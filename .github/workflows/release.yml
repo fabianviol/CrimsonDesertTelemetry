@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: |
+          dotnet build .\CrimsonDesertTelemetry.sln -c Release
+          dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release --no-build
+      - name: Publish
+        run: |
+          dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o .\artifacts\publish
+          Copy-Item .\LICENSE, .\README.md -Destination .\artifacts\publish
+          Compress-Archive -Path .\artifacts\publish\* -DestinationPath .\artifacts\CrimsonDesertTelemetry-win-x64.zip
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME .\artifacts\CrimsonDesertTelemetry-win-x64.zip --generate-notes --verify-tag

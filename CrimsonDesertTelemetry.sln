@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{68468BCB-BE44-4483-AD9B-F6ABE7EB9A59}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrimsonDesertTelemetry.Core", "src\CrimsonDesertTelemetry.Core\CrimsonDesertTelemetry.Core.csproj", "{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrimsonDesertTelemetry.Cli", "src\CrimsonDesertTelemetry.Cli\CrimsonDesertTelemetry.Cli.csproj", "{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{51ACB4AE-0664-4D07-9AA9-25B60A47FA92}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CrimsonDesertTelemetry.Tests", "tests\CrimsonDesertTelemetry.Tests\CrimsonDesertTelemetry.Tests.csproj", "{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B8BE00B0-B785-4D4C-A41E-FCC94E76C4A9} = {68468BCB-BE44-4483-AD9B-F6ABE7EB9A59}
+		{A6752C17-DBBD-4FB9-B49E-DA55C8174AE6} = {68468BCB-BE44-4483-AD9B-F6ABE7EB9A59}
+		{CE90DBBF-FC65-44E0-A1CF-1AFDC33C93BC} = {51ACB4AE-0664-4D07-9AA9-25B60A47FA92}
+	EndGlobalSection
+EndGlobal

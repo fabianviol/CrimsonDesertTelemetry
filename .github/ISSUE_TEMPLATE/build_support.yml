@@ -1,0 +1,33 @@
+name: New game build
+description: Contribute evidence for a new Crimson Desert build
+title: "[Build] "
+labels: [game-build]
+body:
+  - type: markdown
+    attributes:
+      value: Share metadata and controlled observations only. Never upload the executable or a memory dump.
+  - type: input
+    id: build
+    attributes:
+      label: Steam build ID
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Executable version
+    validations:
+      required: true
+  - type: input
+    id: hash
+    attributes:
+      label: Executable SHA-256
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation evidence
+      description: Explain controlled movement/camera tests and whether they survived a full game restart.
+    validations:
+      required: true

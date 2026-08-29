@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible problem on a supported build
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach game binaries, memory dumps, save files, or secrets.
+  - type: input
+    id: build
+    attributes:
+      label: Game build
+      description: Steam build ID and executable version
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the command, expected behavior, actual behavior, and non-sensitive stderr output.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true

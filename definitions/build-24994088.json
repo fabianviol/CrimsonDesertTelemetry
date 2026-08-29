@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "steamAppId": "3321460",
+  "steamBuildId": "24994088",
+  "executableVersion": "1.0.0.2658",
+  "executableSha256": "B596A498701DFCDC49C486D890C42755DABC8C174314C7F26F7329394452446D",
+  "status": "locally-validated",
+  "patterns": [
+    {
+      "name": "static-position-xy-write",
+      "purpose": "static-position-xy",
+      "section": ".text",
+      "pattern": "C5 FB 11 05 ?? ?? ?? ?? 8B 45 D8 89 05 ?? ?? ?? ??",
+      "ripOffset": 4,
+      "ripEnd": 8,
+      "confidence": "locally-validated",
+      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+    },
+    {
+      "name": "static-position-z-write",
+      "purpose": "static-position-z",
+      "section": ".text",
+      "pattern": "C5 FB 11 05 ?? ?? ?? ?? 8B 45 D8 89 05 ?? ?? ?? ??",
+      "ripOffset": 13,
+      "ripEnd": 17,
+      "confidence": "locally-validated",
+      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+    }
+  ]
+}

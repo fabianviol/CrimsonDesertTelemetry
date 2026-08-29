@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>CrimsonDesertTelemetry.Core</AssemblyName>
+    <RootNamespace>CrimsonDesertTelemetry.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

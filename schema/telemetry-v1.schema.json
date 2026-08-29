@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Crimson Desert Telemetry snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gameBuild", "sequence", "timestamp", "player", "camera"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "gameBuild": { "type": "string" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position"],
+      "properties": { "position": { "$ref": "#/$defs/vector3" } }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "up", "right", "forward", "nearPlane", "farPlane", "fieldOfViewDegrees", "aspectRatio", "consensusCopies", "validCopies", "distinctStates", "rediscovered"],
+      "properties": {
+        "position": { "$ref": "#/$defs/vector3" },
+        "up": { "$ref": "#/$defs/vector3" },
+        "right": { "$ref": "#/$defs/vector3" },
+        "forward": { "$ref": "#/$defs/vector3" },
+        "nearPlane": { "type": "number", "exclusiveMinimum": 0 },
+        "farPlane": { "type": "number", "exclusiveMinimum": 0 },
+        "fieldOfViewDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 180 },
+        "aspectRatio": { "type": "number", "exclusiveMinimum": 0 },
+        "consensusCopies": { "type": "integer", "minimum": 1 },
+        "validCopies": { "type": "integer", "minimum": 1 },
+        "distinctStates": { "type": "integer", "minimum": 1 },
+        "rediscovered": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "vector3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    }
+  }
+}

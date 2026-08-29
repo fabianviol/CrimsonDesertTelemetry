@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+.vscode/
+.dotnet/
+artifacts/
+config.json
+*.user
+*.log
