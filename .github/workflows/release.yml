@@ -19,9 +19,10 @@ jobs:
         run: |
           dotnet build .\CrimsonDesertTelemetry.sln -c Release
           dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release --no-build
+          .\tests\Test-Server.ps1
       - name: Publish
         run: |
-          dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o .\artifacts\publish
+          dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o .\artifacts\publish
           Copy-Item .\LICENSE, .\README.md -Destination .\artifacts\publish
           Compress-Archive -Path .\artifacts\publish\* -DestinationPath .\artifacts\CrimsonDesertTelemetry-win-x64.zip
       - name: Create GitHub release

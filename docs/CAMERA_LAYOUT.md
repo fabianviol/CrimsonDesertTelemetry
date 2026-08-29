@@ -39,3 +39,5 @@ Renderer memory contains both current and historical records. The tracker theref
 5. triggers structural rediscovery if no cached copy remains valid.
 
 This design avoids selecting a record based on a single changing scalar or a session-specific pointer.
+
+The public API exposes `farPlane` as `null` when the record contains `FLT_MAX`, meaning effectively infinite. It exposes the projection angle as `verticalFovDegrees`; basis vectors remain the canonical orientation representation.

@@ -3,36 +3,82 @@
   "title": "Crimson Desert Telemetry snapshot v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "gameBuild", "sequence", "timestamp", "player", "camera"],
+  "required": ["schemaVersion", "sequence", "capturedAt", "game", "coordinateSystem", "capabilities", "player", "camera", "quality"],
   "properties": {
     "schemaVersion": { "const": "1.0" },
-    "gameBuild": { "type": "string" },
     "sequence": { "type": "integer", "minimum": 0 },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "player": {
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "game": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["position"],
-      "properties": { "position": { "$ref": "#/$defs/vector3" } }
+      "required": ["build", "state"],
+      "properties": {
+        "build": { "type": "string" },
+        "state": { "enum": ["playing", "loading", "stopped"] }
+      }
+    },
+    "coordinateSystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "handedness", "upAxis"],
+      "properties": {
+        "unit": { "const": "game-unit" },
+        "handedness": { "const": "right" },
+        "upAxis": { "const": "y" }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "player": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position"],
+          "properties": { "position": { "$ref": "#/$defs/vector3" } }
+        }
+      ]
     },
     "camera": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["position", "up", "right", "forward", "nearPlane", "farPlane", "fieldOfViewDegrees", "aspectRatio", "consensusCopies", "validCopies", "distinctStates", "rediscovered"],
-      "properties": {
-        "position": { "$ref": "#/$defs/vector3" },
-        "up": { "$ref": "#/$defs/vector3" },
-        "right": { "$ref": "#/$defs/vector3" },
-        "forward": { "$ref": "#/$defs/vector3" },
-        "nearPlane": { "type": "number", "exclusiveMinimum": 0 },
-        "farPlane": { "type": "number", "exclusiveMinimum": 0 },
-        "fieldOfViewDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 180 },
-        "aspectRatio": { "type": "number", "exclusiveMinimum": 0 },
-        "consensusCopies": { "type": "integer", "minimum": 1 },
-        "validCopies": { "type": "integer", "minimum": 1 },
-        "distinctStates": { "type": "integer", "minimum": 1 },
-        "rediscovered": { "type": "boolean" }
-      }
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position", "up", "right", "forward", "nearPlane", "farPlane", "verticalFovDegrees", "aspectRatio"],
+          "properties": {
+            "position": { "$ref": "#/$defs/vector3" },
+            "up": { "$ref": "#/$defs/vector3" },
+            "right": { "$ref": "#/$defs/vector3" },
+            "forward": { "$ref": "#/$defs/vector3" },
+            "nearPlane": { "type": "number", "exclusiveMinimum": 0 },
+            "farPlane": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+            "verticalFovDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 180 },
+            "aspectRatio": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      ]
+    },
+    "quality": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["consensusCopies", "validCopies", "distinctStates", "rediscovered", "captureDurationMicroseconds"],
+          "properties": {
+            "consensusCopies": { "type": "integer", "minimum": 1 },
+            "validCopies": { "type": "integer", "minimum": 1 },
+            "distinctStates": { "type": "integer", "minimum": 1 },
+            "rediscovered": { "type": "boolean" },
+            "captureDurationMicroseconds": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
     }
   },
   "$defs": {

@@ -9,5 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../CrimsonDesertTelemetry.Core/CrimsonDesertTelemetry.Core.csproj" />
     <Content Include="../../definitions/*.json" Link="definitions/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../schema/*.json" Link="schema/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

@@ -2,11 +2,18 @@ namespace CrimsonDesertTelemetry.Core;
 
 public sealed record TelemetrySnapshot(
     string SchemaVersion,
-    string GameBuild,
     long Sequence,
-    DateTimeOffset Timestamp,
-    PlayerSnapshot Player,
-    CameraSnapshot Camera);
+    DateTimeOffset CapturedAt,
+    GameSnapshot Game,
+    CoordinateSystemSnapshot CoordinateSystem,
+    IReadOnlyList<string> Capabilities,
+    PlayerSnapshot? Player,
+    CameraSnapshot? Camera,
+    QualitySnapshot? Quality);
+
+public sealed record GameSnapshot(string Build, string State);
+
+public sealed record CoordinateSystemSnapshot(string Unit, string Handedness, string UpAxis);
 
 public sealed record PlayerSnapshot(CameraVector3 Position);
 
@@ -16,10 +23,13 @@ public sealed record CameraSnapshot(
     CameraVector3 Right,
     CameraVector3 Forward,
     float NearPlane,
-    float FarPlane,
-    float FieldOfViewDegrees,
-    float AspectRatio,
+    float? FarPlane,
+    float VerticalFovDegrees,
+    float AspectRatio);
+
+public sealed record QualitySnapshot(
     int ConsensusCopies,
     int ValidCopies,
     int DistinctStates,
-    bool Rediscovered);
+    bool Rediscovered,
+    long CaptureDurationMicroseconds);

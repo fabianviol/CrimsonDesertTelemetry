@@ -19,5 +19,8 @@ jobs:
         run: dotnet build .\CrimsonDesertTelemetry.sln -c Release
       - name: Test
         run: dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release --no-build
+      - name: API smoke test
+        shell: pwsh
+        run: .\tests\Test-Server.ps1
       - name: Publish portable CLI
         run: dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained false -o .\artifacts\win-x64

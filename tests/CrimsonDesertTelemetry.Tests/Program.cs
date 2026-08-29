@@ -1,4 +1,5 @@
 using CrimsonDesertTelemetry.Core;
+using System.Text.Json;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -10,7 +11,8 @@ var tests = new (string Name, Action Run)[]
     ("camera rejects wrong sentinel", CameraRejectsWrongSentinel),
     ("camera rejects distant position", CameraRejectsDistantPosition),
     ("camera consensus", CameraConsensus),
-    ("tracker rediscovers camera", TrackerRediscoversCamera)
+    ("tracker rediscovers camera", TrackerRediscoversCamera),
+    ("telemetry JSON contract", TelemetryJsonContract)
 };
 var failures = 0;
 foreach (var test in tests)
@@ -85,6 +87,44 @@ static void TrackerRediscoversCamera()
     var frame = tracker.Capture((10f, 20f, 30f));
     Assert(frame.Rediscovered && tracker.RediscoveryCount == 1 && frame.Camera.Address == regionBase + 0x28,
         "Tracker did not rediscover the relocated camera record.");
+}
+
+static void TelemetryJsonContract()
+{
+    var vector = new CameraVector3(1, 2, 3);
+    var snapshot = new TelemetrySnapshot("1.0", 42, DateTimeOffset.UnixEpoch,
+        new GameSnapshot("24994088", "playing"),
+        new CoordinateSystemSnapshot("game-unit", "right", "y"),
+        ["player.position", "camera.transform", "camera.projection"],
+        new PlayerSnapshot(vector),
+        new CameraSnapshot(vector, vector, vector, vector, 0.2f, null, 50, 1.775f),
+        new QualitySnapshot(48, 100, 7, false, 510));
+    var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    });
+    using var document = JsonDocument.Parse(json);
+    var root = document.RootElement;
+    Assert(root.GetProperty("schemaVersion").GetString() == "1.0", "Schema version is missing.");
+    Assert(root.GetProperty("capturedAt").ValueKind == JsonValueKind.String, "Capture time is missing.");
+    Assert(root.GetProperty("camera").GetProperty("farPlane").ValueKind == JsonValueKind.Null,
+        "Infinite far plane is not represented as null.");
+    Assert(root.GetProperty("camera").GetProperty("verticalFovDegrees").GetSingle() == 50,
+        "Vertical FOV field is missing.");
+    Assert(root.GetProperty("quality").GetProperty("captureDurationMicroseconds").GetInt64() == 510,
+        "Capture duration is missing.");
+
+    var unavailable = snapshot with
+    {
+        Game = new GameSnapshot("24994088", "loading"),
+        Player = null,
+        Camera = null,
+        Quality = null
+    };
+    using var unavailableDocument = JsonDocument.Parse(JsonSerializer.Serialize(unavailable,
+        new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+    Assert(unavailableDocument.RootElement.GetProperty("camera").ValueKind == JsonValueKind.Null,
+        "Unavailable camera state is not represented as null.");
 }
 
 static byte[] CameraBuffer()
