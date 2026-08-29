@@ -21,10 +21,12 @@ try {
         }
     }
     if ($null -eq $health) { throw 'Health endpoint did not become ready.' }
-    if ($health.status -ne 'waiting-for-game' -or $health.sampleRateHz -ne 120) {
+    if ($health.status -notin @('waiting-for-game', 'discovering', 'playing') -or $health.sampleRateHz -ne 120) {
         throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
     }
-    if ($null -ne $health.supportedBuild) { throw 'Build support must be unknown while the game is absent.' }
+    if (-not $health.gameRunning -and $null -ne $health.supportedBuild) {
+        throw 'Build support must be unknown while the game is absent.'
+    }
 
     $localOrigin = Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'http://127.0.0.1:8080' }
     if ($localOrigin.Headers['Access-Control-Allow-Origin'] -ne 'http://127.0.0.1:8080') {
@@ -38,11 +40,13 @@ try {
     $schema = Invoke-RestMethod -Uri "http://127.0.0.1:$port/v1/schema"
     if ($schema.title -ne 'Crimson Desert Telemetry snapshot v1') { throw 'Schema endpoint mismatch.' }
 
-    try {
-        Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
-        throw 'Snapshot unexpectedly succeeded without a running game.'
-    } catch {
-        if ([int]$_.Exception.Response.StatusCode -ne 503) { throw }
+    if (-not $health.gameRunning -or $health.status -ne 'playing') {
+        try {
+            Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
+            throw 'Snapshot unexpectedly succeeded before telemetry was ready.'
+        } catch {
+            if ([int]$_.Exception.Response.StatusCode -ne 503) { throw }
+        }
     }
 
     $socket = [System.Net.WebSockets.ClientWebSocket]::new()

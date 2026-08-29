@@ -66,7 +66,7 @@ The build definition resolves the game's static player-position globals through 
 
 The renderer retains many current and historical copies. At runtime the tracker refreshes the discovered address family and selects the largest quantized consensus state. Polling the cached family is sub-millisecond on the development machine. If every cached copy disappears after a load or region transition, the tracker performs a fresh structural discovery automatically. All clients share this one sampler; increasing the number of WebSocket clients does not cause additional game-memory scans.
 
-The validated layout and evidence are documented in [docs/CAMERA_LAYOUT.md](docs/CAMERA_LAYOUT.md). The public payload contract is available as [schema/telemetry-v1.schema.json](schema/telemetry-v1.schema.json). Research provenance is recorded in [docs/PROVENANCE.md](docs/PROVENANCE.md).
+The validated layout and evidence are documented in [docs/CAMERA_LAYOUT.md](docs/CAMERA_LAYOUT.md). The full live test matrix is recorded in [docs/VALIDATION.md](docs/VALIDATION.md). The public payload contract is available as [schema/telemetry-v1.schema.json](schema/telemetry-v1.schema.json). Research provenance is recorded in [docs/PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Build and test
 

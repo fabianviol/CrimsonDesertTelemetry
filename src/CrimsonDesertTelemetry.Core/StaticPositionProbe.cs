@@ -38,6 +38,12 @@ public static class StaticPositionProbe
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) ||
             Math.Abs(x) > 100_000_000 || Math.Abs(y) > 100_000_000 || Math.Abs(z) > 100_000_000)
             throw new InvalidDataException("Static position contains implausible values.");
+        var horizontalDistanceSquared = x * x + z * z;
+        var nearZeroSentinel = horizontalDistanceSquared < 0.01f && Math.Abs(y) < 0.1f;
+        var height1000Sentinel = horizontalDistanceSquared < 10_000f && Math.Abs(y - 1000.15f) < 1f;
+        var knownLoadingSentinel = nearZeroSentinel || height1000Sentinel;
+        if (knownLoadingSentinel)
+            throw new InvalidDataException("Static horizontal position is not initialized yet.");
         return (x, y, z);
     }
 

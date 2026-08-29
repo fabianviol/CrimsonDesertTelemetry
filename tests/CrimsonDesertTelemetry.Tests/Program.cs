@@ -12,6 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("camera rejects distant position", CameraRejectsDistantPosition),
     ("camera consensus", CameraConsensus),
     ("tracker rediscovers camera", TrackerRediscoversCamera),
+    ("player position rejects uninitialized state", PlayerPositionRejectsUninitializedState),
     ("telemetry JSON contract", TelemetryJsonContract)
 };
 var failures = 0;
@@ -87,6 +88,38 @@ static void TrackerRediscoversCamera()
     var frame = tracker.Capture((10f, 20f, 30f));
     Assert(frame.Rediscovered && tracker.RediscoveryCount == 1 && frame.Camera.Address == regionBase + 0x28,
         "Tracker did not rediscover the relocated camera record.");
+}
+
+static void PlayerPositionRejectsUninitializedState()
+{
+    const ulong baseAddress = 0x400000;
+    var zeroMemory = new BufferMemory(baseAddress, new byte[12]);
+    AssertThrows<InvalidDataException>(() => StaticPositionProbe.Read(zeroMemory,
+        new StaticPositionAddresses(baseAddress, baseAddress + 8)),
+        "An uninitialized zero player position was accepted.");
+
+    var loadingBytes = new byte[12];
+    WriteSingle(loadingBytes, 4, 1000);
+    var loadingMemory = new BufferMemory(baseAddress, loadingBytes);
+    AssertThrows<InvalidDataException>(() => StaticPositionProbe.Read(loadingMemory,
+        new StaticPositionAddresses(baseAddress, baseAddress + 8)),
+        "The observed 0,1000,0 loading sentinel was accepted.");
+
+    WriteSingle(loadingBytes, 0, -0.000002394615f);
+    WriteSingle(loadingBytes, 4, 1000.15f);
+    WriteSingle(loadingBytes, 8, -0.000032010845f);
+    var noisyLoadingMemory = new BufferMemory(baseAddress, loadingBytes);
+    AssertThrows<InvalidDataException>(() => StaticPositionProbe.Read(noisyLoadingMemory,
+        new StaticPositionAddresses(baseAddress, baseAddress + 8)),
+        "The observed noisy loading sentinel was accepted.");
+
+    WriteSingle(loadingBytes, 0, -0.104707725f);
+    WriteSingle(loadingBytes, 4, 1000.15f);
+    WriteSingle(loadingBytes, 8, -0.0047603063f);
+    var driftingLoadingMemory = new BufferMemory(baseAddress, loadingBytes);
+    AssertThrows<InvalidDataException>(() => StaticPositionProbe.Read(driftingLoadingMemory,
+        new StaticPositionAddresses(baseAddress, baseAddress + 8)),
+        "The observed drifting height-1000 loading sentinel was accepted.");
 }
 
 static void TelemetryJsonContract()

@@ -9,4 +9,6 @@
 - Added the versioned community JSON contract and JSON Lines CLI output.
 - Added loopback HTTP snapshot/health/schema endpoints and a WebSocket stream.
 - Added configurable 1–240 Hz shared sampling and automatic game-process reconnects.
+- Classified the observed origin/height-1000 startup sentinel family, including floating-point noise,
+  as loading state.
 - Added offline validation and local API integration tests.

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using CrimsonDesertTelemetry.Cli;
 using CrimsonDesertTelemetry.Core;
@@ -172,6 +173,7 @@ int Serve(string[] commandArgs)
 int RunServer(int port, int rateHz)
 {
     using var cancellation = new CancellationTokenSource();
+    using var timerResolution = WindowsTimerResolution.RequestFor(rateHz);
     ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
     {
         eventArgs.Cancel = true;
@@ -212,7 +214,8 @@ int RunServer(int port, int rateHz)
         app.Map("/v1/stream", context => StreamWebSocket(context, state, cancellation.Token));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
-        var samplingTask = SampleContinuously(state, rateHz, cancellation.Token);
+        var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, cancellation.Token),
+            cancellation.Token);
         try
         {
             app.StartAsync(cancellation.Token).GetAwaiter().GetResult();
@@ -320,7 +323,11 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                 continue;
             }
 
-            var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+            var initialPlayer = await WaitForPlayerPosition(runtime, state,
+                () => ToUnavailableSnapshot(runtime.Definition.SteamBuildId, sequence++, "loading"),
+                cancellationToken);
+            if (initialPlayer is null) continue;
+            var player = initialPlayer.Value;
             state.SetHealth("discovering", true, true, runtime.Definition.SteamBuildId, 0, null, null);
             var discoveryWatch = Stopwatch.StartNew();
             var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
@@ -374,6 +381,28 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
             runtime?.Dispose();
         }
     }
+}
+
+async Task<(float X, float Y, float Z)?> WaitForPlayerPosition(RuntimeContext runtime,
+    TelemetryServerState state, Func<TelemetrySnapshot> createLoadingSnapshot,
+    CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested && !runtime.Process.HasExited)
+    {
+        try
+        {
+            return StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
+        {
+            if (state.Health.Status != "loading")
+                state.Publish(createLoadingSnapshot(), 0, null);
+            state.SetHealth("loading", true, true, runtime.Definition.SteamBuildId,
+                0, null, exception.Message);
+            await Task.Delay(250, cancellationToken);
+        }
+    }
+    return null;
 }
 
 RuntimeContext OpenRuntime()
@@ -478,4 +507,29 @@ sealed class RuntimeContext(
         Reader.Dispose();
         Process.Dispose();
     }
+}
+
+sealed class WindowsTimerResolution : IDisposable
+{
+    private readonly uint _period;
+
+    private WindowsTimerResolution(uint period)
+    {
+        _period = period;
+        if (_period != 0 && TimeBeginPeriod(_period) != 0)
+            throw new InvalidOperationException("Windows did not grant the requested timer resolution.");
+    }
+
+    public static WindowsTimerResolution RequestFor(int rateHz) => new(rateHz > 120 ? 1u : 0u);
+
+    public void Dispose()
+    {
+        if (_period != 0) _ = TimeEndPeriod(_period);
+    }
+
+    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static extern uint TimeBeginPeriod(uint period);
+
+    [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+    private static extern uint TimeEndPeriod(uint period);
 }
