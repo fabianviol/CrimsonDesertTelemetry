@@ -14,12 +14,30 @@ public sealed class BuildDefinition
 
     public static IReadOnlyList<BuildDefinition> LoadAll(string directory)
     {
-        if (!Directory.Exists(directory)) return [];
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        return Directory.EnumerateFiles(directory, "build-*.json")
-            .Select(path => JsonSerializer.Deserialize<BuildDefinition>(File.ReadAllText(path), options)
-                ?? throw new InvalidDataException($"Empty build definition: {path}"))
-            .ToList();
+        var definitions = new Dictionary<string, BuildDefinition>(StringComparer.OrdinalIgnoreCase);
+        var assembly = typeof(BuildDefinition).Assembly;
+        foreach (var resourceName in assembly.GetManifestResourceNames()
+                     .Where(static name => name.Contains(".definitions.build-", StringComparison.OrdinalIgnoreCase) &&
+                                           name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
+        {
+            using var stream = assembly.GetManifestResourceStream(resourceName)
+                               ?? throw new InvalidDataException($"Missing embedded build definition: {resourceName}");
+            var definition = JsonSerializer.Deserialize<BuildDefinition>(stream, options)
+                             ?? throw new InvalidDataException($"Empty embedded build definition: {resourceName}");
+            definitions[definition.ExecutableSha256] = definition;
+        }
+
+        if (Directory.Exists(directory))
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, "build-*.json"))
+            {
+                var definition = JsonSerializer.Deserialize<BuildDefinition>(File.ReadAllText(path), options)
+                                 ?? throw new InvalidDataException($"Empty build definition: {path}");
+                definitions[definition.ExecutableSha256] = definition;
+            }
+        }
+        return definitions.Values.ToList();
     }
 }
 

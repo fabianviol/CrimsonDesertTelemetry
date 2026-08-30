@@ -2,6 +2,10 @@
 
 ## 0.1.0 - Unreleased
 
+- Added a preview ASI bootstrap and mod-manager packaging for the existing read-only host.
+- Fixed DMM misclassifying .NET dependency/runtime JSON as mod patches: the manager
+  package now uses .cfg companions selected explicitly by dotnet exec.
+- Added exact package-content and embedded-resource regression checks.
 - Added read-only support for Crimson Desert Steam build `24994088`.
 - Added version-bound static player-position discovery.
 - Added address-independent render-camera structural discovery.

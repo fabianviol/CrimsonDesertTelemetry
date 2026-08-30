@@ -13,6 +13,7 @@ var tests = new (string Name, Action Run)[]
     ("camera consensus", CameraConsensus),
     ("tracker rediscovers camera", TrackerRediscoversCamera),
     ("player position rejects uninitialized state", PlayerPositionRejectsUninitializedState),
+    ("embedded build definition", EmbeddedBuildDefinition),
     ("telemetry JSON contract", TelemetryJsonContract)
 };
 var failures = 0;
@@ -120,6 +121,14 @@ static void PlayerPositionRejectsUninitializedState()
     AssertThrows<InvalidDataException>(() => StaticPositionProbe.Read(driftingLoadingMemory,
         new StaticPositionAddresses(baseAddress, baseAddress + 8)),
         "The observed drifting height-1000 loading sentinel was accepted.");
+}
+
+static void EmbeddedBuildDefinition()
+{
+    var definitions = BuildDefinition.LoadAll(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
+    Assert(definitions.Any(definition => definition.SteamBuildId == "24994088" &&
+                                         definition.Status == "locally-validated"),
+        "The validated build definition is not embedded in the core assembly.");
 }
 
 static void TelemetryJsonContract()

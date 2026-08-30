@@ -208,9 +208,7 @@ int RunServer(int port, int rateHz)
         app.MapGet("/v1/snapshot", () => state.Latest is { } snapshot
             ? Results.Json(snapshot, jsonOptions)
             : Results.Json(state.Health, jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable));
-        app.MapGet("/v1/schema", () => Results.File(
-            Path.Combine(AppContext.BaseDirectory, "schema", "telemetry-v1.schema.json"),
-            "application/schema+json"));
+        app.MapGet("/v1/schema", () => Results.Bytes(LoadEmbeddedSchema(), "application/schema+json"));
         app.Map("/v1/stream", context => StreamWebSocket(context, state, cancellation.Token));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
@@ -430,6 +428,18 @@ BuildDefinition? FindDefinition(string hash) =>
     BuildDefinition.LoadAll(Path.Combine(AppContext.BaseDirectory, "definitions"))
         .SingleOrDefault(candidate =>
             string.Equals(candidate.ExecutableSha256, hash, StringComparison.OrdinalIgnoreCase));
+
+byte[] LoadEmbeddedSchema()
+{
+    var assembly = typeof(RuntimeContext).Assembly;
+    var resourceName = assembly.GetManifestResourceNames().Single(name =>
+        name.EndsWith("schema.telemetry-v1.schema.json", StringComparison.OrdinalIgnoreCase));
+    using var stream = assembly.GetManifestResourceStream(resourceName)
+                       ?? throw new InvalidDataException("The embedded telemetry schema is missing.");
+    using var buffer = new MemoryStream();
+    stream.CopyTo(buffer);
+    return buffer.ToArray();
+}
 
 CameraSnapshot ToCameraConsensus(RenderCameraConsensus consensus)
 {

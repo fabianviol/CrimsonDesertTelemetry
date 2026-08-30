@@ -2,7 +2,7 @@
 
 Crimson Desert Telemetry is an independent, open-source, read-only telemetry layer for Crimson Desert. It exposes player and render-camera state through a local HTTP/WebSocket API and newline-delimited JSON so lighting systems, overlays, accessibility tools, and other community projects can consume the same neutral interface.
 
-The project does not write to or inject code into the game process. Unknown game builds are rejected instead of being guessed.
+The external telemetry host opens the game for read-only access. An optional ASI bootstrap is loaded into the game by an ASI loader solely to start and manage that host; it does not patch game code or write game memory. Unknown game builds are rejected instead of being guessed.
 
 ## Current support
 
@@ -21,6 +21,24 @@ Currently exposed:
 The camera record is discovered structurally on every game launch. Absolute addresses are deliberately not stored because they change between sessions.
 
 ## Quick start
+
+### Mod-manager preview
+
+The ASI preview package targets Definitive Mod Manager and JSON Mod Manager. It
+requires an ASI loader and the .NET 8 ASP.NET Core Runtime (x64); the host starts
+in the background with the game. Full manager and in-game validation is still
+in progress; see [the package test record](docs/MOD_MANAGER_VALIDATION.md).
+
+Build the package with `scripts/Build-ModManagerPackage.ps1`. Keep all companion
+files together. The `.cfg` files are .NET metadata, not game-patch JSON. The
+bootstrap caches only the runtime configuration under
+`%LOCALAPPDATA%\CrimsonDesertTelemetry\Runtime`, outside mod/game folders.
+
+When upgrading the first test package, replace its old folder completely while
+the mod is disabled and the game is closed. Merging over it leaves old `.json`
+files that DMM will continue to misclassify. Preserve customized INI settings.
+
+### Standalone host
 
 Requirements: Windows x64 and the .NET 8 SDK. Start Crimson Desert and load into the world, then run:
 

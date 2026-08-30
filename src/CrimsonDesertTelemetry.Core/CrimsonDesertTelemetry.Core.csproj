@@ -4,4 +4,7 @@
     <AssemblyName>CrimsonDesertTelemetry.Core</AssemblyName>
     <RootNamespace>CrimsonDesertTelemetry.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../definitions/*.json" Link="definitions/%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>
