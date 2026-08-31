@@ -22,13 +22,18 @@ Currently exposed:
 - near plane, vertical field of view, and aspect ratio (`farPlane` is currently unknown/null);
 - single-source validation and capture timing.
 
-Version 1.0.0 resolves the native render-camera source through build-guarded game globals on every launch. No previous-process heap address, Streamline API call or camera heap scan is required.
+**DLSS is not required.** Version 1.0.0 reads camera data directly from the game's
+native render-camera source, including with upscaling disabled. It resolves this
+source through build-guarded game globals on every launch. No previous-process
+heap address, Streamline API call or camera heap scan is required.
 
 The native source passed a cold start with upscaling disabled and a controlled
 yaw/pitch change on the development NVIDIA setup. AMD/Intel hardware remains
 untested; renderer independence is not a claim of tested support on every GPU.
-Preview.6's Streamline-facing copies stopped updating without DLSS. They remain
-available only in the explicit research command, not as a production fallback.
+
+Historical research only: the DLSS-dependent camera-copy approach used in
+preview.6 was replaced before v1.0.0. It is retained only in an explicit research
+command and is never used by the release's normal telemetry reader or as a fallback.
 See [native camera evidence and remaining tests](docs/ENGINE_CAMERA_RESEARCH.md).
 
 ## Quick start
