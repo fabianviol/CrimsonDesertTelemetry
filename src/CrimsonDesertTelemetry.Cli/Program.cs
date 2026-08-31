@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-const string schemaVersion = "1.0";
+const string schemaVersion = "1.1";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions
@@ -29,6 +29,7 @@ try
         "discover" => Discover(),
         "snapshot" => Snapshot(),
         "track" => Track(args.Skip(1).ToArray()),
+        "trace-camera-copies" => TraceCameraCopies(args.Skip(1).ToArray()),
         "serve" => Serve(args.Skip(1).ToArray()),
         "--version" or "-v" or "version" => Version(),
         "--help" or "-h" or "help" => Help(),
@@ -77,18 +78,16 @@ int Discover()
     using var runtime = OpenRuntime();
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var watch = Stopwatch.StartNew();
-    var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
+    var frame = runtime.Camera.Capture(player);
     watch.Stop();
-    var refreshed = RenderCameraConstantsScanner.Refresh(runtime.Reader,
-        discovered.Select(static candidate => candidate.Address), player);
-    var consensus = RenderCameraConstantsScanner.SelectConsensus(refreshed)
-        ?? throw new InvalidDataException("No valid camera consensus was found.");
+    var consensus = new RenderCameraConsensus(frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates);
     Console.WriteLine(JsonSerializer.Serialize(new
     {
         build = runtime.Definition.SteamBuildId,
+        source = EngineCameraReader.SourceName,
         discoveryMilliseconds = watch.Elapsed.TotalMilliseconds,
-        discoveredCopies = discovered.Count,
-        validCopies = refreshed.Count,
+        discoveredCopies = runtime.Camera.AddressCount,
+        validCopies = frame.ValidCopies,
         consensusCopies = consensus.CopyCount,
         distinctStates = consensus.DistinctStateCount,
         camera = ToCameraConsensus(consensus)
@@ -100,10 +99,9 @@ int Snapshot()
 {
     using var runtime = OpenRuntime();
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
-    var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
-    var tracker = new RenderCameraTracker(runtime.Reader, discovered);
-    var frame = tracker.Capture(player);
-    var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, 0, player, frame, 0);
+    var frame = runtime.Camera.Capture(player);
+    var orientation = runtime.Orientation?.Read(runtime.Reader, player);
+    var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, 0, player, frame, 0, orientation);
     Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
     return 0;
 }
@@ -122,10 +120,10 @@ int Track(string[] commandArgs)
     using var runtime = OpenRuntime();
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var watch = Stopwatch.StartNew();
-    var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
+    var tracker = runtime.Camera;
+    _ = tracker.Capture(player);
     watch.Stop();
-    var tracker = new RenderCameraTracker(runtime.Reader, discovered);
-    Console.Error.WriteLine($"Ready: {tracker.AddressCount} copies discovered in {watch.Elapsed.TotalSeconds:0.###} s.");
+    Console.Error.WriteLine($"Ready: {EngineCameraReader.SourceName}, {tracker.AddressCount} source validated in {watch.Elapsed.TotalMilliseconds:0.###} ms.");
 
     using var cancellation = new CancellationTokenSource();
     ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
@@ -141,10 +139,11 @@ int Track(string[] commandArgs)
     {
         var captureWatch = Stopwatch.StartNew();
         player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+        var orientation = runtime.Orientation?.Read(runtime.Reader, player);
         var frame = tracker.Capture(player);
         captureWatch.Stop();
         var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, sequence, player, frame,
-            captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency);
+            captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
         Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
         sequence++;
         nextTick += (long)(tickInterval.TotalSeconds * Stopwatch.Frequency);
@@ -154,6 +153,76 @@ int Track(string[] commandArgs)
             break;
     }
     Console.CancelKeyPress -= cancelHandler;
+    return 0;
+}
+
+int TraceCameraCopies(string[] commandArgs)
+{
+    if (commandArgs.Length != 3 ||
+        !int.TryParse(commandArgs[0], out var seconds) || seconds is < 1 or > 120 ||
+        !int.TryParse(commandArgs[1], out var rateHz) || rateHz is < 1 or > 120)
+        return UsageError("trace-camera-copies expects <seconds; 1-120> <hz; 1-120> <new-output-file>.");
+
+    var path = Path.GetFullPath(commandArgs[2]);
+    if (File.Exists(path))
+        return UsageError("Refusing to overwrite an existing camera-copy recording.");
+    using var runtime = OpenRuntime();
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    using var output = new StreamWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write,
+        FileShare.Read), new System.Text.UTF8Encoding(false));
+    var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+    Console.Error.WriteLine("Preparing one read-only camera discovery; keep the camera still until RECORDING.");
+    var discoveryWatch = Stopwatch.StartNew();
+    var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
+    discoveryWatch.Stop();
+    var addresses = discovered.Select(static candidate => candidate.Address).Distinct().ToArray();
+    if (addresses.Length == 0)
+        throw new InvalidDataException("No camera copies were discovered.");
+    var startedAt = DateTimeOffset.UtcNow;
+    output.WriteLine(JsonSerializer.Serialize(new
+    {
+        kind = "camera-copy-trace", traceVersion = 1, startedAt,
+        gameBuild = runtime.Definition.SteamBuildId, processId = runtime.Process.Id,
+        processStartedAt = runtime.Process.StartTime.ToUniversalTime(), rateHz,
+        discoveryMilliseconds = discoveryWatch.Elapsed.TotalMilliseconds, addresses,
+        note = "Independent diagnostic discovery, not necessarily the installed host's cached addresses. " +
+            "Private session addresses; not a public telemetry schema or engine frame timestamps."
+    }, jsonOptions));
+    output.Flush();
+
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancelHandler;
+    Console.Error.WriteLine($"RECORDING {seconds} seconds at {rateHz} Hz: {addresses.Length} copies. Output: {path}");
+    var clock = Stopwatch.StartNew();
+    long sequence = 0;
+    try
+    {
+        while (clock.Elapsed.TotalSeconds < seconds && !cancellation.IsCancellationRequested)
+        {
+            var capturedAt = DateTimeOffset.UtcNow;
+            player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+            var copies = RenderCameraConstantsScanner.Refresh(runtime.Reader, addresses, player);
+            var consensus = RenderCameraConstantsScanner.SelectConsensus(copies);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                kind = "sample", sequence, capturedAt, elapsedMs = clock.Elapsed.TotalMilliseconds,
+                player = ToVector(player), candidates = copies, consensus
+            }, jsonOptions));
+            sequence++;
+            var remaining = TimeSpan.FromSeconds((double)sequence / rateHz) - clock.Elapsed;
+            if (remaining > TimeSpan.Zero && cancellation.Token.WaitHandle.WaitOne(remaining)) break;
+        }
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancelHandler;
+    }
+    Console.Error.WriteLine($"Recorded {sequence} camera-copy samples. No game values were changed.");
     return 0;
 }
 
@@ -327,11 +396,8 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
             if (initialPlayer is null) continue;
             var player = initialPlayer.Value;
             state.SetHealth("discovering", true, true, runtime.Definition.SteamBuildId, 0, null, null);
-            var discoveryWatch = Stopwatch.StartNew();
-            var discovered = RenderCameraConstantsScanner.Find(runtime.Reader, player);
-            discoveryWatch.Stop();
-            var tracker = new RenderCameraTracker(runtime.Reader, discovered);
-            var discoveryMilliseconds = discoveryWatch.Elapsed.TotalMilliseconds;
+            var tracker = runtime.Camera;
+            var discoveryMilliseconds = tracker.ReferenceResolutionMilliseconds;
             var tickTicks = Math.Max(1, Stopwatch.Frequency / rateHz);
             var nextTick = Stopwatch.GetTimestamp();
 
@@ -341,10 +407,11 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                 {
                     var captureWatch = Stopwatch.StartNew();
                     player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+                    var orientation = runtime.Orientation?.Read(runtime.Reader, player);
                     var frame = tracker.Capture(player);
                     captureWatch.Stop();
                     var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, sequence++, player, frame,
-                        captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency);
+                        captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
                     state.Publish(snapshot, tracker.AddressCount, discoveryMilliseconds);
                 }
                 catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
@@ -415,7 +482,17 @@ RuntimeContext OpenRuntime()
         var definition = FindDefinition(hash)
             ?? throw new InvalidDataException($"Unsupported Crimson Desert build (SHA-256 {hash}).");
         var addresses = StaticPositionProbe.Resolve(process, executable, definition);
-        return new RuntimeContext(process, new ReadOnlyProcess(process), definition, addresses);
+        var orientation = PlayerOrientationReader.Resolve(process, executable, definition);
+        var reader = new ReadOnlyProcess(process);
+        try
+        {
+            var cameraDefinition = definition.EngineCamera
+                ?? throw new InvalidDataException("This build has no supported native camera definition.");
+            var camera = new EngineCameraReader(reader,
+                checked((ulong)process.MainModule!.BaseAddress.ToInt64()), cameraDefinition);
+            return new RuntimeContext(process, reader, definition, addresses, orientation, camera);
+        }
+        catch { reader.Dispose(); throw; }
     }
     catch
     {
@@ -450,18 +527,21 @@ CameraSnapshot ToCameraConsensus(RenderCameraConsensus consensus)
 }
 
 TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, float Z) player,
-    RenderCameraFrame frame, long captureDurationMicroseconds) => new(
+    RenderCameraFrame frame, long captureDurationMicroseconds, PlayerOrientationSnapshot? orientation = null) => new(
     schemaVersion,
     sequence,
     frame.Timestamp,
     new GameSnapshot(build, "playing"),
     coordinateSystem,
-    capabilities,
-    new PlayerSnapshot(ToVector(player)),
+    CapabilitiesFor(orientation),
+    new PlayerSnapshot(ToVector(player), orientation),
     ToCameraConsensus(new RenderCameraConsensus(
         frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates)),
     new QualitySnapshot(frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates,
         frame.Rediscovered, captureDurationMicroseconds));
+
+IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation) =>
+    orientation is null ? capabilities : capabilities.Append("player.orientation").ToArray();
 
 TelemetrySnapshot ToUnavailableSnapshot(string build, long sequence, string state) => new(
     schemaVersion,
@@ -480,9 +560,10 @@ int Help()
 {
     Console.WriteLine("Crimson Desert Telemetry");
     Console.WriteLine("  diagnose                 Check the running game and build support");
-    Console.WriteLine("  discover                 Discover and summarize camera copies");
+    Console.WriteLine("  discover                 Validate and summarize the native camera source");
     Console.WriteLine("  snapshot                 Emit one JSON telemetry snapshot");
     Console.WriteLine("  track [samples] [hz]     Emit JSON Lines at 1-240 Hz (0 samples = unlimited)");
+    Console.WriteLine("  trace-camera-copies <seconds> <hz> <file>   Record all copies for offline diagnosis");
     Console.WriteLine("  serve [port] [hz]        Serve HTTP and WebSocket telemetry (default 27311, 60 Hz)");
     Console.WriteLine("  version                  Show the program version");
     return 0;
@@ -505,12 +586,16 @@ sealed class RuntimeContext(
     Process process,
     ReadOnlyProcess reader,
     BuildDefinition definition,
-    StaticPositionAddresses positionAddresses) : IDisposable
+    StaticPositionAddresses positionAddresses,
+    PlayerOrientationReader? orientation,
+    EngineCameraReader camera) : IDisposable
 {
     public Process Process { get; } = process;
     public ReadOnlyProcess Reader { get; } = reader;
     public BuildDefinition Definition { get; } = definition;
     public StaticPositionAddresses PositionAddresses { get; } = positionAddresses;
+    public PlayerOrientationReader? Orientation { get; } = orientation;
+    public EngineCameraReader Camera { get; } = camera;
 
     public void Dispose()
     {

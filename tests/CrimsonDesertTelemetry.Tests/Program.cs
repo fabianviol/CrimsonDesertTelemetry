@@ -1,6 +1,13 @@
 using CrimsonDesertTelemetry.Core;
 using System.Text.Json;
 
+if (args.Length != 0)
+{
+    if (args.Length == 2 && args[0] == "--replay-camera-right") return CameraCopyReplay.Run(args[1]);
+    Console.Error.WriteLine("Usage: tests [--replay-camera-right <private-trace.jsonl>]");
+    return 2;
+}
+
 var tests = new (string Name, Action Run)[]
 {
     ("signature exact", SignatureExact),
@@ -11,8 +18,26 @@ var tests = new (string Name, Action Run)[]
     ("camera rejects wrong sentinel", CameraRejectsWrongSentinel),
     ("camera rejects distant position", CameraRejectsDistantPosition),
     ("camera consensus", CameraConsensus),
+    ("camera temporal bootstrap", CameraSelectionTests.Bootstrap),
+    ("camera rejects historical majority", CameraSelectionTests.HistoricalMajority),
+    ("camera follows rotating buffers", CameraSelectionTests.RotatingBuffers),
+    ("camera preserves reverse turns and wrap", CameraSelectionTests.ReversalAndWrap),
+    ("camera tracks position and projection", CameraSelectionTests.PositionAndProjection),
+    ("camera retains stationary source", CameraSelectionTests.Stationary),
+    ("camera rediscovers lost learned sources", CameraSelectionTests.LostSource),
+    ("camera switches away from frozen source", CameraSelectionTests.FrozenSource),
+    ("camera temporal sampling at 1 Hz", CameraSelectionTests.LowRate),
     ("tracker rediscovers camera", TrackerRediscoversCamera),
+    ("native camera mapping and unknown far plane", EngineCameraTests.Mapping),
+    ("native camera rebased cold start", EngineCameraTests.RebasedColdStart),
+    ("native camera instruction guards", EngineCameraTests.InstructionGuards),
+    ("native camera roots and vtables", EngineCameraTests.RootsAndTypes),
+    ("native camera rejects invalid data", EngineCameraTests.InvalidData),
+    ("native camera concurrent read budget", EngineCameraTests.ConcurrentUpdates),
+    ("native camera loading and relocation", EngineCameraTests.LoadingAndRelocation),
+    ("native camera freshness and counter wrap", EngineCameraTests.Freshness),
     ("player position rejects uninitialized state", PlayerPositionRejectsUninitializedState),
+    ("player orientation serializes validated basis", PlayerOrientationSerializesValidatedBasis),
     ("embedded build definition", EmbeddedBuildDefinition),
     ("telemetry JSON contract", TelemetryJsonContract)
 };
@@ -134,7 +159,7 @@ static void EmbeddedBuildDefinition()
 static void TelemetryJsonContract()
 {
     var vector = new CameraVector3(1, 2, 3);
-    var snapshot = new TelemetrySnapshot("1.0", 42, DateTimeOffset.UnixEpoch,
+    var snapshot = new TelemetrySnapshot("1.1", 42, DateTimeOffset.UnixEpoch,
         new GameSnapshot("24994088", "playing"),
         new CoordinateSystemSnapshot("game-unit", "right", "y"),
         ["player.position", "camera.transform", "camera.projection"],
@@ -147,7 +172,7 @@ static void TelemetryJsonContract()
     });
     using var document = JsonDocument.Parse(json);
     var root = document.RootElement;
-    Assert(root.GetProperty("schemaVersion").GetString() == "1.0", "Schema version is missing.");
+    Assert(root.GetProperty("schemaVersion").GetString() == "1.1", "Schema version is missing.");
     Assert(root.GetProperty("capturedAt").ValueKind == JsonValueKind.String, "Capture time is missing.");
     Assert(root.GetProperty("camera").GetProperty("farPlane").ValueKind == JsonValueKind.Null,
         "Infinite far plane is not represented as null.");
@@ -155,6 +180,8 @@ static void TelemetryJsonContract()
         "Vertical FOV field is missing.");
     Assert(root.GetProperty("quality").GetProperty("captureDurationMicroseconds").GetInt64() == 510,
         "Capture duration is missing.");
+    Assert(root.GetProperty("player").GetProperty("orientation").ValueKind == JsonValueKind.Null,
+        "Orientation should be explicitly null when this fixture has no orientation.");
 
     var unavailable = snapshot with
     {
@@ -167,6 +194,18 @@ static void TelemetryJsonContract()
         new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
     Assert(unavailableDocument.RootElement.GetProperty("camera").ValueKind == JsonValueKind.Null,
         "Unavailable camera state is not represented as null.");
+}
+
+static void PlayerOrientationSerializesValidatedBasis()
+{
+    var orientation = new PlayerOrientationSnapshot("player-physics-root",
+        new CameraVector3(1, 0, 0), new CameraVector3(0, 1, 0), 90);
+    using var document = JsonDocument.Parse(JsonSerializer.Serialize(orientation,
+        new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+    Assert(document.RootElement.GetProperty("source").GetString() == "player-physics-root",
+        "Orientation source is missing.");
+    Assert(document.RootElement.GetProperty("headingDegrees").GetSingle() == 90,
+        "Heading was not serialized.");
 }
 
 static byte[] CameraBuffer()

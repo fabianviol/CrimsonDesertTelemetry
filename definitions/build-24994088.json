@@ -26,5 +26,43 @@
       "confidence": "locally-validated",
       "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
     }
-  ]
+  ],
+  "engineCamera": {
+    "layout": "renderer-camera-v1",
+    "mainRootReferenceRva": 3055754,
+    "mainRootReferencePattern": "48 8B 0D ?? ?? ?? ?? 49 8B E8 8B F2 48 85 C9",
+    "mainRootGlobalRva": 103125936,
+    "cameraReferenceRva": 42252105,
+    "cameraReferencePattern": "48 8B 05 ?? ?? ?? ?? C5 FB 10 B0 C8 00 00 00 8B 98 D0 00 00 00",
+    "cameraGlobalRva": 103126584,
+    "contextVtableRva": 87949320,
+    "cameraVtableRva": 87813472
+  },
+  "playerRoot": {
+    "worldSystemPattern": {
+      "name": "world-system-p1",
+      "purpose": "world-system",
+      "section": ".text",
+      "pattern": "48 83 EC 28 48 8B 0D ?? ?? ?? ?? 48 8B 49 ?? E8 ?? ?? ?? ?? 84 C0 0F 94 C0 48 83 C4 28 C3",
+      "ripOffset": 7,
+      "ripEnd": 11,
+      "confidence": "locally-validated",
+      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+    },
+    "worldSystemToActorManagerOffset": 48,
+    "actorManagerToPlayerActorOffset": 80,
+    "playerActorToIntermediateOffset": 104,
+    "intermediateToControlOffset": 64,
+    "controlToOwnerOffset": 320,
+    "ownerToPhysicsOffset": 664,
+    "basisXOffset": 96,
+    "basisYOffset": 112,
+    "basisZOffset": 128,
+    "positionOffset": 144,
+    "expectedTypeNames": [
+      ".?AVClientActorManager@pa@@",
+      ".?AVClientChildOnlyInGameActor@pa@@",
+      ".?AVClientCharacterControlActorComponent@pa@@"
+    ]
+  }
 }

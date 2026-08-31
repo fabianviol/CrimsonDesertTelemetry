@@ -28,11 +28,11 @@ try {
         throw 'Build support must be unknown while the game is absent.'
     }
 
-    $localOrigin = Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'http://127.0.0.1:8080' }
+    $localOrigin = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'http://127.0.0.1:8080' }
     if ($localOrigin.Headers['Access-Control-Allow-Origin'] -ne 'http://127.0.0.1:8080') {
         throw 'Loopback browser origin was not allowed.'
     }
-    $remoteOrigin = Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'https://example.com' }
+    $remoteOrigin = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'https://example.com' }
     if ($remoteOrigin.Headers.ContainsKey('Access-Control-Allow-Origin')) {
         throw 'Remote browser origin was allowed.'
     }
@@ -42,7 +42,7 @@ try {
 
     if (-not $health.gameRunning -or $health.status -ne 'playing') {
         try {
-            Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
+            Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
             throw 'Snapshot unexpectedly succeeded before telemetry was ready.'
         } catch {
             if ([int]$_.Exception.Response.StatusCode -ne 503) { throw }

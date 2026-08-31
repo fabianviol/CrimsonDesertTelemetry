@@ -1,0 +1,218 @@
+#include "overlay.h"
+#include <winhttp.h>
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <format>
+#include <mutex>
+#include <thread>
+#include <utility>
+
+namespace cdt::overlay
+{
+namespace
+{
+struct Shared { std::mutex mutex; View view; };
+// Deliberately process-lifetime: callbacks/worker teardown must not run in DllMain.
+Shared& SharedView() { static auto* shared = new Shared; return *shared; }
+struct HttpHandle
+{
+    HINTERNET value{};
+    explicit HttpHandle(HINTERNET handle) : value(handle) { }
+    ~HttpHandle() { if (value) WinHttpCloseHandle(value); }
+    HttpHandle(const HttpHandle&) = delete;
+    HttpHandle& operator=(const HttpHandle&) = delete;
+};
+float IniFloat(const std::filesystem::path& ini, const wchar_t* key, float fallback, float minimum, float maximum)
+{
+    std::array<wchar_t, 64> wide{};
+    GetPrivateProfileStringW(L"Overlay", key, L"", wide.data(), static_cast<DWORD>(wide.size()), ini.c_str());
+    std::array<char, 64> value{};
+    for (size_t i = 0; wide[i] && i < value.size() - 1; ++i)
+    {
+        if (wide[i] > 127) return fallback;
+        value[i] = static_cast<char>(wide[i]);
+    }
+    float result{};
+    const auto end = value.data() + strlen(value.data());
+    const auto parsed = std::from_chars(value.data(), end, result);
+    return parsed.ec == std::errc{} && parsed.ptr == end && std::isfinite(result)
+        ? std::clamp(result, minimum, maximum) : fallback;
+}
+void Connect(const Config config, HANDLE stop)
+{
+    if (!config.enabled) return;
+    while (WaitForSingleObject(stop, 0) == WAIT_TIMEOUT)
+    {
+        View view;
+        view.connection = "CONNECTING";
+        Publish(view);
+        try
+        {
+            HttpHandle session(WinHttpOpen(L"CrimsonDesertTelemetryOverlay/1.0.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
+                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+            if (!session.value) throw std::runtime_error("Session failed");
+            WinHttpSetTimeouts(session.value, 1000, 1000, 1000, 1000);
+            HttpHandle connection(WinHttpConnect(session.value, L"127.0.0.1", config.port, 0));
+            HttpHandle request(WinHttpOpenRequest(connection.value, L"GET", L"/v1/stream", nullptr,
+                WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0));
+            // Explicitly disable redirects: telemetry never leaves loopback.
+            DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            if (!request.value || !WinHttpSetOption(request.value, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect)) ||
+                !WinHttpSetOption(request.value, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
+                !WinHttpSendRequest(request.value, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+                !WinHttpReceiveResponse(request.value, nullptr)) throw std::runtime_error("Connection failed");
+            DWORD code{}, codeSize = sizeof(code);
+            if (!WinHttpQueryHeaders(request.value, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                WINHTTP_HEADER_NAME_BY_INDEX, &code, &codeSize, WINHTTP_NO_HEADER_INDEX) || code != 101)
+                throw std::runtime_error("No WebSocket upgrade");
+            HttpHandle socket(WinHttpWebSocketCompleteUpgrade(request.value, 0));
+            if (!socket.value) throw std::runtime_error("WebSocket failed");
+            // Synchronous WebSocket receive has its own process-lifetime thread;
+            // it never blocks rendering or the graphics-maintenance worker.
+            view.connected = true;
+            Publish(view);
+            std::array<char, 8192> buffer{};
+            std::string message;
+            Clock::time_point previous{};
+            while (WaitForSingleObject(stop, 0) == WAIT_TIMEOUT)
+            {
+                DWORD received{};
+                WINHTTP_WEB_SOCKET_BUFFER_TYPE type{};
+                const DWORD error = WinHttpWebSocketReceive(socket.value, buffer.data(),
+                    static_cast<DWORD>(buffer.size()), &received, &type);
+                if (error == ERROR_WINHTTP_TIMEOUT) continue;
+                if (error != NO_ERROR || type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) break;
+                if (type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE && type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
+                    throw std::runtime_error("Non-text telemetry");
+                if (message.size() + received > 65536) throw std::runtime_error("Telemetry message too large");
+                message.append(buffer.data(), received);
+                if (type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) continue;
+                try
+                {
+                    auto sample = ParseSample(message, std::chrono::system_clock::now());
+                    const auto now = Clock::now();
+                    // A repeated sample must not refresh its age, even if the peer resends it.
+                    if (view.hasSample && sample.sequence <= view.sample.sequence)
+                        throw std::runtime_error("Non-increasing sequence");
+                    if (previous != Clock::time_point{})
+                    {
+                        const double interval = std::chrono::duration<double>(now - previous).count();
+                        if (interval > 0) view.rateHz = view.rateHz == 0 ? 1 / interval : 0.9 * view.rateHz + 0.1 / interval;
+                    }
+                    previous = now;
+                    view.sample = std::move(sample);
+                    view.received = now;
+                    view.hasSample = true;
+                    Publish(view);
+                }
+                catch (...)
+                {
+                    view.hasSample = false;
+                    view.connected = false;
+                    view.connection = "INVALID / INCOMPATIBLE DATA";
+                    Publish(view);
+                    throw;
+                }
+                message.clear();
+            }
+        }
+        catch (...) { }
+        view.connected = false;
+        if (view.connection != "INVALID / INCOMPATIBLE DATA") view.connection = "RECONNECTING";
+        Publish(view);
+        if (WaitForSingleObject(stop, 1000) != WAIT_TIMEOUT) break;
+    }
+}
+struct WorkerArgs { Config config; HANDLE stop; std::filesystem::path directory; };
+DWORD WINAPI Worker(void* parameter)
+{
+    auto* args = static_cast<WorkerArgs*>(parameter);
+    try
+    {
+        const bool installed = InstallGraphics(args->config);
+        std::ofstream log(args->directory / L"CrimsonDesertTelemetry.overlay.log", std::ios::app);
+        log << "Overlay: " << (installed ? "graphics hooks installed" : "graphics hooks unavailable") << '\n';
+        log.flush();
+        if (!installed) return 1;
+        std::thread([args] { try { Connect(args->config, args->stop); } catch (...) { } }).detach();
+        std::string last;
+        while (WaitForSingleObject(args->stop, 50) == WAIT_TIMEOUT)
+        {
+            MaintainGraphics();
+            const std::string status = GraphicsStatus();
+            if (status != last)
+            {
+                log << status << '\n';
+                log.flush();
+                last = status;
+            }
+        }
+    }
+    catch (...) { return 2; }
+    return 0;
+}
+}
+bool TryRead(View& view)
+{
+    auto& shared = SharedView();
+    std::unique_lock lock(shared.mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    view = shared.view;
+    return true;
+}
+void RunClient(Config config, HANDLE stopEvent) { Connect(config, stopEvent); }
+void Publish(View view)
+{
+    auto& shared = SharedView();
+    std::lock_guard lock(shared.mutex);
+    shared.view = std::move(view);
+}
+Config LoadConfig(const std::filesystem::path& ini)
+{
+    Config config;
+    const auto integer = [&](const wchar_t* key, int fallback) { return static_cast<int>(GetPrivateProfileIntW(L"Overlay", key, fallback, ini.c_str())); };
+    config.enabled = integer(L"Enabled", config.enabled ? 1 : 0) != 0;
+    if (!config.enabled) return config;
+    config.visible = integer(L"InitiallyVisible", 1) != 0;
+    config.details = integer(L"ShowDetails", 0) != 0;
+    config.autoScale = integer(L"AutoScale", 1) != 0;
+    config.toggleKey = std::clamp(integer(L"ToggleKey", 119), 0, 255);
+    config.detailsKey = std::clamp(integer(L"DetailsKey", 120), 0, 255);
+    config.corner = std::clamp(integer(L"Corner", 0), 0, 3);
+    config.staleMs = std::clamp(integer(L"StaleMilliseconds", 1000), 100, 10000);
+    config.scale = IniFloat(ini, L"Scale", 1.0f, 0.5f, 3.0f);
+    config.opacity = IniFloat(ini, L"Opacity", 0.92f, 0.2f, 1.0f);
+    config.port = static_cast<unsigned short>(std::clamp(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()), 1024u, 65535u));
+    return config;
+}
+void Start(const HMODULE module, HANDLE stopEvent, const std::filesystem::path& directory) noexcept
+{
+    try
+    {
+        std::array<wchar_t, 32768> executable{};
+        if (!GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size())) ||
+            _wcsicmp(std::filesystem::path(executable.data()).filename().c_str(), L"CrimsonDesert.exe") != 0) return;
+        const auto config = LoadConfig(directory / L"CrimsonDesertTelemetry.ini");
+        // Return before pinning the module, creating HUD workers, hooks or a client.
+        if (!config.enabled) return;
+        const auto name = std::format(L"Local\\CrimsonDesertTelemetry.Overlay.{}", GetCurrentProcessId());
+        HANDLE singleton = CreateMutexW(nullptr, FALSE, name.c_str());
+        if (!singleton) return;
+        if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(singleton); return; }
+        // A loaded graphics callback cannot be safely hot-unloaded by an ASI manager.
+        HMODULE pinned{};
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(module), &pinned)) { CloseHandle(singleton); return; }
+        auto* args = new WorkerArgs{config, stopEvent, directory};
+        HANDLE thread = CreateThread(nullptr, 0, Worker, args, 0, nullptr);
+        if (thread) CloseHandle(thread);
+        else delete args;
+        // Keep the named mutex handle for process lifetime, including initialization failure.
+    }
+    catch (...) { }
+}
+}

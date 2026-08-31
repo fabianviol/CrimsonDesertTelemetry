@@ -1,9 +1,72 @@
-# Mod-manager preview validation
+# Mod-manager validation
+
+## v1.0.0 release candidate (2026-08-31)
+
+The release package has been built locally with the MIT license, native camera
+reader and HUD disabled by default. The following checks passed for this artifact:
+
+- Release managed build and all 30 managed regression tests.
+- HTTP/WebSocket API smoke test.
+- Three native CTests: HUD model, isolated D3D12 renderer and WebSocket client.
+- Expanded-package checks and ZIP payload comparison (nine files).
+- Packaged version 1.0.0, MIT license and `[Overlay] Enabled=0` verified.
+
+Package: `CrimsonDesertTelemetry-v1.0.0-ModManagers.zip`.
+SHA-256: `4F8EEAFFA0030DDE4BD8095ACB606D3CB73F9E3A9F03D15FD14DEC5CE9F363C9`.
+
+Final installed-file/startup acceptance passed on 2026-08-31 after correcting
+two retained metadata files (see below). All six runtime files, including the INI,
+matched the v1.0.0 package by SHA-256. The ASI was loaded in the restarted game;
+health reported `playing`, supported build 24994088 and no error. Player position,
+player orientation and camera data were present. The sequence advanced by 62 over
+1.0261 capture seconds (approximately 60 Hz). With `[Overlay] Enabled=0`, health
+reported zero WebSocket clients and the HUD log had no entries from this launch.
+
+During this DMM upgrade, the library contained the correct new `.cfg` companions,
+but `bin64` retained the older dependency/runtime metadata while the DLLs updated.
+With the game closed, both old files were backed up and replaced from the release
+package before the successful restart. This verifies the corrected installation,
+not automatic metadata replacement by DMM. Preserve customized INI settings when
+upgrading, but replace both `.cfg` companions alongside the binaries.
+
+JSON Mod Manager lifecycle validation remains pending; do not advertise it as
+fully tested. The preview records below are historical evidence, not additional
+checks of the final archive.
+
+## Preview.7 native-camera candidate (2026-08-30)
+
+The managed host now uses the native engine camera, validated after a cold start
+with upscaling off. The previous HUD remains, with a single-source diagnostic
+label. DMM import/deployment, packaged HUD acceptance, reload/teleport, and testing
+other upscalers are still pending for this package; earlier passes do not cover it.
+
+Preview.7 build checks passed: 30 managed tests, three native CTests, loopback
+HTTP/WebSocket smoke, expanded-package validation, and ZIP payload verification.
+Package SHA-256: `FD893319C0B16BFF07B159701C7C4069F5CB5D2EA797A75B5C775D4C8FD42F67`.
+The installed DMM/game files were not changed by this build.
+
+## Preview.4 in-game observation / preview.6 candidate (2026-08-30)
+
+The new optional Dear ImGui HUD has native model, isolated D3D12 and loopback
+WebSocket tests. Its manager ZIP adds THIRD-PARTY-NOTICES.txt (nine payload files).
+The preview.4 HUD appeared in the actual game, but was too small at 4K and the user
+reported camera-arrow lag/backsteps. Preview.6 includes resolution scaling and a
+temporal camera-selection fix verified in offline replay; renewed game acceptance,
+recording and manager lifecycle tests remain pending. Importing the
+ZIP into DMM updated its library but initially left the old ASI in game `bin64`.
+With the game closed, disabling/re-enabling the plugin deployed the matching ASI.
+Verify deployed file hashes after upgrades; the DMM status badge alone is insufficient.
+See
+[OVERLAY_VALIDATION.md](OVERLAY_VALIDATION.md). The preview.2 results below are
+historical evidence for the telemetry bootstrap, not proof of the new render hooks.
+
+## Historical preview.2 record
 
 Date: 2026-08-30. Package: `0.1.0-preview.2`.
 
-This record is separate from the validated external telemetry tests. It does not
-claim that full DMM/JSON Mod Manager deployment and in-game operation are complete.
+This record is separate from the validated external telemetry tests. DMM deployment
+and an actual in-game startup pass; full lifecycle and JSON Mod Manager validation
+are not yet complete.
 
 ## DMM metadata collision and fix
 
@@ -38,10 +101,35 @@ No JSON or executable is generated in the mod library.
 The old test folder and archive were backed up outside DMM's mods directory.
 The user's INI settings and existing ASI loader were preserved.
 
+## DMM deployment and in-game startup
+
+Verified with DMM 1.9.4 and package `0.1.0-preview.2` on 2026-08-30:
+
+- After the user enabled the plugin, DMM listed it in `activeAsiMods`. All six
+  runtime companions in `bin64` matched the library files byte-for-byte (SHA-256):
+  the ASI, INI, core DLL, host DLL, dependency CFG, and runtime CFG.
+- The user started the game and loaded a save. Game PID 16600 started at 09:43:20
+  local time. Its loaded modules included the game-directory `winmm.dll` and
+  `CrimsonDesertTelemetry.asi`.
+- The bootstrap log recorded starting host PID 1720 at 09:43:22 on loopback port
+  27311 at 60 Hz. No separate manual telemetry launch was used for this test.
+- HTTP health and snapshot returned 200, state `playing`, supported build
+  `24994088`, and no health error. Discovery found 39 copies in 12,580.8 ms.
+- Player and camera positions, the camera basis, FOV, and aspect ratio were
+  present. A subsequent WebSocket check received 121 valid snapshots over
+  1.9952 capture seconds (60.15 Hz), with no sequence gaps and no missing player
+  or camera objects. All samples reported `playing`.
+- Reported capture duration over those 121 samples averaged 126.9 microseconds
+  (minimum 96, maximum 494).
+
+DMM's UI simultaneously showed `NOT MOUNTED`, one active ASI, and an available
+loader. The badge's cause was not investigated; the file hashes and loaded-module
+check establish deployment and loading independently of that ambiguous display.
+This startup check does not replace movement, reload, or shutdown lifecycle tests.
+
 ## Still pending
 
-- DMM: verify every binary/config file after leaving the mod enabled, then test
-  actual game startup and clean disable/uninstall.
+- DMM: clean disable/uninstall and game shutdown with owned-host cleanup.
 - JSON Mod Manager 9.9.4: import, deploy, startup, and uninstall the same archive.
 - Repeat the game lifecycle tests through the ASI bootstrap, including failure
   paths for missing runtime, an occupied port, and unsupported game builds.

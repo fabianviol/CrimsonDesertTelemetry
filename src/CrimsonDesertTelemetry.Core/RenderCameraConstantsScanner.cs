@@ -78,6 +78,15 @@ public static class RenderCameraConstantsScanner
         return new RenderCameraConsensus(representative, winningGroup.Count, candidates.Count, groups.Count);
     }
 
+    internal static RenderCameraConsensus DescribeSelection(
+        IReadOnlyList<RenderCameraConstantsCandidate> candidates, RenderCameraConstantsCandidate selected)
+    {
+        var selectedKey = StateKey.From(selected);
+        return new RenderCameraConsensus(selected,
+            candidates.Count(candidate => StateKey.From(candidate) == selectedKey), candidates.Count,
+            candidates.Select(StateKey.From).Distinct().Count());
+    }
+
     public static IReadOnlyList<RenderCameraConstantsCandidate> FindInBuffer(
         byte[] bytes, ulong bufferBase, (float X, float Y, float Z) playerPosition)
     {

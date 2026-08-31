@@ -14,6 +14,7 @@ $expectedNames = @(
     'crimson-desert-telemetry.deps.cfg',
     'crimson-desert-telemetry.runtimeconfig.cfg',
     'README.txt',
+    'THIRD-PARTY-NOTICES.txt',
     'LICENSE.txt'
 )
 
@@ -32,6 +33,12 @@ function Assert-Payload([hashtable]$Files) {
     $runtime = [Text.Encoding]::UTF8.GetString($Files['crimson-desert-telemetry.runtimeconfig.cfg']) | ConvertFrom-Json
     if (-not $deps.runtimeTarget.name -or $null -eq $deps.targets) { throw 'Invalid .NET dependency metadata.' }
     if ($null -eq $runtime.runtimeOptions) { throw 'Invalid .NET runtime configuration.' }
+    $ini = [Text.Encoding]::UTF8.GetString($Files['CrimsonDesertTelemetry.ini'])
+    if ($ini -notmatch '(?m)^\[Overlay\]' -or $ini -notmatch '(?m)^ToggleKey=119\r?$') { throw 'Missing overlay configuration.' }
+    $notices = [Text.Encoding]::UTF8.GetString($Files['THIRD-PARTY-NOTICES.txt'])
+    foreach ($dependency in @('Dear ImGui', 'MinHook', 'JSON for Modern C++', 'Tristan Grimmer', 'Sean Barrett')) {
+        if (-not $notices.Contains($dependency)) { throw "Missing third-party attribution: $dependency" }
+    }
     foreach ($name in @('CrimsonDesertTelemetry.asi', 'CrimsonDesertTelemetry.Core.dll', 'crimson-desert-telemetry.dll')) {
         $bytes = $Files[$name]
         if ($bytes.Length -lt 2 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {

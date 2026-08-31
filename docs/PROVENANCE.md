@@ -13,3 +13,18 @@ This file records public material consulted during research. A listed source doe
 The structural camera scanner, camera validation rules, redundant-copy consensus algorithm, current-build player-position signature, telemetry schema, and CLI implementation in this repository are original work.
 
 No source was copied from a repository without a verified compatible license. Any future reuse must identify the exact source revision, license, affected files, and required notices in this document and in the reused source files.
+
+## Bundled HUD dependencies
+
+The HUD builds against the following upstream libraries. Their source archives
+are pinned by version and SHA-256 in `native/CrimsonDesertTelemetry.Asi/CMakeLists.txt`.
+
+| Dependency | Version | License | Use |
+|---|---|---|---|
+| Dear ImGui | 1.91.9b | MIT | HUD layout and D3D12 rendering |
+| MinHook | 1.3.4 | BSD 2-Clause | Opt-in graphics-presentation hooks |
+| JSON for Modern C++ | 3.12.0 | MIT | HUD WebSocket payload parsing |
+
+The package includes `THIRD-PARTY-NOTICES.txt` with upstream notices, including
+Dear ImGui's embedded stb components and ProggyClean font. The project's MIT
+license does not replace these dependency licenses. No game assets are bundled.

@@ -25,7 +25,7 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
     private readonly ConcurrentDictionary<Guid, Channel<byte[]>> _subscribers = new();
     private TelemetrySnapshot? _latest;
     private byte[]? _latestBytes;
-    private TelemetryHealth _health = new("1.0", "waiting-for-game", false, null, null,
+    private TelemetryHealth _health = new("1.1", "waiting-for-game", false, null, null,
         sampleRateHz, null, null, 0, 0, null, null);
 
     public TelemetrySnapshot? Latest

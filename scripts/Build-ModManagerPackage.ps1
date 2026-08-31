@@ -1,12 +1,24 @@
 param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]*$')]
-    [string]$Version = '0.1.0-preview.2'
+    [string]$Version = '1.0.0'
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$cmake = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
-if (-not (Test-Path -LiteralPath $cmake)) { throw "CMake was not found at $cmake" }
+$cmake = $null
+$cmakeCommand = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($cmakeCommand) { $cmake = $cmakeCommand.Source }
+else {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        # Match the VS 2022 generator; other installer products (for example SSMS)
+        # may have a higher version but do not include the C++ build tools.
+        $cmake = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.CMake.Project -find 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' | Select-Object -First 1
+    }
+}
+if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) {
+    throw 'CMake was not found. Install Visual Studio 2022 with C++ and CMake tools, or add CMake to PATH.'
+}
 
 $nativeSource = Join-Path $repoRoot 'native\CrimsonDesertTelemetry.Asi'
 $nativeBuild = Join-Path $repoRoot 'build\native-package'
@@ -26,7 +38,7 @@ Assert-WithinRepo $packageRoot
 Assert-WithinRepo $archive
 
 & dotnet publish (Join-Path $repoRoot 'src\CrimsonDesertTelemetry.Cli\CrimsonDesertTelemetry.Cli.csproj') `
-    -c Release -r win-x64 --self-contained false -p:UseAppHost=false -o $managedPublish
+    -c Release -r win-x64 --self-contained false -p:UseAppHost=false "-p:Version=$Version" -o $managedPublish
 if ($LASTEXITCODE -ne 0) { throw 'Managed host publish failed.' }
 
 & $cmake -S $nativeSource -B $nativeBuild -G 'Visual Studio 17 2022' -A x64
@@ -45,6 +57,7 @@ $files = @(
     @{ Source = (Join-Path $managedPublish 'CrimsonDesertTelemetry.Core.dll'); Name = 'CrimsonDesertTelemetry.Core.dll' },
     @{ Source = (Join-Path $repoRoot 'packaging\mod-manager\CrimsonDesertTelemetry.ini'); Name = 'CrimsonDesertTelemetry.ini' },
     @{ Source = (Join-Path $repoRoot 'packaging\mod-manager\README.txt'); Name = 'README.txt' },
+    @{ Source = (Join-Path $nativeBuild 'THIRD-PARTY-NOTICES.txt'); Name = 'THIRD-PARTY-NOTICES.txt' },
     @{ Source = (Join-Path $repoRoot 'LICENSE'); Name = 'LICENSE.txt' }
 )
 foreach ($file in $files) {

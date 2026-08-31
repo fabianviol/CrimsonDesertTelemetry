@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace CrimsonDesertTelemetry.Core;
 
 public sealed record RenderCameraFrame(
@@ -11,6 +13,8 @@ public sealed record RenderCameraFrame(
 public sealed class RenderCameraTracker
 {
     private readonly IReadOnlyProcessMemory _reader;
+    private readonly RenderCameraTemporalSelector _selector = new();
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private ulong[] _addresses;
 
     public RenderCameraTracker(IReadOnlyProcessMemory reader, IEnumerable<RenderCameraConstantsCandidate> discovered)
@@ -27,7 +31,7 @@ public sealed class RenderCameraTracker
     public RenderCameraFrame Capture((float X, float Y, float Z) playerPosition)
     {
         var candidates = RenderCameraConstantsScanner.Refresh(_reader, _addresses, playerPosition);
-        var consensus = RenderCameraConstantsScanner.SelectConsensus(candidates);
+        var consensus = _selector.Select(candidates, _clock.Elapsed);
         var rediscovered = false;
         if (consensus is null)
         {
@@ -36,7 +40,8 @@ public sealed class RenderCameraTracker
             RediscoveryCount++;
             rediscovered = true;
             candidates = RenderCameraConstantsScanner.Refresh(_reader, _addresses, playerPosition);
-            consensus = RenderCameraConstantsScanner.SelectConsensus(candidates);
+            _selector.Reset();
+            consensus = _selector.Select(candidates, _clock.Elapsed);
         }
         if (consensus is null)
             throw new InvalidDataException("No valid camera copy remains after rediscovery.");

@@ -2,6 +2,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <bcrypt.h>
+#include "overlay.h"
 
 #include <algorithm>
 #include <array>
@@ -9,6 +10,7 @@
 #include <format>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -116,6 +118,45 @@ bool IsServerReady(const unsigned short port)
     return firstBytes.starts_with("HTTP/1.1 200") || firstBytes.starts_with("HTTP/1.0 200");
 }
 
+class BootstrapMutex
+{
+public:
+    explicit BootstrapMutex(const unsigned short port)
+    {
+        const auto name = L"Local\\CrimsonDesertTelemetry.Bootstrap." + std::to_wstring(port);
+        handle_ = CreateMutexW(nullptr, FALSE, name.c_str());
+        if (handle_ == nullptr)
+            throw std::runtime_error("Could not create the bootstrap mutex.");
+
+        const DWORD result = WaitForSingleObject(handle_, 0);
+        if (result == WAIT_OBJECT_0 || result == WAIT_ABANDONED)
+            owns_ = true;
+        else if (result == WAIT_TIMEOUT)
+            return;
+        else
+        {
+            CloseHandle(handle_);
+            handle_ = nullptr;
+            throw std::runtime_error("Could not acquire the bootstrap mutex.");
+        }
+    }
+
+    BootstrapMutex(const BootstrapMutex&) = delete;
+    BootstrapMutex& operator=(const BootstrapMutex&) = delete;
+
+    ~BootstrapMutex()
+    {
+        if (owns_) ReleaseMutex(handle_);
+        if (handle_ != nullptr) CloseHandle(handle_);
+    }
+
+    bool Owns() const noexcept { return owns_; }
+
+private:
+    HANDLE handle_ = nullptr;
+    bool owns_ = false;
+};
+
 std::wstring Quote(const std::filesystem::path& value)
 {
     return L"\"" + value.wstring() + L"\"";
@@ -215,6 +256,16 @@ DWORD RunBootstrap()
     if (enabled == 0)
     {
         Log(L"Bootstrap disabled by CrimsonDesertTelemetry.ini.");
+        return 0;
+    }
+
+    // Two ASI copies can be loaded by a mod manager or a stale installation.
+    // Serialize the port check and host launch, then keep ownership for the
+    // host lifetime so a second bootstrap cannot launch a competing server.
+    BootstrapMutex bootstrapMutex(port);
+    if (!bootstrapMutex.Owns())
+    {
+        Log(std::format(L"Another bootstrap instance owns port {}; skipping duplicate host launch.", port));
         return 0;
     }
 
@@ -324,7 +375,11 @@ DWORD RunBootstrap()
 
 DWORD WINAPI BootstrapThread(void*)
 {
-    try { return RunBootstrap(); }
+    try
+    {
+        cdt::overlay::Start(g_module, g_stopEvent, ModuleDirectory());
+        return RunBootstrap();
+    }
     catch (...)
     {
         // Configuration/filesystem errors in the optional bootstrap must not

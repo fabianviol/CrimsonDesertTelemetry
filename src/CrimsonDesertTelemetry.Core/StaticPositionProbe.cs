@@ -47,7 +47,7 @@ public static class StaticPositionProbe
         return (x, y, z);
     }
 
-    private static ulong ResolveUniqueRipTarget(string executable, PatternDefinition candidate)
+    internal static ulong ResolveUniqueRipTarget(string executable, PatternDefinition candidate)
     {
         if (candidate.RipOffset is null || candidate.RipEnd is null)
             throw new InvalidDataException($"{candidate.Name} has no RIP metadata.");

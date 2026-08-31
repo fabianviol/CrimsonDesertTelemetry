@@ -1,6 +1,49 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 1.0.0 - 2026-08-31
+
+- First public release package: player position/root orientation, native render-camera
+  position/basis/projection, loopback HTTP/WebSocket API and JSON Lines output.
+- Product version 1.0.0 retains the existing HTTP v1 endpoints and JSON schema 1.1.
+  No payload or endpoint migration is required for consumers of the development builds.
+- Native camera reads now use guarded game globals, independent of DLSS/Streamline
+  camera copies. Cold-start/upscaling-off and in-game restart tests passed on the
+  development NVIDIA setup; other GPU hardware remains untested.
+- Dear ImGui HUD is opt-in: `[Overlay] Enabled=0` by default, including when the
+  INI/section/key is missing. No HUD hooks, hotkeys or HUD client start in this mode.
+  `[Server] Enabled=1` remains the default; telemetry runs without the HUD.
+- Set `[Overlay] Enabled=1` and restart to enable the HUD. `InitiallyVisible` and
+  F8 control visibility only after opt-in. Existing customized INIs are not overridden.
+- Light-source research is excluded. Unknown game builds are rejected. The optional
+  HUD supports D3D12 / 8-bit SDR; HDR, frame generation and recording remain unverified.
+
+### Development preview history (superseded where noted above)
+
+- Preview.6: replace majority-only tracking with temporal activity selection over
+  renderer copies, keeping the newest observed update among regularly changing
+  sources. Retain learned sources during stillness; rediscover if they are lost.
+- Preserve raw camera turns, reversals, position and projection. No display smoothing
+  or fixed process addresses. Quality copy counts describe the selected state.
+- Add nine targeted selection checks and optional production-code replay. The local
+  controlled 3600-sample right-turn trace yields 803 direction changes without
+  backwards steps or unavailable samples; renewed in-game acceptance remains pending.
+
+- Preview.5: resolution-aware HUD size, matching font-atlas resolution, stronger
+  secondary text contrast and configurable `AutoScale` (enabled by default).
+- Add automatic 4K/resize graphics coverage and HUD scale calculation tests.
+- Add a read-only stream recorder for controlled camera-lag investigations.
+- Document Streamline provenance and unverified GPU/DLSS coverage.
+
+- Preview.4 candidate: optional English Dear ImGui in-game HUD (D3D12 / 8-bit SDR),
+  independent camera/player-root directions, position, FOV and diagnostics.
+- Add configurable passive HUD hotkeys, source-age validation and unavailable-data states.
+- Add pinned native dependencies and bundled third-party license notices.
+- Add native parser tests and an isolated, hidden-window D3D12 graphics smoke test.
+- Light-source research remains excluded; the HUD is visible in-game, but complete
+  in-game/recording acceptance is pending.
+
+- Add schema 1.1 player physics-root orientation (`forward`, `up`, optional heading) with per-frame availability semantics.
+- Serialize concurrent ASI bootstrap startup so duplicate loader instances cannot launch competing telemetry hosts.
 
 - Added a preview ASI bootstrap and mod-manager packaging for the existing read-only host.
 - Fixed DMM misclassifying .NET dependency/runtime JSON as mod patches: the manager

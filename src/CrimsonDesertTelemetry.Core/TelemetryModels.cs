@@ -15,7 +15,13 @@ public sealed record GameSnapshot(string Build, string State);
 
 public sealed record CoordinateSystemSnapshot(string Unit, string Handedness, string UpAxis);
 
-public sealed record PlayerSnapshot(CameraVector3 Position);
+public sealed record PlayerSnapshot(CameraVector3 Position, PlayerOrientationSnapshot? Orientation = null);
+
+public sealed record PlayerOrientationSnapshot(
+    string Source,
+    CameraVector3 Forward,
+    CameraVector3 Up,
+    float? HeadingDegrees);
 
 public sealed record CameraSnapshot(
     CameraVector3 Position,

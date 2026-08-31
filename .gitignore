@@ -8,3 +8,11 @@ artifacts/
 config.json
 *.user
 *.log
+Backup/
+UpgradeLog*.htm
+.env
+.env.*
+!.env.example
+*.dmp
+*.jsonl
+*.mp4

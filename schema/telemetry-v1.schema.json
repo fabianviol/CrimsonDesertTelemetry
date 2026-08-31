@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "sequence", "capturedAt", "game", "coordinateSystem", "capabilities", "player", "camera", "quality"],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
+    "schemaVersion": { "const": "1.1" },
     "sequence": { "type": "integer", "minimum": 0 },
     "capturedAt": { "type": "string", "format": "date-time" },
     "game": {
@@ -39,7 +39,25 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["position"],
-          "properties": { "position": { "$ref": "#/$defs/vector3" } }
+          "properties": {
+            "position": { "$ref": "#/$defs/vector3" },
+            "orientation": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["source", "forward", "up", "headingDegrees"],
+                  "properties": {
+                    "source": { "const": "player-physics-root" },
+                    "forward": { "$ref": "#/$defs/vector3" },
+                    "up": { "$ref": "#/$defs/vector3" },
+                    "headingDegrees": { "type": ["number", "null"], "minimum": 0, "exclusiveMaximum": 360 }
+                  }
+                }
+              ]
+            }
+          }
         }
       ]
     },

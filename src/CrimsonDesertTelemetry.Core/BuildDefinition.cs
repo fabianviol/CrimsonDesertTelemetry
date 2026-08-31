@@ -11,6 +11,8 @@ public sealed class BuildDefinition
     public string ExecutableSha256 { get; set; } = "";
     public string Status { get; set; } = "research";
     public List<PatternDefinition> Patterns { get; set; } = [];
+    public PlayerRootDefinition? PlayerRoot { get; set; }
+    public EngineCameraDefinition? EngineCamera { get; set; }
 
     public static IReadOnlyList<BuildDefinition> LoadAll(string directory)
     {
@@ -39,6 +41,35 @@ public sealed class BuildDefinition
         }
         return definitions.Values.ToList();
     }
+}
+
+public sealed class EngineCameraDefinition
+{
+    public string Layout { get; set; } = "";
+    public ulong MainRootReferenceRva { get; set; }
+    public string MainRootReferencePattern { get; set; } = "";
+    public ulong MainRootGlobalRva { get; set; }
+    public ulong CameraReferenceRva { get; set; }
+    public string CameraReferencePattern { get; set; } = "";
+    public ulong CameraGlobalRva { get; set; }
+    public ulong ContextVtableRva { get; set; }
+    public ulong CameraVtableRva { get; set; }
+}
+
+public sealed class PlayerRootDefinition
+{
+    public PatternDefinition WorldSystemPattern { get; set; } = new();
+    public int WorldSystemToActorManagerOffset { get; set; } = 0x30;
+    public int ActorManagerToPlayerActorOffset { get; set; } = 0x50;
+    public int PlayerActorToIntermediateOffset { get; set; } = 0x68;
+    public int IntermediateToControlOffset { get; set; } = 0x40;
+    public int ControlToOwnerOffset { get; set; } = 0x140;
+    public int OwnerToPhysicsOffset { get; set; } = 0x298;
+    public int BasisXOffset { get; set; } = 0x60;
+    public int BasisYOffset { get; set; } = 0x70;
+    public int BasisZOffset { get; set; } = 0x80;
+    public int PositionOffset { get; set; } = 0x90;
+    public List<string> ExpectedTypeNames { get; set; } = [];
 }
 
 public sealed class PatternDefinition

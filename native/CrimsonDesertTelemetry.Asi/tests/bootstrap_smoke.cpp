@@ -89,7 +89,7 @@ int wmain(const int argc, wchar_t** argv)
     while (std::chrono::steady_clock::now() < deadline)
     {
         const auto health = HttpGet(port, "/v1/health");
-        if (health.starts_with("HTTP/1.1 200") && health.find("\"schemaVersion\":\"1.0\"") != std::string::npos)
+        if (health.starts_with("HTTP/1.1 200") && health.find("\"schemaVersion\":\"1.1\"") != std::string::npos)
         {
             const auto schema = HttpGet(port, "/v1/schema");
             if (!schema.starts_with("HTTP/1.1 200") ||
