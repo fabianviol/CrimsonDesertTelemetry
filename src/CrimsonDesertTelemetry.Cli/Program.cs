@@ -26,6 +26,7 @@ try
     return command switch
     {
         "diagnose" => Diagnose(),
+        "check-compatibility" => CheckCompatibility(args.Skip(1).ToArray()),
         "discover" => Discover(),
         "snapshot" => Snapshot(),
         "track" => Track(args.Skip(1).ToArray()),
@@ -62,15 +63,26 @@ int Diagnose()
     }
     var executable = process.MainModule?.FileName
         ?? throw new InvalidOperationException("The Crimson Desert executable path is unavailable.");
-    var hash = GameDiscovery.ComputeSha256(executable);
-    var definition = FindDefinition(hash);
+    var resolved = ResolveBuild(executable);
     Console.WriteLine($"Process: {process.Id}");
     Console.WriteLine($"Executable: {executable}");
-    Console.WriteLine($"SHA-256: {hash}");
-    Console.WriteLine(definition is null
-        ? "Support: unsupported build"
-        : $"Support: build {definition.SteamBuildId} ({definition.Status})");
-    return definition is null ? 4 : 0;
+    Console.WriteLine($"SHA-256: {resolved.Compatibility.ExecutableSha256}");
+    Console.WriteLine($"Compatibility: {resolved.Compatibility.Mode}; installed build: {resolved.GameBuild}");
+    Console.WriteLine("Runtime camera/player validation still applies to each sample.");
+    return 0;
+}
+
+int CheckCompatibility(string[] commandArgs)
+{
+    if (commandArgs.Length != 1) return UsageError("check-compatibility expects an executable path.");
+    var resolved = BuildCompatibility.CheckAutomatic(commandArgs[0], LoadDefinitions());
+    var camera = resolved.Definition.EngineCamera!;
+    Console.WriteLine(JsonSerializer.Serialize(new { resolved.GameBuild, resolved.Compatibility,
+        resolvedAddresses = new { camera.MainRootReferenceRva, camera.MainRootGlobalRva,
+            camera.CameraReferenceRva, camera.CameraGlobalRva, camera.ContextVtableRva, camera.CameraVtableRva } },
+        jsonOptions));
+    Console.Error.WriteLine("Offline automatic checks passed. This is not a live-game validation.");
+    return 0;
 }
 
 int Discover()
@@ -78,12 +90,13 @@ int Discover()
     using var runtime = OpenRuntime();
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var watch = Stopwatch.StartNew();
+    _ = runtime.ReadOrientation(player);
     var frame = runtime.Camera.Capture(player);
     watch.Stop();
     var consensus = new RenderCameraConsensus(frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates);
     Console.WriteLine(JsonSerializer.Serialize(new
     {
-        build = runtime.Definition.SteamBuildId,
+        build = runtime.GameBuild,
         source = EngineCameraReader.SourceName,
         discoveryMilliseconds = watch.Elapsed.TotalMilliseconds,
         discoveredCopies = runtime.Camera.AddressCount,
@@ -100,8 +113,8 @@ int Snapshot()
     using var runtime = OpenRuntime();
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var frame = runtime.Camera.Capture(player);
-    var orientation = runtime.Orientation?.Read(runtime.Reader, player);
-    var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, 0, player, frame, 0, orientation);
+    var orientation = runtime.ReadOrientation(player);
+    var snapshot = ToSnapshot(runtime.GameBuild, 0, player, frame, 0, orientation);
     Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
     return 0;
 }
@@ -121,6 +134,7 @@ int Track(string[] commandArgs)
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var watch = Stopwatch.StartNew();
     var tracker = runtime.Camera;
+    _ = runtime.ReadOrientation(player);
     _ = tracker.Capture(player);
     watch.Stop();
     Console.Error.WriteLine($"Ready: {EngineCameraReader.SourceName}, {tracker.AddressCount} source validated in {watch.Elapsed.TotalMilliseconds:0.###} ms.");
@@ -139,10 +153,10 @@ int Track(string[] commandArgs)
     {
         var captureWatch = Stopwatch.StartNew();
         player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
-        var orientation = runtime.Orientation?.Read(runtime.Reader, player);
+        var orientation = runtime.ReadOrientation(player);
         var frame = tracker.Capture(player);
         captureWatch.Stop();
-        var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, sequence, player, frame,
+        var snapshot = ToSnapshot(runtime.GameBuild, sequence, player, frame,
             captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
         Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
         sequence++;
@@ -182,7 +196,7 @@ int TraceCameraCopies(string[] commandArgs)
     output.WriteLine(JsonSerializer.Serialize(new
     {
         kind = "camera-copy-trace", traceVersion = 1, startedAt,
-        gameBuild = runtime.Definition.SteamBuildId, processId = runtime.Process.Id,
+        gameBuild = runtime.GameBuild, processId = runtime.Process.Id,
         processStartedAt = runtime.Process.StartTime.ToUniversalTime(), rateHz,
         discoveryMilliseconds = discoveryWatch.Elapsed.TotalMilliseconds, addresses,
         note = "Independent diagnostic discovery, not necessarily the installed host's cached addresses. " +
@@ -390,12 +404,13 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                 continue;
             }
 
+            state.SetCompatibility(runtime.Compatibility);
             var initialPlayer = await WaitForPlayerPosition(runtime, state,
-                () => ToUnavailableSnapshot(runtime.Definition.SteamBuildId, sequence++, "loading"),
+                () => ToUnavailableSnapshot(runtime.GameBuild, sequence++, "loading"),
                 cancellationToken);
             if (initialPlayer is null) continue;
             var player = initialPlayer.Value;
-            state.SetHealth("discovering", true, true, runtime.Definition.SteamBuildId, 0, null, null);
+            state.SetHealth("discovering", true, true, runtime.GameBuild, 0, null, null);
             var tracker = runtime.Camera;
             var discoveryMilliseconds = tracker.ReferenceResolutionMilliseconds;
             var tickTicks = Math.Max(1, Stopwatch.Frequency / rateHz);
@@ -407,19 +422,19 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                 {
                     var captureWatch = Stopwatch.StartNew();
                     player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
-                    var orientation = runtime.Orientation?.Read(runtime.Reader, player);
+                    var orientation = runtime.ReadOrientation(player);
                     var frame = tracker.Capture(player);
                     captureWatch.Stop();
-                    var snapshot = ToSnapshot(runtime.Definition.SteamBuildId, sequence++, player, frame,
+                    var snapshot = ToSnapshot(runtime.GameBuild, sequence++, player, frame,
                         captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
                     state.Publish(snapshot, tracker.AddressCount, discoveryMilliseconds);
                 }
                 catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
                 {
                     if (state.Health.Status != "loading")
-                        state.Publish(ToUnavailableSnapshot(runtime.Definition.SteamBuildId, sequence++, "loading"),
+                        state.Publish(ToUnavailableSnapshot(runtime.GameBuild, sequence++, "loading"),
                             tracker.AddressCount, discoveryMilliseconds);
-                    state.SetHealth("loading", true, true, runtime.Definition.SteamBuildId,
+                    state.SetHealth("loading", true, true, runtime.GameBuild,
                         tracker.AddressCount, discoveryMilliseconds, exception.Message);
                 }
 
@@ -431,14 +446,14 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                     nextTick = Stopwatch.GetTimestamp();
             }
             if (!cancellationToken.IsCancellationRequested && runtime.Process.HasExited)
-                state.Publish(ToUnavailableSnapshot(runtime.Definition.SteamBuildId, sequence++, "stopped"),
+                state.Publish(ToUnavailableSnapshot(runtime.GameBuild, sequence++, "stopped"),
                     tracker.AddressCount, discoveryMilliseconds);
         }
         catch (Exception exception) when (exception is InvalidDataException or Win32Exception or
                                            ArgumentException or InvalidOperationException)
         {
             state.SetHealth("error", runtime is not null, runtime is not null,
-                runtime?.Definition.SteamBuildId, 0, null, exception.Message);
+                runtime?.GameBuild, 0, null, exception.Message);
             await Task.Delay(2000, cancellationToken);
         }
         finally
@@ -462,7 +477,7 @@ async Task<(float X, float Y, float Z)?> WaitForPlayerPosition(RuntimeContext ru
         {
             if (state.Health.Status != "loading")
                 state.Publish(createLoadingSnapshot(), 0, null);
-            state.SetHealth("loading", true, true, runtime.Definition.SteamBuildId,
+            state.SetHealth("loading", true, true, runtime.GameBuild,
                 0, null, exception.Message);
             await Task.Delay(250, cancellationToken);
         }
@@ -478,9 +493,11 @@ RuntimeContext OpenRuntime()
     {
         var executable = process.MainModule?.FileName
             ?? throw new InvalidOperationException("The Crimson Desert executable path is unavailable.");
-        var hash = GameDiscovery.ComputeSha256(executable);
-        var definition = FindDefinition(hash)
-            ?? throw new InvalidDataException($"Unsupported Crimson Desert build (SHA-256 {hash}).");
+        var resolved = ResolveBuild(executable);
+        var definition = resolved.Definition;
+        if (resolved.Compatibility.Mode == "automatic")
+            Console.Error.WriteLine($"Untested executable accepted by automatic compatibility checks " +
+                $"(reference layout {resolved.Compatibility.ReferenceBuild}). Runtime validation remains active.");
         var addresses = StaticPositionProbe.Resolve(process, executable, definition);
         var orientation = PlayerOrientationReader.Resolve(process, executable, definition);
         var reader = new ReadOnlyProcess(process);
@@ -490,7 +507,7 @@ RuntimeContext OpenRuntime()
                 ?? throw new InvalidDataException("This build has no supported native camera definition.");
             var camera = new EngineCameraReader(reader,
                 checked((ulong)process.MainModule!.BaseAddress.ToInt64()), cameraDefinition);
-            return new RuntimeContext(process, reader, definition, addresses, orientation, camera);
+            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -501,10 +518,10 @@ RuntimeContext OpenRuntime()
     }
 }
 
-BuildDefinition? FindDefinition(string hash) =>
-    BuildDefinition.LoadAll(Path.Combine(AppContext.BaseDirectory, "definitions"))
-        .SingleOrDefault(candidate =>
-            string.Equals(candidate.ExecutableSha256, hash, StringComparison.OrdinalIgnoreCase));
+IReadOnlyList<BuildDefinition> LoadDefinitions() =>
+    BuildDefinition.LoadAll(Path.Combine(AppContext.BaseDirectory, "definitions"));
+
+ResolvedBuild ResolveBuild(string executable) => BuildCompatibility.Resolve(executable, LoadDefinitions());
 
 byte[] LoadEmbeddedSchema()
 {
@@ -560,6 +577,7 @@ int Help()
 {
     Console.WriteLine("Crimson Desert Telemetry");
     Console.WriteLine("  diagnose                 Check the running game and build support");
+    Console.WriteLine("  check-compatibility <exe>  Offline automatic checks (also on known EXEs)");
     Console.WriteLine("  discover                 Validate and summarize the native camera source");
     Console.WriteLine("  snapshot                 Emit one JSON telemetry snapshot");
     Console.WriteLine("  track [samples] [hz]     Emit JSON Lines at 1-240 Hz (0 samples = unlimited)");
@@ -585,17 +603,27 @@ int UsageError(string message)
 sealed class RuntimeContext(
     Process process,
     ReadOnlyProcess reader,
-    BuildDefinition definition,
+    ResolvedBuild resolved,
     StaticPositionAddresses positionAddresses,
     PlayerOrientationReader? orientation,
     EngineCameraReader camera) : IDisposable
 {
     public Process Process { get; } = process;
     public ReadOnlyProcess Reader { get; } = reader;
-    public BuildDefinition Definition { get; } = definition;
+    public BuildDefinition Definition { get; } = resolved.Definition;
+    public string GameBuild { get; } = resolved.GameBuild;
+    public CompatibilityInfo Compatibility { get; } = resolved.Compatibility;
     public StaticPositionAddresses PositionAddresses { get; } = positionAddresses;
     public PlayerOrientationReader? Orientation { get; } = orientation;
     public EngineCameraReader Camera { get; } = camera;
+
+    public PlayerOrientationSnapshot? ReadOrientation((float X, float Y, float Z) player)
+    {
+        var value = Orientation?.Read(Reader, player);
+        if (Compatibility.Mode == "automatic" && value is null)
+            throw new InvalidDataException("Automatic compatibility requires a valid player-root type, basis and position.");
+        return value;
+    }
 
     public void Dispose()
     {

@@ -7,7 +7,7 @@ Contributions are welcome, especially independent validation on other machines a
 1. Describe the game distribution, Steam build ID, executable version, and SHA-256.
 2. Explain the controlled experiment used to distinguish the value from look-alikes.
 3. Validate any resolver after a complete game exit and restart.
-4. Add or update a definition under `definitions/` without replacing support for older builds.
+4. Add or update a definition under `definitions/` without replacing support for older builds. Mark a build `locally-validated` only after its own controlled live test; automatic compatibility is not that evidence.
 5. Add offline tests for new parsing, validation, or selection behavior.
 6. Run the Release build and test commands from the README.
 7. Record external research sources in `docs/PROVENANCE.md`.
@@ -15,5 +15,11 @@ Contributions are welcome, especially independent validation on other machines a
 Never submit game binaries, decompiled game code, private keys, access tokens, complete memory dumps, or personal save files. Small synthetic byte fixtures are welcome. Contributions that write to the game, bypass anti-cheat systems, or enable competitive cheating are out of scope.
 
 Keep public schema changes backward-compatible whenever possible. New optional fields are preferred over renaming or removing existing fields.
+
+Automatic compatibility templates must remain opt-in and fail closed. They require
+unique file-backed code references, correctly classified data targets, at least two
+distinct vtable-slot fingerprints per required object, player RTTI guards and the
+existing live plausibility/coherency checks. Do not weaken these checks merely to
+accept a new executable.
 
 By submitting a contribution, you agree that it may be distributed under this repository's MIT License and confirm that you have the right to contribute it.

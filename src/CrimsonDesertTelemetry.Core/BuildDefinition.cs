@@ -13,6 +13,7 @@ public sealed class BuildDefinition
     public List<PatternDefinition> Patterns { get; set; } = [];
     public PlayerRootDefinition? PlayerRoot { get; set; }
     public EngineCameraDefinition? EngineCamera { get; set; }
+    public bool AllowAutomaticCompatibility { get; set; }
 
     public static IReadOnlyList<BuildDefinition> LoadAll(string directory)
     {
@@ -54,6 +55,14 @@ public sealed class EngineCameraDefinition
     public ulong CameraGlobalRva { get; set; }
     public ulong ContextVtableRva { get; set; }
     public ulong CameraVtableRva { get; set; }
+    public List<VtableSlotFingerprint> ContextVtableFingerprints { get; set; } = [];
+    public List<VtableSlotFingerprint> CameraVtableFingerprints { get; set; } = [];
+}
+
+public sealed class VtableSlotFingerprint
+{
+    public int Slot { get; set; }
+    public string Pattern { get; set; } = "";
 }
 
 public sealed class PlayerRootDefinition

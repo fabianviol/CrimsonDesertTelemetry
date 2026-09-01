@@ -1,4 +1,4 @@
-Crimson Desert Telemetry 1.0.0
+Crimson Desert Telemetry
 ========================
 
 This first release package targets Definitive Mod Manager and JSON Mod Manager.
@@ -9,7 +9,9 @@ The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
 confirmed working in-game HUD behavior after restarting with preview.7. The HUD
 retains automatic resolution scaling, including 4K. NVIDIA recording is unverified.
-Supported game: Steam build 24994088, executable 1.0.0.2658. Unknown builds are rejected.
+Manually tested game: Steam build 24994088, executable 1.0.0.2658. Other executable
+hashes are accepted only when all guarded code, data, player-type and camera-table
+sources resolve unambiguously; health labels this automatic, not manually tested.
 
 Requirements
 ------------
@@ -19,7 +21,7 @@ Requirements
 
 Default API
 -----------
-Product version 1.0.0 retains HTTP v1 endpoints and JSON schema 1.1.
+Product version 1.1.0 retains HTTP v1 endpoints and JSON schema 1.1.
 HTTP:      http://127.0.0.1:27311/v1/snapshot
 Health:    http://127.0.0.1:27311/v1/health
 Schema:    http://127.0.0.1:27311/v1/schema

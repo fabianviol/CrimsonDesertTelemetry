@@ -43,6 +43,16 @@ public static partial class GameDiscovery
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
+    public static string? ReadSteamBuildIdForExecutable(string executable)
+    {
+        var binDirectory = Directory.GetParent(Path.GetFullPath(executable));
+        if (binDirectory?.Name.Equals("bin64", StringComparison.OrdinalIgnoreCase) != true ||
+            binDirectory.Parent is null) return null;
+        try { return ReadSteamBuildId(binDirectory.Parent.FullName); }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
     private static string? ReadSteamBuildId(string installDirectory)
     {
         var steamApps = Directory.GetParent(installDirectory)?.Parent?.FullName;

@@ -15,7 +15,7 @@ public static class StaticPositionProbe
         var (x, y, z) = Read(reader, addresses);
         return new StaticPositionProbeResult(
             addresses.XyAddress, addresses.ZAddress, x, y, z,
-            "validated by controlled movement for this build");
+            "guarded patterns and runtime plausibility checks passed");
     }
 
     public static StaticPositionAddresses Resolve(Process process, string executable, BuildDefinition definition)

@@ -17,7 +17,8 @@ internal sealed record TelemetryHealth(
     int ConnectedClients,
     int DiscoveredCopies,
     double? DiscoveryMilliseconds,
-    string? Error);
+    string? Error,
+    CompatibilityInfo? Compatibility = null);
 
 internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, int sampleRateHz)
 {
@@ -59,9 +60,15 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
                 GameBuild = gameBuild,
                 DiscoveredCopies = discoveredCopies,
                 DiscoveryMilliseconds = discoveryMilliseconds,
-                Error = error
+                Error = error,
+                Compatibility = !gameRunning || supportedBuild == false ? null : _health.Compatibility
             };
         }
+    }
+
+    public void SetCompatibility(CompatibilityInfo compatibility)
+    {
+        lock (_gate) _health = _health with { Compatibility = compatibility };
     }
 
     public void Publish(TelemetrySnapshot snapshot, int discoveredCopies, double? discoveryMilliseconds)

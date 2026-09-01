@@ -85,7 +85,13 @@ as well. A missing host results in a connection failure, not an HTTP 503.
   "connectedClients": 1,
   "discoveredCopies": 1,
   "discoveryMilliseconds": 1.64,
-  "error": null
+  "error": null,
+  "compatibility": {
+    "mode": "tested",
+    "executableSha256": "B596A498701DFCDC49C486D890C42755DABC8C174314C7F26F7329394452446D",
+    "executableVersion": "1.0.0.2658",
+    "referenceBuild": "24994088"
+  }
 }
 ```
 
@@ -94,8 +100,8 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 | `schemaVersion` | string | Snapshot schema served by this host; currently `1.1`. |
 | `status` | string | Sampler status; see below. |
 | `gameRunning` | boolean | Sampler's current process-presence observation, not a guarantee of playable data. |
-| `supportedBuild` | boolean or null | `null` before support is known; `false` for an unsupported/unusable build; `true` after opening a supported runtime. On `error`, do not interpret it as successful validation. |
-| `gameBuild` | string or null | Matched Steam build ID, not the telemetry product version. Unknown/unmatched builds may be null. |
+| `supportedBuild` | boolean or null | `null` before support is known; `false` when compatibility checks rejected the executable; `true` after a runtime was opened through either compatibility mode. On `error`, do not interpret it as successful live-data validation. |
+| `gameBuild` | string or null | Installed Steam build ID when available, not the telemetry product version. `"unknown"` can appear in snapshots if an automatically recognized installation has no readable manifest. Null means no runtime is currently identified. |
 | `sampleRateHz` | integer | Configured target rate, not a measured delivery rate. |
 | `lastSequence` | integer or null | Last published snapshot sequence, including unavailable-state snapshots; null before the first publication. |
 | `lastCapture` | date-time string or null | Timestamp of that publication. Retained across health-only updates. |
@@ -103,13 +109,21 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 | `discoveredCopies` | integer | Current native reader reports one source when resolved; zero before resolution/reset. Historical name, not a current heap-scan count. |
 | `discoveryMilliseconds` | number or null | Reference-resolution time in milliseconds; not total game startup, executable hashing time or per-sample latency. |
 | `error` | string or null | Human-readable diagnostic; wording is not a stable machine-readable error code. |
+| `compatibility` | object or null | Executable identity and selection result for the current runtime; null before selection or after rejection/exit. See below. |
+
+`compatibility.mode` is `"tested"` only for an exact, locally validated executable
+SHA-256. `"automatic"` means a different executable was accepted by unique code,
+data-section, player-type and multi-slot object-table guards using `referenceBuild`
+as its layout. It does **not** mean that executable received a manual in-game test.
+`executableSha256` always describes the installed EXE; `executableVersion` can be
+null. This health-only object is additive metadata and is not part of snapshot schema 1.1.
 
 Possible `status` values:
 
 | Status | Interpretation |
 |---|---|
 | `waiting-for-game` | No usable runtime is open; retrying. Initially the latest snapshot is absent. |
-| `unsupported-build` | Executable/build definition could not be accepted; no guessed offsets are used. |
+| `unsupported-build` | Executable failed exact identification and automatic compatibility checks; no guessed offsets are used. |
 | `discovering` | Supported runtime is open and camera sampling is starting; can be very brief. |
 | `playing` | The last publication contained validated player position and camera data. |
 | `loading` | Required data is unavailable or failed validation; see the important distinction below. |
@@ -369,9 +383,11 @@ Not included: light sources, weather/time of day, worldspace identifiers, bones,
 animated pose, input injection, event history, engine frame IDs or GPU timestamps.
 The current camera validator rejects positions more than 50 game units from the
 player; distant free-camera/cutscene setups may therefore report unavailable data.
-Only the [documented game build](../README.md#current-support) is supported. Unknown
-builds fail closed. The native camera source is independent of the former DLSS
-copies, but AMD/Intel hardware compatibility has not yet been tested.
+The [documented game build](../README.md#current-support) is manually validated.
+Other executable hashes are accepted only when the complete guarded layout is
+resolved uniquely and live values continue to pass runtime validation. This is
+reported as automatic compatibility, not manual validation. All failures remain
+closed. AMD/Intel hardware compatibility has not yet been tested.
 
 ## Troubleshooting
 
@@ -380,7 +396,7 @@ copies, but AMD/Intel hardware compatibility has not yet been tested.
 | Connection refused | Game/ASI host is running, `[Server] Enabled=1`, configured port, ASI loader and .NET 8 ASP.NET Core Runtime x64. Inspect bootstrap/host logs. |
 | 503 snapshot response | Read the health object; no snapshot has been published yet. Do not parse it as a player/camera object. |
 | 200 but null objects or old timestamp | Check `game.state`, health and freshness; wait for valid data, do not reuse old values. |
-| `unsupported-build` | Compare the game's executable/build with supported versions. Do not bypass the hash check. |
+| `unsupported-build` | The exact hash was unknown and automatic checks failed. Record the health error, EXE hash/version and installed build ID when reporting it; do not bypass the checks. |
 | Skipped sequences | Expected for slower clients; reduce client work or configured sampling rate. Not a lossless replay API. |
 | Heading seems unrelated to animation | Root facing and camera facing are independent; neither describes all body/bone animations. Check the axis recipe. |
 | Browser fails while a desktop client works | Check loopback Origin/CORS and browser security rules. Use a local HTTP origin, not a directly opened file. |

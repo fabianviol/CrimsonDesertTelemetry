@@ -39,6 +39,13 @@ var tests = new (string Name, Action Run)[]
     ("player position rejects uninitialized state", PlayerPositionRejectsUninitializedState),
     ("player orientation serializes validated basis", PlayerOrientationSerializesValidatedBasis),
     ("embedded build definition", EmbeddedBuildDefinition),
+    ("automatic compatibility relocates code, globals and tables", BuildCompatibilityTests.Relocation),
+    ("compatibility distinguishes exact executable identity", BuildCompatibilityTests.KnownHash),
+    ("compatibility rejects missing and ambiguous code", BuildCompatibilityTests.MissingAndAmbiguousCode),
+    ("compatibility validates RIP target sections", BuildCompatibilityTests.DataTargets),
+    ("compatibility requires unique multi-slot vtable fingerprints", BuildCompatibilityTests.VtableGuards),
+    ("compatibility rejects malformed PE images", BuildCompatibilityTests.MalformedImages),
+    ("compatibility requires one opted-in guarded layout", BuildCompatibilityTests.TemplateGuards),
     ("telemetry JSON contract", TelemetryJsonContract)
 };
 var failures = 0;
@@ -152,8 +159,18 @@ static void EmbeddedBuildDefinition()
 {
     var definitions = BuildDefinition.LoadAll(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
     Assert(definitions.Any(definition => definition.SteamBuildId == "24994088" &&
-                                         definition.Status == "locally-validated"),
+                                         definition.Status == "locally-validated" &&
+                                         definition.AllowAutomaticCompatibility &&
+                                         definition.EngineCamera?.ContextVtableFingerprints.Count >= 2 &&
+                                         definition.EngineCamera.CameraVtableFingerprints.Count >= 2),
         "The validated build definition is not embedded in the core assembly.");
+    Assert(definitions.Any(definition => definition.SteamBuildId == "25050808" &&
+                                         definition.ExecutableVersion == "1.0.0.2692" &&
+                                         definition.Status == "locally-validated" &&
+                                         !definition.AllowAutomaticCompatibility),
+        "The automatically recognized and live-validated update is not embedded.");
+    Assert(definitions.Count(definition => definition.AllowAutomaticCompatibility) == 1,
+        "Automatic compatibility must have exactly one reference layout.");
 }
 
 static void TelemetryJsonContract()

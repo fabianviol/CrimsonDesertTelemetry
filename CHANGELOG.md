@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 - 2026-09-01
+
+- Keep exact SHA-256 matches as explicitly tested builds, while allowing a different
+  game EXE only when the complete reference layout can be relocated unambiguously.
+- Resolve and validate player/static globals, both camera globals and two independent
+  multi-slot object-table fingerprints from the executable. Retain all live pointer,
+  RTTI, basis, projection, coherency, freshness and proximity checks; failures remain closed.
+- Add health `compatibility` metadata that distinguishes `tested` from `automatic`,
+  reports the actual EXE identity and names the manually validated reference layout.
+- Add the offline `check-compatibility <exe>` diagnostic and synthetic regression
+  coverage for relocation, ambiguity, malformed images and invalid section/target classes.
+- Steam build `25050808` / EXE `1.0.0.2692` was accepted automatically from the
+  original reference layout, then locally validated with a fresh launch and controlled
+  independent camera/player movement; it is now also an exact known build.
+
 ## 1.0.0 - 2026-08-31
 
 - First public release package: player position/root orientation, native render-camera

@@ -5,13 +5,24 @@ Crimson Desert Telemetry is an independent, open-source, read-only telemetry lay
 [Download the mod-manager package](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 | [API reference](docs/API.md) | [Client examples](examples)
 
-The external telemetry host opens the game for read-only access. The optional ASI starts and manages that host and includes a separately configurable Dear ImGui HUD, **disabled by default**. When enabled, the HUD hooks DXGI presentation functions to draw inside the game; it does not modify gameplay values. With `[Overlay] Enabled=0`, no HUD hooks, hotkeys or HUD WebSocket client start; telemetry remains active. Unknown game builds are rejected instead of being guessed.
+The external telemetry host opens the game for read-only access. The optional ASI starts and manages that host and includes a separately configurable Dear ImGui HUD, **disabled by default**. When enabled, the HUD hooks DXGI presentation functions to draw inside the game; it does not modify gameplay values. With `[Overlay] Enabled=0`, no HUD hooks, hotkeys or HUD WebSocket client start; telemetry remains active. New executable builds are accepted only if the complete guarded layout can be resolved unambiguously; otherwise they fail closed.
 
 ## Current support
 
 | Distribution | Build | Executable version | Status |
 |---|---:|---:|---|
 | Steam | `24994088` | `1.0.0.2658` | Locally validated |
+| Steam | `25050808` | `1.0.0.2692` | Automatically recognized, then locally validated |
+
+The table lists manually tested builds. An EXE with the same bytes has the same
+SHA-256 on every machine, but a displayed game-build number does not by itself
+prove that every distributed EXE is byte-identical. Exact known hashes take the
+tested path. For a different hash, telemetry can relocate the validated layout
+using unique instruction, writable-global, player-type and multi-slot vtable
+guards. Health reports this as `compatibility.mode: "automatic"`, never as manually
+tested. Ambiguous, incomplete or implausible candidates are rejected. Automatic
+recognition reduces routine update work; it is not a guarantee that every future
+engine layout remains compatible.
 
 Currently exposed:
 
@@ -148,14 +159,16 @@ The optional `player.orientation` capability is emitted only when the validated 
 
 ## How it works
 
-After matching the executable SHA-256, build-bound instructions resolve the player
-and native camera globals. Each camera capture requires:
+For an exact known SHA-256, the tested definition is used. For another hash, all
+required instructions, globals and object tables must first be relocated uniquely
+from a manually validated reference layout. Each camera capture then requires:
 
 - position is within a plausible distance of the player;
 - basis vectors are finite, unit length, mutually orthogonal, and right-handed;
 - near plane, symmetric perspective projection, field of view and aspect ratio are plausible;
 - the direct camera global and the main-root chain identify the same camera;
-- context and camera vtables match this build;
+- context and camera vtables match the selected guarded layout;
+- automatically recognized builds also produce a validated player-root RTTI chain before publishing;
 - two successive camera-field reads and surrounding chain/counter checks agree.
 
 At most three read attempts are made per capture. Source pointers are followed again

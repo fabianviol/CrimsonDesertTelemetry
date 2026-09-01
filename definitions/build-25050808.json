@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "steamAppId": "3321460",
-  "steamBuildId": "24994088",
-  "executableVersion": "1.0.0.2658",
-  "executableSha256": "B596A498701DFCDC49C486D890C42755DABC8C174314C7F26F7329394452446D",
+  "steamBuildId": "25050808",
+  "executableVersion": "1.0.0.2692",
+  "executableSha256": "A93336BC08F1613B609F4F331C687B13A8DB729DD1AB99D8FD09C9FBE06BC210",
   "status": "locally-validated",
-  "allowAutomaticCompatibility": true,
+  "allowAutomaticCompatibility": false,
   "patterns": [
     {
       "name": "static-position-xy-write",
@@ -15,7 +15,7 @@
       "ripOffset": 4,
       "ripEnd": 8,
       "confidence": "locally-validated",
-      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+      "source": "automatically relocated from build 24994088; live camera/player movement validated"
     },
     {
       "name": "static-position-z-write",
@@ -25,7 +25,7 @@
       "ripOffset": 13,
       "ripEnd": 17,
       "confidence": "locally-validated",
-      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+      "source": "automatically relocated from build 24994088; live camera/player movement validated"
     }
   ],
   "engineCamera": {
@@ -56,7 +56,7 @@
       "ripOffset": 7,
       "ripEnd": 11,
       "confidence": "locally-validated",
-      "source": "original current-build derivation; public historical lead credited in docs/PROVENANCE.md"
+      "source": "automatically relocated from build 24994088; live camera/player movement validated"
     },
     "worldSystemToActorManagerOffset": 48,
     "actorManagerToPlayerActorOffset": 80,

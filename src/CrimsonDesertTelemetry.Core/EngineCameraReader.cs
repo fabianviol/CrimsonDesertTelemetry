@@ -5,8 +5,8 @@ using System.Numerics;
 namespace CrimsonDesertTelemetry.Core;
 
 /// <summary>
-/// Build-bound native renderer source. Call only after matching the executable hash
-/// to the build definition. No Streamline calls, heap scans or previous-process addresses.
+/// Native renderer source. Requires a hash-matched definition or one relocated by
+/// BuildCompatibility. No heap scans or previous-process addresses.
 /// </summary>
 public sealed class EngineCameraReader
 {

@@ -1,5 +1,35 @@
 # Mod-manager validation
 
+## v1.1.0 automatic-compatibility release candidate (2026-09-01)
+
+The managed Release build, 37 managed regression tests, loopback HTTP/WebSocket
+smoke test, all three native CTests and package/ZIP validators passed. Forced
+automatic resolution of the real, locally validated game EXE independently found
+the same six player/camera RVAs as its exact-hash definition. Synthetic tests also
+cover relocated layouts and fail-closed behavior for missing/ambiguous code,
+malformed PE data, invalid data targets and weak/ambiguous object-table fingerprints.
+
+Final package: `CrimsonDesertTelemetry-v1.1.0-ModManagers.zip`.
+SHA-256: `ED291A162400BC8BD3DA5A824554A4949776DF35708479B05383845D50C897D3`.
+
+The candidate was then imported through DMM. DMM deployed all binaries but retained
+the old `deps.cfg`; replacing that one file from the imported candidate made all six
+runtime files match. Before launch, Steam updated the game to build `25050808`, EXE
+`1.0.0.2692`, SHA-256
+`A93336BC08F1613B609F4F331C687B13A8DB729DD1AB99D8FD09C9FBE06BC210`.
+The new hash passed automatic offline resolution, finding the same six guarded RVAs.
+
+A fresh live launch then reported `playing`, `compatibility.mode: automatic`,
+reference build `24994088`, build `25050808`, no error and roughly 60 samples/second.
+Player, player orientation, camera and quality were present at `1/1/1`. A camera-only
+turn changed the camera while player position/heading remained exact. Subsequent
+player movement changed position by approximately `(-2.71, -0.08, +1.07)` and player
+heading from `228.56` to `302.94` degrees while camera heading remained `306.78`.
+This constitutes local validation of the automatically recognized build. The final
+package adds its exact build definition and release-version metadata; runtime data
+sources are unchanged. That exact path selects the same confirmed six RVAs without
+the automatic scan and does not require a redundant second movement test.
+
 ## v1.0.0 release candidate (2026-08-31)
 
 The release package has been built locally with the MIT license, native camera

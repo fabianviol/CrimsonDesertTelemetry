@@ -21,11 +21,17 @@ try {
         }
     }
     if ($null -eq $health) { throw 'Health endpoint did not become ready.' }
-    if ($health.status -notin @('waiting-for-game', 'discovering', 'playing') -or $health.sampleRateHz -ne 120) {
+    if ($health.status -notin @('waiting-for-game', 'loading', 'discovering', 'playing') -or $health.sampleRateHz -ne 120) {
         throw "Unexpected health response: $($health | ConvertTo-Json -Compress)"
     }
     if (-not $health.gameRunning -and $null -ne $health.supportedBuild) {
         throw 'Build support must be unknown while the game is absent.'
+    }
+    if (-not ($health.PSObject.Properties.Name -contains 'compatibility')) {
+        throw 'Health response is missing compatibility metadata.'
+    }
+    if (-not $health.gameRunning -and $null -ne $health.compatibility) {
+        throw 'Compatibility must be unknown while the game is absent.'
     }
 
     $localOrigin = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/health" -Headers @{ Origin = 'http://127.0.0.1:8080' }
