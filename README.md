@@ -13,7 +13,7 @@ The external telemetry host opens the game for read-only access. The optional AS
 |---|---:|---:|---|
 | Steam | `24994088` | `1.0.0.2658` | Locally validated |
 | Steam | `25050808` | `1.0.0.2692` | Automatically recognized, then locally validated |
-| Steam | `25116796` | `1.0.0.2760` | Locally validated |
+| Steam | `25116796` | `1.0.0.2760` | Locally validated, player position and orientation re-verified in 1.2.1 |
 
 The table lists manually tested builds. An EXE with the same bytes has the same
 SHA-256 on every machine, but a displayed game-build number does not by itself
@@ -48,18 +48,14 @@ Fire/effect illumination, physical lumens, range and a generic `enabled` claim a
 not included. With the module disabled, schema 1.1 and the existing player/camera
 payload remain unchanged; enabled light output uses additive schema 1.2.
 
-**DLSS is not required.** Version 1.0.0 reads camera data directly from the game's
-native render-camera source, including with upscaling disabled. It resolves this
-source through build-guarded game globals on every launch. No previous-process
-heap address, Streamline API call or camera heap scan is required.
+**DLSS is not required.** Camera data comes directly from the game's native
+render-camera source, including with upscaling disabled. That source is resolved
+through build-guarded game globals on every launch; no previous-process heap
+address, Streamline API call or camera heap scan is involved.
 
 The native source passed a cold start with upscaling disabled and a controlled
 yaw/pitch change on the development NVIDIA setup. AMD/Intel hardware remains
 untested; renderer independence is not a claim of tested support on every GPU.
-
-Historical research only: the DLSS-dependent camera-copy approach used in
-preview.6 was replaced before v1.0.0. It is retained only in an explicit research
-command and is never used by the release's normal telemetry reader or as a fallback.
 See [native camera evidence and remaining tests](docs/ENGINE_CAMERA_RESEARCH.md).
 
 ## Quick start
@@ -115,21 +111,28 @@ files together. The `.cfg` files are .NET metadata, not game-patch JSON. The
 bootstrap caches only the runtime configuration under
 `%LOCALAPPDATA%\CrimsonDesertTelemetry\Runtime`, outside mod/game folders.
 
-Current public version 1.2.0 keeps the existing `/v1/` endpoints. The default
+Current public version 1.2.1 keeps the existing `/v1/` endpoints. The default
 player/camera payload remains JSON schema 1.1; opt-in lights use additive 1.2.
 These version numbers are independent. Breaking public API changes require a new
 major API/product version; clients should tolerate additive fields and capabilities.
 
-When upgrading the first test package, replace its old folder completely while
-the mod is disabled and the game is closed. Merging over it leaves old `.json`
-files that DMM will continue to misclassify. Preserve customized INI settings.
-If a manager preserves your previous `[Overlay] Enabled=1`, change it to `0` to
-use the new disabled default. Existing installations are not silently overridden.
+Upgrading from 1.2.0 on build `25116796` moves `player.position` by roughly 6.5
+units: that version reported the render camera under the player field, and 1.2.1
+reports the player. Consumers that relied on it as an eye position should read
+`camera.position` instead. Player orientation was absent in 1.2.0 on this build
+and is published again.
 
-On upgrades, replace **both `.cfg` companions** together with the binaries; only
-the INI contains user settings. In a local DMM upgrade, the game directory retained
-old `.cfg` metadata even though the library and deployed DLLs were current.
-If this occurs, close the game and replace those two files from the new package.
+When upgrading, close the game, disable the mod, and replace the old folder
+completely rather than merging over it. Merging leaves stale `.json` files behind
+that DMM keeps misclassifying, and it can leave old `.cfg` metadata in the game
+directory while the deployed DLLs are already current. Replace **both `.cfg`
+companions** together with the binaries; only the INI carries user settings, so
+preserve that one.
+
+The mod has to be activated in the manager after import, not only imported.
+Deploying installs `CrimsonDesertTelemetry.asi` and its INI into `bin64`; without
+that step the plugin never loads, and a manager may report that it cannot find the
+ASI configuration.
 
 ### Standalone host
 
