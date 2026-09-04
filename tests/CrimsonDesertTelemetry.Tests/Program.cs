@@ -198,10 +198,12 @@ static void EmbeddedBuildDefinition()
                                          } &&
                                          definition.PlayerRoot is
                                          {
-                                             TransformLayout: "sqt-v1",
-                                             OwnerToPhysicsOffset: 0xE08,
-                                             QuaternionOffset: 0x7E8,
-                                             PositionOffset: 0x7F8
+                                             TransformLayout: "basis-v1",
+                                             OwnerToPhysicsOffset: 0x2B8,
+                                             BasisXOffset: 0x60,
+                                             BasisYOffset: 0x70,
+                                             BasisZOffset: 0x80,
+                                             PositionOffset: 0x90
                                          }),
         "The current live-validated build definition is not embedded.");
 }

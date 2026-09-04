@@ -32,6 +32,15 @@ public sealed class PlayerOrientationReader
         return new PlayerOrientationReader(new PlayerOrientationAddresses(checked(moduleBase + relative)), root);
     }
 
+    /// <summary>
+    /// Why the most recent <see cref="Read"/> produced no orientation, or null when it
+    /// succeeded. Failing closed is deliberate; failing silently is not. A dozen
+    /// separate validations can reject a sample and they are indistinguishable from
+    /// the outside, which makes a stale build definition impossible to tell apart from
+    /// a broken pointer chain without attaching a debugger to the game.
+    /// </summary>
+    public string? LastFailureReason { get; private set; }
+
     public PlayerOrientationSnapshot? Read(IReadOnlyProcessMemory reader, (float X, float Y, float Z) worldPosition)
     {
         try
@@ -41,28 +50,42 @@ public sealed class PlayerOrientationReader
             // The game can replace the actor/physics object while a sample is in flight.
             // Confirm the same leaf before publishing the basis.
             var second = ReadChain(reader);
-            if (second.PhysicsAddress != first.PhysicsAddress) return null;
+            if (second.PhysicsAddress != first.PhysicsAddress)
+            {
+                LastFailureReason = "The physics object was replaced while the sample was in flight.";
+                return null;
+            }
+            LastFailureReason = null;
             return ToSnapshot(transform);
         }
         catch (Exception exception) when (exception is InvalidDataException or OverflowException or
             System.ComponentModel.Win32Exception)
         {
+            LastFailureReason = exception.Message;
             return null;
         }
     }
 
     private ChainResult ReadChain(IReadOnlyProcessMemory reader)
     {
+        // Each hop names itself. The chain has six offsets and any one of them can be
+        // invalidated by a game patch; "the chain failed" does not narrow that down,
+        // "control -> owner (+0x140)" does.
         var current = ReadPointer(reader, _addresses.WorldSystemGlobalAddress);
-        var manager = ReadNext(reader, current, _definition.WorldSystemToActorManagerOffset);
-        CheckType(reader, manager, 0);
-        var actor = ReadNext(reader, manager, _definition.ActorManagerToPlayerActorOffset);
-        CheckType(reader, actor, 1);
-        var intermediate = ReadNext(reader, actor, _definition.PlayerActorToIntermediateOffset);
-        var control = ReadNext(reader, intermediate, _definition.IntermediateToControlOffset);
-        CheckType(reader, control, 2);
-        var owner = ReadNext(reader, control, _definition.ControlToOwnerOffset);
-        var physics = ReadNext(reader, owner, _definition.OwnerToPhysicsOffset);
+        var manager = ReadNext(reader, current, _definition.WorldSystemToActorManagerOffset,
+            "worldSystem", "actorManager");
+        CheckType(reader, manager, 0, "actorManager");
+        var actor = ReadNext(reader, manager, _definition.ActorManagerToPlayerActorOffset,
+            "actorManager", "playerActor");
+        CheckType(reader, actor, 1, "playerActor");
+        var intermediate = ReadNext(reader, actor, _definition.PlayerActorToIntermediateOffset,
+            "playerActor", "intermediate");
+        var control = ReadNext(reader, intermediate, _definition.IntermediateToControlOffset,
+            "intermediate", "control");
+        CheckType(reader, control, 2, "control");
+
+        var owner = ReadNext(reader, control, _definition.ControlToOwnerOffset, "control", "owner");
+        var physics = ReadNext(reader, owner, _definition.OwnerToPhysicsOffset, "owner", "physics");
         return new ChainResult(physics);
     }
 
@@ -82,7 +105,10 @@ public sealed class PlayerOrientationReader
             if (!Finite(sqtPosition) || !float.IsFinite(quaternion.X) || !float.IsFinite(quaternion.Y) ||
                 !float.IsFinite(quaternion.Z) || !float.IsFinite(quaternion.W) ||
                 Math.Abs(quaternion.LengthSquared() - 1) > .002f)
-                throw new InvalidDataException("Player transform quaternion is invalid.");
+                throw new InvalidDataException(
+                    $"Player transform quaternion at physics+0x{_definition.QuaternionOffset:X} is invalid: " +
+                    $"({quaternion.X:G6}, {quaternion.Y:G6}, {quaternion.Z:G6}, {quaternion.W:G6}), " +
+                    $"length squared {quaternion.LengthSquared():G6}.");
             ValidatePosition(sqtPosition, worldPosition);
             var up = Vector3.Transform(Vector3.UnitY, quaternion);
             var forward = -Vector3.Transform(Vector3.UnitZ, quaternion);
@@ -113,13 +139,38 @@ public sealed class PlayerOrientationReader
         return new TransformResult(-z, y);
     }
 
+    /// <summary>
+    /// How far the physics chunk-local position may sit from the player global,
+    /// after removing the 1000-unit chunk origin, before the object is rejected as
+    /// not the player's.
+    /// </summary>
+    /// <remarks>
+    /// This is an identity check, not a freshness check: it establishes that the
+    /// object the chain reached belongs to the player rather than to some other
+    /// actor. The two values are written at different points within a frame, so a
+    /// sample taken between those writes sees them differ by one frame of travel.
+    /// Measured while riding: 3.6% of samples exceeded the previous 0.15 tolerance,
+    /// peaking at 0.28 units, and an immediate re-read rescued none of them because
+    /// it lands inside the same sub-millisecond window. Demanding same-frame
+    /// agreement therefore drops perfectly good samples for a property the reader
+    /// does not need — an orientation one frame old is indistinguishable to any
+    /// consumer.
+    /// Two units still rejects any unrelated object by a wide margin: a position
+    /// would have to land within two units of an exact multiple of 1000 from the
+    /// player on both horizontal axes and within three units in height.
+    /// </remarks>
+    private const float PositionAgreementTolerance = 2f;
+
     private static void ValidatePosition(Vector3 position, (float X, float Y, float Z) worldPosition)
     {
         var delta = new Vector3(worldPosition.X, worldPosition.Y, worldPosition.Z) - position;
         if (!Finite(delta) || Math.Abs(delta.Y) > 3 || Math.Abs(delta.X) > 1_000_000 || Math.Abs(delta.Z) > 1_000_000 ||
-            Math.Abs(delta.X - MathF.Round(delta.X / 1000) * 1000) > .15f ||
-            Math.Abs(delta.Z - MathF.Round(delta.Z / 1000) * 1000) > .15f)
-            throw new InvalidDataException("Player transform does not match the player position.");
+            Math.Abs(delta.X - MathF.Round(delta.X / 1000) * 1000) > PositionAgreementTolerance ||
+            Math.Abs(delta.Z - MathF.Round(delta.Z / 1000) * 1000) > PositionAgreementTolerance)
+            throw new InvalidDataException(
+                $"Player transform position ({position.X:F3}, {position.Y:F3}, {position.Z:F3}) does not match the " +
+                $"player position ({worldPosition.X:F3}, {worldPosition.Y:F3}, {worldPosition.Z:F3}); " +
+                $"delta ({delta.X:F3}, {delta.Y:F3}, {delta.Z:F3}).");
     }
 
     private PlayerOrientationSnapshot ToSnapshot(TransformResult transform)
@@ -133,16 +184,24 @@ public sealed class PlayerOrientationReader
             ToVector(transform.Up), heading);
     }
 
-    private void CheckType(IReadOnlyProcessMemory reader, ulong address, int expectedIndex)
+    private void CheckType(IReadOnlyProcessMemory reader, ulong address, int expectedIndex, string step)
     {
         if (_definition.ExpectedTypeNames.Count <= expectedIndex) return;
+        var expected = _definition.ExpectedTypeNames[expectedIndex];
         var actual = TypeName(reader, address);
-        if (!string.Equals(actual, _definition.ExpectedTypeNames[expectedIndex], StringComparison.Ordinal))
-            throw new InvalidDataException("Player object chain has an unexpected RTTI type.");
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                $"Player chain step '{step}' at 0x{address:X} is {actual ?? "not a typed object"}, expected {expected}.");
     }
 
-    private static ulong ReadNext(IReadOnlyProcessMemory reader, ulong address, int offset) =>
-        ReadPointer(reader, checked(address + checked((ulong)offset)));
+    private static ulong ReadNext(IReadOnlyProcessMemory reader, ulong address, int offset,
+        string from, string to)
+    {
+        if (address is < 0x10000 or > 0x00007FFFFFFFFFFF)
+            throw new InvalidDataException(
+                $"Player chain step '{from}' -> '{to}' cannot be followed: '{from}' is 0x{address:X}.");
+        return ReadPointer(reader, checked(address + checked((ulong)offset)));
+    }
 
     private static ulong ReadPointer(IReadOnlyProcessMemory reader, ulong address) =>
         BitConverter.ToUInt64(reader.Read(ToIntPtr(address), sizeof(ulong)));

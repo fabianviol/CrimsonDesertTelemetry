@@ -115,13 +115,16 @@ int Snapshot(string[] commandArgs)
     if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var error) || positional.Length != 0)
         return UsageError(error ?? "snapshot accepts only --lights and --light-radius <game-units>.");
     using var runtime = OpenRuntime(lightOptions);
-    var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
+    var (player, orientation) = runtime.ReadPose();
     var frame = runtime.Camera.Capture(player);
-    var orientation = runtime.ReadOrientation(player);
     var lights = runtime.CaptureLights(player);
     var snapshot = ToSnapshot(runtime.GameBuild, 0, player, frame, 0, orientation,
         lights, runtime.SupportsLights, SchemaFor(lightOptions));
     Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
+    // An absent orientation is a normal JSON null, which tells the operator nothing
+    // about why. The reason goes to stderr so it cannot disturb the JSON on stdout.
+    if (orientation is null)
+        Console.Error.WriteLine($"Player orientation unavailable: {runtime.OrientationFailureReason}");
     return 0;
 }
 
@@ -159,8 +162,8 @@ int Track(string[] commandArgs)
     while (!cancellation.IsCancellationRequested && (samples == 0 || sequence < samples))
     {
         var captureWatch = Stopwatch.StartNew();
-        player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
-        var orientation = runtime.ReadOrientation(player);
+        PlayerOrientationSnapshot? orientation;
+        (player, orientation) = runtime.ReadPose();
         var frame = tracker.Capture(player);
         var lights = runtime.CaptureLights(player);
         captureWatch.Stop();
@@ -433,8 +436,8 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
                 try
                 {
                     var captureWatch = Stopwatch.StartNew();
-                    player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
-                    var orientation = runtime.ReadOrientation(player);
+                    PlayerOrientationSnapshot? orientation;
+                    (player, orientation) = runtime.ReadPose();
                     var frame = tracker.Capture(player);
                     var lights = runtime.CaptureLights(player);
                     captureWatch.Stop();
@@ -692,12 +695,38 @@ sealed class RuntimeContext(
     public LightOptions LightOptions { get; } = lightOptions;
     public bool SupportsLights => Lights is not null;
 
+    /// <summary>
+    /// Why the last orientation read produced nothing, or null when it succeeded or
+    /// when this build has no player-root definition at all.
+    /// </summary>
+    public string? OrientationFailureReason =>
+        Orientation is null ? "This build has no player-root definition." : Orientation.LastFailureReason;
+
     public PlayerOrientationSnapshot? ReadOrientation((float X, float Y, float Z) player)
     {
         var value = Orientation?.Read(Reader, player);
         if (Compatibility.Mode == "automatic" && value is null)
-            throw new InvalidDataException("Automatic compatibility requires a valid player-root type, basis and position.");
+            throw new InvalidDataException("Automatic compatibility requires a valid player-root type, basis and " +
+                $"position: {OrientationFailureReason}");
         return value;
+    }
+
+    /// <summary>
+    /// Read the player position and its orientation as one pose.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately no retry. An earlier version re-read both values once when the
+    /// first attempt was rejected, on the assumption that a torn read would clear
+    /// immediately. Measured while riding, that retry rescued none of eighteen
+    /// rejections: the player global and the physics object are written at
+    /// different points within a frame, and the sub-millisecond window between
+    /// those writes is wide enough that a retry lands inside it too. The tearing is
+    /// handled where it belongs, in the reader's position tolerance.
+    /// </remarks>
+    public ((float X, float Y, float Z) Player, PlayerOrientationSnapshot? Orientation) ReadPose()
+    {
+        var player = StaticPositionProbe.Read(Reader, PositionAddresses);
+        return (player, ReadOrientation(player));
     }
 
     public EngineLightsSnapshot? CaptureLights((float X, float Y, float Z) player) =>
