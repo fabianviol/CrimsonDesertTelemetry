@@ -211,6 +211,14 @@ dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release
 dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\artifacts\win-x64
 ```
 
+## Releasing
+
+Tagging `v*` builds the mod-manager package and drafts a GitHub release. Pushing
+that package to the [Nexus Mods page](https://www.nexusmods.com/crimsondesert/mods/3374)
+runs over the Nexus Mods v3 API, either from the `Publish to Nexus Mods` workflow
+or from a local PowerShell session; both are dry runs until explicitly told
+otherwise. See [docs/NEXUS_PUBLISHING.md](docs/NEXUS_PUBLISHING.md).
+
 ## Safety and scope
 
 This is an unofficial community project and is not affiliated with or endorsed by Pearl Abyss. Reading another process may still be restricted by game terms or anti-cheat software. Use it only where permitted, do not use it to gain a competitive advantage, and never submit game binaries or memory dumps to this repository.

@@ -1,0 +1,195 @@
+name: Publish to Nexus Mods
+
+# Builds the mod-manager package and, when explicitly asked to, adds it as a new
+# version of the existing file on https://www.nexusmods.com/crimsondesert/mods/3374.
+#
+# Nothing reaches Nexus Mods by accident:
+#   * manual runs default to dry_run = true and only build and validate;
+#   * a published GitHub release is ignored until the repository variable
+#     NEXUS_AUTO_PUBLISH is set to 'true'.
+#
+# Required repository secret : NEXUSMODS_API_KEY   (https://www.nexusmods.com/settings/api-keys)
+# Required repository vars   : NEXUSMODS_FILE_ID, NEXUSMODS_MOD_ID
+#                              (both printed by .\scripts\Get-NexusModStatus.ps1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish. Empty uses Directory.Build.props."
+        required: false
+        type: string
+      dry_run:
+        description: "Build and validate only, do not upload."
+        type: boolean
+        default: true
+      category:
+        description: "File category on the mod page."
+        type: choice
+        options: [main, optional, miscellaneous]
+        default: main
+      update_mod_version:
+        description: "Move the mod page version to this release."
+        type: boolean
+        default: true
+      archive_existing_version:
+        description: "Archive the previous version of the file."
+        type: boolean
+        default: true
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || vars.NEXUS_AUTO_PUBLISH == 'true'
+    runs-on: windows-latest
+    env:
+      NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+      NEXUSMODS_FILE_ID: ${{ vars.NEXUSMODS_FILE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release parameters
+        id: plan
+        shell: pwsh
+        env:
+          # Inputs travel through env rather than ${{ }} interpolation so they are
+          # never parsed as script.
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_CATEGORY: ${{ inputs.category }}
+          INPUT_UPDATE_MOD_VERSION: ${{ inputs.update_mod_version }}
+          INPUT_ARCHIVE_EXISTING: ${{ inputs.archive_existing_version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          $dryRun = 'true'
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $version = $env:GITHUB_REF_NAME -replace '^v', ''
+            $dryRun = 'false'
+          }
+          elseif ($env:INPUT_DRY_RUN -eq 'false') {
+            $dryRun = 'false'
+          }
+          if (-not $version) {
+            [xml]$props = Get-Content .\Directory.Build.props
+            $version = $props.Project.PropertyGroup.Version
+          }
+
+          # Nexus Mods accepts A-Z a-z 0-9 . - only, so a '+build' suffix would be
+          # rejected after the archive had already been uploaded.
+          if ($version.Length -gt 50 -or $version -notmatch '^[a-zA-Z0-9.-]+$') {
+            throw "Nexus Mods rejects the version '$version'."
+          }
+          [xml]$props = Get-Content .\Directory.Build.props
+          if ($version -ne $props.Project.PropertyGroup.Version) {
+            throw "Version $version does not match Directory.Build.props ($($props.Project.PropertyGroup.Version))."
+          }
+          if (-not (Test-Path -LiteralPath ".\docs\releases\v$version.md")) {
+            throw "Missing release notes at docs\releases\v$version.md."
+          }
+          if ($dryRun -eq 'false' -and -not $env:NEXUSMODS_API_KEY) {
+            throw 'NEXUSMODS_API_KEY secret is not set.'
+          }
+          if ($dryRun -eq 'false' -and -not $env:NEXUSMODS_FILE_ID) {
+            throw 'NEXUSMODS_FILE_ID variable is not set. Run scripts\Get-NexusModStatus.ps1 to find it.'
+          }
+
+          $category = if ($env:INPUT_CATEGORY) { $env:INPUT_CATEGORY } else { 'main' }
+          $updateModVersion = if ($env:GITHUB_EVENT_NAME -eq 'release') { 'true' } else { $env:INPUT_UPDATE_MOD_VERSION }
+          $archiveExisting = if ($env:GITHUB_EVENT_NAME -eq 'release') { 'true' } else { $env:INPUT_ARCHIVE_EXISTING }
+
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
+          "dry_run=$dryRun" | Out-File $env:GITHUB_OUTPUT -Append
+          "category=$category" | Out-File $env:GITHUB_OUTPUT -Append
+          "update_mod_version=$updateModVersion" | Out-File $env:GITHUB_OUTPUT -Append
+          "archive_existing=$archiveExisting" | Out-File $env:GITHUB_OUTPUT -Append
+          "archive=CrimsonDesertTelemetry-v$version-ModManagers.zip" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Publishing version $version (dry run: $dryRun)."
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build ASI mod-manager package
+        shell: pwsh
+        run: .\scripts\Build-ModManagerPackage.ps1 -Version '${{ steps.plan.outputs.version }}'
+
+      - name: Stage archive for upload
+        shell: pwsh
+        run: |
+          # The upload action reads the archive by name from the workspace root.
+          Copy-Item -LiteralPath ".\artifacts\mod-manager\${{ steps.plan.outputs.archive }}" -Destination ".\${{ steps.plan.outputs.archive }}"
+
+      - name: Read release notes as changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          Import-Module .\tools\nexus\NexusMods.psm1 -Force
+          $text = ConvertTo-NexusChangelog -Path ".\docs\releases\v${{ steps.plan.outputs.version }}.md"
+          "changelog<<NEXUS_CHANGELOG_EOF" | Out-File $env:GITHUB_OUTPUT -Append
+          $text | Out-File $env:GITHUB_OUTPUT -Append
+          "NEXUS_CHANGELOG_EOF" | Out-File $env:GITHUB_OUTPUT -Append
+
+      - name: Upload package as a workflow artifact
+        # Before the preflight, so a dry run always leaves an inspectable package
+        # even when the preflight rejects the release.
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.plan.outputs.archive }}
+          path: ${{ steps.plan.outputs.archive }}
+          if-no-files-found: error
+
+      - name: Preflight against the Nexus Mods API
+        # Windows PowerShell 5.1 on purpose: the same host the maintenance scripts
+        # run under locally, so a 5.1-only regression fails here rather than on a
+        # release day. Read-only, so it also runs during a dry run.
+        if: env.NEXUSMODS_API_KEY != '' && env.NEXUSMODS_FILE_ID != ''
+        shell: powershell
+        run: |
+          .\scripts\Publish-NexusRelease.ps1 `
+            -Version '${{ steps.plan.outputs.version }}' `
+            -Category '${{ steps.plan.outputs.category }}'
+
+      - name: Upload to Nexus Mods
+        if: steps.plan.outputs.dry_run == 'false'
+        uses: Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23 # v1.0.0-beta.10
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          mod_id: ${{ vars.NEXUSMODS_MOD_ID }}
+          file_id: ${{ vars.NEXUSMODS_FILE_ID }}
+          filename: ${{ steps.plan.outputs.archive }}
+          display_name: Crimson Desert Telemetry
+          description: ASI package for mod managers. Needs an x64 ASI loader and the .NET 8 ASP.NET Core Runtime (x64).
+          version: ${{ steps.plan.outputs.version }}
+          category: ${{ steps.plan.outputs.category }}
+          update_mod_version: ${{ steps.plan.outputs.update_mod_version }}
+          archive_existing_version: ${{ steps.plan.outputs.archive_existing }}
+          allow_mod_manager_download: true
+          changelog: ${{ steps.changelog.outputs.changelog }}
+
+      - name: Summary
+        if: always() && steps.plan.outputs.version != ''
+        shell: pwsh
+        run: |
+          $dry = '${{ steps.plan.outputs.dry_run }}'
+          $lines = @(
+            "## Nexus Mods publish",
+            "",
+            "* Version: ``${{ steps.plan.outputs.version }}``",
+            "* Package: ``${{ steps.plan.outputs.archive }}``",
+            "* Dry run: ``$dry``"
+          )
+          if ($dry -eq 'true') {
+            $lines += "", "No upload was performed. Re-run with ``dry_run: false`` to publish."
+          }
+          else {
+            $lines += "", "[Mod page](https://www.nexusmods.com/crimsondesert/mods/3374?tab=files)"
+          }
+          $lines -join "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append
