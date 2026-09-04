@@ -8,6 +8,8 @@ internal static class BuildCompatibilityTests
         foreach (var shift in new[] { 0u, 0x10000u })
         {
             using var fixture = new Fixture(shift);
+            fixture.Definition.EngineLights = new EngineLightsDefinition
+                { Layout = "light-source-array-v1", RootGlobalRva = 0x637A4D8 };
             var resolved = fixture.Resolve();
             var camera = resolved.Definition.EngineCamera!;
             Check(resolved.Compatibility.Mode == "automatic" && resolved.GameBuild == "unknown",
@@ -21,6 +23,8 @@ internal static class BuildCompatibilityTests
                 camera.CameraVtableRva == fixture.Tables + 0x200, "Relocation used the reference RVAs.");
             Check(fixture.Definition.EngineCamera!.CameraVtableRva == 0xDEAD,
                 "Automatic resolution mutated the trusted definition.");
+            Check(resolved.Definition.EngineLights is null && fixture.Definition.EngineLights is not null,
+                "Automatic compatibility inherited exact-build light offsets.");
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -11,7 +12,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-const string schemaVersion = "1.1";
+const string baseSchemaVersion = "1.1";
+const string lightsSchemaVersion = "1.2";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions
@@ -28,7 +30,7 @@ try
         "diagnose" => Diagnose(),
         "check-compatibility" => CheckCompatibility(args.Skip(1).ToArray()),
         "discover" => Discover(),
-        "snapshot" => Snapshot(),
+        "snapshot" => Snapshot(args.Skip(1).ToArray()),
         "track" => Track(args.Skip(1).ToArray()),
         "trace-camera-copies" => TraceCameraCopies(args.Skip(1).ToArray()),
         "serve" => Serve(args.Skip(1).ToArray()),
@@ -108,29 +110,34 @@ int Discover()
     return 0;
 }
 
-int Snapshot()
+int Snapshot(string[] commandArgs)
 {
-    using var runtime = OpenRuntime();
+    if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var error) || positional.Length != 0)
+        return UsageError(error ?? "snapshot accepts only --lights and --light-radius <game-units>.");
+    using var runtime = OpenRuntime(lightOptions);
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var frame = runtime.Camera.Capture(player);
     var orientation = runtime.ReadOrientation(player);
-    var snapshot = ToSnapshot(runtime.GameBuild, 0, player, frame, 0, orientation);
+    var lights = runtime.CaptureLights(player);
+    var snapshot = ToSnapshot(runtime.GameBuild, 0, player, frame, 0, orientation,
+        lights, runtime.SupportsLights, SchemaFor(lightOptions));
     Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
     return 0;
 }
 
 int Track(string[] commandArgs)
 {
-    if (commandArgs.Length > 2 ||
-        commandArgs.Length >= 1 && !int.TryParse(commandArgs[0], out _) ||
-        commandArgs.Length >= 2 && !int.TryParse(commandArgs[1], out _))
-        return UsageError("track expects integer arguments: [samples] [rate-hz].");
-    var samples = commandArgs.Length >= 1 ? int.Parse(commandArgs[0]) : 0;
-    var rateHz = commandArgs.Length >= 2 ? int.Parse(commandArgs[1]) : 60;
+    if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var lightError) ||
+        positional.Length > 2 ||
+        positional.Length >= 1 && !int.TryParse(positional[0], out _) ||
+        positional.Length >= 2 && !int.TryParse(positional[1], out _))
+        return UsageError(lightError ?? "track expects [samples] [rate-hz] [--lights] [--light-radius <game-units>].");
+    var samples = positional.Length >= 1 ? int.Parse(positional[0]) : 0;
+    var rateHz = positional.Length >= 2 ? int.Parse(positional[1]) : 60;
     if (samples is < 0 or > 100_000 || rateHz is < 1 or > 240)
         return UsageError("track expects [samples; 0 means unlimited] [rate-hz; 1-240].");
 
-    using var runtime = OpenRuntime();
+    using var runtime = OpenRuntime(lightOptions);
     var player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
     var watch = Stopwatch.StartNew();
     var tracker = runtime.Camera;
@@ -155,9 +162,11 @@ int Track(string[] commandArgs)
         player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
         var orientation = runtime.ReadOrientation(player);
         var frame = tracker.Capture(player);
+        var lights = runtime.CaptureLights(player);
         captureWatch.Stop();
         var snapshot = ToSnapshot(runtime.GameBuild, sequence, player, frame,
-            captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
+            captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation,
+            lights, runtime.SupportsLights, SchemaFor(lightOptions));
         Console.WriteLine(JsonSerializer.Serialize(snapshot, jsonOptions));
         sequence++;
         nextTick += (long)(tickInterval.TotalSeconds * Stopwatch.Frequency);
@@ -242,18 +251,19 @@ int TraceCameraCopies(string[] commandArgs)
 
 int Serve(string[] commandArgs)
 {
-    if (commandArgs.Length > 2 ||
-        commandArgs.Length >= 1 && !int.TryParse(commandArgs[0], out _) ||
-        commandArgs.Length >= 2 && !int.TryParse(commandArgs[1], out _))
-        return UsageError("serve expects integer arguments: [port] [rate-hz].");
-    var port = commandArgs.Length >= 1 ? int.Parse(commandArgs[0]) : 27311;
-    var rateHz = commandArgs.Length >= 2 ? int.Parse(commandArgs[1]) : 60;
+    if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var lightError) ||
+        positional.Length > 2 ||
+        positional.Length >= 1 && !int.TryParse(positional[0], out _) ||
+        positional.Length >= 2 && !int.TryParse(positional[1], out _))
+        return UsageError(lightError ?? "serve expects [port] [rate-hz] [--lights] [--light-radius <game-units>].");
+    var port = positional.Length >= 1 ? int.Parse(positional[0]) : 27311;
+    var rateHz = positional.Length >= 2 ? int.Parse(positional[1]) : 60;
     if (port is < 1024 or > 65535 || rateHz is < 1 or > 240)
         return UsageError("serve expects [port; 1024-65535] [rate-hz; 1-240].");
-    return RunServer(port, rateHz);
+    return RunServer(port, rateHz, lightOptions);
 }
 
-int RunServer(int port, int rateHz)
+int RunServer(int port, int rateHz, LightOptions lightOptions)
 {
     using var cancellation = new CancellationTokenSource();
     using var timerResolution = WindowsTimerResolution.RequestFor(rateHz);
@@ -265,7 +275,8 @@ int RunServer(int port, int rateHz)
     Console.CancelKeyPress += cancelHandler;
     try
     {
-        var state = new TelemetryServerState(jsonOptions, rateHz);
+        var activeSchemaVersion = SchemaFor(lightOptions);
+        var state = new TelemetryServerState(jsonOptions, rateHz, activeSchemaVersion);
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
@@ -284,7 +295,7 @@ int RunServer(int port, int rateHz)
         app.MapGet("/", () => Results.Json(new
         {
             name = "Crimson Desert Telemetry",
-            schemaVersion,
+            schemaVersion = activeSchemaVersion,
             endpoints = new[] { "/v1/health", "/v1/snapshot", "/v1/schema", "/v1/stream" }
         }, jsonOptions));
         app.MapGet("/v1/health", () => Results.Json(state.Health, jsonOptions));
@@ -295,7 +306,7 @@ int RunServer(int port, int rateHz)
         app.Map("/v1/stream", context => StreamWebSocket(context, state, cancellation.Token));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
-        var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, cancellation.Token),
+        var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, lightOptions, cancellation.Token),
             cancellation.Token);
         try
         {
@@ -382,7 +393,8 @@ async Task WaitForWebSocketClose(WebSocket socket, CancellationToken cancellatio
     }
 }
 
-async Task SampleContinuously(TelemetryServerState state, int rateHz, CancellationToken cancellationToken)
+async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptions lightOptions,
+    CancellationToken cancellationToken)
 {
     long sequence = 0;
     while (!cancellationToken.IsCancellationRequested)
@@ -391,7 +403,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
         try
         {
             state.SetHealth("waiting-for-game", false, null, null, 0, null, null);
-            try { runtime = OpenRuntime(); }
+            try { runtime = OpenRuntime(lightOptions); }
             catch (InvalidOperationException)
             {
                 await Task.Delay(1000, cancellationToken);
@@ -406,7 +418,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
 
             state.SetCompatibility(runtime.Compatibility);
             var initialPlayer = await WaitForPlayerPosition(runtime, state,
-                () => ToUnavailableSnapshot(runtime.GameBuild, sequence++, "loading"),
+                () => ToUnavailableSnapshot(runtime, sequence++, "loading", "player-unavailable"),
                 cancellationToken);
             if (initialPlayer is null) continue;
             var player = initialPlayer.Value;
@@ -424,15 +436,17 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                     player = StaticPositionProbe.Read(runtime.Reader, runtime.PositionAddresses);
                     var orientation = runtime.ReadOrientation(player);
                     var frame = tracker.Capture(player);
+                    var lights = runtime.CaptureLights(player);
                     captureWatch.Stop();
                     var snapshot = ToSnapshot(runtime.GameBuild, sequence++, player, frame,
-                        captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation);
+                        captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation,
+                        lights, runtime.SupportsLights, SchemaFor(lightOptions));
                     state.Publish(snapshot, tracker.AddressCount, discoveryMilliseconds);
                 }
                 catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
                 {
                     if (state.Health.Status != "loading")
-                        state.Publish(ToUnavailableSnapshot(runtime.GameBuild, sequence++, "loading"),
+                        state.Publish(ToUnavailableSnapshot(runtime, sequence++, "loading", "required-telemetry-unavailable"),
                             tracker.AddressCount, discoveryMilliseconds);
                     state.SetHealth("loading", true, true, runtime.GameBuild,
                         tracker.AddressCount, discoveryMilliseconds, exception.Message);
@@ -446,7 +460,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, Cancellati
                     nextTick = Stopwatch.GetTimestamp();
             }
             if (!cancellationToken.IsCancellationRequested && runtime.Process.HasExited)
-                state.Publish(ToUnavailableSnapshot(runtime.GameBuild, sequence++, "stopped"),
+                state.Publish(ToUnavailableSnapshot(runtime, sequence++, "stopped", "game-stopped"),
                     tracker.AddressCount, discoveryMilliseconds);
         }
         catch (Exception exception) when (exception is InvalidDataException or Win32Exception or
@@ -485,7 +499,7 @@ async Task<(float X, float Y, float Z)?> WaitForPlayerPosition(RuntimeContext ru
     return null;
 }
 
-RuntimeContext OpenRuntime()
+RuntimeContext OpenRuntime(LightOptions lightOptions = default)
 {
     var process = GameDiscovery.FindRunningProcess()
         ?? throw new InvalidOperationException("Crimson Desert is not running.");
@@ -507,7 +521,11 @@ RuntimeContext OpenRuntime()
                 ?? throw new InvalidDataException("This build has no supported native camera definition.");
             var camera = new EngineCameraReader(reader,
                 checked((ulong)process.MainModule!.BaseAddress.ToInt64()), cameraDefinition);
-            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera);
+            EngineLightReader? lights = null;
+            if (lightOptions.Enabled && resolved.Compatibility.Mode == "tested" && definition.EngineLights is { } lightDefinition)
+                lights = new EngineLightReader(reader,
+                    checked((ulong)process.MainModule!.BaseAddress.ToInt64()), lightDefinition);
+            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, lightOptions);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -544,32 +562,40 @@ CameraSnapshot ToCameraConsensus(RenderCameraConsensus consensus)
 }
 
 TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, float Z) player,
-    RenderCameraFrame frame, long captureDurationMicroseconds, PlayerOrientationSnapshot? orientation = null) => new(
+    RenderCameraFrame frame, long captureDurationMicroseconds, PlayerOrientationSnapshot? orientation = null,
+    EngineLightsSnapshot? lights = null, bool supportsLights = false, string schemaVersion = baseSchemaVersion) => new(
     schemaVersion,
     sequence,
     frame.Timestamp,
     new GameSnapshot(build, "playing"),
     coordinateSystem,
-    CapabilitiesFor(orientation),
+    CapabilitiesFor(orientation, supportsLights),
     new PlayerSnapshot(ToVector(player), orientation),
     ToCameraConsensus(new RenderCameraConsensus(
         frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates)),
     new QualitySnapshot(frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates,
-        frame.Rediscovered, captureDurationMicroseconds));
+        frame.Rediscovered, captureDurationMicroseconds),
+    lights);
 
-IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation) =>
-    orientation is null ? capabilities : capabilities.Append("player.orientation").ToArray();
+IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation, bool supportsLights = false)
+{
+    IEnumerable<string> result = capabilities;
+    if (orientation is not null) result = result.Append("player.orientation");
+    if (supportsLights) result = result.Append("lights.engine");
+    return result.ToArray();
+}
 
-TelemetrySnapshot ToUnavailableSnapshot(string build, long sequence, string state) => new(
-    schemaVersion,
+TelemetrySnapshot ToUnavailableSnapshot(RuntimeContext runtime, long sequence, string state, string lightReason) => new(
+    SchemaFor(runtime.LightOptions),
     sequence,
     DateTimeOffset.UtcNow,
-    new GameSnapshot(build, state),
+    new GameSnapshot(runtime.GameBuild, state),
     coordinateSystem,
-    capabilities,
+    CapabilitiesFor(null, runtime.SupportsLights),
     null,
     null,
-    null);
+    null,
+    runtime.UnavailableLights(lightReason));
 
 static CameraVector3 ToVector((float X, float Y, float Z) value) => new(value.X, value.Y, value.Z);
 
@@ -579,10 +605,10 @@ int Help()
     Console.WriteLine("  diagnose                 Check the running game and build support");
     Console.WriteLine("  check-compatibility <exe>  Offline automatic checks (also on known EXEs)");
     Console.WriteLine("  discover                 Validate and summarize the native camera source");
-    Console.WriteLine("  snapshot                 Emit one JSON telemetry snapshot");
-    Console.WriteLine("  track [samples] [hz]     Emit JSON Lines at 1-240 Hz (0 samples = unlimited)");
+    Console.WriteLine("  snapshot [--lights] [--light-radius N]  Emit one JSON telemetry snapshot");
+    Console.WriteLine("  track [samples] [hz] [--lights] [--light-radius N]  Emit JSON Lines");
     Console.WriteLine("  trace-camera-copies <seconds> <hz> <file>   Record all copies for offline diagnosis");
-    Console.WriteLine("  serve [port] [hz]        Serve HTTP and WebSocket telemetry (default 27311, 60 Hz)");
+    Console.WriteLine("  serve [port] [hz] [--lights] [--light-radius N]  Serve HTTP/WebSocket telemetry");
     Console.WriteLine("  version                  Show the program version");
     return 0;
 }
@@ -600,13 +626,59 @@ int UsageError(string message)
     return 2;
 }
 
+string SchemaFor(LightOptions options) => options.Enabled ? lightsSchemaVersion : baseSchemaVersion;
+
+bool TryParseLightOptions(string[] arguments, out string[] positional, out LightOptions options,
+    out string? error)
+{
+    var values = new List<string>();
+    var enabled = false;
+    var radius = LightOptions.DefaultRadius;
+    error = null;
+    for (var index = 0; index < arguments.Length; index++)
+    {
+        var argument = arguments[index];
+        if (argument.Equals("--lights", StringComparison.OrdinalIgnoreCase))
+        {
+            enabled = true;
+            continue;
+        }
+        if (argument.Equals("--light-radius", StringComparison.OrdinalIgnoreCase))
+        {
+            if (++index >= arguments.Length ||
+                !float.TryParse(arguments[index], NumberStyles.Float, CultureInfo.InvariantCulture, out radius))
+            {
+                positional = [];
+                options = default;
+                error = "--light-radius expects a number in invariant format.";
+                return false;
+            }
+            enabled = true;
+            continue;
+        }
+        values.Add(argument);
+    }
+    if (!float.IsFinite(radius) || radius is < 1 or > 100_000)
+    {
+        positional = [];
+        options = default;
+        error = "--light-radius must be between 1 and 100000 game units.";
+        return false;
+    }
+    positional = values.ToArray();
+    options = new LightOptions(enabled, radius);
+    return true;
+}
+
 sealed class RuntimeContext(
     Process process,
     ReadOnlyProcess reader,
     ResolvedBuild resolved,
     StaticPositionAddresses positionAddresses,
     PlayerOrientationReader? orientation,
-    EngineCameraReader camera) : IDisposable
+    EngineCameraReader camera,
+    EngineLightReader? lights,
+    LightOptions lightOptions) : IDisposable
 {
     public Process Process { get; } = process;
     public ReadOnlyProcess Reader { get; } = reader;
@@ -616,6 +688,9 @@ sealed class RuntimeContext(
     public StaticPositionAddresses PositionAddresses { get; } = positionAddresses;
     public PlayerOrientationReader? Orientation { get; } = orientation;
     public EngineCameraReader Camera { get; } = camera;
+    public EngineLightReader? Lights { get; } = lights;
+    public LightOptions LightOptions { get; } = lightOptions;
+    public bool SupportsLights => Lights is not null;
 
     public PlayerOrientationSnapshot? ReadOrientation((float X, float Y, float Z) player)
     {
@@ -625,11 +700,28 @@ sealed class RuntimeContext(
         return value;
     }
 
+    public EngineLightsSnapshot? CaptureLights((float X, float Y, float Z) player) =>
+        !LightOptions.Enabled ? null : Lights is null
+            ? UnsupportedLights()
+            : Lights.Capture(player, LightOptions.NearbyRadius);
+
+    public EngineLightsSnapshot? UnavailableLights(string reason) =>
+        !LightOptions.Enabled ? null : Lights is null ? UnsupportedLights() : Lights.Unavailable(LightOptions.NearbyRadius, reason);
+
+    private EngineLightsSnapshot UnsupportedLights() => new(
+        "unavailable", EngineLightReader.SourceName, LightOptions.NearbyRadius, null,
+        new EngineLightDiagnosticsSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0), "unsupported-build");
+
     public void Dispose()
     {
         Reader.Dispose();
         Process.Dispose();
     }
+}
+
+readonly record struct LightOptions(bool Enabled, float NearbyRadius)
+{
+    public const float DefaultRadius = 100f;
 }
 
 sealed class WindowsTimerResolution : IDisposable

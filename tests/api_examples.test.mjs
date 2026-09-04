@@ -22,7 +22,8 @@ test('documented snapshots have the schema-required envelope and vectors', async
   const schema = JSON.parse(await readFile(new URL('../schema/telemetry-v1.schema.json', import.meta.url)));
   for (const snapshot of [playing, loading]) {
     assert.deepEqual(Object.keys(snapshot).sort(), [...schema.required].sort());
-    assert.equal(snapshot.schemaVersion, schema.properties.schemaVersion.const);
+    assert.ok(schema.properties.schemaVersion.enum.includes(snapshot.schemaVersion));
+    assert.equal(snapshot.schemaVersion, '1.1');
     assert.ok(schema.properties.game.properties.state.enum.includes(snapshot.game.state));
     assert.ok(Number.isFinite(Date.parse(snapshot.capturedAt)));
   }

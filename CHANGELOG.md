@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 - 2026-09-04
+
+- Add opt-in, read-only nearby engine-light telemetry for the exactly validated
+  `25050808` and `25116796` executables. The module reads the CPU source array, re-resolves and
+  double-checks its complete pointer walk per snapshot, retries once, and fails closed.
+- Publish verified position, point/spot kind when known, linear color, record/renderer
+  flags, and conditional renderer scale/final linear RGB. Do not claim range, lumens,
+  generic enabled state, direction, fire/effect lights, or durable source identities.
+- Keep schema 1.1 and its payload unchanged while lights are disabled; opt-in light
+  snapshots use additive schema 1.2 and separate diagnostic counters.
+- Restore exact player, orientation, camera and light support after Steam build
+  `25116796` / EXE `1.0.0.2760`, using the newly validated direct scene/camera
+  root and SQT player transform. Unknown builds continue to fail closed.
+
 ## 1.1.0 - 2026-09-01
 
 - Keep exact SHA-256 matches as explicitly tested builds, while allowing a different

@@ -1,5 +1,17 @@
 # Mod-manager validation
 
+## v1.2.0 engine-light release candidate (2026-09-04)
+
+The managed Release build and all 43 regression tests passed, including the new
+direct camera and direct scene/light layouts. All three native CTests, four API
+example tests, and expanded-package/ZIP validators passed. The actual Release
+binary was then run read-only against Steam build `25116796`: schema 1.2 reported
+player, orientation, camera and available engine lights; 230 source records yielded
+135 within radius 100, with zero malformed, unsupported or unavailable-walk records.
+
+Final package: `CrimsonDesertTelemetry-v1.2.0-ModManagers.zip`.
+SHA-256: `2102189439F629FF564ECFCC837C6F54F931AA701EEBC55E1C2521FC2EF87EDE`.
+
 ## v1.1.0 automatic-compatibility release candidate (2026-09-01)
 
 The managed Release build, 37 managed regression tests, loopback HTTP/WebSocket

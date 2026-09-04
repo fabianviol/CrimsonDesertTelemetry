@@ -57,6 +57,9 @@ public static class BuildCompatibility
     {
         // Never mutate or promote an untested EXE into the persisted allowlist.
         var definition = JsonSerializer.Deserialize<BuildDefinition>(JsonSerializer.Serialize(reference))!;
+        // Light offsets are never carried onto a merely pattern-compatible executable.
+        // They are enabled only by an exact, locally validated executable hash.
+        definition.EngineLights = null;
         var camera = definition.EngineCamera
             ?? throw new InvalidDataException("No native camera layout.");
         if (camera.Layout != "renderer-camera-v1") throw new InvalidDataException("Unknown camera layout.");

@@ -14,6 +14,8 @@ public sealed class EngineCameraReader
     private const int SourceLength = 0x868;
     private readonly IReadOnlyProcessMemory _reader;
     private readonly ulong _mainGlobal, _cameraGlobal, _contextVtable, _cameraVtable;
+    private readonly bool _directCamera;
+    private readonly int _counterOffset;
     private readonly Func<TimeSpan> _clock;
     private Chain? _lastChain;
     private uint _lastCounter;
@@ -25,17 +27,28 @@ public sealed class EngineCameraReader
     public EngineCameraReader(IReadOnlyProcessMemory reader, ulong moduleBase,
         EngineCameraDefinition definition, Func<TimeSpan>? clock = null)
     {
-        if (definition.Layout != "renderer-camera-v1")
+        if (definition.Layout is not ("renderer-camera-v1" or "renderer-camera-direct-v1"))
             throw new InvalidDataException("Unsupported native camera layout.");
         _reader = reader;
         var watch = Stopwatch.StartNew();
         _clock = clock ?? (() => watch.Elapsed);
-        _mainGlobal = ResolveReference(moduleBase, definition.MainRootReferenceRva,
-            definition.MainRootReferencePattern, definition.MainRootGlobalRva, 0x0D);
         _cameraGlobal = ResolveReference(moduleBase, definition.CameraReferenceRva,
             definition.CameraReferencePattern, definition.CameraGlobalRva, 0x05);
-        _contextVtable = At(moduleBase, definition.ContextVtableRva);
         _cameraVtable = At(moduleBase, definition.CameraVtableRva);
+        _directCamera = definition.Layout == "renderer-camera-direct-v1";
+        if (_directCamera)
+        {
+            if (definition.FrameCounterOffset is <= 0 or > 0x10000 || (definition.FrameCounterOffset & 3) != 0)
+                throw new InvalidDataException("Invalid native camera frame-counter offset.");
+            _counterOffset = definition.FrameCounterOffset;
+        }
+        else
+        {
+            _mainGlobal = ResolveReference(moduleBase, definition.MainRootReferenceRva,
+                definition.MainRootReferencePattern, definition.MainRootGlobalRva, 0x0D);
+            _contextVtable = At(moduleBase, definition.ContextVtableRva);
+            _counterOffset = 0x40;
+        }
         ReferenceResolutionMilliseconds = watch.Elapsed.TotalMilliseconds;
     }
 
@@ -94,6 +107,14 @@ public sealed class EngineCameraReader
 
     private Chain ReadChain()
     {
+        if (_directCamera)
+        {
+            var directCamera = ReadPointer(_cameraGlobal);
+            if (ReadPointer(directCamera) != _cameraVtable)
+                throw new InvalidDataException("Native camera object type disagrees.");
+            return new Chain(0, 0, directCamera, directCamera, ReadPointer(At(directCamera, 0x428)));
+        }
+
         var main = ReadPointer(_mainGlobal);
         var application = ReadPointer(At(main, 0x28));
         var context = ReadPointer(At(application, 0x18));
@@ -104,7 +125,8 @@ public sealed class EngineCameraReader
         return new Chain(main, application, context, camera, ReadPointer(At(camera, 0x428)));
     }
 
-    private uint Counter(ulong context) => BitConverter.ToUInt32(_reader.Read(Pointer(At(context, 0x40)), 4));
+    private uint Counter(ulong context) => BitConverter.ToUInt32(
+        _reader.Read(Pointer(At(context, checked((ulong)_counterOffset))), 4));
     private ulong ReadPointer(ulong address)
     {
         var value = BitConverter.ToUInt64(_reader.Read(Pointer(address), 8));

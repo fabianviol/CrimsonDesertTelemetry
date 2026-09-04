@@ -1,7 +1,7 @@
 # API reference
 
-Public contract for **Crimson Desert Telemetry 1.0.0**, HTTP API **v1**, snapshot
-schema **1.1**. These are separate version numbers. This document describes the
+Public contract for Crimson Desert Telemetry, HTTP API **v1**, snapshot schemas
+**1.1** and **1.2**. These are separate version numbers. This document describes the
 shipped implementation, not planned features or historical memory-scanning tools.
 
 ## Connect
@@ -28,18 +28,23 @@ Enabled=1
 Port=27311
 SampleRateHz=60
 
+[Lights]
+Enabled=0
+NearbyRadius=100
+
 [Overlay]
 Enabled=0
 ```
 
-`Port` supports 1024–65535; `SampleRateHz` supports 1–240. The ASI clamps values
+`Port` supports 1024–65535; `SampleRateHz` supports 1–240. `NearbyRadius` supports
+1–100000 game units. The ASI clamps values
 outside those ranges. Changes require a game restart. HUD enablement is independent
 of telemetry. Keep the `.cfg` runtime metadata unchanged; it is not user configuration.
 
 Alternatively, from a source checkout with the .NET 8 SDK:
 
 ```powershell
-dotnet run --project .\src\CrimsonDesertTelemetry.Cli -- serve 27311 60
+dotnet run --project .\src\CrimsonDesertTelemetry.Cli -- serve 27311 60 --lights --light-radius 100
 ```
 
 The CLI rejects out-of-range arguments instead of clamping them. Do not start a
@@ -97,7 +102,7 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | Snapshot schema served by this host; currently `1.1`. |
+| `schemaVersion` | string | `1.1` with lights disabled; additive `1.2` when the light module is requested. |
 | `status` | string | Sampler status; see below. |
 | `gameRunning` | boolean | Sampler's current process-presence observation, not a guarantee of playable data. |
 | `supportedBuild` | boolean or null | `null` before support is known; `false` when compatibility checks rejected the executable; `true` after a runtime was opened through either compatibility mode. On `error`, do not interpret it as successful live-data validation. |
@@ -179,13 +184,14 @@ and successful CLI `snapshot`/`track` output. The following examples are synthet
 
 ### Envelope and availability
 
-All top-level fields in the example are required. `vector3` below means an object
+All top-level fields in the 1.1 example are required. Schema 1.2 additionally
+requires `lights`. `vector3` below means an object
 with three required, finite JSON numbers: `x`, `y`, `z`. There are no string-encoded
 numbers, NaN values, addresses, process handles or memory blobs in this contract.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1`. Compare versions as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` normally or `1.2` with requested light telemetry. Compare versions as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -195,6 +201,7 @@ numbers, NaN values, addresses, process handles or memory blobs in this contract
 | `player` | object or null | Null when required telemetry is unavailable. |
 | `camera` | object or null | Null when required telemetry is unavailable. |
 | `quality` | object or null | Null when required telemetry is unavailable. |
+| `lights` | object (schema 1.2 only) | Current nearby engine-light result and diagnostics; never emitted in schema 1.1. |
 
 Currently known capabilities:
 
@@ -202,10 +209,45 @@ Currently known capabilities:
 - `camera.transform`: camera position and basis vectors.
 - `camera.projection`: near plane, vertical FOV, aspect ratio; **not** a promise of a known far plane.
 - `player.orientation`: validated player physics-root orientation for this sample.
+- `lights.engine`: the exact-build Engine-Light reader is available. Its presence
+  does not mean `lights.status` is currently `available`.
 
 Important: `loading`/`stopped` messages still list the three base capabilities, but
 their `player`, `camera`, and `quality` fields are null. Capabilities alone are not
 a validity check. Require `game.state == "playing"` and the objects you need.
+
+### Optional engine lights (schema 1.2)
+
+The light module is disabled by default and currently gated to the exact validated
+Steam build `25050808` executable hash. Requesting it on another build produces
+`lights.status="unavailable"` with reason `unsupported-build`; it never guesses
+offsets. A changing or unreadable scene walk likewise publishes no source array.
+
+An available result has `status="available"`, `source="engine-light-source-array"`,
+the configured `nearbyRadius`, a possibly empty `sources` array and diagnostics.
+Each source can contain:
+
+| Field | Meaning |
+|---|---|
+| `position` | Validated world position in the same game coordinates as the player. |
+| `kind` | `point` or `spot` only when the engine encoding is recognized; otherwise omitted. |
+| `colorLinear` | Engine record's emitted linear RGB base color. |
+| `recordActive` | Record-maintenance flag; **not** a promise that the light is visibly emitting. |
+| `rendererSelected` | Whether this record is selected for the mapped renderer path. |
+| `rendererScale`, `rendererRgbLinear` | Both present only for a selected record with a positive finite scalar. The scalar is authored renderer data, not physical lumens; RGB is `colorLinear * rendererScale`. |
+
+No address, durable ID, range, lumens, direction, generic `enabled` field or
+fire/effect source is exposed. Array order and engine handles must not be used as
+identity across snapshots or restarts. Multiple records at one position are retained.
+
+Diagnostics distinguish malformed records, valid records outside the configured
+radius, unknown kind encodings, unavailable renderer fields and non-positive renderer
+scales. `walkChanged`, `walkRetrySucceeded` and `walkUnavailable` are cumulative for
+the current game runtime. The reader resolves `module → P → C → S → A` afresh,
+checks its backlink and vector bounds, copies the contiguous records, then resolves
+the complete walk again. One complete retry is allowed; no previous light snapshot
+is reused after failure. This protects against scene transitions but is not an
+engine-frame atomicity guarantee.
 
 ```json
 {
@@ -373,13 +415,13 @@ are diagnostics, not this public snapshot contract.
 ## Compatibility and limits
 
 Ignore unknown optional fields/capability strings and handle null or missing
-optional fields. The published schema is strict for validating **this version**
-(`additionalProperties: false`, `schemaVersion: "1.1"`); do not use an old strict
+optional fields. The published schema is strict for the supported 1.1/1.2 shapes
+(`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
 Reject an unsupported major version explicitly. Breaking contract changes require
 a new major API/product version; build offsets are not part of the public API.
 
-Not included: light sources, weather/time of day, worldspace identifiers, bones,
+Not included: fire/effect illumination, weather/time of day, worldspace identifiers, bones,
 animated pose, input injection, event history, engine frame IDs or GPU timestamps.
 The current camera validator rejects positions more than 50 game units from the
 player; distant free-camera/cutscene setups may therefore report unavailable data.

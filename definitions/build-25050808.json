@@ -6,6 +6,10 @@
   "executableSha256": "A93336BC08F1613B609F4F331C687B13A8DB729DD1AB99D8FD09C9FBE06BC210",
   "status": "locally-validated",
   "allowAutomaticCompatibility": false,
+  "engineLights": {
+    "layout": "light-source-array-v1",
+    "rootGlobalRva": 104309976
+  },
   "patterns": [
     {
       "name": "static-position-xy-write",

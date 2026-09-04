@@ -69,6 +69,30 @@ public sealed class PlayerOrientationReader
     private TransformResult ReadTransform(IReadOnlyProcessMemory reader, ulong physics,
         (float X, float Y, float Z) worldPosition)
     {
+        if (_definition.TransformLayout == "sqt-v1")
+        {
+            var sqtLength = Math.Max(_definition.PositionOffset + 0x0C, _definition.QuaternionOffset + 0x10);
+            var sqtBytes = reader.Read(ToIntPtr(physics), sqtLength);
+            var quaternion = new Quaternion(
+                BitConverter.ToSingle(sqtBytes, _definition.QuaternionOffset),
+                BitConverter.ToSingle(sqtBytes, _definition.QuaternionOffset + 4),
+                BitConverter.ToSingle(sqtBytes, _definition.QuaternionOffset + 8),
+                BitConverter.ToSingle(sqtBytes, _definition.QuaternionOffset + 12));
+            var sqtPosition = Vector(sqtBytes, _definition.PositionOffset);
+            if (!Finite(sqtPosition) || !float.IsFinite(quaternion.X) || !float.IsFinite(quaternion.Y) ||
+                !float.IsFinite(quaternion.Z) || !float.IsFinite(quaternion.W) ||
+                Math.Abs(quaternion.LengthSquared() - 1) > .002f)
+                throw new InvalidDataException("Player transform quaternion is invalid.");
+            ValidatePosition(sqtPosition, worldPosition);
+            var up = Vector3.Transform(Vector3.UnitY, quaternion);
+            var forward = -Vector3.Transform(Vector3.UnitZ, quaternion);
+            if (!Unit(up) || !Unit(forward) || Math.Abs(Vector3.Dot(up, forward)) > .002f)
+                throw new InvalidDataException("Player quaternion produced an invalid basis.");
+            return new TransformResult(forward, up);
+        }
+        if (_definition.TransformLayout != "basis-v1")
+            throw new InvalidDataException("Unsupported player transform layout.");
+
         var length = Math.Max(_definition.PositionOffset + 0x10,
             Math.Max(_definition.BasisZOffset + 0x0C, _definition.BasisYOffset + 0x0C));
         var bytes = reader.Read(ToIntPtr(physics), length);
@@ -85,12 +109,17 @@ public sealed class PlayerOrientationReader
         var determinant = Vector3.Dot(Vector3.Cross(x, y), z);
         if (Math.Abs(determinant - 1) > .003f)
             throw new InvalidDataException("Player physics basis has an invalid handedness.");
+        ValidatePosition(position, worldPosition);
+        return new TransformResult(-z, y);
+    }
+
+    private static void ValidatePosition(Vector3 position, (float X, float Y, float Z) worldPosition)
+    {
         var delta = new Vector3(worldPosition.X, worldPosition.Y, worldPosition.Z) - position;
         if (!Finite(delta) || Math.Abs(delta.Y) > 3 || Math.Abs(delta.X) > 1_000_000 || Math.Abs(delta.Z) > 1_000_000 ||
             Math.Abs(delta.X - MathF.Round(delta.X / 1000) * 1000) > .15f ||
             Math.Abs(delta.Z - MathF.Round(delta.Z / 1000) * 1000) > .15f)
-            throw new InvalidDataException("Player physics root does not match the player position.");
-        return new TransformResult(-z, y);
+            throw new InvalidDataException("Player transform does not match the player position.");
     }
 
     private PlayerOrientationSnapshot ToSnapshot(TransformResult transform)
@@ -137,6 +166,7 @@ public sealed class PlayerOrientationReader
         BitConverter.ToSingle(bytes, offset + 8));
 
     private static bool Finite(Vector3 value) => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool Unit(Vector3 value) => Finite(value) && Math.Abs(value.LengthSquared() - 1) < .002f;
     private static CameraVector3 ToVector(Vector3 value) => new(value.X, value.Y, value.Z);
     private static float NormalizeDegrees(float value) => (value % 360 + 360) % 360;
 

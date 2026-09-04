@@ -15,6 +15,7 @@ namespace cdt::overlay
 {
 namespace
 {
+constexpr size_t MaximumTelemetryMessageBytes = 4 * 1024 * 1024;
 struct Shared { std::mutex mutex; View view; };
 // Deliberately process-lifetime: callbacks/worker teardown must not run in DllMain.
 Shared& SharedView() { static auto* shared = new Shared; return *shared; }
@@ -88,7 +89,8 @@ void Connect(const Config config, HANDLE stop)
                 if (error != NO_ERROR || type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) break;
                 if (type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE && type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
                     throw std::runtime_error("Non-text telemetry");
-                if (message.size() + received > 65536) throw std::runtime_error("Telemetry message too large");
+                if (message.size() + received > MaximumTelemetryMessageBytes)
+                    throw std::runtime_error("Telemetry message too large");
                 message.append(buffer.data(), received);
                 if (type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) continue;
                 try

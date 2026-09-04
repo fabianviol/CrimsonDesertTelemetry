@@ -9,8 +9,9 @@ This file records public material consulted during research. A listed source doe
 | `Orcax-1399/CrimsonDesert-player-status-modifier` | Public player-pointer and position-hook documentation | Terminology and possible investigation routes | No |
 | `Baal-TehDriverman/CrimsonDesertMods` | Public pattern-scanning and hook-coordination documentation | Compatibility considerations | No |
 | CDTT and UltimateCameraMod public releases | User-facing behavior and packaged data | Capability comparison only | No |
+| [Developer Debug Console Enabler](https://www.nexusmods.com/crimsondesert/mods/803) by YinjiDawn/YinjiD | Published description plus offline inspection of command/RTTI strings in the user-supplied v0.1.0 proxy DLL | Research lead for the game's MSVC RTTI and dormant console commands; all telemetry addresses and layouts were derived independently from the game executable and validated read-only | No |
 
-The structural camera scanner, camera validation rules, redundant-copy consensus algorithm, current-build player-position signature, telemetry schema, and CLI implementation in this repository are original work.
+The structural camera scanner, camera validation rules, redundant-copy consensus algorithm, current-build player-position signature, telemetry schema, CLI implementation, and engine-light record/pointer-walk derivation in this repository are original work based on read-only observation and disassembly of the supported game executable. No community light-mod code or assets are used by the light reader.
 
 No source was copied from a repository without a verified compatible license. Any future reuse must identify the exact source revision, license, affected files, and required notices in this document and in the reused source files.
 

@@ -69,6 +69,10 @@ int main()
         Require(sample.cameraHeading && std::abs(*sample.cameraHeading) < 0.01, "Independent camera heading");
         Require(!Heading({0, 1, 0}), "Vertical direction must not produce a heading");
         std::cout << "PASS overlay camera/player separation and vertical projection\n";
+        json["schemaVersion"] = "1.2";
+        sample = ParseSample(json.dump(), now);
+        Require(sample.playerPosition.has_value(), "Additive schema 1.2 compatibility");
+        json["schemaVersion"] = "1.1";
         View view;
         view.sample = sample; view.connected = true; view.hasSample = true; view.received = Clock::now();
         Require(IsLive(view, view.received, 1000), "Fresh data");

@@ -35,6 +35,9 @@ function Assert-Payload([hashtable]$Files) {
     if ($null -eq $runtime.runtimeOptions) { throw 'Invalid .NET runtime configuration.' }
     $ini = [Text.Encoding]::UTF8.GetString($Files['CrimsonDesertTelemetry.ini'])
     if ($ini -notmatch '(?m)^\[Overlay\]' -or $ini -notmatch '(?m)^ToggleKey=119\r?$') { throw 'Missing overlay configuration.' }
+    if ($ini -notmatch '(?ms)^\[Lights\].*?^Enabled=0\r?$' -or $ini -notmatch '(?m)^NearbyRadius=100\r?$') {
+        throw 'Engine lights must be present and disabled by default.'
+    }
     $notices = [Text.Encoding]::UTF8.GetString($Files['THIRD-PARTY-NOTICES.txt'])
     foreach ($dependency in @('Dear ImGui', 'MinHook', 'JSON for Modern C++', 'Tristan Grimmer', 'Sean Barrett')) {
         if (-not $notices.Contains($dependency)) { throw "Missing third-party attribution: $dependency" }

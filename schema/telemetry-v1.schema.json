@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "sequence", "capturedAt", "game", "coordinateSystem", "capabilities", "player", "camera", "quality"],
   "properties": {
-    "schemaVersion": { "const": "1.1" },
+    "schemaVersion": { "enum": ["1.1", "1.2"] },
     "sequence": { "type": "integer", "minimum": 0 },
     "capturedAt": { "type": "string", "format": "date-time" },
     "game": {
@@ -97,8 +97,18 @@
           }
         }
       ]
+    },
+    "lights": {
+      "$ref": "#/$defs/engineLights"
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "schemaVersion": { "const": "1.2" } }, "required": ["schemaVersion"] },
+      "then": { "required": ["lights"] },
+      "else": { "not": { "required": ["lights"] } }
+    }
+  ],
   "$defs": {
     "vector3": {
       "type": "object",
@@ -108,6 +118,68 @@
         "x": { "type": "number" },
         "y": { "type": "number" },
         "z": { "type": "number" }
+      }
+    },
+    "engineLights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "nearbyRadius", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable"] },
+        "source": { "const": "engine-light-source-array" },
+        "nearbyRadius": { "type": "number", "minimum": 1, "maximum": 100000 },
+        "sources": {
+          "type": "array",
+          "maxItems": 8192,
+          "items": { "$ref": "#/$defs/engineLight" }
+        },
+        "diagnostics": { "$ref": "#/$defs/engineLightDiagnostics" },
+        "unavailableReason": {
+          "enum": ["unsupported-build", "walk-unavailable", "player-unavailable", "required-telemetry-unavailable", "game-stopped"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] },
+          "then": { "required": ["sources"] },
+          "else": { "required": ["unavailableReason"] }
+        }
+      ]
+    },
+    "engineLight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "colorLinear", "recordActive", "rendererSelected"],
+      "dependentRequired": {
+        "rendererScale": ["rendererRgbLinear"],
+        "rendererRgbLinear": ["rendererScale"]
+      },
+      "properties": {
+        "position": { "$ref": "#/$defs/vector3" },
+        "kind": { "enum": ["point", "spot"] },
+        "colorLinear": { "$ref": "#/$defs/vector3" },
+        "recordActive": { "type": "boolean" },
+        "rendererSelected": { "type": "boolean" },
+        "rendererScale": { "type": "number", "exclusiveMinimum": 0 },
+        "rendererRgbLinear": { "$ref": "#/$defs/vector3" }
+      }
+    },
+    "engineLightDiagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRecords", "publishedRecords", "malformed", "outsideRadius", "unsupportedKind",
+        "rendererDataUnavailable", "nonPositiveRendererScale", "walkChanged", "walkRetrySucceeded", "walkUnavailable"],
+      "properties": {
+        "sourceRecords": { "type": "integer", "minimum": 0 },
+        "publishedRecords": { "type": "integer", "minimum": 0 },
+        "malformed": { "type": "integer", "minimum": 0 },
+        "outsideRadius": { "type": "integer", "minimum": 0 },
+        "unsupportedKind": { "type": "integer", "minimum": 0 },
+        "rendererDataUnavailable": { "type": "integer", "minimum": 0 },
+        "nonPositiveRendererScale": { "type": "integer", "minimum": 0 },
+        "walkChanged": { "type": "integer", "minimum": 0 },
+        "walkRetrySucceeded": { "type": "integer", "minimum": 0 },
+        "walkUnavailable": { "type": "integer", "minimum": 0 }
       }
     }
   }

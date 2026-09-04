@@ -130,6 +130,32 @@ internal static class EngineCameraTests
         _ = fixture.Reader.Capture((10, 20, 30));
     }
 
+    public static void DirectCameraLayout()
+    {
+        const ulong moduleBase = 0x140000000;
+        const ulong camera = 0x200000;
+        const ulong source = 0x210000;
+        var definition = BuildDefinition.LoadAll(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")))
+            .Single(value => value.SteamBuildId == "25116796").EngineCamera
+            ?? throw new InvalidOperationException("Direct camera definition is not embedded.");
+        var memory = new Memory();
+        var code = definition.CameraReferencePattern.Split(' ')
+            .Select(token => token == "??" ? (byte)0 : Convert.ToByte(token, 16)).ToArray();
+        BitConverter.GetBytes(checked((int)((long)definition.CameraGlobalRva -
+            (long)definition.CameraReferenceRva - 7))).CopyTo(code, 3);
+        memory.Blocks[moduleBase + definition.CameraReferenceRva] = code;
+        memory.Q(moduleBase + definition.CameraGlobalRva, camera);
+        memory.Q(camera, moduleBase + definition.CameraVtableRva);
+        memory.U(camera + checked((ulong)definition.FrameCounterOffset), 100);
+        memory.Q(camera + 0x428, source);
+        memory.Blocks[source] = SourceBytes();
+        var reader = new EngineCameraReader(memory, moduleBase, definition, () => TimeSpan.Zero);
+        Check(reader.Capture((10, 20, 30)).Camera.Address == source,
+            "Direct camera layout did not resolve its source.");
+        memory.Q(camera, moduleBase + definition.CameraVtableRva + 8);
+        Reject(() => reader.Capture((10, 20, 30)), "Direct camera layout accepted the wrong camera type.");
+    }
+
     private sealed class Fixture
     {
         public ulong Base { get; }

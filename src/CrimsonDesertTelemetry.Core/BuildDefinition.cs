@@ -13,6 +13,7 @@ public sealed class BuildDefinition
     public List<PatternDefinition> Patterns { get; set; } = [];
     public PlayerRootDefinition? PlayerRoot { get; set; }
     public EngineCameraDefinition? EngineCamera { get; set; }
+    public EngineLightsDefinition? EngineLights { get; set; }
     public bool AllowAutomaticCompatibility { get; set; }
 
     public static IReadOnlyList<BuildDefinition> LoadAll(string directory)
@@ -44,6 +45,14 @@ public sealed class BuildDefinition
     }
 }
 
+public sealed class EngineLightsDefinition
+{
+    public string Layout { get; set; } = "";
+    public ulong RootGlobalRva { get; set; }
+    public ulong SceneGlobalRva { get; set; }
+    public ulong SceneVtableRva { get; set; }
+}
+
 public sealed class EngineCameraDefinition
 {
     public string Layout { get; set; } = "";
@@ -55,6 +64,7 @@ public sealed class EngineCameraDefinition
     public ulong CameraGlobalRva { get; set; }
     public ulong ContextVtableRva { get; set; }
     public ulong CameraVtableRva { get; set; }
+    public int FrameCounterOffset { get; set; }
     public List<VtableSlotFingerprint> ContextVtableFingerprints { get; set; } = [];
     public List<VtableSlotFingerprint> CameraVtableFingerprints { get; set; } = [];
 }
@@ -67,6 +77,7 @@ public sealed class VtableSlotFingerprint
 
 public sealed class PlayerRootDefinition
 {
+    public string TransformLayout { get; set; } = "basis-v1";
     public PatternDefinition WorldSystemPattern { get; set; } = new();
     public int WorldSystemToActorManagerOffset { get; set; } = 0x30;
     public int ActorManagerToPlayerActorOffset { get; set; } = 0x50;
@@ -78,6 +89,7 @@ public sealed class PlayerRootDefinition
     public int BasisYOffset { get; set; } = 0x70;
     public int BasisZOffset { get; set; } = 0x80;
     public int PositionOffset { get; set; } = 0x90;
+    public int QuaternionOffset { get; set; }
     public List<string> ExpectedTypeNames { get; set; } = [];
 }
 

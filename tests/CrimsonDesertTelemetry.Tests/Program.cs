@@ -36,6 +36,13 @@ var tests = new (string Name, Action Run)[]
     ("native camera concurrent read budget", EngineCameraTests.ConcurrentUpdates),
     ("native camera loading and relocation", EngineCameraTests.LoadingAndRelocation),
     ("native camera freshness and counter wrap", EngineCameraTests.Freshness),
+    ("native camera direct layout", EngineCameraTests.DirectCameraLayout),
+    ("engine lights decode verified fields", EngineLightReaderTests.DecodeFields),
+    ("engine lights reject and diagnose fields", EngineLightReaderTests.Validation),
+    ("engine lights retry a changed walk", EngineLightReaderTests.WalkRetry),
+    ("engine lights fail closed after walk races", EngineLightReaderTests.WalkUnavailable),
+    ("engine lights direct scene-global walk", EngineLightReaderTests.DirectSceneWalk),
+    ("engine lights JSON omits unavailable fields", EngineLightReaderTests.JsonContract),
     ("player position rejects uninitialized state", PlayerPositionRejectsUninitializedState),
     ("player orientation serializes validated basis", PlayerOrientationSerializesValidatedBasis),
     ("embedded build definition", EmbeddedBuildDefinition),
@@ -167,10 +174,36 @@ static void EmbeddedBuildDefinition()
     Assert(definitions.Any(definition => definition.SteamBuildId == "25050808" &&
                                          definition.ExecutableVersion == "1.0.0.2692" &&
                                          definition.Status == "locally-validated" &&
-                                         !definition.AllowAutomaticCompatibility),
+                                         !definition.AllowAutomaticCompatibility &&
+                                         definition.EngineLights is { Layout: "light-source-array-v1", RootGlobalRva: 0x637A4D8 }),
         "The automatically recognized and live-validated update is not embedded.");
+    Assert(definitions.Single(definition => definition.SteamBuildId == "24994088").EngineLights is null,
+        "Unvalidated light offsets leaked into the automatic reference build.");
     Assert(definitions.Count(definition => definition.AllowAutomaticCompatibility) == 1,
         "Automatic compatibility must have exactly one reference layout.");
+    Assert(definitions.Any(definition => definition.SteamBuildId == "25116796" &&
+                                         definition.ExecutableVersion == "1.0.0.2760" &&
+                                         definition.Status == "locally-validated" &&
+                                         !definition.AllowAutomaticCompatibility &&
+                                         definition.EngineCamera is
+                                         {
+                                             Layout: "renderer-camera-direct-v1",
+                                             FrameCounterOffset: 0x2C8
+                                         } &&
+                                         definition.EngineLights is
+                                         {
+                                             Layout: "light-source-array-scene-global-v1",
+                                             SceneGlobalRva: 0x6B4EFB8,
+                                             SceneVtableRva: 0x5C01A20
+                                         } &&
+                                         definition.PlayerRoot is
+                                         {
+                                             TransformLayout: "sqt-v1",
+                                             OwnerToPhysicsOffset: 0xE08,
+                                             QuaternionOffset: 0x7E8,
+                                             PositionOffset: 0x7F8
+                                         }),
+        "The current live-validated build definition is not embedded.");
 }
 
 static void TelemetryJsonContract()
@@ -199,6 +232,8 @@ static void TelemetryJsonContract()
         "Capture duration is missing.");
     Assert(root.GetProperty("player").GetProperty("orientation").ValueKind == JsonValueKind.Null,
         "Orientation should be explicitly null when this fixture has no orientation.");
+    Assert(!root.TryGetProperty("lights", out _),
+        "Disabled light telemetry changed the schema 1.1 payload.");
 
     var unavailable = snapshot with
     {

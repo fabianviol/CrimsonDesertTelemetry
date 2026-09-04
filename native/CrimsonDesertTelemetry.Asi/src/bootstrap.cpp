@@ -252,6 +252,9 @@ DWORD RunBootstrap()
     const int requestedRate = GetPrivateProfileIntW(L"Server", L"SampleRateHz", 60, iniPath.c_str());
     const unsigned short port = static_cast<unsigned short>(std::clamp(requestedPort, 1024, 65535));
     const int sampleRate = std::clamp(requestedRate, 1, 240);
+    const bool lightsEnabled = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, iniPath.c_str()) != 0;
+    const int nearbyRadius = std::clamp(
+        static_cast<int>(GetPrivateProfileIntW(L"Lights", L"NearbyRadius", 100, iniPath.c_str())), 1, 100000);
 
     if (enabled == 0)
     {
@@ -331,6 +334,8 @@ DWORD RunBootstrap()
     std::wstring commandLine = Quote(dotnet) + L" exec --depsfile " + Quote(dependencies) +
         L" --runtimeconfig " + Quote(cachedRuntimeConfig) + L" " + Quote(host) + L" serve " +
         std::to_wstring(port) + L" " + std::to_wstring(sampleRate);
+    if (lightsEnabled)
+        commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
     mutableCommand.push_back(L'\0');
     PROCESS_INFORMATION process{};
@@ -353,8 +358,8 @@ DWORD RunBootstrap()
         CloseHandle(job);
         job = nullptr;
     }
-    Log(std::format(L"Started telemetry host PID {} on 127.0.0.1:{} at {} Hz.",
-        process.dwProcessId, port, sampleRate));
+    Log(std::format(L"Started telemetry host PID {} on 127.0.0.1:{} at {} Hz; engine lights {}.",
+        process.dwProcessId, port, sampleRate, lightsEnabled ? L"enabled" : L"disabled"));
 
     const std::array<HANDLE, 2> waits{g_stopEvent, process.hProcess};
     const DWORD waitResult = WaitForMultipleObjects(static_cast<DWORD>(waits.size()), waits.data(), FALSE, INFINITE);

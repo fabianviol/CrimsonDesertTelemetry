@@ -13,6 +13,7 @@ The external telemetry host opens the game for read-only access. The optional AS
 |---|---:|---:|---|
 | Steam | `24994088` | `1.0.0.2658` | Locally validated |
 | Steam | `25050808` | `1.0.0.2692` | Automatically recognized, then locally validated |
+| Steam | `25116796` | `1.0.0.2760` | Locally validated |
 
 The table lists manually tested builds. An EXE with the same bytes has the same
 SHA-256 on every machine, but a displayed game-build number does not by itself
@@ -32,6 +33,20 @@ Currently exposed:
 - camera up, right, and forward vectors;
 - near plane, vertical field of view, and aspect ratio (`farPlane` is currently unknown/null);
 - single-source validation and capture timing.
+
+Builds `25050808` and `25116796` additionally support an **optional, disabled-by-default** nearby
+engine-light feed. Enable it before launch with:
+
+```ini
+[Lights]
+Enabled=1
+NearbyRadius=100
+```
+
+It reports only verified engine light records inside that player-centred radius.
+Fire/effect illumination, physical lumens, range and a generic `enabled` claim are
+not included. With the module disabled, schema 1.1 and the existing player/camera
+payload remain unchanged; enabled light output uses additive schema 1.2.
 
 **DLSS is not required.** Version 1.0.0 reads camera data directly from the game's
 native render-camera source, including with upscaling disabled. It resolves this
@@ -84,8 +99,8 @@ compass directions; player-root orientation is not the animated body pose.
 
 The development setup passed a user-observed in-game restart test with the native
 camera source. Broader compatibility tests remain open; see
-[the overlay test checklist](docs/OVERLAY_VALIDATION.md). Light sources are not part
-of this release. Disabling/uninstalling the ASI requires closing the game; hot-unload
+[the overlay test checklist](docs/OVERLAY_VALIDATION.md). Engine-light telemetry is
+opt-in and build-gated. Disabling/uninstalling the ASI requires closing the game; hot-unload
 is intentionally unsupported.
 
 ### Mod-manager package
@@ -100,7 +115,8 @@ files together. The `.cfg` files are .NET metadata, not game-patch JSON. The
 bootstrap caches only the runtime configuration under
 `%LOCALAPPDATA%\CrimsonDesertTelemetry\Runtime`, outside mod/game folders.
 
-Product version 1.0.0 keeps the existing `/v1/` endpoints and JSON schema 1.1.
+Current public version 1.2.0 keeps the existing `/v1/` endpoints. The default
+player/camera payload remains JSON schema 1.1; opt-in lights use additive 1.2.
 These version numbers are independent. Breaking public API changes require a new
 major API/product version; clients should tolerate additive fields and capabilities.
 

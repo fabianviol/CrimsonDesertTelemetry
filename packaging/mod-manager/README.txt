@@ -1,7 +1,7 @@
 Crimson Desert Telemetry
 ========================
 
-This first release package targets Definitive Mod Manager and JSON Mod Manager.
+This release package targets Definitive Mod Manager and JSON Mod Manager.
 Complete install/uninstall and in-game validation in both managers is still pending.
 It starts the read-only Crimson Desert Telemetry host automatically with the game.
 The optional English in-game Dear ImGui HUD is completely disabled by default.
@@ -9,7 +9,8 @@ The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
 confirmed working in-game HUD behavior after restarting with preview.7. The HUD
 retains automatic resolution scaling, including 4K. NVIDIA recording is unverified.
-Manually tested game: Steam build 24994088, executable 1.0.0.2658. Other executable
+Manually tested games: Steam builds 24994088 (EXE 1.0.0.2658), 25050808
+(EXE 1.0.0.2692), and 25116796 (EXE 1.0.0.2760). Other executable
 hashes are accepted only when all guarded code, data, player-type and camera-table
 sources resolve unambiguously; health labels this automatic, not manually tested.
 
@@ -21,7 +22,8 @@ Requirements
 
 Default API
 -----------
-Product version 1.1.0 retains HTTP v1 endpoints and JSON schema 1.1.
+HTTP v1 remains unchanged. The default player/camera payload uses JSON schema 1.1;
+opt-in engine-light payloads use additive schema 1.2.
 HTTP:      http://127.0.0.1:27311/v1/snapshot
 Health:    http://127.0.0.1:27311/v1/health
 Schema:    http://127.0.0.1:27311/v1/schema
@@ -31,6 +33,13 @@ Configuration
 -------------
 Edit CrimsonDesertTelemetry.ini before starting the game. The supported sample
 rate is 1-240 Hz. The server listens on loopback only.
+
+Nearby engine lights
+--------------------
+Set Enabled=1 in the [Lights] section to opt in. NearbyRadius is measured in game
+units; no metre conversion is claimed. This module is available only for the exact
+validated builds 25050808 and 25116796 and fails closed on other executable hashes. It reports
+verified engine records, not fire/effect illumination, physical lumens or range.
 
 In-game HUD
 -----------
@@ -61,15 +70,15 @@ after installing or changing configuration. Hot-unloading the ASI is not support
 
 The telemetry host reads game memory. The optional HUD hooks DXGI functions to draw
 inside the game but does not modify gameplay values. See THIRD-PARTY-NOTICES.txt
-for Dear ImGui, MinHook and JSON library licenses. No light-source module is included.
+for Dear ImGui, MinHook and JSON library licenses.
 
 Camera compatibility
 --------------------
 The native camera source is resolved from guarded game globals, without Streamline
 calls or a heap scan. Upscaling-off operation was tested after a cold start.
 AMD/Intel GPUs, other upscalers, HDR and frame generation need further validation.
-Player position/root orientation use separate game-memory sources. The existing
-HTTP/WebSocket JSON 1.1 contract is unchanged. Camera quality counts are 1/1/1
+Player position/root orientation use separate game-memory sources. The default
+HTTP/WebSocket JSON 1.1 player/camera contract is unchanged. Camera quality counts are 1/1/1
 for the single validated source; farPlane is null (no validated finite distance).
 Camera timestamps indicate sampling time, not when the engine produced a frame.
 Each capture checks both pointer routes, object types, successive field reads and

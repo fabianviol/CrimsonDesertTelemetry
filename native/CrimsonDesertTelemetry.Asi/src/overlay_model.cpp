@@ -12,6 +12,7 @@ namespace cdt::overlay
 namespace
 {
 using Json = nlohmann::json;
+constexpr size_t MaximumTelemetryMessageBytes = 4 * 1024 * 1024;
 float Number(const Json& value)
 {
     const float result = value.get<float>();
@@ -85,13 +86,14 @@ float HudScale(float width, float height, const Config& config, bool details)
 
 Sample ParseSample(const std::string_view text, const std::chrono::system_clock::time_point now)
 {
-    if (text.empty() || text.size() > 65536) throw std::runtime_error("Invalid message size");
+    if (text.empty() || text.size() > MaximumTelemetryMessageBytes) throw std::runtime_error("Invalid message size");
     const auto root = Json::parse(text, [](int depth, Json::parse_event_t, Json&)
     {
         if (depth > 24) throw std::runtime_error("Telemetry nesting limit exceeded");
         return true;
     });
-    if (root.at("schemaVersion") != "1.1") throw std::runtime_error("Unsupported telemetry schema");
+    const auto schema = root.at("schemaVersion").get<std::string>();
+    if (schema != "1.1" && schema != "1.2") throw std::runtime_error("Unsupported telemetry schema");
     const auto& axes = root.at("coordinateSystem");
     if (axes.at("upAxis") != "y" || axes.at("handedness") != "right" || axes.at("unit") != "game-unit")
         throw std::runtime_error("Unsupported coordinate system");
