@@ -16,21 +16,21 @@
       "name": "static-position-xy-write",
       "purpose": "static-position-xy",
       "section": ".text",
-      "pattern": "C4 C1 7B 10 47 2C C5 FB 11 05 ?? ?? ?? ?? 41 8B 47 34 41 B0 01 89 05 ?? ?? ?? ??",
-      "ripOffset": 10,
-      "ripEnd": 14,
+      "pattern": "C5 FB 11 3D ?? ?? ?? ?? 44 89 3D ?? ?? ?? ??",
+      "ripOffset": 4,
+      "ripEnd": 8,
       "confidence": "locally-validated",
-      "source": "relocated structurally for build 25116796; live player-position validation"
+      "source": "structural writer search for build 25116796: 8-byte RIP store paired with a 4-byte RIP store into global+8; the only global chunk-aligned to the physics root; live-validated over 27 units of player movement"
     },
     {
       "name": "static-position-z-write",
       "purpose": "static-position-z",
       "section": ".text",
-      "pattern": "C4 C1 7B 10 47 2C C5 FB 11 05 ?? ?? ?? ?? 41 8B 47 34 41 B0 01 89 05 ?? ?? ?? ??",
-      "ripOffset": 23,
-      "ripEnd": 27,
+      "pattern": "C5 FB 11 3D ?? ?? ?? ?? 44 89 3D ?? ?? ?? ??",
+      "ripOffset": 11,
+      "ripEnd": 15,
       "confidence": "locally-validated",
-      "source": "relocated structurally for build 25116796; live player-position validation"
+      "source": "structural writer search for build 25116796: 8-byte RIP store paired with a 4-byte RIP store into global+8; the only global chunk-aligned to the physics root; live-validated over 27 units of player movement"
     }
   ],
   "engineCamera": {
@@ -48,7 +48,7 @@
     "cameraVtableFingerprints": []
   },
   "playerRoot": {
-    "transformLayout": "sqt-v1",
+    "transformLayout": "basis-v1",
     "worldSystemPattern": {
       "name": "world-system-p1",
       "purpose": "world-system",
@@ -57,19 +57,18 @@
       "ripOffset": 3,
       "ripEnd": 7,
       "confidence": "locally-validated",
-      "source": "relocated structurally for build 25116796; RTTI-guarded player chain validated live"
+      "source": "relocated for build 25116796; RTTI-guarded player chain validated live; physics link is owner+0x2B8, confirmed by the unchanged physics-update code pattern, its callers and an execute-breakpoint capture"
     },
     "worldSystemToActorManagerOffset": 48,
     "actorManagerToPlayerActorOffset": 80,
     "playerActorToIntermediateOffset": 104,
     "intermediateToControlOffset": 64,
     "controlToOwnerOffset": 320,
-    "ownerToPhysicsOffset": 3592,
+    "ownerToPhysicsOffset": 696,
     "basisXOffset": 96,
     "basisYOffset": 112,
     "basisZOffset": 128,
-    "positionOffset": 2040,
-    "quaternionOffset": 2024,
+    "positionOffset": 144,
     "expectedTypeNames": [
       ".?AVClientActorManager@pa@@",
       ".?AVClientChildOnlyInGameActor@pa@@",

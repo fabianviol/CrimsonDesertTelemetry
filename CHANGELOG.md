@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.2.1-preview.2 - 2026-09-04
+
+- Stop dropping player orientation while the player moves fast. The player global
+  and the physics object are written at different points within a frame, so a
+  sample taken between those writes sees them disagree by one frame of travel.
+  Measured while riding: 3.6% of samples exceeded the previous 0.15-unit
+  agreement tolerance, peaking at 0.28 units, which showed up as the orientation
+  flickering out several times a second. The tolerance is an identity check, not a
+  freshness check, and now says so: two units still rejects any unrelated object
+  by a wide margin, while an orientation that is one frame old is not worth
+  discarding.
+- Read the player position and orientation through one `ReadPose` call so the two
+  cannot drift apart between call sites. An immediate re-read on rejection was
+  tried and removed: measured against eighteen rejections it rescued none, because
+  the window between the two writes is wider than a retry takes.
+
+
+## 1.2.1-preview.1 - 2026-09-04
+
+- Correct the player position for Steam build `25116796`. The globals used since
+  1.2.0 hold the renderer camera position, not the player's; they were bit-identical
+  to `camera.position` and about 6.5 units from the player. The genuine player
+  global was found by searching the executable for its structural shape (an
+  8-byte RIP-relative store paired with a 4-byte store into the same global plus
+  eight) instead of an exact byte pattern, which no longer matched after the
+  update. Exactly one candidate is chunk-aligned to the physics root; it was
+  live-validated over 27 units of player movement.
+- Withdraw the SQT player-transform claim from 1.2.0. `owner+0xE08` resolves to a
+  zeroed object holding neither a position nor a rotation. The genuine transform
+  is the unchanged `basis-v1` physics layout; only the physics link moved, from
+  `owner+0x298` to `owner+0x2B8`. Confirmed by the unchanged physics-update code
+  pattern, its callers, an execute-breakpoint capture and a live turning test.
+- Publish player orientation again for `25116796`. Verified live: over 22 samples
+  the player heading swept 355 degrees while the camera held still for seven of
+  them, so the two are demonstrably independent sources, and the root basis
+  stayed upright in every sample.
+- Report why an orientation is missing instead of returning a silent null. The
+  chain names the failing hop and its offset, RTTI mismatches report expected and
+  actual type, and quaternion or position rejections include the values. `snapshot`
+  writes the reason to stderr, leaving JSON on stdout unchanged.
+
+
 ## 1.2.0 - 2026-09-04
 
 - Add opt-in, read-only nearby engine-light telemetry for the exactly validated
