@@ -11,9 +11,9 @@ if ($cmakeCommand) { $cmake = $cmakeCommand.Source }
 else {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path -LiteralPath $vswhere) {
-        # Match the VS 2022 generator; other installer products (for example SSMS)
-        # may have a higher version but do not include the C++ build tools.
-        $cmake = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.CMake.Project -find 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' | Select-Object -First 1
+        # Require the C++ CMake component so unrelated installer products are ignored.
+        # Do not pin a Visual Studio generation: GitHub's windows-latest image advances.
+        $cmake = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.CMake.Project -find 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' | Select-Object -First 1
     }
 }
 if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) {
@@ -41,7 +41,7 @@ Assert-WithinRepo $archive
     -c Release -r win-x64 --self-contained false -p:UseAppHost=false "-p:Version=$Version" -o $managedPublish
 if ($LASTEXITCODE -ne 0) { throw 'Managed host publish failed.' }
 
-& $cmake -S $nativeSource -B $nativeBuild -G 'Visual Studio 17 2022' -A x64
+& $cmake -S $nativeSource -B $nativeBuild -A x64
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI configure failed.' }
 & $cmake --build $nativeBuild --config Release
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI build failed.' }
