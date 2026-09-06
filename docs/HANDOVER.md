@@ -9,17 +9,44 @@ smoothing or new hook. The miniHUD root arrow/camera cone are larger, outlined,
 and drawn above the light dots; dots retain measured HDR-derived color swatches.
 UI change commit `673651c`; counter fix `ff1f85b`.
 
-Current discussion: API policy for several overlapping fire contributions.
-Recommendation (not implemented/approved): retain raw current contributions and
+Current discussion: usable HUD/API presentation for overlapping fire contributions.
+Agreed direction (not implemented): retain raw current contributions and
 offer a separately labelled grouped summary only with defensible membership;
 do not collapse nearby sources blindly or claim source-RGB sums reproduce pixels.
 Actual appearance also depends on spatial/angular attenuation, visibility,
 materials, indirect light and tone mapping. Source-derived summaries and a
 view-dependent Hue estimate must remain distinguishable from measurements.
 No code/config/game changes. Controlled preview.3 movement recording remains pending.
-One next technical step if continuing brightness work: capture the matching
-ExposureConstantBuffer alongside the existing light/counter sample to directly
-validate its dynamic scalar, after deciding the requested API representation.
+The user approved paired exposure capture, then raised the fire HUD's usability.
+Next technical step: capture the matching ExposureConstantBuffer alongside the
+existing light/counter sample to validate its scalar. Separately, GPU-slot numbers
+must not act as persistent HUD identities; do not smooth away real fire variation.
+
+### Fire HUD diagnosis — 21:57 CEST
+
+User screenshot identifies the fire at (-10507.66,610.94,-4368.33), two nearby
+SPOT contributions with very different amplitudes. Read-only API recording:
+`artifacts/light-research/fire-two-contributions-20260906-215755.jsonl`, eight seconds,
+PID33348/preview.3; 482 playing rows, 480 available/two bridge-changing, 124 distinct
+captures35782..35905, native frames56555..56978. Player fixed, camera Y bob .00671.
+Both fire contributions occur in EVERY available capture; assign by disjoint
+height bands, not sampleIndex. Lower Y610.91943..610.9313: luminance .12450..18824,
+116/123 index changes; upper Y610.94904..610.9607: .45831..91976, 121/123 changes.
+Each spans 37 GPU slots. Their source-RGB luminance sum varies .63132..1.04581;
+it does not cancel to a constant. Blue glass is always slot1 here, luminance
+2.58732..2.66662 (3.1% span), while the fire sum spans 65.7%. Fire variation remains
+after division by the blue control; it is not explained by that common factor.
+Aggregate fire RGB ratio is roughly 1:.303..310:.0754..0763 (mostly amplitude).
+This spatial pair is an experiment association, not a generic physical-light ID.
+
+Code confirms sampleIndex is simply the GPU valid-prefix index. HUD independently
+re-sorts and places labels by crosshair distance every frame, so near contributions
+can exchange screen boxes. However, exact projection with each envelope camera
+shows ZERO pair-rank swaps here: the upper contribution is closer to the crosshair
+in 124/124 captures and 480/480 available API rows. A box-swap explanation is not
+supported for this recording. Normal HUD should not foreground transient slots;
+one stable detail panel can retain individual current values without claiming an
+unproven grouping or pixel-accurate combined brightness. No plugin/config edits.
 
 ### Exposure cause and spot labels — 21:37 CEST continuation
 
@@ -87,7 +114,8 @@ Shader evidence (same Process LL below): ordinary nonnegative input RGB receives
 a static 5%-luminance floor and constant matrix
 M=[[.61312,.33951,.04737],[.07020,.91636,.01345],[.02062,.10958,.86980]].
 No dynamic multiplier on that path. ExposureConstantBuffer is read only in its
-negative-RGB special route. The factor's actual upstream cause is NOT established.
+negative-RGB special route. At this earlier checkpoint the upstream cause was not
+established; the later InjectLights findings above supersede that uncertainty.
 Older blue-glass factor-of-two report at research handover3733 was real amplitude
 evidence but never proof of pulsing. Current HUD shows renderer-scaled values,
 not just the constant authored color; luminance is derived from those same RGB.
