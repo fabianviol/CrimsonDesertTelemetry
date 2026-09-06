@@ -151,38 +151,6 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
     const bool lightLive = RenderedLightsLive(view, Clock::now(), config.staleMs);
     if (sample.playerPosition)
     {
-        if (sample.cameraPosition && sample.cameraHeading)
-        {
-            const Vec3 delta{sample.cameraPosition->x - sample.playerPosition->x,
-                sample.cameraPosition->y - sample.playerPosition->y,
-                sample.cameraPosition->z - sample.playerPosition->z};
-            if (delta.x*delta.x + delta.z*delta.z <= radius*radius)
-            {
-                const ImVec2 base = ground(delta.x,delta.z);
-                const ImVec2 camera = heightPoint(base,delta.y);
-                const float yaw = *sample.cameraHeading * std::numbers::pi_v<float> / 180.f;
-                const auto ray = [&](float angle, float length)
-                {
-                    auto p = ground(delta.x + std::sin(angle)*length,
-                        delta.z + std::cos(angle)*length);
-                    p.y += camera.y - base.y;
-                    return p;
-                };
-                if (sample.fov && sample.aspectRatio)
-                {
-                    const float half = std::atan(std::tan(*sample.fov *
-                        std::numbers::pi_v<float> / 360.f) * *sample.aspectRatio);
-                    const auto left = ray(yaw-half,radius*.62f);
-                    const auto right = ray(yaw+half,radius*.62f);
-                    draw->AddTriangleFilled(camera,left,right,IM_COL32(251,188,91,19));
-                    draw->AddLine(camera,left,IM_COL32(251,188,91,80),scale);
-                    draw->AddLine(camera,right,IM_COL32(251,188,91,80),scale);
-                }
-                draw->AddLine(base,camera,IM_COL32(251,188,91,100),scale);
-                draw->AddCircle(camera,3.f*scale,Amber,12,scale);
-                ScreenArrow(draw,camera,ray(yaw,radius*.45f),Amber,scale);
-            }
-        }
         if (lightLive && sample.renderedLights.records)
         {
             struct Dot { ImVec2 base, tip; ImU32 color, halo; };
@@ -208,15 +176,58 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
                 draw->AddCircle(dot.tip,3*scale,IM_COL32(224,239,245,170),12,.65f*scale);
             }
         }
+        // Orientation cues sit above all light dots. Keep the camera fill
+        // translucent so the light distribution remains visible underneath.
+        if (sample.cameraPosition && sample.cameraHeading)
+        {
+            const Vec3 delta{sample.cameraPosition->x - sample.playerPosition->x,
+                sample.cameraPosition->y - sample.playerPosition->y,
+                sample.cameraPosition->z - sample.playerPosition->z};
+            if (delta.x*delta.x + delta.z*delta.z <= radius*radius)
+            {
+                const ImVec2 base = ground(delta.x,delta.z);
+                const ImVec2 camera = heightPoint(base,delta.y);
+                const float yaw = *sample.cameraHeading * std::numbers::pi_v<float> / 180.f;
+                const auto ray = [&](float angle, float length)
+                {
+                    auto p = ground(delta.x + std::sin(angle)*length,
+                        delta.z + std::cos(angle)*length);
+                    p.y += camera.y - base.y;
+                    return p;
+                };
+                const ImU32 outline = IM_COL32(5,14,23,235);
+                if (sample.fov && sample.aspectRatio)
+                {
+                    const float half = std::atan(std::tan(*sample.fov *
+                        std::numbers::pi_v<float> / 360.f) * *sample.aspectRatio);
+                    const auto left = ray(yaw-half,radius*.7f);
+                    const auto right = ray(yaw+half,radius*.7f);
+                    draw->AddTriangleFilled(camera,left,right,IM_COL32(251,188,91,25));
+                    draw->AddLine(camera,left,outline,3.5f*scale);
+                    draw->AddLine(camera,right,outline,3.5f*scale);
+                    draw->AddLine(camera,left,IM_COL32(251,188,91,225),1.5f*scale);
+                    draw->AddLine(camera,right,IM_COL32(251,188,91,225),1.5f*scale);
+                }
+                draw->AddLine(base,camera,outline,3*scale);
+                draw->AddLine(base,camera,IM_COL32(251,188,91,185),scale);
+                const auto tip = ray(yaw,radius*.55f);
+                ScreenArrow(draw,camera,tip,outline,1.15f*scale,4);
+                ScreenArrow(draw,camera,tip,Amber,1.15f*scale,2);
+                draw->AddCircleFilled(camera,5*scale,outline,16);
+                draw->AddCircle(camera,4*scale,Amber,16,1.8f*scale);
+                draw->AddCircleFilled(camera,1.3f*scale,White,8);
+            }
+        }
     }
     if (sample.playerHeading)
     {
         const float yaw = *sample.playerHeading * std::numbers::pi_v<float> / 180.f;
-        ScreenArrow(draw,center,ground(std::sin(yaw)*radius*.4f,
-            std::cos(yaw)*radius*.4f),Cyan,scale,2);
+        const auto tip = ground(std::sin(yaw)*radius*.5f,std::cos(yaw)*radius*.5f);
+        ScreenArrow(draw,center,tip,IM_COL32(5,14,23,245),1.15f*scale,4.5f);
+        ScreenArrow(draw,center,tip,Cyan,1.15f*scale,2.2f);
     }
-    draw->AddCircleFilled(center,4*scale,IM_COL32(9,20,30,255),16);
-    draw->AddCircle(center,4*scale,Cyan,16,1.5f*scale);
+    draw->AddCircleFilled(center,5*scale,IM_COL32(9,20,30,255),16);
+    draw->AddCircle(center,4*scale,Cyan,16,2*scale);
     draw->PopClipRect();
     const auto xAxis = ground(radius*.96f,0), zAxis = ground(0,radius*.96f);
     draw->AddText(ImGui::GetFont(),10*scale,ImVec2(xAxis.x+5*scale,xAxis.y-5*scale),Muted,"+X");
