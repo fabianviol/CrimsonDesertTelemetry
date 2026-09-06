@@ -15,8 +15,10 @@ try {
     $null = $socket.ConnectAsync([Uri]"ws://127.0.0.1:$Port/v1/stream", $cancellation.Token).GetAwaiter().GetResult()
     $writer = [IO.StreamWriter]::new([IO.FileStream]::new($destination, [IO.FileMode]::CreateNew), [Text.UTF8Encoding]::new($false))
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    $buffer = [byte[]]::new(65536)
-    Write-Output "RECORDING for $Seconds seconds: camera stream only; no extra memory scan."
+    # Schema 1.4 includes light arrays; retain a bounded full message, not the
+    # former camera-only 64 KiB limit. This still reads only the existing API.
+    $buffer = [byte[]]::new(4 * 1024 * 1024)
+    Write-Output "RECORDING for $Seconds seconds: telemetry stream including enabled lights; no extra memory scan."
     while ($clock.Elapsed.TotalSeconds -lt $Seconds) {
         $offset = 0
         do {
