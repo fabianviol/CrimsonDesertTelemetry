@@ -1,7 +1,56 @@
-# Current checkpoint — larger 3D radar and light detail groups, 2026-09-06, Codex/Astra
+# Current checkpoint — update-stability audit, 2026-09-06, Codex/Astra
 
-**1.3.0-preview.4 is built, tested and packaged for DMM.** Installed game remains
-PID33348 / preview.3;
+User confirmed preview.4's enlarged radar/frustum and grouped light UI in game
+with a screenshot. PID was not rechecked. Product source remains `db727ca`;
+this audit changes documentation only, not plugin/config/releases or game state.
+No GitHub/Nexus upload is authorized by the audit request or was performed.
+
+**Result: restart-safe and guarded against unknown EXEs, not automatically
+portable for the current renderer.** Native EXE SHA gate stops game hooks before
+startup on an unknown hash. The current direct camera profile also has no automatic
+resolver: only historical `renderer-camera-v1` is supported by BuildCompatibility.
+Actual offline `check-compatibility` on current EXE4D99...F454 fails with zero layouts,
+reference24994088 missing static-position-xy-write. Exact current profile still works;
+this is a recovery-coverage gap, not evidence the running telemetry is invalid.
+
+Prioritized hardening proposal (NOT implemented):
+1. Shared validated build contract for managed/native roots, layouts, hook signature
+   AND surrounding register/binding provenance; a read-only update-check command
+   should report individual failed anchors. Never just update the SHA allowlist.
+2. Extend recovery to current direct-camera/scene paths, using existing names and
+   producer chains. Native candidates must not become automatic hooks merely because
+   one pattern matches. Layout/type/queue-state checks and a short live control remain.
+3. Preserve a compact current recovery recipe/tools/reference manifest in product Git,
+   plus private backup of irreplaceable research/artifacts. Independent research Git
+   is clean at af5485b but has NO remote; product ignores research/external/artifacts.
+   Existing shader names, entry hashes, seed, hook/counter chain below are valuable;
+   old build-specific scripts and stale tail-validity conclusions must not be reused.
+4. Add update-contract negative tests: production hook rejection (existing D3D12
+   capture smoke bypasses StartCapture), current-layout relocation/ambiguity and real
+   player pointer-chain fixtures. Present PR CI tests managed only; native tests run
+   in release workflow. Test safe refusals in normal CI before new profile promotion.
+
+Separate residual risk: only EXE bytes are identified. Shader-only asset changes
+could keep that hash yet change 48-byte fields/counterbyte4/color semantics. No active
+PSO/shader identity gate exists; numerical plausibility cannot prove field meaning.
+Profile loading also lacks central schema/contract validation. Exact/trusted player
+mode may retain static position when orientation validation fails (not automatically
+a bad position); existing tests do not execute PlayerOrientationReader's real chain.
+
+Checks run without new builds/instrumentation: existing managed50/50 PASS; native
+hash-guard, bridge and 8-thread/80k thunk tests PASS. These do not validate a future
+game version. Audit sources: BuildCompatibility.cs, BuildDefinition.cs, definitions/,
+Program.cs528..533, EngineCameraReader/EngineLightReader/RenderLightReader,
+native build_guard.cpp/instruments.cpp/render_capture.cpp/filter_thunk.asm;
+research recovery entry points and current native/shader evidence remain below.
+
+One next step: agree/implement the bounded current-build recovery/contract hardening
+before publishing. Exposure capture remains approved but separate and unfinished.
+
+## Previous checkpoint — larger 3D radar and light detail groups
+
+**1.3.0-preview.4 is built, tested and packaged for DMM.** At packaging time the
+installed game was PID33348 / preview.3 (superseded by the user's preview.4 confirmation);
 no game files, capture hooks, raw API records or RGB normalization were changed.
 One next step: user closes the game, installs the new DMM ZIP,
 then checks the fire detail panel and camera pitch in the larger radar.
