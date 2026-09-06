@@ -151,8 +151,14 @@ Stay in PID27140; no reinstall required. **A1 ON baseline captured** in
 capture. Spatial test fixed in advance: horizontal distance<0.65 and vertical
 distance<3 from the four previously measured positions. Lamp2 has1..2 point
 contributions, summed linear luminance0.05925..0.15509 (animated, not lumens).
-Next instruction to user: switch this lamp OFF once, stay there, report AUS;
-capture B before requesting ON again. Cold-start availability and camera pairing are measured, not merely a host-test
+**B OFF captured** in the matching `...-B-off.jsonl`:305/305available samples,
+87distinct captures15680..15766,frames49983..50290,max render age79ms,malformed0.
+Target lamp2 has **zero contributions in87/87**; lamps1/3/4 remain present in87/87.
+Player moved slightly during interaction to(-10530.006,609.15674,-4419.3315).
+Camera distance/FOV changed(A1:55deg,B:50deg), heading unchanged; retain this
+control detail rather than claiming identical views. Next: request lamp ON once,
+stay there and report AN; record A2 and complete the comparison before declaring
+A-B-A passed. Cold-start availability and camera pairing are measured, not merely a host-test
 claim. User prefers DMM; never replace game files with the optional helper without
 a new request. Do not modify ASI loader/other mods.
 
