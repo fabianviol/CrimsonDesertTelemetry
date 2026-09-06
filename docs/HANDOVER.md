@@ -1,12 +1,42 @@
-# Current checkpoint — GitHub 2.0 publication resumed, 2026-09-07, Codex/Astra
+# Current checkpoint — 2.0.0 published; Nexus scan pending, 2026-09-07, Codex/Astra
 
-User explicitly reauthorized publication after HDR completion. Release source is
-the green-tested09d9462 plus documentation-only closeout/release wording updates.
-The tag-triggered workflow will build and test a fresh package, then create a
-draft. Verify its payload/download and publish latest2.0.0; preserve every local
-pre-release ZIP. NEXUS_AUTO_PUBLISH was rechecked unset, so Nexus remains excluded.
-No tag/release existed at resumption. Replace this paragraph with final release
-URL, source tag and public asset digest after successful publication.
+User authorized both releases. GitHub **2.0.0 is public**:
+https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0
+Release ID 383735205; tag source `44c7a72e3aeebcdfb7d5fc6253dc7510f68a2bf8`.
+Release workflow 34063681737 and CI 34063670548/34063681715 succeeded.
+
+Published asset 547756043: `CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`,
+805939 bytes; nine-file payload inspected.
+ZIP SHA256 `3212DD1FD6CDEE5F537C2000572965648B97D0AC38335381E65BEF086FBBE214`.
+ASI SHA256 `D5D6337637E4582704105B9D95C803E2A7F7F6AD87DA31E57AF6D20167C3E4F9`.
+This GitHub-built archive is distinct from the preserved local validation ZIPs.
+
+Nexus https://www.nexusmods.com/crimsondesert/mods/3374 was updated through its
+editor/uploader: the new lighting-first 2.0 description is saved; the same ZIP
+was uploaded through Update existing file and Save file succeeded. The table shows
+Main / Primary / 2.0.0. Public file ID **14887**, 787 KiB; at final verification
+Nexus says **not yet downloadable: virus scanning in progress**. Public version,
+new description, file summary and changelog were checked; no scan bypass attempted.
+Previous 1.2.1 was archived, not deleted. The new screenshot,
+"Version 2.0 - Live light markers and 3D radar", was uploaded and made the thumbnail;
+https://youtu.be/eyRkkTXAU64 was added. Automatic Nexus CI remains unconfigured;
+`NEXUS_AUTO_PUBLISH` is unset. This release used the site UI, not automatic CI.
+
+Native Release and 14/14 CTests pass; GitHub also verifies 56 managed tests and
+HTTP/WebSocket coverage. HDR10/scRGB uses the original linear-light UI compositor
+with configurable 200-nit white (80–500); SDR retains its direct path. HDR evidence
+is WARP/synthetic plus real ImGui integration/SDR↔scRGB transitions, **not live HDR
+display/game acceptance**. No suitable HDR setup was available; prior in-game
+acceptance predates HDR. Full native lighting still targets exact Steam 25116796.
+API v1/WebSocket `/v1/stream` and raw schemas remain unchanged; no complete-light,
+permanent-OFF, persistent physical-ID or exact-pixel-color claim is made.
+
+Public GitHub release is visibly Latest, with the verified asset available through
+the release API. Nexus requirements still correctly point to the x64 ASP.NET Core
+runtime and ASI loader. Next, if following up: check file 14887's automatic scan
+result on Nexus; do not upload it again. No further source/game installation work
+is required by publishing. In Nexus's file-description editor, locator fill did
+not persist; normal select-all/type/Tab did, verified on the public download page.
 
 ## Previous checkpoint — HDR added; publication paused
 
