@@ -109,11 +109,18 @@ MaxLabels=6
 hooks or client. F8 cannot activate a HUD disabled with `Enabled=0`.
 
 The English, passive Dear ImGui HUD shows independent player-root and camera
-headings, camera pitch/FOV and player XYZ. Its oblique 3D radar adds current light
-contributions around the player, with height stems and a camera-view guide.
+headings, camera pitch/FOV and player XYZ below a full-width oblique 3D radar.
+The radar shows current light contributions with height stems and a spatial
+camera frustum: position, pitch, roll and horizontal/vertical view angles use the
+camera basis and FOV. Its displayed length is schematic, not a measured view range.
 `Radar3D=0` restores the original compass. **F8** toggles this corner HUD; **F9**
 toggles diagnostics. **F10** independently toggles fullscreen world-light markers,
-including compact position, RGB, linear-luminance and distance labels. Spot arrows
+including position, RGB, linear-luminance and distance labels. Close contributions
+(at most 0.15 game units apart pairwise) share a detail box, retaining separate
+values in spatial order. This is only presentation grouping, not physical-object
+identity or a combined appearance estimate. Raw API data and real light variation
+remain unchanged; transient GPU-slot numbers appear only with F9 diagnostics.
+Spot arrows
 use a schematic length, not measured light range. No mouse input is captured.
 Key codes, corner, scale and opacity are
 configured in `CrimsonDesertTelemetry.ini` before launch.

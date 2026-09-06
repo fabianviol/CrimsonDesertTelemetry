@@ -40,7 +40,7 @@ std::optional<Rect> HudBounds(const Config& config, ImVec2 display)
     if (!config.enabled || !config.visible) return std::nullopt;
     const float scale = HudScale(display.x, display.y, config, config.details);
     if (scale < .3f) return std::nullopt;
-    const float width = 510 * scale, height = (config.details ? 600.f : 344.f) * scale;
+    const float width = 510 * scale, height = HudNaturalHeight(config,config.details) * scale;
     const float margin = 20 * scale;
     const ImVec2 origin((config.corner & 1) ? display.x - width - margin : margin,
         (config.corner & 2) ? display.y - height - margin : margin);
@@ -110,23 +110,24 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
         draw->AddText(ImGui::GetFont(), size*scale, at(x,y), color, value.c_str());
     };
     const float radius = std::clamp(config.lightRadius, 1.f, 500.f);
-    const float unit = 80.f / radius;
-    // Fixed world yaw reference, player-centered. The ground is viewed obliquely;
-    // only the displayed vertical stem is bounded to this compact panel.
-    const auto ground = [&](float x, float z)
+    const float unit = 205.f / radius;
+    // One orthographic oblique projection for every vertex. XZ is the ground;
+    // Y remains a true vertical coordinate for both lights and camera frustum.
+    // Clip the completed drawing instead of distorting individual heights.
+    const auto project = [&](Vec3 relative)
     {
-        return at(124.f + (.8660254f*x + .5f*z)*unit,
-            181.f + (.25f*x - .4330127f*z)*unit);
+        return at(255.f + (.8660254f*relative.x + .5f*relative.z)*unit,
+            251.f + (.25f*relative.x - .4330127f*relative.z - .8660254f*relative.y)*unit);
     };
-    const auto heightPoint = [&](ImVec2 p, float height)
+    const auto ground = [&](float x,float z) { return project(Vec3{x,0,z}); };
+    const auto relative = [&](Vec3 world)
     {
-        p.y -= std::clamp(height*unit*.85f, -43.f, 55.f)*scale;
-        p.y = std::clamp(p.y,origin.y+118*scale,origin.y+230*scale);
-        return p;
+        return Vec3{world.x-sample.playerPosition->x,world.y-sample.playerPosition->y,
+            world.z-sample.playerPosition->z};
     };
-    text(20, 82, Cyan, "3D LIGHT RADAR", 12);
-    text(20, 99, Muted, "Player center / world yaw reference", 10);
-    draw->PushClipRect(at(16,113), at(234,235), true);
+    text(20,84,Cyan,"3D LIGHT RADAR",13);
+    text(20,104,Muted,"Player center / XZ ground / Y height / fixed world axes",11);
+    draw->PushClipRect(at(16,118),at(494,366),true);
     for (int ring = 1; ring <= 2; ++ring)
     {
         std::array<ImVec2, 64> points;
@@ -140,15 +141,18 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
         draw->AddPolyline(points.data(), static_cast<int>(points.size()), Grid,
             ImDrawFlags_Closed, scale);
     }
-    for (int i = -1; i <= 1; ++i)
+    for (int i = -3; i <= 3; ++i)
     {
-        const float offset = static_cast<float>(i)*radius*.5f;
+        const float offset = static_cast<float>(i)*radius*.25f;
         const float edge = std::sqrt(radius*radius - offset*offset);
         draw->AddLine(ground(offset,-edge), ground(offset,edge), Grid, scale);
         draw->AddLine(ground(-edge,offset), ground(edge,offset), Grid, scale);
     }
     const ImVec2 center = ground(0,0);
-    const bool lightLive = RenderedLightsLive(view, Clock::now(), config.staleMs);
+    const auto now = Clock::now();
+    const bool lightLive = RenderedLightsLive(view,now,config.staleMs);
+    const float frustumLength = radius*.4f;
+    const auto frustum = sample.playerPosition ? BuildCameraFrustum(sample,frustumLength) : std::nullopt;
     if (sample.playerPosition)
     {
         if (lightLive && sample.renderedLights.records)
@@ -160,9 +164,8 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
             for (const auto& light : *sample.renderedLights.records)
             {
                 if (DistanceSquared(light.position,*sample.playerPosition) > radius*radius) continue;
-                const auto base = ground(light.position.x - sample.playerPosition->x,
-                    light.position.z - sample.playerPosition->z);
-                dots.push_back({base,heightPoint(base,light.position.y - sample.playerPosition->y),
+                const auto delta = relative(light.position);
+                dots.push_back({ground(delta.x,delta.z),project(delta),
                     LightColor(light.colorLinear),LightColor(light.colorLinear,40)});
                 if (dots.size() >= markerLimit) break;
             }
@@ -176,73 +179,77 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
                 draw->AddCircle(dot.tip,3*scale,IM_COL32(224,239,245,170),12,.65f*scale);
             }
         }
-        // Orientation cues sit above all light dots. Keep the camera fill
-        // translucent so the light distribution remains visible underneath.
-        if (sample.cameraPosition && sample.cameraHeading)
+        // Draw the complete pitched/rolled frustum above the light dots. Its
+        // depth is a display choice; its FOV, aspect and orientation are measured.
+        if (frustum)
         {
-            const Vec3 delta{sample.cameraPosition->x - sample.playerPosition->x,
-                sample.cameraPosition->y - sample.playerPosition->y,
-                sample.cameraPosition->z - sample.playerPosition->z};
-            if (delta.x*delta.x + delta.z*delta.z <= radius*radius)
+            const auto delta = relative(frustum->apex);
+            const auto camera = project(delta), base = ground(delta.x,delta.z);
+            const ImU32 outline = IM_COL32(5,14,23,235);
+            std::array<ImVec2,4> corners;
+            for (size_t i = 0; i < corners.size(); ++i) corners[i] = project(relative(frustum->farCorners[i]));
+            double signedArea = 0;
+            for (size_t i = 0; i < corners.size(); ++i)
             {
-                const ImVec2 base = ground(delta.x,delta.z);
-                const ImVec2 camera = heightPoint(base,delta.y);
-                const float yaw = *sample.cameraHeading * std::numbers::pi_v<float> / 180.f;
-                const auto ray = [&](float angle, float length)
-                {
-                    auto p = ground(delta.x + std::sin(angle)*length,
-                        delta.z + std::cos(angle)*length);
-                    p.y += camera.y - base.y;
-                    return p;
-                };
-                const ImU32 outline = IM_COL32(5,14,23,235);
-                if (sample.fov && sample.aspectRatio)
-                {
-                    const float half = std::atan(std::tan(*sample.fov *
-                        std::numbers::pi_v<float> / 360.f) * *sample.aspectRatio);
-                    const auto left = ray(yaw-half,radius*.7f);
-                    const auto right = ray(yaw+half,radius*.7f);
-                    draw->AddTriangleFilled(camera,left,right,IM_COL32(251,188,91,25));
-                    draw->AddLine(camera,left,outline,3.5f*scale);
-                    draw->AddLine(camera,right,outline,3.5f*scale);
-                    draw->AddLine(camera,left,IM_COL32(251,188,91,225),1.5f*scale);
-                    draw->AddLine(camera,right,IM_COL32(251,188,91,225),1.5f*scale);
-                }
-                draw->AddLine(base,camera,outline,3*scale);
-                draw->AddLine(base,camera,IM_COL32(251,188,91,185),scale);
-                const auto tip = ray(yaw,radius*.55f);
-                ScreenArrow(draw,camera,tip,outline,1.15f*scale,4);
-                ScreenArrow(draw,camera,tip,Amber,1.15f*scale,2);
-                draw->AddCircleFilled(camera,5*scale,outline,16);
-                draw->AddCircle(camera,4*scale,Amber,16,1.8f*scale);
-                draw->AddCircleFilled(camera,1.3f*scale,White,8);
+                const auto next = (i+1)%corners.size();
+                signedArea += static_cast<double>(corners[i].x)*corners[next].y -
+                    static_cast<double>(corners[next].x)*corners[i].y;
             }
+            // ImGui's antialiased convex fill expects clockwise screen winding.
+            if (signedArea < 0) std::reverse(corners.begin(),corners.end());
+            draw->AddConvexPolyFilled(corners.data(),static_cast<int>(corners.size()),IM_COL32(251,188,91,20));
+            for (size_t i = 0; i < corners.size(); ++i)
+            {
+                const auto next = (i+1)%corners.size();
+                draw->AddTriangleFilled(camera,corners[i],corners[next],IM_COL32(251,188,91,8));
+            }
+            for (size_t i = 0; i < corners.size(); ++i)
+            {
+                const auto next = (i+1)%corners.size();
+                draw->AddLine(camera,corners[i],outline,3.5f*scale);
+                draw->AddLine(corners[i],corners[next],outline,3.5f*scale);
+                draw->AddLine(camera,corners[i],IM_COL32(251,188,91,210),1.5f*scale);
+                draw->AddLine(corners[i],corners[next],Amber,1.5f*scale);
+            }
+            draw->AddLine(base,camera,outline,3*scale);
+            draw->AddLine(base,camera,IM_COL32(251,188,91,185),scale);
+            const auto tip = project(relative(frustum->farCenter));
+            ScreenArrow(draw,camera,tip,outline,1.25f*scale,4);
+            ScreenArrow(draw,camera,tip,Amber,1.25f*scale,2);
+            draw->AddCircleFilled(camera,5.5f*scale,outline,16);
+            draw->AddCircle(camera,4.5f*scale,Amber,16,1.8f*scale);
+            draw->AddCircleFilled(camera,1.3f*scale,White,8);
         }
     }
     if (sample.playerHeading)
     {
         const float yaw = *sample.playerHeading * std::numbers::pi_v<float> / 180.f;
-        const auto tip = ground(std::sin(yaw)*radius*.5f,std::cos(yaw)*radius*.5f);
-        ScreenArrow(draw,center,tip,IM_COL32(5,14,23,245),1.15f*scale,4.5f);
-        ScreenArrow(draw,center,tip,Cyan,1.15f*scale,2.2f);
+        const auto tip = ground(std::sin(yaw)*radius*.3f,std::cos(yaw)*radius*.3f);
+        ScreenArrow(draw,center,tip,IM_COL32(5,14,23,245),1.3f*scale,4.5f);
+        ScreenArrow(draw,center,tip,Cyan,1.3f*scale,2.2f);
     }
     draw->AddCircleFilled(center,5*scale,IM_COL32(9,20,30,255),16);
     draw->AddCircle(center,4*scale,Cyan,16,2*scale);
-    draw->PopClipRect();
     const auto xAxis = ground(radius*.96f,0), zAxis = ground(0,radius*.96f);
-    draw->AddText(ImGui::GetFont(),10*scale,ImVec2(xAxis.x+5*scale,xAxis.y-5*scale),Muted,"+X");
-    draw->AddText(ImGui::GetFont(),10*scale,ImVec2(zAxis.x+4*scale,zAxis.y-12*scale),Muted,"+Z");
-    text(20,236,lightLive && sample.playerPosition ? Muted : Amber,
-        !lightLive ? LightFeedStatus(view,Clock::now(),config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
-        std::format("{:.0f} gu / filtered (not 360 complete)",radius),10);
-    text(20,249,Muted,"Height stems are schematic",9);
+    const auto yAxis = project(Vec3{0,radius*.3f,0});
+    draw->AddLine(center,yAxis,IM_COL32(156,181,195,100),scale);
+    draw->AddText(ImGui::GetFont(),11*scale,ImVec2(xAxis.x+7*scale,xAxis.y-5*scale),Muted,"+X");
+    draw->AddText(ImGui::GetFont(),11*scale,ImVec2(zAxis.x+5*scale,zAxis.y-14*scale),Muted,"+Z");
+    draw->AddText(ImGui::GetFont(),11*scale,ImVec2(yAxis.x+6*scale,yAxis.y-8*scale),Muted,"+Y");
+    draw->PopClipRect();
+    text(20,375,lightLive && sample.playerPosition ? Muted : Amber,
+        !lightLive ? LightFeedStatus(view,now,config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
+        std::format("Radius {:.0f} gu / filtered coverage (not 360 complete)",radius),11);
+    text(20,394,frustum ? Muted : Amber,frustum
+        ? std::format("Camera frustum: {:.1f} gu displayed depth (schematic length)",frustumLength)
+        : "Camera frustum unavailable: camera basis / projection missing",10);
 }
 }
 
 void DrawHud(const View& view, const Config& config, const bool details)
 {
     auto& io = ImGui::GetIO();
-    const float naturalHeight = details ? 600.0f : 344.0f;
+    const float naturalHeight = HudNaturalHeight(config,details);
     const float scale = HudScale(io.DisplaySize.x, io.DisplaySize.y, config, details);
     if (scale < 0.3f) return;
     const float width = 510 * scale, height = naturalHeight * scale;
@@ -298,34 +305,53 @@ void DrawHud(const View& view, const Config& config, const bool details)
     arrow(sample.playerHeading, Cyan, true, 46);
     draw->AddCircleFilled(center, 3 * scale, White);
     }
-    text(250, 87, Cyan, "PLAYER ROOT", 13);
-    text(250, 106, White, Angle(sample.playerHeading), 24);
-    text(250, 144, Amber, "CAMERA", 13);
-    text(250, 163, White, Angle(sample.cameraHeading), 24);
-    text(250, 204, Muted, "PITCH", 12);
-    text(370, 204, Muted, "VERTICAL FOV", 12);
-    text(250, 223, White, Angle(sample.pitch), 17);
-    text(370, 223, White, Angle(sample.fov), 17);
-    draw->AddLine(point(20, 265), point(490, 265), IM_COL32(40, 61, 76, 255));
-    text(20, 279, Muted, "PLAYER POSITION  X / Y / Z  [game units]", 12);
-    text(20, 298, White, VectorText(sample.playerPosition), 19);
-    text(20, 325, Muted, "World axes, not compass north. Root orientation, not body pose.", 12);
+    if (config.radar3D)
+    {
+        draw->AddLine(point(20,414),point(490,414),IM_COL32(40,61,76,255));
+        text(20,427,Cyan,"PLAYER ROOT",12);
+        text(145,427,Amber,"CAMERA YAW",12);
+        text(270,427,Muted,"PITCH",12);
+        text(395,427,Muted,"VERTICAL FOV",12);
+        text(20,447,White,Angle(sample.playerHeading),21);
+        text(145,447,White,Angle(sample.cameraHeading),21);
+        text(270,447,White,Angle(sample.pitch),21);
+        text(395,447,White,Angle(sample.fov),21);
+        text(20,483,Muted,"PLAYER POSITION  X / Y / Z  [game units]",12);
+        text(20,503,White,VectorText(sample.playerPosition),19);
+        text(20,532,Muted,"World axes / player root orientation, not body pose",10);
+    }
+    else
+    {
+        text(250,87,Cyan,"PLAYER ROOT",13);
+        text(250,106,White,Angle(sample.playerHeading),24);
+        text(250,144,Amber,"CAMERA",13);
+        text(250,163,White,Angle(sample.cameraHeading),24);
+        text(250,204,Muted,"PITCH",12);
+        text(370,204,Muted,"VERTICAL FOV",12);
+        text(250,223,White,Angle(sample.pitch),17);
+        text(370,223,White,Angle(sample.fov),17);
+        draw->AddLine(point(20,265),point(490,265),IM_COL32(40,61,76,255));
+        text(20,279,Muted,"PLAYER POSITION  X / Y / Z  [game units]",12);
+        text(20,298,White,VectorText(sample.playerPosition),19);
+        text(20,325,Muted,"World axes, not compass north. Root orientation, not body pose.",12);
+    }
 
     if (!details) return;
-    draw->AddLine(point(20, 354), point(490, 354), IM_COL32(40, 61, 76, 255));
-    text(20, 368, White, "DIAGNOSTICS", 14);
-    text(20, 395, Muted, std::format("Schema {}  |  sequence {}  |  {:.1f} received Hz",
+    const float diagnostics = HudNaturalHeight(config,false);
+    draw->AddLine(point(20,diagnostics+10),point(490,diagnostics+10),IM_COL32(40,61,76,255));
+    text(20,diagnostics+24,White,"DIAGNOSTICS",14);
+    text(20,diagnostics+51,Muted,std::format("Schema {}  |  sequence {}  |  {:.1f} received Hz",
         view.sample.schemaVersion, view.sample.sequence, live ? view.rateHz : 0.0), 13);
-    text(20, 416, Muted, view.hasSample ? std::format("Sample age {:.0f} ms  |  capture {} us (not latency)",
+    text(20,diagnostics+72,Muted,view.hasSample ? std::format("Sample age {:.0f} ms  |  capture {} us (not latency)",
         AgeMs(view, now), view.sample.captureUs) : "Sample age --  |  capture --", 13);
-    text(20, 437, Muted, std::format("Camera sources {}/{}  |  states {}  |  rebound {}",
+    text(20,diagnostics+93,Muted,std::format("Camera sources {}/{}  |  states {}  |  rebound {}",
         sample.consensus, sample.validCopies, sample.distinctStates, sample.rediscovered ? "yes" : "no"), 13);
-    text(20, 458, Muted, "Player forward  " + VectorText(sample.playerForward, 3), 13);
-    text(20, 479, Muted, "Camera forward  " + VectorText(sample.cameraForward, 3), 13);
-    text(20, 500, Muted, "Player up       " + VectorText(sample.playerUp, 3), 13);
-    text(20, 521, Muted, "Build " + view.sample.build, 13);
-    text(20, 542, Muted, "D3D12 / SDR  |  passive HUD  |  no mouse capture", 13);
-    text(20, 570, Cyan, "Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"), 12);
+    text(20,diagnostics+114,Muted,"Player forward  " + VectorText(sample.playerForward,3),13);
+    text(20,diagnostics+135,Muted,"Camera forward  " + VectorText(sample.cameraForward,3),13);
+    text(20,diagnostics+156,Muted,"Player up       " + VectorText(sample.playerUp,3),13);
+    text(20,diagnostics+177,Muted,"Build " + view.sample.build,13);
+    text(20,diagnostics+198,Muted,"D3D12 / SDR  |  passive HUD  |  no mouse capture",13);
+    text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
 }
 
 void DrawLightOverlay(const View& view, const Config& config)
@@ -414,14 +440,28 @@ void DrawLightOverlay(const View& view, const Config& config)
         }
     }
 
-    const size_t wantedLabels = std::min(markers.size(),static_cast<size_t>(std::clamp(config.lightMaxLabels,0,16)));
+    // Group only detail presentation, never the telemetry or physical identities.
+    // A complete-link world-space bound prevents unrelated, depth-separated lights
+    // or a chain of nearby sources from collapsing into one supposed object.
+    std::vector<const LightRecord*> detailRecords;
+    const size_t labelCandidates = std::min<size_t>(markers.size(),64);
+    detailRecords.reserve(labelCandidates);
+    for (size_t i = 0; i < labelCandidates; ++i) detailRecords.push_back(markers[i].light);
+    auto detailGroups = GroupLightDetails(detailRecords);
+    std::sort(detailGroups.begin(),detailGroups.end(),[](const auto& a,const auto& b)
+    {
+        return *std::min_element(a.begin(),a.end()) < *std::min_element(b.begin(),b.end());
+    });
+    const size_t wantedLabels = std::min(detailGroups.size(),
+        static_cast<size_t>(std::clamp(config.lightMaxLabels,0,16)));
     for (size_t i = 0; i < markers.size(); ++i)
     {
         const auto& marker = markers[i];
         const ImVec2 p(marker.screen.x,marker.screen.y);
         if (legend.Contains(p,10*scale)) continue;
         const auto& light = *marker.light;
-        const bool selected = i == 0 && wantedLabels > 0;
+        const bool selected = wantedLabels > 0 && !detailGroups.empty() &&
+            std::find(detailGroups.front().begin(),detailGroups.front().end(),i) != detailGroups.front().end();
         const float ring = (selected ? 9.f : 6.f)*scale;
         draw->AddCircle(p,ring+3*scale,LightColor(light.colorLinear,42),24,5*scale);
         draw->AddCircle(p,ring,IM_COL32(4,12,19,235),24,4*scale);
@@ -458,34 +498,63 @@ void DrawLightOverlay(const View& view, const Config& config)
     // Keep labels clear of the reticle as well as each other and the optional HUD.
     occupied.push_back({ImVec2(display.x*.5f-22*scale,display.y*.5f-22*scale),
         ImVec2(display.x*.5f+22*scale,display.y*.5f+22*scale)});
+    // Leave room beside the taller radar on small displays. Marker geometry and
+    // the reticle exclusion keep their original scale; only detail cards shrink.
+    const float detailScale = std::min(scale,display.x/1100.f);
     size_t labelCount = 0;
-    const size_t labelCandidates = std::min<size_t>(markers.size(),64);
-    for (size_t i = 0; i < labelCandidates && labelCount < wantedLabels; ++i)
+    for (const auto& group : detailGroups)
     {
-        const auto& marker = markers[i];
+        if (labelCount >= wantedLabels) break;
+        const auto& marker = markers[group.front()];
         const auto& light = *marker.light;
-        const ImVec2 anchor(marker.screen.x,marker.screen.y);
+        ImVec2 anchor{};
+        float distance = 0;
+        for (const size_t index : group)
+        {
+            anchor.x += markers[index].screen.x;
+            anchor.y += markers[index].screen.y;
+            distance += markers[index].distance;
+        }
+        const float count = static_cast<float>(group.size());
+        anchor.x /= count; anchor.y /= count; distance /= count;
         if (legend.Contains(anchor,10*scale)) continue;
-        std::string kind = light.kind == "spot" ? "SPOT" : light.kind == "point" ? "POINT" : "UNKNOWN KIND";
-        std::array<std::string,4> lines{
-            std::format("{}  /  sample #{}",kind,light.sampleIndex),
-            std::format("XYZ  {:.2f} / {:.2f} / {:.2f}",light.position.x,light.position.y,light.position.z),
-            std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}",light.colorLinear.x,light.colorLinear.y,light.colorLinear.z),
-            std::format("Luminance {:.4g}  /  player distance {:.1f} gu",light.luminanceLinear,marker.distance)};
-        if (light.kind == "spot" && light.coneHalfAngleDegrees)
-            lines[0] += std::format("  /  half cone {:.1f} deg",*light.coneHalfAngleDegrees);
-        float width = 0;
-        for (const auto& line : lines)
-            width = std::max(width,font->CalcTextSizeA(12*scale,FLT_MAX,0,line.c_str()).x);
-        width += 26*scale;
-        const float height = 82*scale;
+        struct DetailLine { std::string text; ImU32 color; };
+        std::vector<DetailLine> lines;
+        const bool multiple = group.size() > 1;
+        lines.push_back({multiple ? std::format("LIGHT DETAILS  /  {} nearby contributions",group.size()) :
+            "LIGHT DETAILS  /  1 contribution", White});
+        lines.push_back({multiple ? std::format("{:.1f} gu away  /  spatial grouping, not object identity",distance) :
+            std::format("{:.1f} gu away  /  current renderer values",distance),Muted});
+        // Fixed spatial ordering is independent of frame-local GPU slots and RGB.
+        // Keep each contribution, including its real pulse, separate and unfiltered.
+        const size_t shown = std::min<size_t>(group.size(),4);
+        for (size_t member = 0; member < shown; ++member)
+        {
+            const auto& value = *markers[group[member]].light;
+            const std::string kind = value.kind == "spot" ? "SPOT" : value.kind == "point" ? "POINT" : "UNKNOWN KIND";
+            auto title = std::format("{}  {}",member+1,kind);
+            if (value.kind == "spot" && value.coneHalfAngleDegrees)
+                title += std::format("  /  half cone {:.1f} deg",*value.coneHalfAngleDegrees);
+            if (config.details) title += std::format("  /  GPU slot {}",value.sampleIndex);
+            lines.push_back({std::move(title),LightColor(value.colorLinear)});
+            lines.push_back({std::format("XYZ  {:.3f} / {:.3f} / {:.3f}",value.position.x,
+                value.position.y,value.position.z),Muted});
+            lines.push_back({std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}   |   L {:.4g}",
+                value.colorLinear.x,value.colorLinear.y,value.colorLinear.z,value.luminanceLinear),White});
+        }
+        if (group.size() > shown)
+            lines.push_back({std::format("+{} more contributions; all raw values remain in API",group.size()-shown),Muted});
+        // The box size must not oscillate with the number of digits in live RGB.
+        const float width = std::min(460*detailScale,display.x-2*margin);
+        const float height = (20+17*static_cast<float>(lines.size()))*detailScale;
         if (width > display.x-2*margin || height > display.y-2*margin) continue;
         // Clear the 22px reticle half-width plus the 8px collision margin.
         // A smaller gap rejects every placement for the aimed-at center light.
         const float gap = 36*scale;
-        const std::array<ImVec2,8> offsets{{
+        const std::array<ImVec2,12> offsets{{
             {gap,-height*.5f},{-width-gap,-height*.5f},{gap,-height-gap},{gap,gap},
-            {-width-gap,-height-gap},{-width-gap,gap},{-width*.5f,-height-gap},{-width*.5f,gap}}};
+            {-width-gap,-height-gap},{-width-gap,gap},{-width*.5f,-height-gap},{-width*.5f,gap},
+            {gap,-2*height-gap},{-width-gap,-2*height-gap},{gap,height+gap},{-width-gap,height+gap}}};
         std::optional<Rect> target;
         for (const auto offset : offsets)
         {
@@ -512,9 +581,12 @@ void DrawLightOverlay(const View& view, const Config& config)
         draw->AddRect(target->min,target->max,LightColor(light.colorLinear,175),7*scale);
         draw->AddRectFilled(ImVec2(target->min.x,target->min.y+11*scale),
             ImVec2(target->min.x+3*scale,target->max.y-11*scale),LightColor(light.colorLinear),scale);
+        draw->PushClipRect(ImVec2(target->min.x+10*detailScale,target->min.y),
+            ImVec2(target->max.x-10*detailScale,target->max.y),true);
         for (size_t line = 0; line < lines.size(); ++line)
-            draw->AddText(font,12*scale,ImVec2(target->min.x+13*scale,
-                target->min.y+(10+17*static_cast<float>(line))*scale),line == 0 ? White : Muted,lines[line].c_str());
+            draw->AddText(font,12*detailScale,ImVec2(target->min.x+13*detailScale,
+                target->min.y+(10+17*static_cast<float>(line))*detailScale),lines[line].color,lines[line].text.c_str());
+        draw->PopClipRect();
         ++labelCount;
     }
 
@@ -550,7 +622,7 @@ void DrawNotice(const Notice& notice, const Config& config, bool hudVisible, boo
         const float hudScale = HudScale(display.x, display.y, config, details);
         const float beside = 550 * hudScale;
         if (beside + width + margin <= display.x) x = beside;
-        else y = (details ? 640 : 384) * hudScale;
+        else y = (HudNaturalHeight(config,details)+40) * hudScale;
     }
     y = std::min(y, std::max(margin, display.y - height - margin));
     auto* draw = ImGui::GetForegroundDrawList();

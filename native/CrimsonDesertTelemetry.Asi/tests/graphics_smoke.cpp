@@ -84,15 +84,16 @@ View LightFixture(float aspect)
     sample.playerPosition = Vec3{camera.x, camera.y - 1, camera.z + 0.5f};
     sample.playerForward = Vec3{0, 0, 1}; sample.playerHeading = 0.0f;
     const auto position = [&](float x, float y, float z) { return Vec3{camera.x + x, camera.y + y, camera.z + z}; };
-    // Four visible contributions at different elevations, one behind the camera,
-    // and one before its near plane. Indices are sample-local, not object IDs.
+    // Five visible contributions, including a close pair with independent RGB,
+    // one behind the camera and one before its near plane. Slots are not IDs.
     const std::vector<LightRecord> records{
         {0, position(0, 0, 10), {0.85f, 0.30f, 0.08f}, 0.40f, "point", std::nullopt, std::nullopt},
         {1, position(-3, 2, 12), {1.20f, 0.65f, 0.12f}, 0.74f, "point", std::nullopt, std::nullopt},
         {2, position(4, 1, 14), {0.30f, 0.60f, 1.80f}, 0.63f, "spot", Vec3{0, -1, 0}, 27.0f},
         {3, position(-4, -2, -8), {0.85f, 0.05f, 1.20f}, 0.30f, "point", std::nullopt, std::nullopt},
         {4, position(0.01f, 0.005f, 0.02f), {0, 2, 0}, 1.40f, "point", std::nullopt, std::nullopt},
-        {5, position(2, -2, 8), {0.06f, 0.15f, 0.85f}, 0.19f, "point", std::nullopt, std::nullopt}
+        {5, position(2, -2, 8), {0.06f, 0.15f, 0.85f}, 0.19f, "point", std::nullopt, std::nullopt},
+        {6, position(0, .03f, 10), {2.4f, .75f, .19f}, 1.05f, "point", std::nullopt, std::nullopt}
     };
     sample.authoredLights.status = "available";
     sample.authoredLights.publishedRecords = 2u;
@@ -100,6 +101,22 @@ View LightFixture(float aspect)
     sample.renderedLights.publishedRecords = static_cast<std::uint32_t>(records.size());
     sample.renderedLights.ageMilliseconds = 12;
     sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(records);
+    return view;
+}
+View PitchedLightFixture(float aspect)
+{
+    auto view = LightFixture(aspect);
+    auto& sample = view.sample;
+    sample.cameraPosition->y += 6;
+    sample.cameraPosition->z -= 5;
+    // Down40 degrees with15 degrees of roll; this cannot be represented by yaw.
+    const float pitch = -40*std::numbers::pi_v<float>/180;
+    const float roll = 15*std::numbers::pi_v<float>/180;
+    const float sp = std::sin(pitch), cp = std::cos(pitch), sr = std::sin(roll), cr = std::cos(roll);
+    sample.cameraForward = Vec3{0,sp,cp};
+    sample.cameraRight = Vec3{cr,cp*sr,-sp*sr};
+    sample.cameraUp = Vec3{-sr,cp*cr,-sp*cr};
+    sample.pitch = -40.f;
     return view;
 }
 struct Pixels
@@ -162,12 +179,9 @@ void RequireLightPixels(const Pixels& image, const Config& config, bool hudVisib
     Require(image.Changed(static_cast<int>(spotX - 4 * scale), static_cast<int>(spotY + 16 * scale),
         static_cast<int>(spotX + 4 * scale), static_cast<int>(spotY + 40 * scale)) > 4,
         "Downward spot direction arrow missing");
-    // Both excluded records would project here if depth/near clipping failed.
-    Require(image.Around(width / 2 + focal / 2, height / 2 - focal / 4, 8 * scale) == 0,
-        "A behind-camera or near-plane light produced a screen ghost");
     if (hudVisible)
-        Require(image.Changed(static_cast<int>(55 * scale), static_cast<int>(135 * scale),
-            static_cast<int>(235 * scale), static_cast<int>(270 * scale)) > 100,
+        Require(image.Changed(static_cast<int>(36 * scale), static_cast<int>(138 * scale),
+            static_cast<int>(514 * scale), static_cast<int>(386 * scale)) > 100,
             "Combined light HUD radar area was not rendered");
 }
 void RequireNoLightPixels(const Pixels& image)
@@ -329,8 +343,8 @@ int wmain(int argc, wchar_t** argv)
             flat.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(std::move(records));
             const auto flattenedImage = frame(false, nullptr, &flat, true);
             const float scale = HudScale(960, 720, config, true);
-            Require(referenceLights.Different(flattenedImage, static_cast<int>(55 * scale), static_cast<int>(135 * scale),
-                static_cast<int>(235 * scale), static_cast<int>(270 * scale)) > 10,
+            Require(referenceLights.Different(flattenedImage, static_cast<int>(36 * scale), static_cast<int>(138 * scale),
+                static_cast<int>(514 * scale), static_cast<int>(386 * scale)) > 10,
                 "Light radar ignored record height changes");
             std::cout << "PASS 3D light radar responds to changing light elevations\n";
         }
@@ -344,21 +358,54 @@ int wmain(int argc, wchar_t** argv)
         if (lightsMode)
         {
             RequireLightPixels(hiddenHud, config, false);
+            // Isolate each excluded source with the HUD hidden. A legitimate
+            // detail card in the mixed scene can otherwise occupy its would-be
+            // projection, making a blank-pixel clipping assertion invalid.
+            for (const size_t excludedIndex : std::array<size_t,2>{3,4})
+            {
+                auto excludedOnly = LightFixture(960.0f/720.0f);
+                const std::vector<LightRecord> excludedRecord{
+                    excludedOnly.sample.renderedLights.records->at(excludedIndex)};
+                excludedOnly.sample.renderedLights.records =
+                    std::make_shared<const std::vector<LightRecord>>(excludedRecord);
+                excludedOnly.sample.renderedLights.publishedRecords = 1u;
+                const auto beforeExcluded = RenderedFrames();
+                const auto excludedImage = frame(false,nullptr,&excludedOnly,true);
+                Require(RenderedFrames() == beforeExcluded+1,"Clipping fixture did not render its active light overlay");
+                const float excludedWidth = static_cast<float>(excludedImage.width);
+                const float excludedHeight = static_cast<float>(excludedImage.height);
+                const float focal = excludedHeight/(2*std::tan(std::numbers::pi_v<float>/6));
+                Require(excludedImage.Around(excludedWidth/2+focal/2,excludedHeight/2-focal/4,12) == 0,
+                    "An isolated behind-camera or near-plane light produced its screen ghost");
+                Require(excludedImage.Changed(0,0,static_cast<int>(excludedImage.width),
+                    static_cast<int>(excludedImage.height)-100) == 0,
+                    "An excluded-only fixture painted a marker or detail card outside the status legend");
+            }
             auto centerOnly = LightFixture(960.0f / 720.0f);
             const std::vector<LightRecord> oneRecord{centerOnly.sample.renderedLights.records->front()};
             centerOnly.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(oneRecord);
             centerOnly.sample.renderedLights.publishedRecords = 1u;
             const auto centerImage = frame(false, nullptr, &centerOnly, true);
-            const float centerScale = HudScale(static_cast<float>(centerImage.width), static_cast<float>(centerImage.height), config, true);
             const float centerX = static_cast<float>(centerImage.width) / 2;
             const float centerY = static_cast<float>(centerImage.height) / 2;
-            // Reticle/ring pixels stop before this region. With no other lights
-            // or HUD, only the selected light's detail card can paint it. A gap
-            // of24 intersects the protected reticle and wrongly rejects every
-            // placement; the corrected gap leaves room for this right-hand card.
-            Require(centerImage.Changed(static_cast<int>(centerX + 50 * centerScale), static_cast<int>(centerY - 25 * centerScale),
-                static_cast<int>(centerX + 160 * centerScale), static_cast<int>(centerY + 25 * centerScale)) > 100,
+            // Allow either right-side or upper placement on compact surfaces.
+            // Source rings and their short connector do not reach this region.
+            Require(centerImage.Changed(static_cast<int>(centerX + 50), static_cast<int>(centerY - 180),
+                static_cast<int>(centerX + 430), static_cast<int>(centerY + 180)) > 100,
                 "Selected central light detail card was blocked by the reticle");
+            auto grouped = LightFixture(960.0f / 720.0f);
+            std::vector<LightRecord> pair{grouped.sample.renderedLights.records->front(),
+                grouped.sample.renderedLights.records->back()};
+            grouped.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(pair);
+            grouped.sample.renderedLights.publishedRecords = 2u;
+            const auto groupedImage = frame(false,nullptr,&grouped,true);
+            pair[1].colorLinear = Vec3{7.7f,1.7f,.7f}; pair[1].luminanceLinear = 2.9f;
+            grouped.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(pair);
+            grouped.received = Clock::now();
+            const auto changedSecondRow = frame(false,nullptr,&grouped,true);
+            Require(groupedImage.Different(changedSecondRow,static_cast<int>(centerX+50),static_cast<int>(centerY-180),
+                static_cast<int>(centerX+430),static_cast<int>(centerY+180)) > 5,
+                "Grouped central detail card did not render the second contribution's own RGB");
             auto stale = LightFixture(960.0f / 720.0f);
             stale.sample.renderedLights.ageMilliseconds = 650;
             RequireNoLightPixels(frame(false, nullptr, &stale, true));
@@ -389,6 +436,31 @@ int wmain(int argc, wchar_t** argv)
         Require(RenderedFrames() == afterHidden + 3, "4K HUD/notifications did not render after resize");
         if (lightsMode) RequireLightPixels(largeImage, config, !lightsOnly);
         std::cout << "PASS 4K HUD rendering after resize with resolution-scaled font atlas\n";
+        if (lightsMode && !lightsOnly)
+        {
+            auto pitched = PitchedLightFixture(3840.0f/2160.0f);
+            const auto pitchedImage = frame(false,argc > imageArgument+2 ? argv[imageArgument+2] : nullptr,&pitched,true);
+            auto level = pitched;
+            level.sample.cameraForward = Vec3{0,0,1}; level.sample.cameraRight = Vec3{1,0,0};
+            level.sample.cameraUp = Vec3{0,1,0}; level.sample.pitch = 0.f;
+            level.received = Clock::now();
+            const auto levelImage = frame(false,nullptr,&level,true);
+            const float radarScale = HudScale(3840,2160,config,true);
+            Require(pitchedImage.Different(levelImage,static_cast<int>(36*radarScale),static_cast<int>(138*radarScale),
+                static_cast<int>(514*radarScale),static_cast<int>(386*radarScale)) > 100,
+                "Camera radar frustum ignored pitch and roll while yaw was unchanged");
+            auto missingBasis = pitched; missingBasis.sample.cameraRight.reset(); missingBasis.received = Clock::now();
+            const auto missingImage = frame(false,nullptr,&missingBasis,true);
+            Require(pitchedImage.Different(missingImage,static_cast<int>(36*radarScale),static_cast<int>(138*radarScale),
+                static_cast<int>(514*radarScale),static_cast<int>(386*radarScale)) > 100,
+                "Camera radar frustum was guessed without a valid camera basis");
+            Check(chain->ResizeBuffers(2,800,480,DXGI_FORMAT_R8G8B8A8_UNORM,0));
+            MaintainGraphics();
+            const auto compactImage = frame(false,argc > imageArgument+3 ? argv[imageArgument+3] : nullptr,nullptr,true);
+            Require(compactImage.Changed(440,190,760,310) > 100,
+                "Compact combined surface lost its grouped light detail card");
+            std::cout << "PASS full-width radar camera pitch/roll, missing-basis clearing and grouped contribution RGB\n";
+        }
         Check(gpu.device->GetDeviceRemovedReason());
         DestroyWindow(window);
         return 0;

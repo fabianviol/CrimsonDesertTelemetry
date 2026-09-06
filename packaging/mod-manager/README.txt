@@ -8,6 +8,9 @@ ManyLights readback. It also contains the optional research console; do not load
 the old CrimsonHueConsole.asi alongside it. Unified capture passed local cold-start,
 moving-camera and lamp A-B-A checks on exact build 25116796 in preview.1.
 Preview.2 adds a 3D light radar and fullscreen world markers, both initially enabled.
+Preview.3 excludes stale buffer tails using the paired GPU valid-prefix count.
+Preview.4 enlarges the radar, adds a pitch/roll-aware 3D camera frustum, and combines
+nearby detail boxes while retaining each contribution's individual raw values.
 The new light visualization still requires its own live alignment check.
 The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
@@ -53,7 +56,9 @@ coverage of sun/sky/emissive lighting are claimed. See docs/API.md in the source
 In-game HUD
 -----------
 The [Overlay] section enables the corner HUD; Radar3D=1 replaces its compass with
-an oblique, player-centered light overview. Radar3D=0 restores the original compass.
+an oblique, player-centered light overview with its text below the full-width radar.
+Camera frustum angles follow the actual camera basis/FOV; its drawn length is
+schematic. Radar3D=0 restores the original compass.
 The independent [LightOverlay] section enables fullscreen markers and compact
 position/RGB/linear-luminance labels. Both views are enabled in this preview.
 Separate startup notices are enabled by [Notifications] Enabled=1. They show loading,
@@ -66,6 +71,9 @@ Telemetry remains active independently through [Server] Enabled=1.
 F8: corner HUD. F9: diagnostics. F10: fullscreen light markers, independently of F8.
 No mouse input is captured. Markers use measured filtered light contributions,
 not persistent lamp IDs; overlapping contributions can belong to one lamp.
+Contributions at most 0.15 game units apart pairwise share a detail box in spatial
+order, without claiming object identity or adding their brightness. F9 also shows
+transient GPU slots in these boxes. Raw API records and actual pulses are unchanged.
 Only fresh data is drawn. The radar may show lights behind the camera if those
 records remain in the filtered feed; this is not a complete 360-degree registry.
 World markers have no scene-depth test and can appear through walls. Spot arrows

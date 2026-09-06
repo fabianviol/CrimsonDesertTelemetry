@@ -34,6 +34,37 @@ double Dot(const Vec3 a, const Vec3 b)
 {
     return static_cast<double>(a.x) * b.x + static_cast<double>(a.y) * b.y + static_cast<double>(a.z) * b.z;
 }
+bool ValidCamera(const Sample& sample)
+{
+    if (!sample.cameraPosition || !sample.cameraForward || !sample.cameraRight || !sample.cameraUp ||
+        !sample.fov || !sample.aspectRatio || !sample.nearPlane)
+        return false;
+    const auto forward = *sample.cameraForward, right = *sample.cameraRight, up = *sample.cameraUp;
+    if (!Finite(*sample.cameraPosition) || !Finite(forward) || !Finite(right) || !Finite(up) ||
+        !std::isfinite(*sample.fov) || *sample.fov <= 0 || *sample.fov >= 180 ||
+        !std::isfinite(*sample.aspectRatio) || *sample.aspectRatio <= 0 ||
+        !std::isfinite(*sample.nearPlane) || *sample.nearPlane <= 0)
+        return false;
+    const Vec3 cross{right.y * up.z - right.z * up.y, right.z * up.x - right.x * up.z,
+        right.x * up.y - right.y * up.x};
+    return std::abs(Dot(forward, forward) - 1.0) <= .02 && std::abs(Dot(right, right) - 1.0) <= .02 &&
+        std::abs(Dot(up, up) - 1.0) <= .02 && std::abs(Dot(right, up)) <= .02 &&
+        std::abs(Dot(right, forward)) <= .02 && std::abs(Dot(up, forward)) <= .02 &&
+        std::abs(Dot(cross, forward) - 1.0) <= .03;
+}
+int CompareCoordinate(const float a, const float b)
+{
+    // Keep a strict weak ordering even for an invalid presentation input.
+    if (std::isnan(a)) return std::isnan(b) ? 0 : 1;
+    if (std::isnan(b)) return -1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+int CompareSpatialVector(const Vec3 a, const Vec3 b)
+{
+    if (const int y = CompareCoordinate(a.y, b.y)) return y;
+    if (const int x = CompareCoordinate(a.x, b.x)) return x;
+    return CompareCoordinate(a.z, b.z);
+}
 Vec3 Direction(const Json& value)
 {
     const auto result = Vector(value);
@@ -185,23 +216,10 @@ std::optional<float> Heading(const Vec3 direction)
 std::optional<ScreenPoint> ProjectWorld(const Vec3 world, const Sample& sample, const float width, const float height)
 {
     if (!Finite(world) || !std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
-        !sample.cameraPosition || !sample.cameraForward || !sample.cameraRight || !sample.cameraUp ||
-        !sample.fov || !sample.aspectRatio || !sample.nearPlane)
+        !ValidCamera(sample))
         return std::nullopt;
     const auto position = *sample.cameraPosition, forward = *sample.cameraForward,
         right = *sample.cameraRight, up = *sample.cameraUp;
-    if (!Finite(position) || !Finite(forward) || !Finite(right) || !Finite(up) ||
-        !std::isfinite(*sample.fov) || *sample.fov <= 0 || *sample.fov >= 180 ||
-        !std::isfinite(*sample.aspectRatio) || *sample.aspectRatio <= 0 ||
-        !std::isfinite(*sample.nearPlane) || *sample.nearPlane <= 0)
-        return std::nullopt;
-    const Vec3 cross{right.y * up.z - right.z * up.y, right.z * up.x - right.x * up.z,
-        right.x * up.y - right.y * up.x};
-    if (std::abs(Dot(forward, forward) - 1.0) > .02 || std::abs(Dot(right, right) - 1.0) > .02 ||
-        std::abs(Dot(up, up) - 1.0) > .02 || std::abs(Dot(right, up)) > .02 ||
-        std::abs(Dot(right, forward)) > .02 || std::abs(Dot(up, forward)) > .02 ||
-        std::abs(Dot(cross, forward) - 1.0) > .03)
-        return std::nullopt;
     const Vec3 delta{world.x - position.x, world.y - position.y, world.z - position.z};
     if (!Finite(delta)) return std::nullopt;
     const double depth = Dot(delta, forward);
@@ -217,13 +235,92 @@ std::optional<ScreenPoint> ProjectWorld(const Vec3 world, const Sample& sample, 
     return result;
 }
 
+std::optional<CameraFrustum> BuildCameraFrustum(const Sample& sample, const float length)
+{
+    if (!ValidCamera(sample) || !std::isfinite(length) || length <= *sample.nearPlane) return std::nullopt;
+    const double halfHeight = std::tan(static_cast<double>(*sample.fov) * std::numbers::pi / 360.0) * length;
+    const double halfWidth = halfHeight * *sample.aspectRatio;
+    if (!std::isfinite(halfHeight) || !std::isfinite(halfWidth) || halfHeight <= 0 || halfWidth <= 0)
+        return std::nullopt;
+    const auto apex = *sample.cameraPosition, forward = *sample.cameraForward,
+        right = *sample.cameraRight, up = *sample.cameraUp;
+    const auto farPoint = [&](const double horizontal, const double vertical)
+    {
+        return Vec3{
+            static_cast<float>(apex.x + static_cast<double>(forward.x) * length + right.x * horizontal + up.x * vertical),
+            static_cast<float>(apex.y + static_cast<double>(forward.y) * length + right.y * horizontal + up.y * vertical),
+            static_cast<float>(apex.z + static_cast<double>(forward.z) * length + right.z * horizontal + up.z * vertical)};
+    };
+    CameraFrustum result{apex, farPoint(0, 0),
+        {farPoint(-halfWidth, halfHeight), farPoint(halfWidth, halfHeight),
+         farPoint(halfWidth, -halfHeight), farPoint(-halfWidth, -halfHeight)}};
+    if (!Finite(result.farCenter) || !std::all_of(result.farCorners.begin(), result.farCorners.end(), Finite))
+        return std::nullopt;
+    return result;
+}
+
+bool NearbyForDetails(const Vec3 a, const Vec3 b, const float maxDistance)
+{
+    if (!Finite(a) || !Finite(b) || !std::isfinite(maxDistance) || maxDistance <= 0) return false;
+    const double x = static_cast<double>(a.x) - b.x, y = static_cast<double>(a.y) - b.y,
+        z = static_cast<double>(a.z) - b.z;
+    return x * x + y * y + z * z <= static_cast<double>(maxDistance) * maxDistance;
+}
+
+bool SpatialLightLess(const LightRecord& a, const LightRecord& b)
+{
+    if (const int position = CompareSpatialVector(a.position, b.position)) return position < 0;
+    if (a.kind != b.kind) return a.kind < b.kind;
+    if (a.direction.has_value() != b.direction.has_value()) return !a.direction.has_value();
+    if (a.direction)
+        if (const int direction = CompareSpatialVector(*a.direction, *b.direction)) return direction < 0;
+    if (a.coneHalfAngleDegrees.has_value() != b.coneHalfAngleDegrees.has_value())
+        return !a.coneHalfAngleDegrees.has_value();
+    return a.coneHalfAngleDegrees && CompareCoordinate(*a.coneHalfAngleDegrees, *b.coneHalfAngleDegrees) < 0;
+}
+
+std::vector<std::vector<size_t>> GroupLightDetails(const std::span<const LightRecord* const> records,
+    const float maxDistance)
+{
+    const size_t count = std::min(records.size(), size_t{64});
+    std::vector<size_t> order;
+    order.reserve(count);
+    for (size_t index = 0; index < count; ++index) order.push_back(index);
+    std::stable_sort(order.begin(), order.end(), [&](const size_t a, const size_t b)
+    {
+        if (!records[a] || !records[b]) return records[a] && !records[b];
+        return SpatialLightLess(*records[a], *records[b]);
+    });
+    std::vector<std::vector<size_t>> groups;
+    groups.reserve(count);
+    for (const auto index : order)
+    {
+        const auto group = std::find_if(groups.begin(), groups.end(), [&](const auto& members)
+        {
+            return records[index] && std::all_of(members.begin(), members.end(), [&](const size_t member)
+            {
+                return records[member] && NearbyForDetails(records[index]->position, records[member]->position, maxDistance);
+            });
+        });
+        if (group == groups.end()) groups.push_back({index});
+        else group->push_back(index);
+    }
+    return groups;
+}
+
+float HudNaturalHeight(const Config& config, const bool details)
+{
+    return config.radar3D ? (details ? 806.f : 550.f) : (details ? 600.f : 344.f);
+}
+
 float HudScale(float width, float height, const Config& config, bool details)
 {
-    if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0) return 0;
+    if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
+        !std::isfinite(config.scale) || config.scale <= 0) return 0;
     const float resolution = config.autoScale ? std::max(1.0f, height / 1080.0f) : 1.0f;
     // Scale in physical render-target pixels: a 4K screen needs twice the 1080p size.
     // Keep lower-resolution displays readable; only shrink if the panel would clip.
-    const float naturalHeight = details ? 600.0f : 344.0f;
+    const float naturalHeight = HudNaturalHeight(config, details);
     return std::min({config.scale * resolution, width / 550.0f, height / (naturalHeight + 40.0f)});
 }
 

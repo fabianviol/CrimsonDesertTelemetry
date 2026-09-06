@@ -1,8 +1,11 @@
 #pragma once
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,10 +91,27 @@ struct ScreenPoint { float x{}, y{}, depth{}; };
 // World positions are already reconstructed with the capture-paired camera.
 // Project with the newest envelope camera; leave viewport clipping to callers.
 std::optional<ScreenPoint> ProjectWorld(Vec3 world, const Sample& sample, float width, float height);
+struct CameraFrustum
+{
+    Vec3 apex, farCenter;
+    // Camera-local top-left, top-right, bottom-right, bottom-left.
+    std::array<Vec3, 4> farCorners;
+};
+// Schematic forward depth, not a physical visibility/range measurement. Preserve
+// all three world dimensions, including camera pitch and roll.
+std::optional<CameraFrustum> BuildCameraFrustum(const Sample& sample, float length);
+bool NearbyForDetails(Vec3 a, Vec3 b, float maxDistance = .15f);
+bool SpatialLightLess(const LightRecord& a, const LightRecord& b);
+// Presentation only: complete-link proximity groups, never physical identities.
+// Indices address the input span; at most its first 64 entries are considered.
+// Every considered entry remains present exactly once, including singletons.
+std::vector<std::vector<size_t>> GroupLightDetails(std::span<const LightRecord* const> records,
+    float maxDistance = .15f);
 double AgeMs(const View& view, Clock::time_point now);
 bool IsLive(const View& view, Clock::time_point now, int staleMs);
 bool RenderedLightsLive(const View& view, Clock::time_point now, int staleMs);
 std::string LightFeedStatus(const View& view, Clock::time_point now, int staleMs);
 std::string Status(const View& view, Clock::time_point now, int staleMs);
+float HudNaturalHeight(const Config& config, bool details);
 float HudScale(float width, float height, const Config& config, bool details);
 }

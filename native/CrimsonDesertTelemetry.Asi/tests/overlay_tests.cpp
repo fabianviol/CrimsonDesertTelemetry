@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
@@ -88,6 +89,164 @@ void ProjectionTests()
     point = ProjectWorld({10, 30, 40}, sample, 1000, 500);
     Require(point && close(point->x, 500) && close(point->y, 250), "Pitched camera projection ignored vertical basis");
     std::cout << "PASS world projection, rotated camera, near/behind rejection and invalid metadata\n";
+}
+void FrustumTests()
+{
+    Sample sample;
+    sample.cameraPosition = Vec3{10, 20, 30};
+    sample.cameraForward = Vec3{0, 0, 1}; sample.cameraRight = Vec3{1, 0, 0}; sample.cameraUp = Vec3{0, 1, 0};
+    sample.fov = 90.f; sample.aspectRatio = 2.f; sample.nearPlane = .1f;
+    const auto close = [](const float a, const float b) { return std::abs(a - b) < .001f; };
+    const auto checkProjection = [&](const Sample& camera)
+    {
+        const auto geometry = BuildCameraFrustum(camera, 10.f);
+        Require(geometry.has_value(), "Valid 3D frustum rejected");
+        const std::array<ScreenPoint, 4> expected{{{0, 0, 10}, {1000, 0, 10}, {1000, 500, 10}, {0, 500, 10}}};
+        for (size_t index = 0; index < expected.size(); ++index)
+        {
+            const auto point = ProjectWorld(geometry->farCorners[index], camera, 1000, 500);
+            Require(point && close(point->x, expected[index].x) && close(point->y, expected[index].y) &&
+                close(point->depth, 10), "3D frustum corners must agree with camera projection and forward depth");
+        }
+        const auto center = ProjectWorld(geometry->farCenter, camera, 1000, 500);
+        Require(center && close(center->x, 500) && close(center->y, 250), "Frustum center must follow camera forward");
+        return *geometry;
+    };
+    const auto level = checkProjection(sample);
+    Require(close(level.apex.x, 10) && close(level.apex.y, 20) && close(level.apex.z, 30) &&
+        close(level.farCenter.z, 40) && close(level.farCorners[0].x, -10) &&
+        close(level.farCorners[0].y, 30) && close(level.farCorners[2].y, 10),
+        "Level frustum must retain camera apex and full vertical and horizontal FOV");
+    const float steep = std::sqrt(.75f);
+    auto pitched = sample;
+    pitched.cameraForward = Vec3{0, -steep, .5f}; pitched.cameraUp = Vec3{0, .5f, steep};
+    const auto down = checkProjection(pitched);
+    Require(close(down.farCenter.y, 20 - 10 * steep) && close(down.farCenter.z, 35) &&
+        down.farCorners[0].y < down.apex.y && down.farCorners[2].z < down.apex.z &&
+        down.farCorners[0].y - down.farCorners[2].y > 9.9f,
+        "Downward 60-degree camera must tilt the whole 3D frustum, not flatten an elevated ground wedge");
+    pitched.cameraForward = Vec3{0, steep, .5f}; pitched.cameraUp = Vec3{0, .5f, -steep};
+    const auto up = checkProjection(pitched);
+    Require(close(up.farCenter.y, 20 + 10 * steep) && up.farCorners[2].y > up.apex.y,
+        "Upward camera must raise both center and far plane");
+    auto rolled = sample;
+    rolled.cameraRight = Vec3{0, 1, 0}; rolled.cameraUp = Vec3{-1, 0, 0};
+    const auto roll = checkProjection(rolled);
+    Require(close(roll.farCorners[0].x, 0) && close(roll.farCorners[0].y, 0) &&
+        close(roll.farCorners[1].y, 40), "Camera roll must rotate frustum right/up geometry in world space");
+    auto narrow = sample; narrow.fov = 60.f; narrow.aspectRatio = 1.f;
+    const auto square = checkProjection(narrow);
+    narrow.aspectRatio = 3.f;
+    const auto wide = checkProjection(narrow);
+    Require(close(wide.farCorners[1].x - wide.farCenter.x, 3 * (square.farCorners[1].x - square.farCenter.x)) &&
+        close(wide.farCorners[0].y, square.farCorners[0].y) && square.farCorners[0].y < level.farCorners[0].y,
+        "Frustum aspect must scale width only and narrower FOV must reduce far-plane extent");
+    for (const auto bad : {0.f, -1.f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+    {
+        Require(!BuildCameraFrustum(sample, bad), "Invalid schematic frustum length accepted");
+        auto invalid = sample; invalid.fov = bad;
+        Require(!BuildCameraFrustum(invalid, 10), "Invalid frustum FOV accepted");
+        invalid = sample; invalid.aspectRatio = bad;
+        Require(!BuildCameraFrustum(invalid, 10), "Invalid frustum aspect accepted");
+        invalid = sample; invalid.nearPlane = bad;
+        Require(!BuildCameraFrustum(invalid, 10), "Invalid frustum near plane accepted");
+    }
+    Require(!BuildCameraFrustum(sample, .1f), "Frustum far plane must be beyond its near plane");
+    auto invalid = sample; invalid.cameraPosition.reset();
+    Require(!BuildCameraFrustum(invalid, 10), "Missing camera must not produce a zero-apex frustum");
+    invalid = sample; invalid.cameraRight = sample.cameraUp;
+    Require(!BuildCameraFrustum(invalid, 10), "Nonorthogonal frustum basis accepted");
+    invalid = sample; invalid.cameraRight = Vec3{-1, 0, 0};
+    Require(!BuildCameraFrustum(invalid, 10), "Mirrored frustum basis accepted");
+    invalid = sample; invalid.cameraForward = Vec3{0, 0, 2};
+    Require(!BuildCameraFrustum(invalid, 10), "Nonunit frustum basis accepted");
+    invalid = sample; invalid.cameraUp = Vec3{0, std::numeric_limits<float>::quiet_NaN(), 0};
+    Require(!BuildCameraFrustum(invalid, 10), "Nonfinite frustum basis accepted");
+    invalid = sample; invalid.aspectRatio.reset();
+    Require(!BuildCameraFrustum(invalid, 10), "Missing frustum aspect must not be guessed");
+    invalid = sample; invalid.fov = 180.f;
+    Require(!BuildCameraFrustum(invalid, 10), "Degenerate frustum FOV accepted");
+    invalid = sample; invalid.aspectRatio = std::numeric_limits<float>::max();
+    Require(!BuildCameraFrustum(invalid, std::numeric_limits<float>::max()), "Overflowing world frustum accepted");
+    std::cout << "PASS full world-space camera frustum, pitch, roll, FOV/aspect and shared projection validation\n";
+}
+
+void LightDetailGroupingTests()
+{
+    std::vector<LightRecord> records(7);
+    const std::array<Vec3, 7> positions{{{0, 0, 0}, {0, .04f, 0}, {1, 0, 0}, {1.1f, 0, 0},
+        {1.2f, 0, 0}, {0, 0, 2}, {0, 1, 0}}};
+    std::vector<const LightRecord*> input;
+    for (size_t index = 0; index < records.size(); ++index)
+    {
+        records[index].position = positions[index]; records[index].sampleIndex = static_cast<int>(index);
+        records[index].kind = "spot"; records[index].colorLinear = {1, .3f, .1f}; records[index].luminanceLinear = 1.f;
+        input.push_back(&records[index]);
+    }
+    const auto groups = GroupLightDetails(input);
+    Require(groups.size() == 5, "Nearby pair must merge while far/depth/height-separated records and a chain tail stay distinct");
+    std::array<size_t, 7> seen{};
+    bool nearbyPair = false, chainPair = false;
+    for (const auto& group : groups)
+    {
+        for (const auto member : group)
+        {
+            Require(member < seen.size(), "Grouped index no longer addresses original raw record");
+            ++seen[member];
+            for (const auto other : group)
+                Require(NearbyForDetails(input[member]->position, input[other]->position),
+                    "Complete-link groups must not merge a proximity chain beyond maximum pair distance");
+        }
+        nearbyPair = nearbyPair || (group == std::vector<size_t>{0, 1});
+        chainPair = chainPair || (group == std::vector<size_t>{2, 3});
+    }
+    Require(nearbyPair && chainPair && std::all_of(seen.begin(), seen.end(), [](const auto n) { return n == 1; }),
+        "Grouping must retain every raw member exactly once, including singletons, in stable spatial order");
+    const auto signature = [](const auto& members, const auto& pointers)
+    {
+        std::vector<std::vector<std::array<float, 3>>> result;
+        for (const auto& group : members)
+        {
+            auto& output = result.emplace_back();
+            for (const auto index : group)
+            {
+                const auto position = pointers[index]->position;
+                output.push_back({position.x, position.y, position.z});
+            }
+        }
+        return result;
+    };
+    const auto original = signature(groups, input);
+    for (size_t iteration = 0; iteration < records.size(); ++iteration)
+    {
+        std::rotate(input.begin(), input.begin() + 1, input.end());
+        for (size_t index = 0; index < records.size(); ++index)
+        {
+            records[index].sampleIndex = 100 - static_cast<int>(index + iteration);
+            records[index].colorLinear = {static_cast<float>(index + iteration), 2, 3};
+            records[index].luminanceLinear = static_cast<float>(100 - iteration - index);
+        }
+        Require(signature(GroupLightDetails(input), input) == original,
+            "GPU-index/input-order or RGB/luminance changes must not reorder spatial detail groups");
+    }
+    auto equivalent = records.front(); equivalent.sampleIndex = -1; equivalent.luminanceLinear = 999.f;
+    equivalent.colorLinear = {99, 55, 12};
+    Require(!SpatialLightLess(equivalent, records.front()) && !SpatialLightLess(records.front(), equivalent),
+        "Spatial ordering must not use color, brightness or GPU index as a tiebreaker");
+    Require(!NearbyForDetails({0, 0, 0}, {0, 0, .151f}) &&
+        !NearbyForDetails({0, 0, 0}, {0, .151f, 0}), "Detail proximity must use all world dimensions");
+    Require(!NearbyForDetails({0, 0, 0}, {std::numeric_limits<float>::quiet_NaN(), 0, 0}),
+        "Nonfinite positions must not merge");
+    Require(GroupLightDetails(input, -1.f).size() == input.size(), "Invalid grouping distance must retain singles");
+    Require(GroupLightDetails({}).empty(), "Empty detail selection must stay empty");
+    std::vector<LightRecord> many(80);
+    std::vector<const LightRecord*> manyPointers;
+    for (auto& record : many) manyPointers.push_back(&record);
+    const auto bounded = GroupLightDetails(manyPointers);
+    Require(bounded.size() == 1 && bounded.front().size() == 64,
+        "Detail grouping must be bounded to the first 64 selected raw records");
+    for (const auto index : bounded.front()) Require(index < 64, "Grouping read beyond its selected-record cap");
+    std::cout << "PASS bounded complete-link detail groups, raw-member preservation and index/color-independent ordering\n";
 }
 void RenderedLightTests(nlohmann::json json, std::chrono::system_clock::time_point now)
 {
@@ -370,7 +529,21 @@ int main(int argc, char** argv)
         config.autoScale = false;
         Require(std::abs(HudScale(3840, 2160, config, false) - 1.0f) < 0.001f, "Manual HUD scale");
         config.autoScale = true;
-        Require(HudScale(800, 480, config, true) * 640.0f <= 480.1f, "Diagnostics must fit small screens");
+        Require(HudScale(800, 480, config, true) * (HudNaturalHeight(config, true) + 40) <= 480.1f,
+            "Diagnostics must fit small screens");
+        for (const bool radar3D : {false, true})
+            for (const bool details : {false, true})
+                for (const auto display : {std::array<float, 2>{800, 480}, {1920, 1080}, {3840, 2160}})
+                    for (const bool automatic : {false, true})
+                    {
+                        Config fit; fit.radar3D = radar3D; fit.autoScale = automatic; fit.scale = 3.f;
+                        const float scale = HudScale(display[0], display[1], fit, details);
+                        Require(scale > 0 && (HudNaturalHeight(fit, details) + 40) * scale <= display[1] + .01f &&
+                            550 * scale <= display[0] + .01f,
+                            "Both full-width radar and legacy HUD, normal/details and manual/auto scales must fit display");
+                    }
+        Require(HudNaturalHeight(config, false) == 550 && HudNaturalHeight(config, true) == 806,
+            "3D radar layout must use the shared taller natural heights");
         Require(HudScale(0, 0, config, false) == 0, "Minimized surface");
         std::cout << "PASS HUD resolution scaling and panel bounds\n";
         const auto now = std::chrono::system_clock::from_time_t(1788091200); // 2026-08-30T12:00:00Z
@@ -384,6 +557,8 @@ int main(int argc, char** argv)
             "quality":{"consensusCopies":3,"validCopies":4,"distinctStates":1,"rediscovered":false,"captureDurationMicroseconds":120}})");
         auto sample = ParseSample(json.dump(), now);
         ProjectionTests();
+        FrustumTests();
+        LightDetailGroupingTests();
         RenderedLightTests(json, now);
         Require(sample.playerPosition && sample.playerPosition->x == 123, "Player position");
         Require(sample.playerHeading && std::abs(*sample.playerHeading - 90) < 0.01, "Independent player heading");

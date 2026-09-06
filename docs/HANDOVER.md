@@ -1,4 +1,49 @@
-# Current checkpoint — filtered light tail fix, 2026-09-06, Codex/Astra
+# Current checkpoint — larger 3D radar and light detail groups, 2026-09-06, Codex/Astra
+
+**1.3.0-preview.4 is built, tested and packaged for DMM.** Installed game remains
+PID33348 / preview.3;
+no game files, capture hooks, raw API records or RGB normalization were changed.
+One next step: user closes the game, installs the new DMM ZIP,
+then checks the fire detail panel and camera pitch in the larger radar.
+
+- Radar uses the full panel width (logical radius205, previously80); normal panel
+  height550, diagnostics806. Root/camera/FOV/XYZ readouts sit below the radar.
+- Camera frustum uses measured forward/right/up, vertical FOV and aspect in the
+  same affine 3D projection as light positions. XZ ground, Y height; no clamped
+  vertex heights or elevated flat yaw wedge. Length .4*radarRadius is schematic.
+  Missing/invalid projection metadata hides the frustum, not guessed geometry.
+- Nearby detail cards merge by pairwise distance<=.15gu (complete-link, no chain),
+  only as presentation. Separate raw contribution values stay in spatial order;
+  no physical-object IDs, sums, pulse classification or smoothing are invented.
+  At most64 detail candidates/four visible contributions per group; raw API records stay.
+  GPU slots appear only with F9 diagnostics. Fixed card width avoids digit-width
+  jitter; compact values retain HDR/tiny magnitudes and small viewports scale cards.
+- All six UI/client test paths passed: model, general HUD, notifications, combined
+  lights, lights-only and WebSocket. Raster checks include a .03gu pair with an
+  independently changing second row, pitch/roll with unchanged yaw, missing camera
+  basis, isolated near/behind clipping, stale clearing, resize and 800x480/4K.
+  Pitched4K and compact screenshots visually inspected; live game check pending.
+  Relevant source: overlay_hud.cpp, overlay_model.{h,cpp}, overlay_tests.cpp,
+  graphics_smoke.cpp. Package defaults/hotkeys remain unchanged.
+
+ZIP: `artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.4-ModManagers.zip`
+SHA256 `8D8FB31CBCE31979200541C7454D44C52BADC67E2AF99EAA2310F097C6DFBBC6`.
+Expanded: `artifacts/mod-manager/v1.3.0-preview.4-20260906-222529-708-5a75c437/CrimsonDesertTelemetry`.
+Package validator/negative cases passed; older immutable ZIPs preserved.
+Screenshots: `build/light-overlay-preview4-{small,4k,pitched4k,compact}.bmp`
+(synthetic fixtures, NOT game screenshots). Source research repository unchanged.
+
+**Exposure remains a separate approved follow-on, not included in this HUD build.**
+Bounded read-only check22:13:52 CEST PID33348: ExposureOwner+D8 contains FOUR plausible
+exposure float4; +118 already contains pointers, so never blindly read80 bytes.
+Bridge frame40441, unchanged seqlock101142, validCount42: CPU E before/after
+.08051319/.08049921 predicts mode1 factor1.32961224; blue lamp measured1.32911805
+(-.0372%). Strong candidate, still NOT frame-paired upload provenance. Missing
+proof: how this CPUblock reaches the bound Exposure-CBV for the sampled frame.
+GPU copy also lacks CBV suboffset/heap/state proof; never assume the light UAV state.
+Do not revisit generic GPU searches or silently divide all effects by this value.
+
+## Previous checkpoint — filtered light tail fix and fire diagnosis
 
 ## Result / one next step
 
