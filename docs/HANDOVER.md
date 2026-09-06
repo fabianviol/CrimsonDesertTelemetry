@@ -39,8 +39,14 @@ match current sources. It uses the newly built ASI and unchanged managed/runtime
 payload from the verified pre-HDR2.0 package (host source/ABI/API unchanged).
 The original versioned ZIP hash still matches E8A268...; no replacement occurred.
 
-Next: verify fresh GitHub CI, then await resumption of the stopped publication.
-No ASI was installed into the game during this HDR pass. Nexus remains untouched.
+Saved/pushed source: `09d9462` (Codex). GitHub CI
+https://github.com/fabianviol/CrimsonDesertTelemetry/actions/runs/34063281265
+is green: managed/API/WebSocket plus all14 native tests, including HDR paths and
+the corrected capture smoke. Working tree/package were verified; publication
+recheck confirms no2.0 release/tag and latest published remains1.2.1.
+Next: await resumption of the stopped publication; tag the validated source only
+when release is requested again. No ASI was installed into the game during this
+HDR pass. Nexus remains untouched.
 
 ## Previous checkpoint — GitHub 2.0.0 release preparation
 
