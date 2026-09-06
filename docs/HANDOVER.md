@@ -4,8 +4,9 @@
 
 User requested one telemetry product/ASI, including the former console, automatic
 filtered ManyLights and the revised camera anchor. CrimsonHue is only a future
-Philips Hue consumer. Work is implemented in candidate **1.3.0-preview.1**; native
-live validation remains mandatory, not inferred from the previous manual captures.
+Philips Hue consumer. Candidate **1.3.0-preview.1**, implementation commit **afcc1cc**,
+has now passed its first automatic in-game startup/data check. Deliberate movement
+and physical A-B-A checks of this combined version remain open.
 
 - Single ASI source: `native/CrimsonDesertTelemetry.Asi`; imported console0.3.17
   commands retained under `src/console`, original research/releases preserved.
@@ -46,7 +47,8 @@ README and synchronized assistant rules. Product rules are synchronized too.
 
 Camera live check in old-plugin PID28640:30/30 valid samples,30 distinct source
 frames, source0x3852A770C00,3840x2160. `_renderingOriginPos` was ~1.03 above player,
-not a replacement for player position. Game now closed by user for DMM migration.
+not a replacement for player position. That was the previous process; see current
+live result below.
 
 Existing measured light A-B-A, packed direction, source and consumer evidence:
 `../research/light-source-tests/CODEX_HANDOVER_FIRE.md` (latest experiments at end)
@@ -83,16 +85,42 @@ Expanded package:
 Source is the unified implementation commit containing this checkpoint; no source
 changes are pending before the user's first in-game test.
 
+## Live result — 2026-09-06, ~19:44–19:45 CEST
+
+User installed through DMM, restarted, loaded and reported the success notice.
+PID **27140**, start19:41:38.708. Exactly one loaded ASI, telemetry SHA256
+`851856C3D78103ABEF972C1B0BD41C4C4BE9A78AE933D0A74F1285C414AF733E`, matching
+the candidate; no CrimsonHueConsole loaded. Native log confirms exact-build
+postfilter detour and submission-fenced capture ready. No native fault/refusal.
+HostPID25296, health `playing`, schema1.4, exact supported build. One initial
+duplicate-bootstrap/port-owner skip precedes the successful host start; not a
+second loaded ASI or a later host failure.
+
+Read-only API check: **40/40 available** over5.24s;40 distinct captured game frames
+9243..9480, capture sequence2719..2798. Roughly15 captures/s observed (20Hz configured
+target, not a measured20Hz guarantee). Data age15..78ms, mean45.95ms, malformed0.
+13 authored records;119..130 current rendered contributions within the configured
+100-game-unit player radius (not119..130 physical lamps). A preceding sample had
+343 total active records,218 outside radius and125 published.
+
+Blue IC glass, Twilight Glass Lamp and Twilight Crystal each matched their previously
+measured world positions in all40 samples, with no position spread at API precision.
+The two glass-lamp directions were downward and cone half-angle~27degrees;
+crystal classified point and correctly omitted direction. Player was
+(-10502.611,610.52814,-4373.8613). Camera was essentially stationary aside from
+~0.0013 vertical variation, so **not a deliberate movement-pairing proof**.
+No manual command, breakpoint, switch or config change was issued during this check.
+Native/overlay logs show Starting→Waiting→Loading→Telemetry is ready.
+
 ## Remaining / one next step
 
-ZIP delivered to user. They prefer DMM; **do not directly install with the optional
-helper**. They were instructed to deactivate both previous packages before enabling
-the unified package. Do not modify ASI loader/other mods. Next: one cold-start test,
-**without any preparatory lamp toggles**. Bridge must reach available while game
-frames advance, move/turn to validate paired world positions, one lamp A-B-A and
-console smoke if enabled. Do not call that completed before actual observations.
+Stay in PID27140; no reinstall required. Next: a short deliberate movement/turn
+check against the known static glass/crystal world positions, then one physical
+lamp A-B-A. Cold-start availability itself is now measured, not merely a host-test
+claim. User prefers DMM; never replace game files with the optional helper without
+a new request. Do not modify ASI loader/other mods.
 
-Only claim successful game integration after that live test. Console/explorer is
+Do not claim the remaining movement/switch tests completed. Console/explorer is
 integrated but disabled in this package; its startup debug capture was not exercised
 in the combined real game yet. Native automatic compatibility beyond the exact
 supported EXE remains a separate follow-up, not a reason to guess offsets.
