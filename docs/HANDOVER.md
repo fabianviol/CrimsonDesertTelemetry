@@ -1,4 +1,4 @@
-# Current checkpoint — 2.0.0 live startup verified, 2026-09-06, Codex/Astra
+# Current checkpoint — 2.0.0 startup behavior accepted, 2026-09-06, Codex/Astra
 
 User requested version **2.0.0**, not another preview, for the forthcoming release.
 User reports "läuft" after installation/restart. **2.0.0 is installed and the
@@ -13,10 +13,19 @@ captureSequence2460→2480, frame8436→8496, light age16→15ms, malformed0;
 Player and camera are independent, available poses; health.error=null.
 These are contributions, not counts of distinct physical lamps.
 
-**One next step: ask user to confirm the visual notice timing (silent loading,
-then six-second success) before proceeding to GitHub/Nexus preparation.** INI says
-6000ms and notice lifecycle/raster tests passed; the appended overlay log has no
-timestamps, so it does not independently prove this run's on-screen timing.
+User subsequently repeated startup and explicitly accepts the observed behavior:
+the success notice appears as soon as data arrives, already during the visible
+loading sequence. This supersedes the earlier request to wait until that sequence
+has completely ended. No change requested. INI duration remains6000ms; precise
+on-screen duration was not separately measured. PID/API evidence above is from the
+earlier measured run, not a fresh measurement of this later startup.
+
+Known accepted edge case: returning to the title screen without restarting can
+leave HUD/data visible for several seconds, until stale or another load. Cause
+unproven (continued engine activity vs state detection); user explicitly says leave
+it alone because the HUD can be hidden. Do not reopen this as a release blocker.
+**One next step: GitHub/Nexus release preparation when requested; no further plugin
+changes for these accepted startup/title-screen observations.** Nothing published.
 New untracked `media/` belongs to the user/other work and was left untouched.
 
 - Native EXE hash, hook/caller guards and scene/wrapper/GPU contract now derive from
@@ -31,8 +40,8 @@ New untracked `media/` belongs to the user/other work and was left untouched.
 - Build profiles reject unknown/duplicate JSON fields, missing chain offsets,
   malformed/ambiguous patterns, bad RIP bounds and inconsistent native contracts.
   Real player-chain fixtures cover identity, position, basis and replaced pointers.
-- Normal notification startup/loading/discovery remains silent, without arbitrary
-  loading timeout. Ready requires playing + fresh requested data (valid empty light
+- Normal startup/loading/discovery waiting messages are suppressed, without arbitrary
+  loading timeout. Ready requires API playing + fresh requested data (valid empty light
   feeds count), default6s/clamped5–10s. Local bootstrap/native faults render without
   a host or validated game hooks. Errors may appear before loading; explicit
   Notifications.Enabled=0 still disables them. Unsupported graphics can prevent UI;
