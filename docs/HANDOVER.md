@@ -46,9 +46,12 @@ Host FileVersion2.0.0.0; package compiled from this turn's working tree on base8
 (the automatic informational-version suffix names that base, not a clean source tag).
 Older versioned ZIPs are untouched. Release notes: `docs/releases/v2.0.0.md`.
 
-Private recovery backup is the remaining local closeout action after saving source:
-`scripts/Backup-UpdateEvidence.ps1 -ExecutablePath <baseline-exe>`; independent
-research af5485b remains clean/no remote. Never publish the EXE/shader/index backup.
+Source saved in `7a33227` (Codex). Private recovery copy verified at
+`artifacts/recovery/20260906-231424-3734727b/manifest.json`: product Git history
+through7a33227, independent research af5485b, baseline EXE and selected shader/index
+evidence. Both bundles verified; EXE copy hash matches. Same-disk copy, not off-device
+backup. Original captures remain untouched; research remains clean/no remote.
+Never publish the EXE/shader/index backup. No local closeout work remains.
 
 ## Previous checkpoint — update-stability audit (proposal now implemented above)
 
