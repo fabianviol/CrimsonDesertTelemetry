@@ -5,8 +5,8 @@
 User requested one telemetry product/ASI, including the former console, automatic
 filtered ManyLights and the revised camera anchor. CrimsonHue is only a future
 Philips Hue consumer. Candidate **1.3.0-preview.1**, implementation commit **afcc1cc**,
-has now passed its first automatic in-game startup/data check. Deliberate movement
-and physical A-B-A checks of this combined version remain open.
+has passed automatic in-game startup/data and deliberate camera/player movement
+checks. The physical A-B-A check of this combined version remains open.
 
 - Single ASI source: `native/CrimsonDesertTelemetry.Asi`; imported console0.3.17
   commands retained under `src/console`, original research/releases preserved.
@@ -112,15 +112,44 @@ crystal classified point and correctly omitted direction. Player was
 No manual command, breakpoint, switch or config change was issued during this check.
 Native/overlay logs show Starting→Waiting→Loading→Telemetry is ready.
 
+## Movement result — 2026-09-06, ~19:49–19:50 CEST
+
+User deliberately turned/pitched camera and walked forward/backward in PID27140.
+Existing API recorder updated for bounded4MiB light payloads (commit73aea96).
+Capture: `artifacts/light-research/unified-camera-movement-pid27140-20260906-01.jsonl`,
+201489649bytes,3597 WS samples over59.909s (~60.025Hz),917 distinct rendered captures
+7228..8144, native frames23018..26020. No API sequence skips/duplicates/regressions.
+Camera coordinate spans13.6485/7.26307/18.4697; player spans4.671/0.15198/8.0373 game
+units. This is a real movement control, not another stationary recording.
+
+Both static glass anchors occurred in917/917 distinct captures with **identical
+world positions at API precision** throughout. Maximum distance to rounded prior
+references0.000413 game units. Crystal occurred in469/917, also identical position;
+448 captures omitted it (even without a kind filter). Do not label that OFF;
+view-dependent filtering remains the relevant distinction.
+
+Latest envelope camera differs from paired light camera by up to1.713 game units
+and13.99degrees across all available WS samples. Using that latest camera would
+incorrectly shift the static lights; actual paired-camera conversion stays stable.
+Thus pairing passed this real movement test.
+
+Quality caveats: authoredavailable3597/3597; renderedavailable3585/3597. Twelve
+isolated `bridge-changing` samples, max33.047ms to recovery, correctly publish no
+rendered values. No stale/native-fault result. Rendered age across all samples:
+median47ms,p9578ms,max94ms. On38 distinct captures one record was rejected as
+malformed (not published); its raw cause is not established. These small availability/
+coverage issues are retained for later hardening, not hidden as a perfect run.
+No implementation/config/game change during measurement; package unchanged.
+
 ## Remaining / one next step
 
-Stay in PID27140; no reinstall required. Next: a short deliberate movement/turn
-check against the known static glass/crystal world positions, then one physical
-lamp A-B-A. Cold-start availability itself is now measured, not merely a host-test
+Stay in PID27140; no reinstall required. Next: user approaches one of the known lit
+fire lamps, leaves it ON and reports ready; then record physical A-B-A one phase
+at a time. Cold-start availability and camera pairing are measured, not merely a host-test
 claim. User prefers DMM; never replace game files with the optional helper without
 a new request. Do not modify ASI loader/other mods.
 
-Do not claim the remaining movement/switch tests completed. Console/explorer is
+Do not claim the remaining switch test completed. Console/explorer is
 integrated but disabled in this package; its startup debug capture was not exercised
 in the combined real game yet. Native automatic compatibility beyond the exact
 supported EXE remains a separate follow-up, not a reason to guess offsets.
