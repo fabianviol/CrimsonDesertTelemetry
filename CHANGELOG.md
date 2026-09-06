@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a normalized world-space `direction` for authored spotlights by rotating
+  their verified local +Z cone axis with the source-record quaternion. Point
+  lights and invalid rotations omit it. Opt-in light snapshots now use additive
+  schema 1.3; the disabled-light schema remains 1.1.
+
 ## 1.2.1 - 2026-09-04
 
 - Correct the player position for Steam build `25116796`. The globals used since

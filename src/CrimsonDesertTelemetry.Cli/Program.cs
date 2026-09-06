@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 const string baseSchemaVersion = "1.1";
-const string lightsSchemaVersion = "1.2";
+const string lightsSchemaVersion = "1.3";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions

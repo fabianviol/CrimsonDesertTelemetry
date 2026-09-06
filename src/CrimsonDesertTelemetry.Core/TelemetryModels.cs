@@ -64,7 +64,9 @@ public sealed record EngineLightSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     float? RendererScale,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CameraVector3? RendererRgbLinear);
+    CameraVector3? RendererRgbLinear,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CameraVector3? Direction = null);
 
 public sealed record EngineLightDiagnosticsSnapshot(
     int SourceRecords,

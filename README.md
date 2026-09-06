@@ -43,10 +43,12 @@ Enabled=1
 NearbyRadius=100
 ```
 
-It reports only verified engine light records inside that player-centred radius.
-Fire/effect illumination, physical lumens, range and a generic `enabled` claim are
-not included. With the module disabled, schema 1.1 and the existing player/camera
-payload remain unchanged; enabled light output uses additive schema 1.2.
+It reports only verified engine light records inside that player-centred radius,
+including a world-space emission direction for spotlights. Point lights omit the
+direction because it has no semantic meaning for them. Fire/effect illumination,
+physical lumens, range and a generic `enabled` claim are not included. With the
+module disabled, schema 1.1 and the existing player/camera payload remain unchanged;
+enabled light output uses additive schema 1.3.
 
 **DLSS is not required.** Camera data comes directly from the game's native
 render-camera source, including with upscaling disabled. That source is resolved

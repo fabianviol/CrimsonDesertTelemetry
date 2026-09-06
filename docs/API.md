@@ -102,7 +102,7 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` with lights disabled; additive `1.2` when the light module is requested. |
+| `schemaVersion` | string | `1.1` with lights disabled; additive `1.3` when the light module is requested. |
 | `status` | string | Sampler status; see below. |
 | `gameRunning` | boolean | Sampler's current process-presence observation, not a guarantee of playable data. |
 | `supportedBuild` | boolean or null | `null` before support is known; `false` when compatibility checks rejected the executable; `true` after a runtime was opened through either compatibility mode. On `error`, do not interpret it as successful live-data validation. |
@@ -184,8 +184,8 @@ and successful CLI `snapshot`/`track` output. The following examples are synthet
 
 ### Envelope and availability
 
-All top-level fields in the 1.1 example are required. Schema 1.2 additionally
-requires `lights`. `vector3` below means an object
+All top-level fields in the 1.1 example are required. Schemas 1.2 and 1.3 additionally
+require `lights`. `vector3` below means an object
 with three required, finite JSON numbers: `x`, `y`, `z`. There are no string-encoded
 numbers, NaN values, addresses, process handles or memory blobs in this contract.
 
@@ -201,7 +201,7 @@ numbers, NaN values, addresses, process handles or memory blobs in this contract
 | `player` | object or null | Null when required telemetry is unavailable. |
 | `camera` | object or null | Null when required telemetry is unavailable. |
 | `quality` | object or null | Null when required telemetry is unavailable. |
-| `lights` | object (schema 1.2 only) | Current nearby engine-light result and diagnostics; never emitted in schema 1.1. |
+| `lights` | object (schema 1.2+) | Current nearby engine-light result and diagnostics; never emitted in schema 1.1. |
 
 Currently known capabilities:
 
@@ -216,7 +216,7 @@ Important: `loading`/`stopped` messages still list the three base capabilities, 
 their `player`, `camera`, and `quality` fields are null. Capabilities alone are not
 a validity check. Require `game.state == "playing"` and the objects you need.
 
-### Optional engine lights (schema 1.2)
+### Optional engine lights (schema 1.3)
 
 The light module is disabled by default and currently gated to the exact validated
 Steam build `25050808` executable hash. Requesting it on another build produces
@@ -231,13 +231,14 @@ Each source can contain:
 |---|---|
 | `position` | Validated world position in the same game coordinates as the player. |
 | `kind` | `point` or `spot` only when the engine encoding is recognized; otherwise omitted. |
+| `direction` | Normalized world-space emission direction for a `spot`, obtained by rotating local +Z with its validated transform quaternion. Omitted for point lights and if the quaternion is invalid. |
 | `colorLinear` | Engine record's emitted linear RGB base color. |
 | `recordActive` | Record-maintenance flag; **not** a promise that the light is visibly emitting. |
 | `rendererSelected` | Whether this record is selected for the mapped renderer path. |
 | `rendererScale`, `rendererRgbLinear` | Both present only for a selected record with a positive finite scalar. The scalar is authored renderer data, not physical lumens; RGB is `colorLinear * rendererScale`. |
 
-No address, durable ID, range, lumens, direction, generic `enabled` field or
-fire/effect source is exposed. Array order and engine handles must not be used as
+No address, durable ID, range, lumens, generic `enabled` field or fire/effect
+source is exposed. Array order and engine handles must not be used as
 identity across snapshots or restarts. Multiple records at one position are retained.
 
 Diagnostics distinguish malformed records, valid records outside the configured
@@ -415,7 +416,7 @@ are diagnostics, not this public snapshot contract.
 ## Compatibility and limits
 
 Ignore unknown optional fields/capability strings and handle null or missing
-optional fields. The published schema is strict for the supported 1.1/1.2 shapes
+optional fields. The published schema is strict for the supported 1.1/1.2/1.3 shapes
 (`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
 Reject an unsupported major version explicitly. Breaking contract changes require

@@ -6,7 +6,8 @@ internal static class EngineLightReaderTests
     public static void DecodeFields()
     {
         var bytes = Records(
-            Record((1, 2, 3), (.5f, .25f, .125f), .47119140625f, 2, active: 1, selected: 1),
+            Record((1, 2, 3), (.5f, .25f, .125f), .47119140625f, 2, active: 1, selected: 1,
+                rotation: (.191231772f, .6807572f, -.6807572f, .191231772f)),
             Record((2, 2, 3), (.2f, .3f, .4f), -1, 0, active: 0, selected: 0));
         var result = EngineLightReader.Decode(bytes, 2, (0, 0, 0), 10);
         Check(result.Sources.Count == 2 && result.Sources[0].Kind == "spot" &&
@@ -15,8 +16,13 @@ internal static class EngineLightReaderTests
               result.Sources[0].RendererRgbLinear == new CameraVector3(1, .5f, .25f),
             "Renderer RGB was not derived from the proven fields.");
         Check(result.Sources[1].RendererScale is null && result.Sources[1].RendererRgbLinear is null &&
-              !result.Sources[1].RecordActive && !result.Sources[1].RendererSelected,
+              result.Sources[1].Direction is null && !result.Sources[1].RecordActive &&
+              !result.Sources[1].RendererSelected,
             "Unselected renderer fields were invented.");
+        Check(result.Sources[0].Direction is CameraVector3 direction &&
+              Math.Abs(direction.X) < .0001f && Math.Abs(direction.Y + 1) < .0001f &&
+              Math.Abs(direction.Z) < .0001f,
+            "Spot quaternion was not converted from local +Z to world direction.");
         Check(result.RendererDataUnavailable == 1, "Unselected renderer diagnostics mismatch.");
     }
 
@@ -28,16 +34,19 @@ internal static class EngineLightReaderTests
             Record((100, 0, 0), (1, 1, 1), -1, 1, 1, 1),
             Record((float.NaN, 0, 0), (1, 1, 1), -1, 1, 1, 1),
             Record((3, 0, 0), (1, 1, 1), -1, float.NaN, 1, 1),
-            Record((4, 0, 0), (1, 1, 1), -1, -2, 1, 1));
-        var result = EngineLightReader.Decode(bytes, 6, (0, 0, 0), 10);
-        Check(result.Sources.Count == 4 && result.Malformed == 1 && result.OutsideRadius == 1,
+            Record((4, 0, 0), (1, 1, 1), -1, -2, 1, 1),
+            Record((5, 0, 0), (1, 1, 1), .4f, 1, 1, 1, rotation: (0, 0, 0, 0)));
+        var result = EngineLightReader.Decode(bytes, 7, (0, 0, 0), 10);
+        Check(result.Sources.Count == 5 && result.Malformed == 1 && result.OutsideRadius == 1,
             "Malformed and outside-radius records were conflated.");
         Check(result.UnsupportedKind == 1 && result.Sources[0].Kind is null,
             "Unknown cone encoding was assigned a kind.");
         Check(result.RendererDataUnavailable == 1 && result.NonPositiveRendererScale == 2,
             "Renderer field diagnostics mismatch.");
-        Check(result.Sources.Skip(1).All(source => source.RendererScale is null),
+        Check(result.Sources.Skip(1).Take(3).All(source => source.RendererScale is null),
             "Invalid renderer scales were published.");
+        Check(result.Sources[^1].Kind == "spot" && result.Sources[^1].Direction is null,
+            "Invalid spot rotation discarded or invented a direction for an otherwise valid light.");
     }
 
     public static void WalkRetry()
@@ -110,19 +119,27 @@ internal static class EngineLightReaderTests
 
     public static void JsonContract()
     {
-        var source = EngineLightReader.Decode(
-            Record((1, 2, 3), (1, .5f, .25f), -1, 0, 1, 0), 1, (0, 0, 0), 10).Sources[0];
-        var lights = new EngineLightsSnapshot("available", EngineLightReader.SourceName, 10, [source],
-            new EngineLightDiagnosticsSnapshot(1, 1, 0, 0, 0, 1, 0, 0, 0, 0));
-        var snapshot = new TelemetrySnapshot("1.2", 1, DateTimeOffset.UnixEpoch,
+        var sources = EngineLightReader.Decode(Records(
+            Record((1, 2, 3), (1, .5f, .25f), -1, 0, 1, 0),
+            Record((2, 2, 3), (1, .5f, .25f), .47119140625f, 0, 1, 0,
+                rotation: (.191231772f, .6807572f, -.6807572f, .191231772f))),
+            2, (0, 0, 0), 10).Sources;
+        var lights = new EngineLightsSnapshot("available", EngineLightReader.SourceName, 10, sources,
+            new EngineLightDiagnosticsSnapshot(2, 2, 0, 0, 0, 2, 0, 0, 0, 0));
+        var snapshot = new TelemetrySnapshot("1.3", 1, DateTimeOffset.UnixEpoch,
             new GameSnapshot("25050808", "playing"), new CoordinateSystemSnapshot("game-unit", "right", "y"),
             ["player.position", "camera.transform", "camera.projection", "lights.engine"], null, null, null, lights);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(snapshot,
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
-        var light = document.RootElement.GetProperty("lights").GetProperty("sources")[0];
-        Check(!light.TryGetProperty("rendererScale", out _) && !light.TryGetProperty("rendererRgbLinear", out _),
+        var serializedSources = document.RootElement.GetProperty("lights").GetProperty("sources");
+        var point = serializedSources[0];
+        var spot = serializedSources[1];
+        Check(!point.TryGetProperty("rendererScale", out _) && !point.TryGetProperty("rendererRgbLinear", out _),
             "Unavailable renderer fields serialized as plausible values or nulls.");
-        Check(document.RootElement.GetProperty("schemaVersion").GetString() == "1.2",
+        Check(!point.TryGetProperty("direction", out _), "Point light serialized a direction.");
+        Check(Math.Abs(spot.GetProperty("direction").GetProperty("y").GetSingle() + 1) < .0001f,
+            "Spot direction was not serialized.");
+        Check(document.RootElement.GetProperty("schemaVersion").GetString() == "1.3",
             "Light snapshot did not use the additive schema revision.");
     }
 
@@ -190,9 +207,13 @@ internal static class EngineLightReaderTests
     }
 
     private static byte[] Record((float X, float Y, float Z) position, (float R, float G, float B) color,
-        float cone, float scale, byte active, byte selected)
+        float cone, float scale, byte active, byte selected,
+        (float X, float Y, float Z, float W)? rotation = null)
     {
         var bytes = new byte[EngineLightReader.RecordSize];
+        var quaternion = rotation ?? (0, 0, 0, 1);
+        F(bytes, 0x20, quaternion.X); F(bytes, 0x24, quaternion.Y);
+        F(bytes, 0x28, quaternion.Z); F(bytes, 0x2C, quaternion.W);
         F(bytes, 0x30, position.X); F(bytes, 0x34, position.Y); F(bytes, 0x38, position.Z);
         F(bytes, 0x3C, color.R); F(bytes, 0x40, color.G); F(bytes, 0x44, color.B);
         F(bytes, 0x4C, scale); F(bytes, 0x54, cone);

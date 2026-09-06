@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Numerics;
 
 namespace CrimsonDesertTelemetry.Core;
 
@@ -105,10 +106,14 @@ public sealed class EngineLightReader
 
             var cone = Float(record, 0x54);
             string? kind;
+            CameraVector3? direction = null;
             if (BitConverter.SingleToInt32Bits(cone) == BitConverter.SingleToInt32Bits(-1f))
                 kind = "point";
             else if (float.IsFinite(cone) && cone > 0 && cone <= MathF.PI / 2)
+            {
                 kind = "spot";
+                direction = SpotDirection(record);
+            }
             else
             {
                 kind = null;
@@ -154,7 +159,7 @@ public sealed class EngineLightReader
             }
 
             sources.Add(new EngineLightSnapshot(position, kind, color, active != 0, selected != 0,
-                rendererScale, rendererRgb));
+                rendererScale, rendererRgb, direction));
         }
 
         return new EngineLightDecodeResult(sources, count, malformed, outsideRadius, unsupportedKind,
@@ -216,6 +221,22 @@ public sealed class EngineLightReader
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) &&
         Math.Abs(value.X) <= TechnicalMagnitudeLimit && Math.Abs(value.Y) <= TechnicalMagnitudeLimit &&
         Math.Abs(value.Z) <= TechnicalMagnitudeLimit;
+
+    private static CameraVector3? SpotDirection(ReadOnlySpan<byte> record)
+    {
+        var quaternion = new Quaternion(Float(record, 0x20), Float(record, 0x24),
+            Float(record, 0x28), Float(record, 0x2C));
+        if (!float.IsFinite(quaternion.X) || !float.IsFinite(quaternion.Y) ||
+            !float.IsFinite(quaternion.Z) || !float.IsFinite(quaternion.W) ||
+            Math.Abs(quaternion.LengthSquared() - 1) > .002f)
+            return null;
+
+        var world = Vector3.Transform(Vector3.UnitZ, Quaternion.Normalize(quaternion));
+        if (!float.IsFinite(world.X) || !float.IsFinite(world.Y) || !float.IsFinite(world.Z) ||
+            Math.Abs(world.LengthSquared() - 1) > .002f)
+            return null;
+        return new CameraVector3(world.X, world.Y, world.Z);
+    }
 
     private static float Float(ReadOnlySpan<byte> bytes, int offset) =>
         BitConverter.ToSingle(bytes.Slice(offset, sizeof(float)));
