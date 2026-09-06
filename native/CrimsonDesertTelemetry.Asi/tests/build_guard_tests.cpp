@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include "build_guard.h"
+#include "native_contract.generated.h"
 
 namespace cdt::instruments::test
 {
@@ -49,8 +50,8 @@ int wmain(int argc, wchar_t** argv)
     if (cdt::instruments::test::HashFile(L"?:\\nonexistent-game.exe", digest)) return 4;
     if (argc == 2)
     {
-        if (!cdt::instruments::test::HashFile(argv[1], digest) || Hex(digest) !=
-            "4d99c15c58bd20a94d354d10ae395d1fac777d59ef52cba8080dc3fc8dc6f454") return 5;
+        if (!cdt::instruments::test::HashFile(argv[1], digest) ||
+            digest != cdt::native_contract::ExecutableSha256) return 5;
         std::cout << "PASS actual supported game executable SHA256\n";
     }
     std::cout << "PASS SHA256 known vectors, streaming boundaries, million bytes, executable rejection\n";

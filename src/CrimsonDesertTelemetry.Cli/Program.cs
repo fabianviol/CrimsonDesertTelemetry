@@ -29,6 +29,7 @@ try
     {
         "diagnose" => Diagnose(),
         "check-compatibility" => CheckCompatibility(args.Skip(1).ToArray()),
+        "check-update" => CheckUpdate(args.Skip(1).ToArray()),
         "discover" => Discover(),
         "snapshot" => Snapshot(args.Skip(1).ToArray()),
         "track" => Track(args.Skip(1).ToArray()),
@@ -85,6 +86,15 @@ int CheckCompatibility(string[] commandArgs)
         jsonOptions));
     Console.Error.WriteLine("Offline automatic checks passed. This is not a live-game validation.");
     return 0;
+}
+
+int CheckUpdate(string[] commandArgs)
+{
+    if (commandArgs.Length != 1) return UsageError("check-update expects an executable path.");
+    var report = UpdateCheck.Run(commandArgs[0], LoadDefinitions());
+    Console.WriteLine(JsonSerializer.Serialize(report, jsonOptions));
+    Console.Error.WriteLine("Read-only offline recovery report. This command never enables hooks, lights or unknown builds.");
+    return report.Status == "anchor-check-failed" ? 4 : 0;
 }
 
 int Discover()
@@ -611,6 +621,7 @@ int Help()
     Console.WriteLine("Crimson Desert Telemetry");
     Console.WriteLine("  diagnose                 Check the running game and build support");
     Console.WriteLine("  check-compatibility <exe>  Offline automatic checks (also on known EXEs)");
+    Console.WriteLine("  check-update <exe>         Read-only per-anchor recovery report; never enables hooks or lights");
     Console.WriteLine("  discover                 Validate and summarize the native camera source");
     Console.WriteLine("  snapshot [--lights] [--light-radius N]  Emit one JSON telemetry snapshot");
     Console.WriteLine("  track [samples] [hz] [--lights] [--light-radius N]  Emit JSON Lines");

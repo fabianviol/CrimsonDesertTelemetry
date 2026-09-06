@@ -12,6 +12,10 @@ Config LoadConfig(const std::filesystem::path& ini);
 void Start(HMODULE module, HANDLE stopEvent, const std::filesystem::path& directory) noexcept;
 bool TryRead(View& view);
 void Publish(View view);
+// Independent of WebSocket/host readiness. A source owns and explicitly clears
+// its bounded actionable fault; notifications still respect the user's opt-out.
+void SetLocalFault(std::string_view source, std::string_view title, std::string_view detail) noexcept;
+void ClearLocalFault(std::string_view source) noexcept;
 // Blocking receive loop for a dedicated worker; the ASI keeps it for process lifetime.
 void RunClient(Config config, HANDLE stopEvent);
 void DrawHud(const View& view, const Config& config, bool details);

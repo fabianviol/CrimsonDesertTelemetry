@@ -1,7 +1,7 @@
-Crimson Desert Telemetry
-========================
+Crimson Desert Telemetry 2.0.0
+=============================
 
-This unified preview package targets Definitive Mod Manager and JSON Mod Manager.
+This unified package targets Definitive Mod Manager and JSON Mod Manager.
 Complete install/uninstall and in-game validation in both managers is still pending.
 One ASI starts the read-only external host and instruments the renderer for filtered
 ManyLights readback. It also contains the optional research console; do not load
@@ -11,15 +11,17 @@ Preview.2 adds a 3D light radar and fullscreen world markers, both initially ena
 Preview.3 excludes stale buffer tails using the paired GPU valid-prefix count.
 Preview.4 enlarges the radar, adds a pitch/roll-aware 3D camera frustum, and combines
 nearby detail boxes while retaining each contribution's individual raw values.
-The new light visualization still requires its own live alignment check.
+Preview.4 was visually confirmed in game. Version 2.0 hardens build/profile checks,
+adds an offline check-update command and keeps normal loading notifications silent.
 The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
 confirmed working in-game HUD behavior after restarting with preview.7. The HUD
 retains automatic resolution scaling, including 4K. NVIDIA recording is unverified.
 Manually tested games: Steam builds 24994088 (EXE 1.0.0.2658), 25050808
 (EXE 1.0.0.2692), and 25116796 (EXE 1.0.0.2760). Other executable
-hashes are accepted only when all guarded code, data, player-type and camera-table
-sources resolve unambiguously; health labels this automatic, not manually tested.
+hashes may be recognized only for the historical guarded basic-telemetry layout;
+health labels that automatic, not manually tested. Current direct-camera/ManyLights
+recovery is not automatically promoted. Native lighting requires the validated EXE.
 
 Requirements
 ------------
@@ -60,10 +62,12 @@ an oblique, player-centered light overview with its text below the full-width ra
 Camera frustum angles follow the actual camera basis/FOV; its drawn length is
 schematic. Radar3D=0 restores the original compass.
 The independent [LightOverlay] section enables fullscreen markers and compact
-position/RGB/linear-luminance labels. Both views are enabled in this preview.
-Separate startup notices are enabled by [Notifications] Enabled=1. They show loading,
-ready and actionable errors at the top left; readiness disappears after six seconds,
-errors persist until resolved. A visible HUD moves notices out of its top-left area.
+position/RGB/linear-luminance labels. Both views are enabled by default.
+Separate status notices are enabled by [Notifications] Enabled=1. Normal startup,
+loading and discovery remain silent. Once the scene is playing and requested data
+is ready, success appears for six seconds (DurationMilliseconds, clamped to 5-10s).
+Actionable errors can appear immediately, even with an unsupported EXE or missing
+host; they persist until resolved. A visible HUD moves notices out of its top-left area.
 Disable Overlay, LightOverlay and Notifications to skip all UI graphics hooks/client.
 They require D3D12/SDR; if drawing fails, use the logs. Missing sections default off.
 Telemetry remains active independently through [Server] Enabled=1.
@@ -87,7 +91,7 @@ Player-root heading (cyan) and camera heading (amber) are independent. X/Z label
 are world axes, not compass north. Player orientation is not an animated body pose.
 Coordinates use game units. Loading/disconnected/stale values are not shown live.
 
-The first HUD preview supports DirectX 12 and 8-bit SDR only. HDR and frame
+The HUD supports DirectX 12 and 8-bit SDR only. HDR and frame
 generation are not validated. NVIDIA recording requires an actual recording test.
 Edit [Overlay] settings in the INI before launch: Enabled, InitiallyVisible,
 ShowDetails, Radar3D, ToggleKey, DetailsKey, Corner, AutoScale, Scale, Opacity, StaleMilliseconds.

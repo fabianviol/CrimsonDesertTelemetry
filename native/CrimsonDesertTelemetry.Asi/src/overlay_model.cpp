@@ -451,7 +451,7 @@ struct NoticeState
 {
     std::string key;
     Notice notice;
-    bool persistent = true, debounce = false;
+    enum Kind { Silent, Waiting, Ready, Error } kind = Error;
 };
 NoticeState LightNotice(const LightSummary& light)
 {
@@ -473,43 +473,59 @@ NoticeState LightNotice(const LightSummary& light)
             "Install matching ASI and telemetry host versions, then restart Crimson Desert.", true}};
     if (reason == "bridge-missing")
         return {reason, {"Light capture is not connected",
-            "Check that CrimsonDesertTelemetry.asi is loaded and light capture is enabled.", true}, true, true};
+            "Check that CrimsonDesertTelemetry.asi is loaded and light capture is enabled.", true}, NoticeState::Waiting};
     if (reason == "bridge-waiting" || reason == "bridge-stale" || reason == "bridge-changing" ||
         reason == "walk-unavailable" || reason == "player-unavailable" ||
         reason == "required-telemetry-unavailable" || reason == "game-stopped")
-        return {"lights-waiting", {"Preparing light data",
-            "Waiting for a fresh light sample from the current scene."}, true, true};
+        return {"lights-waiting", {"Light capture has no fresh sample",
+            "Restart Crimson Desert; check CrimsonDesertTelemetry.native.log if this continues.", true}, NoticeState::Waiting};
     return {"lights-unavailable", {"Light data is unavailable",
-        "Check the telemetry logs for the light reader's failure reason.", true}, true, true};
+        "Check the telemetry logs for the light reader's failure reason.", true}};
 }
 NoticeState NextNotice(const View& view, const Config& config, Clock::time_point now)
 {
     const bool live = IsLive(view, now, config.staleMs);
+    if (!view.localFaults.empty())
+    {
+        const auto& fault = view.localFaults.front();
+        return {"local-" + fault.source, {fault.title, fault.detail, true}};
+    }
     if (!live && (view.healthStatus == "unsupported-build" || view.healthStatus == "error"))
         return {"health-" + view.healthStatus, {
             view.healthStatus == "unsupported-build" ? "This game build needs an update" : "Telemetry could not start",
             view.healthError.empty() ? "Check the telemetry logs and restart with matching plugin files."
                 : view.healthError.substr(0, 512), true}};
+    if (view.hasSample && view.sample.state == "unsupported")
+        return {"unsupported", {"This game build needs an update",
+            "Install a telemetry version compatible with this Crimson Desert build.", true}};
+    // A concrete native/layout failure is actionable even during loading. A
+    // missing or merely discovering feed is not a startup timeout or an error.
+    for (const auto* light : {config.lightsExpected ? &view.sample.authoredLights : nullptr,
+        config.lightsExpected && config.renderedExpected ? &view.sample.renderedLights : nullptr})
+    {
+        if (!light || light->status == "available" || light->status == "not-reported") continue;
+        const auto problem = LightNotice(*light);
+        if (problem.kind == NoticeState::Error) return problem;
+    }
     if (!view.connected)
     {
         if (view.connection == "INVALID / INCOMPATIBLE DATA")
             return {"connection-invalid", {"Telemetry data is incompatible",
                 "Install matching ASI and telemetry host versions, then restart Crimson Desert.", true}};
-        return {"connection-waiting", {"Starting telemetry",
-            "Waiting for the local telemetry connection."}, true, true};
+        return {"connection-waiting", {"Telemetry connection was interrupted",
+            "Check CrimsonDesertTelemetry.host.log; restart Crimson Desert if the host has stopped.", true}, NoticeState::Waiting};
     }
     if (!view.hasSample)
-        return {"sample-waiting", {"Waiting for Crimson Desert",
-            "Telemetry will become available after a scene is loaded."}, true, true};
+        return {"sample-waiting", {"Telemetry has no current sample",
+            "Check CrimsonDesertTelemetry.host.log; restart Crimson Desert if this continues.", true}, NoticeState::Waiting};
     if (view.sample.state != "playing")
-        return {"scene-" + view.sample.state, {view.sample.state == "loading" ? "Loading Crimson Desert" : "Waiting for Crimson Desert",
-            "Telemetry resumes when the scene is ready."}};
+        return {"scene-waiting", {}, NoticeState::Silent};
     if (AgeMs(view, now) > config.staleMs)
-        return {"telemetry-stale", {"Waiting for fresh telemetry",
-            "The last sample is out of date; current values are temporarily unavailable."}, true, true};
+        return {"telemetry-stale", {"Telemetry stopped updating",
+            "Current values are unavailable. Check the telemetry logs or restart Crimson Desert.", true}, NoticeState::Waiting};
     if (!view.sample.cameraPosition || !view.sample.playerPosition)
-        return {"pose-waiting", {"Preparing player and camera data",
-            "Waiting for the current scene's telemetry."}, true, true};
+        return {"pose-waiting", {"Player or camera data is unavailable",
+            "Check CrimsonDesertTelemetry.host.log; restart Crimson Desert if this continues.", true}, NoticeState::Waiting};
 
     std::optional<NoticeState> waiting;
     for (const auto* light : {config.lightsExpected ? &view.sample.authoredLights : nullptr,
@@ -521,18 +537,17 @@ NoticeState NextNotice(const View& view, const Config& config, Clock::time_point
             return {"lights-missing", {"Requested light data is missing",
                 "Install matching ASI and telemetry host files; check [Lights] settings and restart.", true}};
         auto notice = LightNotice(*light);
-        if (notice.notice.error) return notice;
+        if (notice.kind == NoticeState::Error) return notice;
         if (!waiting) waiting = std::move(notice);
     }
     if (waiting) return *waiting;
-    if (config.lightsExpected && config.renderedExpected && view.sample.renderedLights.ageMilliseconds &&
-        *view.sample.renderedLights.ageMilliseconds + AgeMs(view, now) > 500)
-        return {"lights-waiting", {"Preparing light data",
-            "Waiting for a fresh light sample from the current scene."}, true, true};
+    if (config.lightsExpected && config.renderedExpected && !RenderedLightsLive(view, now, config.staleMs))
+        return {"lights-waiting", {"Light capture has no fresh sample",
+            "Restart Crimson Desert; check CrimsonDesertTelemetry.native.log if this continues.", true}, NoticeState::Waiting};
     const bool lights = config.lightsExpected && (view.sample.authoredLights.status == "available" ||
         (config.renderedExpected && view.sample.renderedLights.status == "available"));
     return {"ready", {"Telemetry is ready", lights ? "Player, camera and available light data are ready."
-        : "Player and camera data are ready."}, false};
+        : "Player and camera data are ready."}, NoticeState::Ready};
 }
 }
 
@@ -540,39 +555,54 @@ std::optional<Notice> NoticeTracker::Update(const View& view, const Config& conf
 {
     if (!config.notifications)
     {
-        current_.reset(); currentKey_.clear(); pendingKey_.clear(); observedKey_.clear();
+        current_.reset(); currentKey_.clear(); pendingKey_.clear(); readyForScene_ = false;
         return std::nullopt;
     }
     const auto visible = [&]() -> std::optional<Notice>
     {
-        return current_ && (persistent_ || now - shownAt_ < std::chrono::milliseconds(
-            std::clamp(config.notificationDurationMs, 1000, 60000))) ? current_ : std::nullopt;
+        return current_ && (current_->error || now - shownAt_ < std::chrono::milliseconds(
+            std::clamp(config.notificationDurationMs, 5000, 10000))) ? current_ : std::nullopt;
     };
+    // A confirmed non-playing state arms one new ready toast for the next
+    // loaded scene. Connection jitter / sample counts never imply a reload.
+    const bool sceneWaiting = (view.connected && view.hasSample && view.sample.state != "playing" &&
+        view.sample.state != "unsupported") || (!IsLive(view, now, config.staleMs) &&
+        (view.healthStatus == "loading" || view.healthStatus == "discovering" || view.healthStatus == "waiting"));
+    if (sceneWaiting) readyForScene_ = false;
     auto next = NextNotice(view, config, now);
-    if (next.key != observedKey_) { observedKey_ = next.key; observedAt_ = now; }
-    if (now - observedAt_ >= std::chrono::seconds(10))
+    if (currentKey_.starts_with("local-") && next.kind != NoticeState::Error)
     {
-        if (next.key == "connection-waiting")
-            next = {"connection-timeout", {"Telemetry host is not reachable",
-                "Check the .NET 8 ASP.NET Core Runtime (x64), [Server] Enabled=1, and telemetry host logs.", true}};
-        else if (next.key == "lights-waiting")
-            next = {"lights-timeout", {"Light capture has no fresh sample",
-                "Restart Crimson Desert; check CrimsonDesertTelemetry.native.log if this continues.", true}};
+        // The owning local source explicitly cleared its fault. Do not keep
+        // that resolved message during the connection-recovery grace period.
+        current_.reset(); currentKey_.clear();
     }
-    if (next.key == currentKey_)
+    if (next.kind == NoticeState::Silent || (next.kind == NoticeState::Waiting && !readyForScene_))
     {
         pendingKey_.clear();
-        return visible();
+        // Concrete faults are retained by their source until it reports
+        // recovery. Normal loading/discovery must not retain a stale toast.
+        current_.reset(); currentKey_.clear();
+        return std::nullopt;
     }
-    if (next.debounce && !currentKey_.empty())
+    if (next.kind == NoticeState::Waiting)
     {
         if (next.key != pendingKey_) { pendingKey_ = next.key; pendingAt_ = now; }
         if (now - pendingAt_ < std::chrono::seconds(1)) return visible();
     }
-    pendingKey_.clear();
+    else pendingKey_.clear();
+    if (next.kind == NoticeState::Ready)
+    {
+        if (readyForScene_ && (!current_ || !current_->error)) return visible();
+        readyForScene_ = true;
+    }
+    if (next.key == currentKey_)
+    {
+        // Updated diagnostics from the same source must not freeze old text.
+        current_ = std::move(next.notice);
+        return visible();
+    }
     currentKey_ = std::move(next.key);
     current_ = std::move(next.notice);
-    persistent_ = next.persistent;
     shownAt_ = now;
     return visible();
 }

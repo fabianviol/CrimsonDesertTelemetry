@@ -297,6 +297,7 @@ int wmain(int argc, wchar_t** argv)
             DXGI_SWAP_CHAIN_DESC1 current{}; Check(chain->GetDesc1(&current));
             auto view = supplied ? *supplied : lightsMode ?
                 LightFixture(static_cast<float>(current.Width) / static_cast<float>(current.Height)) : Fixture();
+            if (noticesOnly && !supplied) view.sample.cameraPosition = view.sample.playerPosition;
             Publish(std::move(view));
             ComPtr<ID3D12Resource> buffer;
             Check(chain->GetBuffer(chain->GetCurrentBackBufferIndex(), IID_PPV_ARGS(&buffer)));
@@ -314,6 +315,18 @@ int wmain(int argc, wchar_t** argv)
             if (screenshot || inspect) return SaveBuffer(gpu, buffer.Get(), screenshot);
             return Pixels{};
         };
+        if (noticesOnly)
+        {
+            View waiting;
+            const auto startupImage = frame(false, nullptr, &waiting, true);
+            Require(startupImage.Changed(0, 0, 960, 720) == 0 && RenderedFrames() == 0,
+                "Normal notification-only startup produced visible loading UI");
+            waiting.connected = waiting.hasSample = true;
+            waiting.sample.state = "loading"; waiting.received = Clock::now();
+            const auto loadingImage = frame(false, nullptr, &waiting, true);
+            Require(loadingImage.Changed(0, 0, 960, 720) == 0 && RenderedFrames() == 0,
+                "Normal loading submitted a notification draw");
+        }
         if (lightsMode)
         {
             SetVisibleForTest(false);
@@ -460,6 +473,27 @@ int wmain(int argc, wchar_t** argv)
             Require(compactImage.Changed(440,190,760,310) > 100,
                 "Compact combined surface lost its grouped light detail card");
             std::cout << "PASS full-width radar camera pitch/roll, missing-basis clearing and grouped contribution RGB\n";
+        }
+        if (noticesOnly)
+        {
+            View waiting;
+            SetLocalFault("bootstrap", "Telemetry host files are missing", "Reinstall the complete CrimsonDesertTelemetry package.");
+            const auto localFault = frame(false, nullptr, &waiting, true);
+            Require(localFault.Changed(0, 0, 3840, 2160) > 100,
+                "Local bootstrap failure produced no on-screen notice without a server");
+            ClearLocalFault("bootstrap");
+            const auto cleared = frame(false, nullptr, &waiting, true);
+            Require(cleared.Changed(0, 0, 3840, 2160) == 0,
+                "Resolved local failure left a stale notification on screen");
+            waiting.healthStatus = "unsupported-build";
+            waiting.healthError = "Install a telemetry version for this game build.";
+            // The raster fixture publishes its modeled diagnostic directly;
+            // process-local reporting is exercised above through the real API.
+            waiting.localFaults.push_back({"native", "This game build needs an update", waiting.healthError});
+            const auto unsupported = frame(false, nullptr, &waiting, true);
+            Require(unsupported.Changed(0, 0, 3840, 2160) > 100,
+                "Unsupported build before any playing sample produced no on-screen error");
+            std::cout << "PASS silent startup/loading and local bootstrap/unsupported errors without a host\n";
         }
         Check(gpu.device->GetDeviceRemovedReason());
         DestroyWindow(window);

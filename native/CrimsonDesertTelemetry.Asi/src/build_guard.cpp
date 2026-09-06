@@ -1,5 +1,6 @@
 #include <windows.h>
 #include "build_guard.h"
+#include "native_contract.generated.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -125,16 +126,13 @@ namespace cdt::instruments
 {
 bool VerifyExecutable()
 {
-    // 25116796, independently recorded in the research handover and measured
-    // from the EXE. Any different executable disables native game hooks.
-    constexpr std::array<unsigned char, 32> expected{
-        0x4D,0x99,0xC1,0x5C,0x58,0xBD,0x20,0xA9,0x4D,0x35,0x4D,0x10,0xAE,0x39,0x5D,0x1F,
-        0xAC,0x77,0x7D,0x59,0xEF,0x52,0xCB,0xA8,0x08,0x0D,0xC3,0xFC,0x8D,0xC6,0xF4,0x54};
+    // The reviewed JSON definition is the only EXE allowlist. Runtime discovery
+    // never authorizes an unknown binary to execute native game hooks.
     std::array<wchar_t, 32768> path{};
     const auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (!length || length >= path.size()) return false;
     Digest digest{};
-    return HashExecutableFile(path.data(), digest) && digest == expected;
+    return HashExecutableFile(path.data(), digest) && digest == native_contract::ExecutableSha256;
 }
 
 #ifdef CDT_BUILD_GUARD_TEST

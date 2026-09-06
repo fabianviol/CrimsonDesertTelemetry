@@ -1,4 +1,56 @@
-# Current checkpoint — update-stability audit, 2026-09-06, Codex/Astra
+# Current checkpoint — 2.0.0 prepared, 2026-09-06, Codex/Astra
+
+User requested version **2.0.0**, not another preview, for the forthcoming release.
+The new package is built and locally tested; NOT uploaded/tagged/published or
+installed into the game. User confirmed preview.4 in game; current PID was not
+rechecked. **One next step: close game, install 2.0.0 via DMM, cold-load a save and
+confirm silent loading → six-second ready notice, player/camera/lights and HUD.**
+Do that final packaged live check before GitHub/Nexus publishing.
+
+- Native EXE hash, hook/caller guards and scene/wrapper/GPU contract now derive from
+  `definitions/build-25116796.json` via CMake. Production StartCapture validates PE,
+  executable sections, exact hook and three known caller/binder contexts before
+  MinHook. Unknown EXEs remain barred from native game instrumentation; ABI2 unchanged.
+- `check-update <exe>` is read-only/offline and never enables candidates. Current
+  EXE returns exact-profile-anchors-checked: 11 matched code/RTTI anchors. Scene
+  vtable has no proven relocatable fingerprint; it and authored layout remain
+  unverified by this offline check. Current direct-layout automatic promotion is
+  deliberately NOT implemented; no unsupported "just change SHA" shortcut.
+- Build profiles reject unknown/duplicate JSON fields, missing chain offsets,
+  malformed/ambiguous patterns, bad RIP bounds and inconsistent native contracts.
+  Real player-chain fixtures cover identity, position, basis and replaced pointers.
+- Normal notification startup/loading/discovery remains silent, without arbitrary
+  loading timeout. Ready requires playing + fresh requested data (valid empty light
+  feeds count), default6s/clamped5–10s. Local bootstrap/native faults render without
+  a host or validated game hooks. Errors may appear before loading; explicit
+  Notifications.Enabled=0 still disables them. Unsupported graphics can prevent UI;
+  retain logs. Radar, raw RGB and light API semantics were not changed.
+- Recovery entry: `docs/UPDATE_RECOVERY.md`; three preserved archive tools now travel
+  with product Git, reused from research af5485b. No active PSO/shader-identity gate:
+  unchanged EXE + changed shader assets remains a real unclosed risk. Exposure
+  normalization/capture remains separate and unfinished; evidence is below.
+
+Verification: final2.0 managed build0warnings; 56/56 managed tests, HTTP/WebSocket
+smoke, 11/11 native CTest paths PASS. Actual EXE file matches generated hook+all
+contexts. Negative production StartCapture tests leave code untouched/no trampoline.
+Raster tests verify silent startup/loading and local errors with HUD/host absent.
+Package validator/negative cases and ZIP payload equality PASS. Reused shader
+inspector reproduced ProcessManyLightsCS from preserved PASC/DXBC; no game writes.
+Normal PR CI now runs native tests too. No whole-game future-update claim.
+
+Package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`
+SHA256 `E8A268B2B0A9D2C592A13789E0C67FC0F5C7E75BF81F09ADE7736B5784D16D12`.
+Expanded: `artifacts/mod-manager/v2.0.0-20260906-231021-302-bb4227cc/CrimsonDesertTelemetry`.
+ASI SHA256 `F2B62762945EC0E3A1FEDFB5B8836FB927A1DF81520A777D1F4EE6A521B1387D`.
+Host FileVersion2.0.0.0; package compiled from this turn's working tree on base8ad54db
+(the automatic informational-version suffix names that base, not a clean source tag).
+Older versioned ZIPs are untouched. Release notes: `docs/releases/v2.0.0.md`.
+
+Private recovery backup is the remaining local closeout action after saving source:
+`scripts/Backup-UpdateEvidence.ps1 -ExecutablePath <baseline-exe>`; independent
+research af5485b remains clean/no remote. Never publish the EXE/shader/index backup.
+
+## Previous checkpoint — update-stability audit (proposal now implemented above)
 
 User confirmed preview.4's enlarged radar/frustum and grouped light UI in game
 with a screenshot. PID was not rechecked. Product source remains `db727ca`;

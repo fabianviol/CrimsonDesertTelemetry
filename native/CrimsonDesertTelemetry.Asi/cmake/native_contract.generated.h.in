@@ -1,0 +1,55 @@
+#pragma once
+// GENERATED from definitions/build-25116796.json; do not hand-edit.
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string_view>
+namespace cdt::native_contract
+{
+inline constexpr std::string_view BuildId = "@CDT_BUILD@";
+inline constexpr std::string_view ContractId = "@CDT_CONTRACT_ID@";
+inline constexpr std::array<unsigned char, 32> ExecutableSha256{@CDT_EXE_HASH@};
+inline constexpr std::uint64_t SceneGlobalRva = @CDT_SCENE_GLOBAL@ULL;
+inline constexpr std::uint64_t HookRva = @CDT_HOOK_RVA@ULL;
+inline constexpr std::array<std::uint8_t, @CDT_HOOK_SIZE@> HookSignature{@CDT_HOOK_BYTES@};
+struct ContextSignature { std::uint64_t rva; std::span<const std::uint8_t> bytes; };
+@CDT_CONTEXT_ARRAYS@
+inline constexpr std::array<ContextSignature, @CDT_CONTEXT_COUNT@> ContextSignatures{{
+@CDT_CONTEXT_ENTRIES@}};
+inline constexpr std::uint32_t InnerOffset = @CDT_WRAPPER_innerOffset@;
+inline constexpr std::uint32_t StrideOffset = @CDT_WRAPPER_strideOffset@;
+inline constexpr std::uint32_t CountOffset = @CDT_WRAPPER_countOffset@;
+inline constexpr std::uint32_t ResourceOffset = @CDT_WRAPPER_resourceOffset@;
+inline constexpr std::uint32_t CommandHolderOffset = @CDT_WRAPPER_commandHolderOffset@;
+inline constexpr std::uint32_t NativeListOffset = @CDT_WRAPPER_nativeListOffset@;
+inline constexpr std::uint32_t OwnerBankIndexOffset = @CDT_WRAPPER_ownerBankIndexOffset@;
+inline constexpr std::uint32_t SceneRootPointerOffset = @CDT_SCENE_rootPointerOffset@;
+inline constexpr std::uint32_t SceneBytes = @CDT_SCENE_byteCount@;
+inline constexpr std::uint32_t FrameOffset = @CDT_SCENE_frameOffset@;
+inline constexpr std::uint32_t ScreenOffset = @CDT_SCENE_screenOffset@;
+inline constexpr std::uint32_t PositionOffset = @CDT_SCENE_positionOffset@;
+inline constexpr std::uint32_t DirectionOffset = @CDT_SCENE_directionOffset@;
+inline constexpr std::uint32_t ViewRelativeOffset = @CDT_SCENE_viewRelativeOffset@;
+inline constexpr std::uint32_t EarthRadiusOffset = @CDT_SCENE_earthRadiusOffset@;
+inline constexpr float EarthRadius = @CDT_SCENE_earthRadius@.0f;
+inline constexpr std::uint32_t RecordCount = @CDT_GPU_recordCount@;
+inline constexpr std::uint32_t RecordStride = @CDT_GPU_recordStride@;
+inline constexpr std::uint32_t CounterBytes = @CDT_GPU_counterBytes@;
+inline constexpr std::uint32_t ValidCounterByteOffset = @CDT_GPU_validCounterByteOffset@;
+// These are ABI/layout version assertions, not a second editable profile. A new
+// layout must receive a reviewed decoder/bridge version, not only a new hash.
+static_assert(SceneBytes == 2816 && RecordCount == 32768 && RecordStride == 48 && CounterBytes == 256);
+static_assert(ValidCounterByteOffset == 4 && ValidCounterByteOffset + 4 <= CounterBytes);
+static_assert(InnerOffset == 48 && StrideOffset == 192 && CountOffset == 196 && ResourceOffset == 360);
+static_assert(CommandHolderOffset == 2048 && NativeListOffset == 8 && OwnerBankIndexOffset == 2296);
+static_assert(SceneRootPointerOffset == 1064 && FrameOffset == 32 && ScreenOffset == 48);
+static_assert(PositionOffset == 128 && DirectionOffset == 144 && ViewRelativeOffset == 160);
+static_assert(EarthRadiusOffset == 2752 && EarthRadius == 6360000.0f);
+static_assert(FrameOffset + 4 <= SceneBytes && ScreenOffset + 16 <= SceneBytes);
+static_assert(PositionOffset + 16 <= SceneBytes && DirectionOffset == PositionOffset + 16);
+static_assert(ViewRelativeOffset + 64 <= SceneBytes && EarthRadiusOffset + 4 <= SceneBytes);
+static_assert(InnerOffset < 4096 && StrideOffset < 4096 && CountOffset < 4096 && ResourceOffset < 4096);
+static_assert(CommandHolderOffset < 65536 && NativeListOffset < 4096 && OwnerBankIndexOffset < 65536);
+static_assert(SceneRootPointerOffset < 65536 && HookRva > 0 && SceneGlobalRva > 0);
+}

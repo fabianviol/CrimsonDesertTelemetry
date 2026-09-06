@@ -13,6 +13,7 @@ public static class BuildCompatibility
 {
     public static ResolvedBuild Resolve(string executable, IReadOnlyList<BuildDefinition> definitions)
     {
+        BuildProfileValidation.ValidateAll(definitions);
         var hash = GameDiscovery.ComputeSha256(executable);
         var known = definitions.SingleOrDefault(definition =>
             string.Equals(definition.ExecutableSha256, hash, StringComparison.OrdinalIgnoreCase));
@@ -29,6 +30,7 @@ public static class BuildCompatibility
     private static ResolvedBuild ResolveAutomatic(string executable, IReadOnlyList<BuildDefinition> definitions,
         string hash)
     {
+        BuildProfileValidation.ValidateAll(definitions);
         var image = CompatibilityImage.Load(executable);
         var matches = new List<(BuildDefinition Reference, BuildDefinition Resolved)>();
         var failures = new List<string>();
@@ -60,6 +62,7 @@ public static class BuildCompatibility
         // Light offsets are never carried onto a merely pattern-compatible executable.
         // They are enabled only by an exact, locally validated executable hash.
         definition.EngineLights = null;
+        definition.NativeCapture = null;
         var camera = definition.EngineCamera
             ?? throw new InvalidDataException("No native camera layout.");
         if (camera.Layout != "renderer-camera-v1") throw new InvalidDataException("Unknown camera layout.");
@@ -215,6 +218,45 @@ internal sealed class CompatibilityImage
         }
         if (candidates.Count != 1) throw new InvalidDataException($"Missing vtable fingerprint: {label}.");
         return candidates[0];
+    }
+
+    public ulong FindRttiName(string name)
+    {
+        var pattern = SignaturePattern.Parse(string.Join(" ", System.Text.Encoding.ASCII.GetBytes(name + '\0')
+            .Select(value => value.ToString("X2"))));
+        var matches = new List<ulong>();
+        // MSVC stores TypeDescriptor names in writable .data on the current build.
+        foreach (var section in _sections.Where(s => s.Readable && !s.Executable))
+            foreach (var offset in pattern.FindAll(Bytes(section)))
+            {
+                matches.Add(section.VirtualAddress + (ulong)offset);
+                if (matches.Count > 1) throw new InvalidDataException($"Ambiguous RTTI name: {name}.");
+            }
+        if (matches.Count != 1) throw new InvalidDataException($"Missing RTTI name: {name}.");
+        return matches[0];
+    }
+
+    public string InspectExactVtable(ulong rva)
+    {
+        if (rva < 8 || (rva & 7) != 0 || !IsData(rva - 8, 16, writable: false))
+            throw new InvalidDataException("Vtable is not aligned read-only image data.");
+        var first = BitConverter.ToUInt64(ReadRva(rva, 8));
+        if (first < _imageBase || !_sections.Any(s => s.Executable && first - _imageBase >= s.VirtualAddress &&
+                first - _imageBase < (ulong)s.VirtualAddress + s.RawSize))
+            throw new InvalidDataException("Vtable first slot is not executable image code.");
+        var locatorVa = BitConverter.ToUInt64(ReadRva(rva - 8, 8));
+        if (locatorVa < _imageBase || !IsData(locatorVa - _imageBase, 24, writable: false))
+            return "Aligned read-only table with an executable first slot; no usable MSVC RTTI locator.";
+        var locator = ReadRva(locatorVa - _imageBase, 24);
+        if (BitConverter.ToUInt32(locator, 0) != 1 || BitConverter.ToUInt32(locator, 20) != locatorVa - _imageBase)
+            throw new InvalidDataException("Vtable RTTI locator self-reference disagrees.");
+        var typeRva = (ulong)BitConverter.ToUInt32(locator, 12);
+        // MSVC TypeDescriptors may be in writable .data, unlike the locator/table.
+        var typeName = ReadRva(typeRva + 16, 160);
+        var end = Array.IndexOf(typeName, (byte)0);
+        if (end is < 5 or > 150 || typeName.Take(end).Any(b => b is < 32 or > 126))
+            throw new InvalidDataException("Vtable RTTI type name is invalid.");
+        return "Aligned read-only table with an executable first slot and RTTI " + System.Text.Encoding.ASCII.GetString(typeName, 0, end);
     }
 
     private byte[] ReadRva(ulong rva, int size)

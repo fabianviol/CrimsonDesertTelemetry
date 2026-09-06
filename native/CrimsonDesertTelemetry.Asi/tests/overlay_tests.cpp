@@ -351,76 +351,79 @@ void NoticeTests()
     View view;
     NoticeTracker tracker;
     auto notice = tracker.Update(view, config, start);
-    Require(notice && notice->title == "Starting telemetry" && !notice->error,
-        "Notifications must work with the full HUD disabled");
-    notice = tracker.Update(view, config, start + std::chrono::seconds(9));
-    Require(notice && notice->title == "Starting telemetry", "Waiting notice must persist initially");
-    notice = tracker.Update(view, config, start + std::chrono::seconds(30));
-    Require(notice && notice->error && notice->title == "Telemetry host is not reachable" &&
-        notice->detail.find("ASP.NET Core Runtime") != std::string::npos,
-        "Host startup timeout must provide an actionable error");
+    Require(!notice && !tracker.Update(view, config, start + std::chrono::seconds(60)),
+        "Normal startup must remain silent even after sixty seconds");
+    view.connected = true;
+    Require(!tracker.Update(view, config, start + std::chrono::seconds(120)),
+        "Connected discovery without a sample must remain silent");
     view.connected = true; view.hasSample = true; view.sample.state = "loading";
-    notice = tracker.Update(view, config, start + std::chrono::seconds(31));
-    Require(notice && notice->title == "Loading Crimson Desert", "Loading notice missing");
+    Require(!tracker.Update(view, config, start + std::chrono::seconds(121)) &&
+        !tracker.Update(view, config, start + std::chrono::seconds(181)),
+        "Long scene loading must never show a loading notice or timeout");
     view.sample.state = "playing";
     view.sample.playerPosition = Vec3{1, 2, 3}; view.sample.cameraPosition = Vec3{4, 5, 6};
     view.sample.authoredLights.status = "available"; view.sample.authoredLights.publishedRecords = 0;
     view.sample.renderedLights.status = "available"; view.sample.renderedLights.publishedRecords = 0;
+    view.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>();
+    view.sample.renderedLights.ageMilliseconds = 0;
     const auto fresh = [&](Clock::time_point when)
     {
         view.received = when;
         ++view.sample.sequence;
         return tracker.Update(view, config, when);
     };
-    notice = fresh(start + std::chrono::seconds(32));
+    view.sample.renderedLights.status = "unavailable";
+    view.sample.renderedLights.unavailableReason = "bridge-waiting";
+    Require(!fresh(start + std::chrono::seconds(182)) && !fresh(start + std::chrono::seconds(242)),
+        "Initial light discovery must not become an arbitrary timeout");
+    view.sample.renderedLights.status = "available";
+    view.sample.renderedLights.unavailableReason.clear();
+    notice = fresh(start + std::chrono::seconds(243));
     Require(notice && notice->title == "Telemetry is ready" && !notice->error,
         "Loading-to-ready success notice missing");
     view.sample.renderedLights.publishedRecords = 400;
-    Require(!fresh(start + std::chrono::seconds(39)), "Sequence/count changes retriggered the success notice");
+    Require(fresh(start + std::chrono::milliseconds(248999)).has_value(), "Ready notice expired before six seconds");
+    Require(!fresh(start + std::chrono::seconds(249)), "Ready notice did not expire at six seconds");
+    Require(!fresh(start + std::chrono::seconds(250)), "Sequence/count changes retriggered the success notice");
     view.sample.renderedLights.status = "unavailable";
     view.sample.renderedLights.unavailableReason = "legacy-plugin-conflict";
-    notice = fresh(start + std::chrono::seconds(40));
+    notice = fresh(start + std::chrono::seconds(251));
     Require(notice && notice->error && notice->detail.find("mod manager") != std::string::npos,
         "Legacy conflict must explain the corrective action");
-    notice = fresh(start + std::chrono::seconds(70));
+    notice = fresh(start + std::chrono::seconds(281));
     Require(notice && notice->error, "Actionable error vanished before recovery");
     view.sample.renderedLights.status = "available";
     view.sample.renderedLights.unavailableReason.clear();
-    notice = fresh(start + std::chrono::seconds(71));
+    notice = fresh(start + std::chrono::seconds(282));
     Require(notice && notice->title == "Telemetry is ready", "Recovery should emit one new ready notice");
-    Require(!fresh(start + std::chrono::seconds(78)), "Recovery ready notice did not expire");
+    Require(!fresh(start + std::chrono::seconds(289)), "Recovery ready notice did not expire");
     // A brief interruption must neither replace the screen with a stale notice
     // nor cause another success toast when the next sample arrives.
-    Require(!tracker.Update(view, config, start + std::chrono::milliseconds(80001)),
+    Require(!tracker.Update(view, config, start + std::chrono::milliseconds(291001)),
         "Transient stale data was not debounced");
-    Require(!fresh(start + std::chrono::milliseconds(80500)), "Brief stale recovery retriggered ready");
-    Require(!tracker.Update(view, config, start + std::chrono::seconds(83)), "Stale debounce did not start");
-    notice = tracker.Update(view, config, start + std::chrono::seconds(84));
-    Require(notice && notice->title == "Waiting for fresh telemetry", "Persistent stale data was hidden");
-    notice = fresh(start + std::chrono::seconds(85));
+    Require(!fresh(start + std::chrono::milliseconds(291500)), "Brief stale recovery retriggered ready");
+    Require(!tracker.Update(view, config, start + std::chrono::seconds(294)), "Stale debounce did not start");
+    notice = tracker.Update(view, config, start + std::chrono::seconds(295));
+    Require(notice && notice->error && notice->title == "Telemetry stopped updating", "Persistent stale data was hidden");
+    notice = fresh(start + std::chrono::seconds(296));
     Require(notice && notice->title == "Telemetry is ready", "Stale recovery was not reported");
     view.sample.state = "loading";
-    notice = fresh(start + std::chrono::seconds(86));
-    Require(notice && notice->title == "Loading Crimson Desert", "Second load did not restart notices");
+    Require(!fresh(start + std::chrono::seconds(297)) && !fresh(start + std::chrono::seconds(357)),
+        "Reload must clear the old ready toast and stay silent");
     view.sample.state = "playing";
-    notice = fresh(start + std::chrono::seconds(87));
+    notice = fresh(start + std::chrono::seconds(358));
     Require(notice && notice->title == "Telemetry is ready", "Second loaded scene did not report ready");
     config.notifications = false;
-    Require(!fresh(start + std::chrono::seconds(88)), "Disabled notices must disappear");
+    Require(!fresh(start + std::chrono::seconds(359)), "Disabled notices must disappear");
 
     config.notifications = true;
     view.sample.renderedLights.status = "unavailable";
     view.sample.renderedLights.unavailableReason = "bridge-waiting";
-    notice = fresh(start + std::chrono::seconds(90));
-    Require(notice && !notice->error, "Initial light discovery should wait");
-    notice = fresh(start + std::chrono::seconds(101));
-    Require(notice && notice->error && notice->title == "Light capture has no fresh sample",
-        "A progressing scene with permanently missing light samples needs an error");
-    notice = fresh(start + std::chrono::seconds(102));
-    Require(notice && notice->error, "Light timeout error oscillated back to waiting");
+    Require(!fresh(start + std::chrono::seconds(360)) && !fresh(start + std::chrono::seconds(420)),
+        "Re-enabled initial discovery should stay silent without a proven fault");
     config.renderedExpected = false;
     view.sample.renderedLights.unavailableReason = "game-stopped";
-    notice = fresh(start + std::chrono::seconds(103));
+    notice = fresh(start + std::chrono::seconds(421));
     Require(notice && notice->title == "Telemetry is ready" && !notice->error,
         "Intentionally disabled ManyLights must not become a capture error");
 
@@ -431,6 +434,31 @@ void NoticeTests()
     notice = healthTracker.Update(unhealthy, healthConfig, start);
     Require(notice && notice->error && notice->detail == unhealthy.healthError,
         "Unsupported build must be visible before any sample exists");
+    unhealthy = View{}; unhealthy.hasSample = true; unhealthy.sample.state = "unsupported";
+    NoticeTracker unsupportedSample;
+    Require(unsupportedSample.Update(unhealthy, healthConfig, start)->error,
+        "An unsupported sample must not be presented as loading");
+
+    Publish(View{});
+    SetLocalFault("bootstrap", "Telemetry host files are missing", "Reinstall the complete package.");
+    View local;
+    Require(TryRead(local) && !local.connected && local.localFaults.size() == 1,
+        "A bootstrap fault must reach the overlay without a server");
+    NoticeTracker localTracker;
+    notice = localTracker.Update(local, healthConfig, start);
+    Require(notice && notice->error && notice->title == "Telemetry host files are missing",
+        "Missing-host bootstrap failure was not displayed immediately");
+    Publish(View{});
+    Require(TryRead(local) && local.localFaults.size() == 1 &&
+        localTracker.Update(local, healthConfig, start + std::chrono::seconds(60))->error,
+        "Reconnect publication or elapsed time cleared a local fault");
+    healthConfig.notifications = false;
+    Require(!localTracker.Update(local, healthConfig, start), "Explicit opt-out must suppress even bootstrap faults");
+    healthConfig.notifications = true;
+    ClearLocalFault("bootstrap");
+    Require(TryRead(local) && local.localFaults.empty(), "Local fault recovery did not clear its source");
+    Require(!localTracker.Update(local, healthConfig, start + std::chrono::seconds(61)),
+        "A resolved local bootstrap failure remained on screen");
     View oldHost;
     oldHost.connected = true; oldHost.hasSample = true; oldHost.received = start;
     oldHost.sample.state = "playing"; oldHost.sample.schemaVersion = "1.1";
@@ -452,6 +480,19 @@ void NoticeTests()
     notice = expectedTracker.Update(oldHost, expected, start);
     Require(notice && !notice->error && notice->title == "Telemetry is ready",
         "An intentionally unrequested rendered feed prevented readiness");
+    oldHost.received = start;
+    expected.notificationDurationMs = 1;
+    NoticeTracker minimumDuration;
+    Require(minimumDuration.Update(oldHost, expected, start).has_value(), "Ready duration fixture");
+    oldHost.received = start + std::chrono::milliseconds(4999);
+    Require(minimumDuration.Update(oldHost, expected, oldHost.received).has_value(), "Ready duration must clamp to at least five seconds");
+    oldHost.received = start + std::chrono::seconds(5);
+    Require(!minimumDuration.Update(oldHost, expected, oldHost.received), "Five-second minimum did not expire");
+    expected.notificationDurationMs = 60000;
+    NoticeTracker maximumDuration;
+    Require(maximumDuration.Update(oldHost, expected, oldHost.received).has_value(), "Maximum ready duration fixture");
+    oldHost.received = start + std::chrono::seconds(15);
+    Require(!maximumDuration.Update(oldHost, expected, oldHost.received), "Ready duration must clamp to at most ten seconds");
     std::cout << "PASS notification lifecycle, error recovery, debounce and HUD independence\n";
 }
 void SnapshotFileTest(const char* filename)
@@ -505,6 +546,9 @@ int main(int argc, char** argv)
         Require(notices.notifications && !notices.enabled && notices.notificationDurationMs == 7000 &&
             notices.port == 27329 && notices.lightsExpected && !notices.renderedExpected,
             "Notification-only INI must load server/light expectations without enabling the full HUD");
+        Require(ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=1\n").notificationDurationMs == 5000 &&
+            ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=60000\n").notificationDurationMs == 10000,
+            "Configured ready duration must remain between five and ten seconds");
         Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121,
             "World markers must default off and retain independent visibility/hotkey defaults");
         const auto markers = ReadTestConfig("[Overlay]\nEnabled=0\nAutoScale=0\nScale=1.5\nRadar3D=0\n"

@@ -1,5 +1,6 @@
 #include "render_capture.h"
 #include "render_bridge.h"
+#include "native_contract.generated.h"
 #include "console/common.h"
 #include "console/mem.h"
 #include <d3d12.h>
@@ -16,11 +17,7 @@ namespace cdt::render
 {
 namespace
 {
-constexpr uint64_t FilterRva = 0x3CB65CA;
-constexpr uint64_t CameraRootRva = 0x6B4EFB8;
-constexpr std::array<uint8_t, 25> FilterSignature{
-    0x48,0x8B,0x5C,0x24,0x50,0x48,0x8B,0xCB,0xE8,0x69,0x06,0xB2,0xFF,
-    0x48,0x8B,0x03,0x48,0x8B,0xCB,0xFF,0x90,0x08,0x02,0x00,0x00};
+namespace contract = native_contract;
 enum class Phase { Discover, Found, Preparing, Ready, Recorded, Submitting, WaitingGpu, Failed, Stopped };
 SRWLOCK lock = SRWLOCK_INIT;
 Phase phase = Phase::Stopped;
@@ -50,7 +47,7 @@ template<class T> bool Read(uint64_t address, T& result)
 bool ReadScene(std::array<uint8_t, SceneBytes>& result)
 {
     uint64_t root{}, data{};
-    if (!Read(gameBase + CameraRootRva, root) || !Read(root + 0x428, data)) return false;
+    if (!Read(gameBase + contract::SceneGlobalRva, root) || !Read(root + contract::SceneRootPointerOffset, data)) return false;
     // +428 is a pointer to the SceneConstantBuffer, not an inline structure.
     return ch::mem::SafeRead(reinterpret_cast<void*>(data), result.data(), result.size()) && ValidateScene(result.data());
 }
@@ -58,9 +55,10 @@ bool Resolve(uint64_t outer, uint64_t command, ID3D12Resource*& source, ID3D12Gr
 {
     uint64_t inner{}, holder{}, resource{}, nativeList{};
     uint32_t stride{}, count{};
-    if (!Read(outer + 0x30, inner) || !Read(inner + 0xC0, stride) || !Read(inner + 0xC4, count) ||
-        stride != RecordStride || count != RecordCount || !Read(inner + 0x168, resource) ||
-        !Read(command + 0x800, holder) || !Read(holder + 8, nativeList) || !resource || !nativeList) return false;
+    if (!Read(outer + contract::InnerOffset, inner) || !Read(inner + contract::StrideOffset, stride) ||
+        !Read(inner + contract::CountOffset, count) || stride != RecordStride || count != RecordCount ||
+        !Read(inner + contract::ResourceOffset, resource) || !Read(command + contract::CommandHolderOffset, holder) ||
+        !Read(holder + contract::NativeListOffset, nativeList) || !resource || !nativeList) return false;
     source = reinterpret_cast<ID3D12Resource*>(resource);
     list = reinterpret_cast<ID3D12GraphicsCommandList*>(nativeList);
     const auto desc = source->GetDesc();
@@ -73,7 +71,7 @@ bool ResolveCounter(uint64_t outer, ID3D12Resource*& counter)
     uint64_t inner{}, resource{};
     // Do not assume the CPU wrapper's stride/count encoding for this counter.
     // The exact binding identifies it; the native descriptor bounds the copy.
-    if (!Read(outer + 0x30, inner) || !Read(inner + 0x168, resource) || !resource) return false;
+    if (!Read(outer + contract::InnerOffset, inner) || !Read(inner + contract::ResourceOffset, resource) || !resource) return false;
     counter = reinterpret_cast<ID3D12Resource*>(resource);
     const auto desc = counter->GetDesc();
     return desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && desc.Width >= CounterBytes &&
@@ -119,7 +117,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     if (!sameDevice) { Fail(ERROR_INVALID_HANDLE); return; }
     std::array<uint8_t, SceneBytes> confirmation{};
     if (!ReadScene(scene) || !ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) return;
-    memcpy(&capturedFrame, scene.data() + 0x20, sizeof(capturedFrame));
+    memcpy(&capturedFrame, scene.data() + contract::FrameOffset, sizeof(capturedFrame));
     if (hasFrame && capturedFrame == lastFrame) return;
     source->AddRef();
     counter->AddRef();
@@ -135,7 +133,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     capturedOwner = owner;
     capturedBufferIndex = UINT32_MAX;
     uint32_t currentIndex{};
-    if (owner && Read(owner + 0x8F8, currentIndex)) capturedBufferIndex = currentIndex;
+    if (owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
     std::array<D3D12_RESOURCE_BARRIER, 2> barriers{};
     for (auto& barrier : barriers)
     {
@@ -233,18 +231,94 @@ void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint
     ReleaseSRWLockExclusive(&lock);
 }
 
+PreflightResult CheckCapturePreflight(uint64_t moduleBase)
+{
+    if (!moduleBase) return {PreflightFailure::MissingImage};
+    // Bound address arithmetic before touching an untrusted/malformed image.
+    if (moduleBase > UINT64_MAX - 0x80000000ULL) return {PreflightFailure::MalformedImage};
+    IMAGE_DOS_HEADER dos{};
+    if (!Read(moduleBase, dos)) return {PreflightFailure::UnreadableImage};
+    if (dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew < static_cast<LONG>(sizeof(dos)) ||
+        dos.e_lfanew > 0x100000) return {PreflightFailure::MalformedImage};
+    IMAGE_NT_HEADERS64 nt{};
+    if (!Read(moduleBase + static_cast<uint32_t>(dos.e_lfanew), nt)) return {PreflightFailure::UnreadableImage};
+    const auto imageBytes = nt.OptionalHeader.SizeOfImage;
+    const uint64_t sectionsRva = static_cast<uint32_t>(dos.e_lfanew) + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) +
+        nt.FileHeader.SizeOfOptionalHeader;
+    if (nt.Signature != IMAGE_NT_SIGNATURE || nt.FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
+        nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+        nt.FileHeader.SizeOfOptionalHeader != sizeof(IMAGE_OPTIONAL_HEADER64) ||
+        nt.FileHeader.NumberOfSections == 0 || nt.FileHeader.NumberOfSections > 96 || imageBytes > 0x80000000ULL ||
+        sectionsRva + nt.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER) > imageBytes)
+        return {PreflightFailure::MalformedImage};
+    const auto inside = [imageBytes](uint64_t rva, size_t length)
+    { return rva < imageBytes && length <= imageBytes - rva; };
+    if (!inside(contract::SceneGlobalRva, sizeof(uint64_t))) return {PreflightFailure::SceneGlobalOutsideImage};
+    std::array<IMAGE_SECTION_HEADER, 96> sections{};
+    for (uint32_t i = 0; i < nt.FileHeader.NumberOfSections; ++i)
+        if (!Read(moduleBase + sectionsRva + i * sizeof(IMAGE_SECTION_HEADER), sections[i]))
+            return {PreflightFailure::UnreadableImage};
+    const auto executable = [&](uint64_t rva, size_t length)
+    {
+        if (!inside(rva, length)) return false;
+        for (uint32_t i = 0; i < nt.FileHeader.NumberOfSections; ++i)
+        {
+            const auto& section = sections[i];
+            const uint64_t start = section.VirtualAddress;
+            const uint64_t size = std::max(section.Misc.VirtualSize, section.SizeOfRawData);
+            if ((section.Characteristics & IMAGE_SCN_MEM_EXECUTE) && start <= rva && rva - start <= size &&
+                length <= size - (rva - start) && inside(start, static_cast<size_t>(size))) return true;
+        }
+        return false;
+    };
+    const auto matches = [&](uint64_t rva, std::span<const uint8_t> signature)
+    {
+        std::array<uint8_t, 128> bytes{};
+        return !signature.empty() && signature.size() <= bytes.size() &&
+            ch::mem::SafeRead(reinterpret_cast<const void*>(moduleBase + rva), bytes.data(), signature.size()) &&
+            std::equal(signature.begin(), signature.end(), bytes.begin());
+    };
+    if (!executable(contract::HookRva, contract::HookSignature.size()))
+        return {PreflightFailure::HookOutsideExecutableSection};
+    if (!matches(contract::HookRva, contract::HookSignature)) return {PreflightFailure::HookSignatureMismatch};
+    for (uint32_t i = 0; i < contract::ContextSignatures.size(); ++i)
+    {
+        const auto& context = contract::ContextSignatures[i];
+        if (!executable(context.rva, context.bytes.size())) return {PreflightFailure::ContextOutsideExecutableSection, i};
+        if (!matches(context.rva, context.bytes)) return {PreflightFailure::ContextSignatureMismatch, i};
+    }
+    return {};
+}
+
+const char* PreflightFailureName(PreflightFailure failure)
+{
+    switch (failure)
+    {
+        case PreflightFailure::None: return "ready";
+        case PreflightFailure::MissingImage: return "missing-module";
+        case PreflightFailure::UnreadableImage: return "unreadable-image";
+        case PreflightFailure::MalformedImage: return "malformed-pe-image";
+        case PreflightFailure::SceneGlobalOutsideImage: return "scene-root-outside-image";
+        case PreflightFailure::HookOutsideExecutableSection: return "hook-not-in-executable-section";
+        case PreflightFailure::HookSignatureMismatch: return "hook-signature-mismatch";
+        case PreflightFailure::ContextOutsideExecutableSection: return "context-not-in-executable-section";
+        case PreflightFailure::ContextSignatureMismatch: return "caller-context-signature-mismatch";
+    }
+    return "unknown-preflight-failure";
+}
+
 bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
 {
-    gameBase = moduleBase;
-    hookAddress = gameBase + FilterRva;
-    intervalMs = 1000 / std::clamp(sampleRateHz, 1u, 60u);
-    std::array<uint8_t, FilterSignature.size()> actual{};
-    if (!Read(hookAddress, actual) || actual != FilterSignature)
+    const auto preflight = CheckCapturePreflight(moduleBase);
+    if (!preflight)
     {
         PublishStatus(Status::Incompatible, ERROR_INVALID_DATA, ExactBuild);
-        ch::Log("ManyLights disabled: exact post-dispatch signature mismatch; no hook installed.");
+        ch::Log("ManyLights disabled before any hook: %s (context index %u).", PreflightFailureName(preflight.failure), preflight.contextIndex);
         return false;
     }
+    gameBase = moduleBase;
+    hookAddress = gameBase + contract::HookRva;
+    intervalMs = 1000 / std::clamp(sampleRateHz, 1u, 60u);
     const auto init = MH_Initialize();
     if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED)
     { PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
@@ -254,7 +328,7 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
     if (MH_EnableHook(reinterpret_cast<void*>(hookAddress)) != MH_OK)
     { phase = Phase::Stopped; PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
     hookEnabled = true;
-    ch::Log("ManyLights exact-build detour installed at RVA 0x%llX; waiting for renderer.", FilterRva);
+    ch::Log("ManyLights exact-build/context detour installed at RVA 0x%llX; waiting for renderer.", contract::HookRva);
     return true;
 }
 
@@ -297,11 +371,20 @@ void PollCapture()
         Fail(WAIT_TIMEOUT);
     if (phase == Phase::Failed)
     {
-        PublishStatus(Status::Fault, error ? error : ERROR_INVALID_DATA, ExactBuild);
+        if (!error) error = ERROR_INVALID_DATA;
+        PublishStatus(Status::Fault, error, ExactBuild);
         ch::Log("ManyLights disabled after capture failure 0x%08X; pending resources retained safely until process exit.", error);
         phase = Phase::Stopped;
     }
     ReleaseSRWLockExclusive(&lock);
+}
+
+uint32_t CaptureFailureCode()
+{
+    AcquireSRWLockShared(&lock);
+    const auto result = (phase == Phase::Failed || phase == Phase::Stopped) ? error : 0;
+    ReleaseSRWLockShared(&lock);
+    return result;
 }
 
 void StopCapture()
@@ -318,7 +401,7 @@ void StopCapture()
 }
 bool OwnsCodeAddress(uint64_t address)
 {
-    return hookEnabled && address >= hookAddress && address < hookAddress + FilterSignature.size();
+    return hookEnabled && address >= hookAddress && address < hookAddress + contract::HookSignature.size();
 }
 #ifdef CDT_RENDER_CAPTURE_TEST
 // Host-test-only entry. Never compiled into the ASI; production always requires

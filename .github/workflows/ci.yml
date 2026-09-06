@@ -22,5 +22,14 @@ jobs:
       - name: API smoke test
         shell: pwsh
         run: .\tests\Test-Server.ps1
+      - name: Configure and build native plugin/tests
+        shell: pwsh
+        run: |
+          cmake -S native/CrimsonDesertTelemetry.Asi -B build/native-package -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Native configure failed.' }
+          cmake --build build/native-package --config Release -- /m:2
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
+      - name: Native contract, capture and UI regression tests
+        run: ctest --test-dir build/native-package -C Release --output-on-failure
       - name: Publish portable CLI
         run: dotnet publish .\src\CrimsonDesertTelemetry.Cli -c Release -r win-x64 --self-contained false -o .\artifacts\win-x64

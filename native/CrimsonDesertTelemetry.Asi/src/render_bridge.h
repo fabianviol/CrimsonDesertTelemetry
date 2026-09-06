@@ -2,16 +2,17 @@
 #include <windows.h>
 #include <cstddef>
 #include <cstdint>
+#include "native_contract.generated.h"
 
 namespace cdt::render
 {
 constexpr uint32_t Magic = 0x52445443;
 constexpr uint32_t Version = 2;
-constexpr uint32_t SceneBytes = 2816;
-constexpr uint32_t RecordCount = 32768;
-constexpr uint32_t RecordStride = 48;
+constexpr uint32_t SceneBytes = native_contract::SceneBytes;
+constexpr uint32_t RecordCount = native_contract::RecordCount;
+constexpr uint32_t RecordStride = native_contract::RecordStride;
 constexpr uint32_t LightBytes = RecordCount * RecordStride;
-constexpr uint32_t CounterBytes = 256;
+constexpr uint32_t CounterBytes = native_contract::CounterBytes;
 constexpr uint32_t MappingBytes = 256 + SceneBytes + LightBytes + CounterBytes;
 enum class Status : uint32_t { Waiting, Active, Incompatible, Fault, LegacyConflict, Stopped };
 enum Flags : uint32_t { ExactBuild = 1, FenceCompleted = 2, PairedScene = 4, PairedCounter = 8 };

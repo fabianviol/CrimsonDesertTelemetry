@@ -54,6 +54,9 @@ struct View
     bool connected{}, hasSample{};
     std::string connection = "CONNECTING";
     std::string healthStatus, healthError;
+    // Process-local bootstrap/native failures survive disconnected stream views.
+    struct LocalFault { std::string source, title, detail; };
+    std::vector<LocalFault> localFaults;
     double rateHz{};
 };
 struct Config
@@ -79,10 +82,10 @@ class NoticeTracker
 public:
     std::optional<Notice> Update(const View& view, const Config& config, Clock::time_point now);
 private:
-    std::string currentKey_, pendingKey_, observedKey_;
+    std::string currentKey_, pendingKey_;
     std::optional<Notice> current_;
-    Clock::time_point shownAt_{}, pendingAt_{}, observedAt_{};
-    bool persistent_{};
+    Clock::time_point shownAt_{}, pendingAt_{};
+    bool readyForScene_{};
 };
 // Reject malformed/oversize/incompatible data; never interpret missing vectors as zero.
 Sample ParseSample(std::string_view json, std::chrono::system_clock::time_point now);

@@ -5,7 +5,7 @@ Crimson Desert Telemetry is an independent, open-source telemetry layer for Crim
 [Download the mod-manager package](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 | [API reference](docs/API.md) | [Client examples](examples)
 
-The external telemetry host opens the game for read-only access. One ASI starts that host and contains the native ManyLights capture, optional Dear ImGui HUD and optional research console. ManyLights capture instruments the renderer and copies its filtered light buffer; it is not an untouched/read-only game run. The light-visualization preview enables both HUD views; the research console stays off. Disabling the HUD does not disable lighting capture. Basic telemetry can recognize guarded compatible builds; native lighting instrumentation requires the exact validated executable hash and instruction signatures and otherwise fails closed.
+The external telemetry host opens the game for read-only access. One ASI starts that host and contains the native ManyLights capture, optional Dear ImGui HUD and optional research console. ManyLights capture instruments the renderer and copies its filtered light buffer; it is not an untouched/read-only game run. Version 2.0 enables both HUD views; the research console stays off. Disabling the HUD does not disable lighting capture. Basic telemetry can recognize guarded compatible builds; native lighting instrumentation requires the exact validated executable hash and instruction signatures and otherwise fails closed.
 
 ## Current support
 
@@ -22,8 +22,12 @@ tested path. For a different hash, telemetry can relocate the validated layout
 using unique instruction, writable-global, player-type and multi-slot vtable
 guards. Health reports this as `compatibility.mode: "automatic"`, never as manually
 tested. Ambiguous, incomplete or implausible candidates are rejected. Automatic
-recognition reduces routine update work; it is not a guarantee that every future
-engine layout remains compatible.
+recognition covers the historical camera layout, not automatic promotion of the
+current direct-camera/ManyLights path. Use the read-only `check-update <exe>` command
+for individual current-path anchors; candidates never enable native hooks. See the
+[update recovery reference](docs/UPDATE_RECOVERY.md). Shared build contracts and
+strict runtime guards reduce repair work, but do not guarantee future compatibility
+or detect every shader-only asset change.
 
 Currently exposed:
 
@@ -35,9 +39,9 @@ Currently exposed:
 - single-source validation and capture timing.
 
 Builds `25050808` and `25116796` support nearby authored engine-light records.
-The unified **1.3.0-preview.2 candidate** additionally captures current filtered
+The unified **2.0.0 package** additionally captures current filtered
 ManyLights on exact build `25116796`, including the researched fire, candle and
-glass/crystal light contributions. The candidate enables lights by default:
+glass/crystal light contributions. Lights are enabled by default:
 
 ```ini
 [Lights]
@@ -56,7 +60,7 @@ durable OFF state; culling and scene loading also affect visibility. Stable phys
 IDs, physical lumens and coverage of every lighting mechanism are not claimed.
 With `[Lights] Enabled=0`, schema 1.1 remains unchanged. The unified capture passed
 local cold-start, moving-camera and physical lamp A-B-A checks on build `25116796`.
-It remains a preview, not a claim of broad hardware or complete lighting coverage.
+This does not establish broad hardware support or complete lighting coverage.
 
 **DLSS is not required.** Camera data comes directly from the game's native
 render-camera source, including with upscaling disabled. That source is resolved
@@ -72,15 +76,17 @@ See [native camera evidence and remaining tests](docs/ENGINE_CAMERA_RESEARCH.md)
 
 ### Startup and loading status
 
-The unified candidate displays brief status notices at the top left independently
-of the full HUD: startup, scene loading, ready, and actionable errors. Ready messages
-disappear after six seconds; unresolved errors stay visible. A visible top-left HUD
+Normal startup, scene loading and discovery are silent. After the scene is playing
+and requested telemetry is ready, a status notice appears for six seconds.
+Actionable errors can appear immediately, including unsupported EXEs or a missing
+host; they do not depend on enabling game-memory hooks or the full HUD. Unresolved
+errors stay visible. A visible top-left HUD
 moves the notices beside it (below on narrow screens). They share the existing
 D3D12/SDR drawing backend; HDR or graphics-hook failure can prevent on-screen notices,
 in which case check the bootstrap/native/overlay logs.
 
-`[Notifications] Enabled=1` enables these notices in the candidate package;
-`DurationMilliseconds=6000` controls the ready duration. Set it to `Enabled=0` to
+`[Notifications] Enabled=1` enables these notices in the package;
+`DurationMilliseconds=6000` controls the ready duration (clamped to 5–10 seconds). Set it to `Enabled=0` to
 disable them. No HUD hotkeys become active solely because notices are enabled.
 
 For integrations, start with the [API reference and client examples](docs/API.md).
@@ -89,7 +95,7 @@ handling, WebSocket delivery, freshness and reconnection.
 
 ### Optional in-game HUD
 
-The light-visualization preview enables both HUD views. Missing configuration
+Version 2.0 enables both HUD views. Missing configuration
 still defaults them off. Startup notices have their separate setting above.
 Edit `CrimsonDesertTelemetry.ini` before restarting the game:
 

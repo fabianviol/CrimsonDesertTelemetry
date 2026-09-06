@@ -73,7 +73,7 @@ void PublishSample(const void* scene, const void* lights, const void* counters, 
     ++mapping->header.sampleSequence;
     mapping->header.capturedTickMs = capturedTickMs;
     mapping->header.publishedTickMs = GetTickCount64();
-    mapping->header.frameNumber = At<uint32_t>(scene, 0x20);
+    mapping->header.frameNumber = At<uint32_t>(scene, native_contract::FrameOffset);
     mapping->header.error = 0;
     mapping->header.flags = ExactBuild | FenceCompleted | PairedScene | PairedCounter;
     mapping->header.outputResource = outputResource;
@@ -87,13 +87,13 @@ void PublishSample(const void* scene, const void* lights, const void* counters, 
 
 bool ValidateScene(const void* scene)
 {
-    if (!scene || At<float>(scene, 0xAC0) != 6360000.0f) return false;
-    const auto screen = At<std::array<float, 4>>(scene, 0x30);
+    if (!scene || At<float>(scene, native_contract::EarthRadiusOffset) != native_contract::EarthRadius) return false;
+    const auto screen = At<std::array<float, 4>>(scene, native_contract::ScreenOffset);
     if (!std::isfinite(screen[0]) || !std::isfinite(screen[1]) || screen[0] < 64 || screen[1] < 64 ||
         screen[0] > 32768 || screen[1] > 32768 || !std::isfinite(screen[2]) || !std::isfinite(screen[3]) ||
         std::fabs(screen[0] * screen[2] - 1.0f) > 0.002f || std::fabs(screen[1] * screen[3] - 1.0f) > 0.002f) return false;
-    const auto position = At<std::array<float, 4>>(scene, 0x80);
-    const auto direction = At<std::array<float, 4>>(scene, 0x90);
+    const auto position = At<std::array<float, 4>>(scene, native_contract::PositionOffset);
+    const auto direction = At<std::array<float, 4>>(scene, native_contract::DirectionOffset);
     float length = 0;
     for (size_t i = 0; i < 3; ++i)
     {
@@ -105,8 +105,10 @@ bool ValidateScene(const void* scene)
 
 bool SameScene(const void* first, const void* second)
 {
-    return At<uint32_t>(first, 0x20) == At<uint32_t>(second, 0x20) &&
-        memcmp(static_cast<const uint8_t*>(first) + 0x80, static_cast<const uint8_t*>(second) + 0x80, 32) == 0 &&
-        memcmp(static_cast<const uint8_t*>(first) + 0xA0, static_cast<const uint8_t*>(second) + 0xA0, 64) == 0;
+    return At<uint32_t>(first, native_contract::FrameOffset) == At<uint32_t>(second, native_contract::FrameOffset) &&
+        memcmp(static_cast<const uint8_t*>(first) + native_contract::PositionOffset,
+            static_cast<const uint8_t*>(second) + native_contract::PositionOffset, 32) == 0 &&
+        memcmp(static_cast<const uint8_t*>(first) + native_contract::ViewRelativeOffset,
+            static_cast<const uint8_t*>(second) + native_contract::ViewRelativeOffset, 64) == 0;
 }
 }

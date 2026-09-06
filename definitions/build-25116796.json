@@ -6,6 +6,74 @@
   "executableSha256": "4D99C15C58BD20A94D354D10AE395D1FAC777D59EF52CBA8080DC3FC8DC6F454",
   "status": "locally-validated",
   "allowAutomaticCompatibility": false,
+  "nativeCapture": {
+    "schemaVersion": 1,
+    "contractId": "manylights-filter-25116796-v1",
+    "status": "locally-validated",
+    "requiresExactExecutable": true,
+    "hookRva": 63661514,
+    "hookSignature": "48 8B 5C 24 50 48 8B CB E8 69 06 B2 FF 48 8B 03 48 8B CB FF 90 08 02 00 00",
+    "contextSignatures": [
+      {
+        "rva": 63655936,
+        "bytes": "48 8B C4 48 89 58 10 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 68 88 48 81 EC 40 01 00 00 C5 F8 29 70 B8 C5 F8 29 78 A8 48 8B DA 4C 8B E9",
+        "purpose": "ProcessManyLights owner RCX to R13 and command RDX to RBX; measured current executable function entry"
+      },
+      {
+        "rva": 63661244,
+        "bytes": "4C 8B 7C 24 58 48 83 78 08 00 74 23 48 8B 13 4C 8B 92 D0 04 00 00 C6 44 24 28 00 C6 44 24 20 01 45 33 C9 4D 8B C7 48 8B D0 48 8B CB 41 FF D2 48 8B 5C 24 50",
+        "purpose": "Paired counter wrapper loaded into R15 and passed to UAV binder before command restore"
+      },
+      {
+        "rva": 63661440,
+        "bytes": "4C 8B 65 88 48 83 78 08 00 74 23 48 8B 13 4C 8B 92 D0 04 00 00 C6 44 24 28 00 C6 44 24 20 01 45 33 C9 4D 8B C4 48 8B D0 48 8B CB 41 FF D2 48 8B 4C 24 50 48 8B 01 BA 00 02 00 00 41 B9 01 00 00 00 45 8B C1 FF 90 28 03 00 00",
+        "purpose": "Filtered wrapper R12 passed to UAV binder followed by Dispatch(512,1,1); ends exactly at hook"
+      }
+    ],
+    "registers": {
+      "output": "r12",
+      "command": "rbx",
+      "counter": "r15",
+      "owner": "r13"
+    },
+    "wrapper": {
+      "innerOffset": 48,
+      "strideOffset": 192,
+      "countOffset": 196,
+      "resourceOffset": 360,
+      "commandHolderOffset": 2048,
+      "nativeListOffset": 8,
+      "ownerBankIndexOffset": 2296
+    },
+    "scene": {
+      "rootPointerOffset": 1064,
+      "byteCount": 2816,
+      "frameOffset": 32,
+      "screenOffset": 48,
+      "positionOffset": 128,
+      "directionOffset": 144,
+      "viewRelativeOffset": 160,
+      "earthRadiusOffset": 2752,
+      "earthRadius": 6360000
+    },
+    "gpu": {
+      "recordCount": 32768,
+      "recordStride": 48,
+      "counterBytes": 256,
+      "validCounterByteOffset": 4,
+      "resourceState": "unordered-access"
+    },
+    "shaderEvidence": {
+      "producerEntry": "29588660",
+      "consumerEntries": [
+        "84574902",
+        "5eecfe7e"
+      ],
+      "producerDxilHash": "c40f89b9b04627219c4b77a1736da3b7",
+      "source": "docs/UPDATE_RECOVERY.md#shader-contract",
+      "validation": "archived-one-variant-not-live-pso"
+    }
+  },
   "engineLights": {
     "layout": "light-source-array-scene-global-v1",
     "sceneGlobalRva": 112521144,

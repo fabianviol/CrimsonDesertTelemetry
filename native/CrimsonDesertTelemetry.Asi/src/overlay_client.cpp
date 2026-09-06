@@ -17,7 +17,13 @@ namespace cdt::overlay
 namespace
 {
 constexpr size_t MaximumTelemetryMessageBytes = 4 * 1024 * 1024;
-struct Shared { std::mutex mutex; View view; std::string healthStatus, healthError; };
+struct Shared
+{
+    std::mutex mutex;
+    View view;
+    std::string healthStatus, healthError;
+    std::vector<View::LocalFault> localFaults;
+};
 // Deliberately process-lifetime: callbacks/worker teardown must not run in DllMain.
 Shared& SharedView() { static auto* shared = new Shared; return *shared; }
 struct HttpHandle
@@ -113,10 +119,14 @@ void Connect(const Config config, HANDLE stop)
                     view.sample = std::move(sample);
                     view.received = now;
                     view.hasSample = true;
+                    ClearLocalFault("bootstrap");
+                    ClearLocalFault("stream");
                     Publish(view);
                 }
                 catch (...)
                 {
+                    SetLocalFault("stream", "Telemetry data is incompatible",
+                        "Install matching ASI and telemetry host versions, then restart Crimson Desert.");
                     view.hasSample = false;
                     view.connected = false;
                     view.connection = "INVALID / INCOMPATIBLE DATA";
@@ -176,6 +186,10 @@ void PollHealth(unsigned short port)
     catch (...) { status = "host-unreachable"; }
     auto& shared = SharedView();
     std::lock_guard guard(shared.mutex);
+    // A lost health request is not proof that a diagnosed failure resolved.
+    if (status == "host-unreachable" && (shared.healthStatus == "unsupported-build" || shared.healthStatus == "error")) return;
+    if (status != "host-unreachable")
+        std::erase_if(shared.localFaults, [](const auto& fault) { return fault.source == "bootstrap"; });
     shared.healthStatus = std::move(status);
     shared.healthError = std::move(error);
 }
@@ -240,6 +254,7 @@ bool TryRead(View& view)
     view = shared.view;
     view.healthStatus = shared.healthStatus;
     view.healthError = shared.healthError;
+    view.localFaults.insert(view.localFaults.end(), shared.localFaults.begin(), shared.localFaults.end());
     return true;
 }
 void RunClient(Config config, HANDLE stopEvent) { Connect(config, stopEvent); }
@@ -248,6 +263,32 @@ void Publish(View view)
     auto& shared = SharedView();
     std::lock_guard lock(shared.mutex);
     shared.view = std::move(view);
+}
+void SetLocalFault(std::string_view source, std::string_view title, std::string_view detail) noexcept
+{
+    try
+    {
+        if (source.empty() || title.empty()) return;
+        View::LocalFault fault{std::string(source.substr(0, 64)), std::string(title.substr(0, 128)),
+            std::string(detail.substr(0, 300))};
+        auto& shared = SharedView();
+        std::lock_guard lock(shared.mutex);
+        const auto existing = std::find_if(shared.localFaults.begin(), shared.localFaults.end(),
+            [&](const auto& candidate) { return candidate.source == fault.source; });
+        if (existing != shared.localFaults.end()) *existing = std::move(fault);
+        else if (shared.localFaults.size() < 8) shared.localFaults.push_back(std::move(fault));
+    }
+    catch (...) { } // Diagnostics must never terminate the game process.
+}
+void ClearLocalFault(std::string_view source) noexcept
+{
+    try
+    {
+        auto& shared = SharedView();
+        std::lock_guard lock(shared.mutex);
+        std::erase_if(shared.localFaults, [&](const auto& fault) { return fault.source == source; });
+    }
+    catch (...) { }
 }
 Config LoadConfig(const std::filesystem::path& ini)
 {
@@ -268,7 +309,7 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.lightsExpected = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str()) != 0;
     config.renderedExpected = config.lightsExpected && GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, ini.c_str()) != 0;
     config.notificationDurationMs = static_cast<int>(std::clamp(
-        GetPrivateProfileIntW(L"Notifications", L"DurationMilliseconds", 6000, ini.c_str()), 1000u, 30000u));
+        GetPrivateProfileIntW(L"Notifications", L"DurationMilliseconds", 6000, ini.c_str()), 5000u, 10000u));
     if (!config.enabled && !config.notifications && !config.lightOverlay) return config;
     config.visible = integer(L"InitiallyVisible", 1) != 0;
     config.details = integer(L"ShowDetails", 0) != 0;

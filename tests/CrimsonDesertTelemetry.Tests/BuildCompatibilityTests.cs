@@ -21,7 +21,7 @@ internal static class BuildCompatibilityTests
                 camera.CameraGlobalRva == fixture.Data + 0x108 &&
                 camera.ContextVtableRva == fixture.Tables + 0x100 &&
                 camera.CameraVtableRva == fixture.Tables + 0x200, "Relocation used the reference RVAs.");
-            Check(fixture.Definition.EngineCamera!.CameraVtableRva == 0xDEAD,
+            Check(fixture.Definition.EngineCamera!.CameraVtableRva == 0xDEA0,
                 "Automatic resolution mutated the trusted definition.");
             Check(resolved.Definition.EngineLights is null && fixture.Definition.EngineLights is not null,
                 "Automatic compatibility inherited exact-build light offsets.");
@@ -33,6 +33,7 @@ internal static class BuildCompatibilityTests
         using var fixture = new Fixture();
         fixture.Save();
         fixture.Definition.ExecutableSha256 = GameDiscovery.ComputeSha256(fixture.Path);
+        fixture.Definition.AllowAutomaticCompatibility = false;
         fixture.Definition.EngineCamera!.ContextVtableFingerprints.Clear();
         var result = BuildCompatibility.Resolve(fixture.Path, [fixture.Definition]);
         Check(result.Compatibility.Mode == "tested", "Known EXE did not take the existing path.");
@@ -116,7 +117,7 @@ internal static class BuildCompatibilityTests
             "Multiple matching templates accepted.");
     }
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         public const int SectionTable = 0x188;
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"cdt-compat-{Guid.NewGuid():N}.exe");
@@ -153,12 +154,15 @@ internal static class BuildCompatibilityTests
             Definition = new BuildDefinition
             {
                 Status = "locally-validated", AllowAutomaticCompatibility = true,
-                ExecutableSha256 = new string('A', 64), SteamBuildId = "reference-only", Patterns = [xy, z],
+                SchemaVersion = 1, SteamAppId = "3321460", ExecutableVersion = "1.0.0.1",
+                ExecutableSha256 = new string('A', 64), SteamBuildId = "1", Patterns = [xy, z],
                 PlayerRoot = new PlayerRootDefinition { WorldSystemPattern = world, ExpectedTypeNames = ["manager", "actor", "control"] },
                 EngineCamera = new EngineCameraDefinition
                 {
                     Layout = "renderer-camera-v1", MainRootReferencePattern = main.Pattern,
-                    CameraReferencePattern = camera.Pattern, CameraVtableRva = 0xDEAD,
+                    CameraReferencePattern = camera.Pattern, CameraVtableRva = 0xDEA0, ContextVtableRva = 0xDEA8,
+                    MainRootReferenceRva = Code + 0x100, CameraReferenceRva = Code + 0x180,
+                    MainRootGlobalRva = Data + 0x100, CameraGlobalRva = Data + 0x108,
                     ContextVtableFingerprints = [new() { Slot = 1, Pattern = contextFunctions[0] }, new() { Slot = 2, Pattern = contextFunctions[1] }],
                     CameraVtableFingerprints = [new() { Slot = 1, Pattern = cameraFunctions[0] }, new() { Slot = 2, Pattern = cameraFunctions[1] }]
                 }

@@ -21,6 +21,15 @@ public sealed class PlayerOrientationReader
         _definition = definition;
     }
 
+    /// <summary>Construct the same guarded reader from an already resolved address (also for offline memory fixtures).</summary>
+    public static PlayerOrientationReader FromResolvedAddress(ulong worldSystemGlobalAddress, PlayerRootDefinition definition)
+    {
+        BuildProfileValidation.ValidatePlayerRoot(definition);
+        if (worldSystemGlobalAddress is < 0x10000 or > 0x00007FFFFFFFFFFF || (worldSystemGlobalAddress & 7) != 0)
+            throw new InvalidDataException("Invalid resolved world-system global address.");
+        return new PlayerOrientationReader(new(worldSystemGlobalAddress), definition);
+    }
+
     public static PlayerOrientationReader? Resolve(Process process, string executable, BuildDefinition definition)
     {
         var root = definition.PlayerRoot;
@@ -29,7 +38,7 @@ public sealed class PlayerOrientationReader
             throw new InvalidDataException("Player orientation is not validated for this build.");
         var moduleBase = checked((ulong)process.MainModule!.BaseAddress.ToInt64());
         var relative = StaticPositionProbe.ResolveUniqueRipTarget(executable, root.WorldSystemPattern);
-        return new PlayerOrientationReader(new PlayerOrientationAddresses(checked(moduleBase + relative)), root);
+        return FromResolvedAddress(checked(moduleBase + relative), root);
     }
 
     /// <summary>
@@ -120,7 +129,7 @@ public sealed class PlayerOrientationReader
             throw new InvalidDataException("Unsupported player transform layout.");
 
         var length = Math.Max(_definition.PositionOffset + 0x10,
-            Math.Max(_definition.BasisZOffset + 0x0C, _definition.BasisYOffset + 0x0C));
+            Math.Max(_definition.BasisXOffset + 0x0C, Math.Max(_definition.BasisZOffset + 0x0C, _definition.BasisYOffset + 0x0C)));
         var bytes = reader.Read(ToIntPtr(physics), length);
         var x = Vector(bytes, _definition.BasisXOffset);
         var y = Vector(bytes, _definition.BasisYOffset);

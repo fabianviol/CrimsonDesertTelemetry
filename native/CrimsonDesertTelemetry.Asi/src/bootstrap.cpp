@@ -277,10 +277,13 @@ DWORD RunBootstrap()
     if (WSAStartup(MAKEWORD(2, 2), &sockets) != 0)
     {
         Log(L"Could not initialize Winsock.");
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry networking could not start",
+            "Restart Crimson Desert. Check CrimsonDesertTelemetry.bootstrap.log if this repeats.");
         return 2;
     }
     if (IsServerReady(port))
     {
+        cdt::overlay::ClearLocalFault("bootstrap");
         Log(std::format(L"Telemetry server already available on 127.0.0.1:{}.", port));
         WSACleanup();
         return 0;
@@ -290,6 +293,8 @@ DWORD RunBootstrap()
     if (dotnet.empty())
     {
         Log(L".NET 8 was not found. Install the .NET 8 ASP.NET Core Runtime (x64).");
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry needs the .NET 8 runtime",
+            "Install the .NET 8 ASP.NET Core Runtime (x64), then restart Crimson Desert.");
         WSACleanup();
         return 3;
     }
@@ -301,6 +306,8 @@ DWORD RunBootstrap()
         !std::filesystem::is_regular_file(runtimeConfig))
     {
         Log(L"Missing host DLL or .deps.cfg/.runtimeconfig.cfg companion file; reinstall the complete package.");
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry host files are missing",
+            "Reinstall the complete CrimsonDesertTelemetry package, including DLL and CFG companion files.");
         WSACleanup();
         return 4;
     }
@@ -310,6 +317,8 @@ DWORD RunBootstrap()
     {
         const std::string message = error.what();
         Log(L"Runtime configuration preparation failed: " + std::wstring(message.begin(), message.end()));
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry runtime configuration failed",
+            "Reinstall matching package files; check CrimsonDesertTelemetry.bootstrap.log for the configuration error.");
         WSACleanup();
         return 6;
     }
@@ -343,10 +352,13 @@ DWORD RunBootstrap()
     const BOOL started = CreateProcessW(dotnet.c_str(), mutableCommand.data(), nullptr, nullptr,
         hostLog != nullptr, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
         directory.c_str(), &startup, &process);
+    const auto startError = started ? ERROR_SUCCESS : GetLastError();
     if (hostLog != nullptr) CloseHandle(hostLog);
     if (!started)
     {
-        Log(std::format(L"Could not start telemetry host (Win32 error {}).", GetLastError()));
+        Log(std::format(L"Could not start telemetry host (Win32 error {}).", startError));
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry host could not start",
+            std::format("Win32 error {}. Check CrimsonDesertTelemetry.bootstrap.log and the .NET 8 ASP.NET Core Runtime (x64).", startError));
         WSACleanup();
         return 5;
     }
@@ -371,6 +383,8 @@ DWORD RunBootstrap()
         DWORD exitCode = 0;
         GetExitCodeProcess(process.hProcess, &exitCode);
         Log(std::format(L"Telemetry host exited with code {}.", exitCode));
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry host stopped",
+            std::format("Exit code {}. Check CrimsonDesertTelemetry.host.log, then restart Crimson Desert.", exitCode));
     }
 
     if (job != nullptr) CloseHandle(job);
@@ -392,6 +406,8 @@ DWORD WINAPI BootstrapThread(void*)
         // escape the thread entry point and terminate the game process.
         try { Log(L"Bootstrap stopped after an unexpected configuration or filesystem error."); }
         catch (...) { }
+        cdt::overlay::SetLocalFault("bootstrap", "Telemetry bootstrap failed",
+            "Check CrimsonDesertTelemetry.bootstrap.log and reinstall matching package files, then restart.");
         return 7;
     }
 }
@@ -399,7 +415,12 @@ DWORD WINAPI BootstrapThread(void*)
 DWORD WINAPI InstrumentsThread(void*)
 {
     try { cdt::instruments::Run(g_stopEvent); }
-    catch (...) { try { Log(L"Native instruments stopped after an unexpected error."); } catch (...) {} }
+    catch (...)
+    {
+        try { Log(L"Native instruments stopped after an unexpected error."); } catch (...) {}
+        cdt::overlay::SetLocalFault("native", "Native telemetry stopped",
+            "Restart Crimson Desert; check CrimsonDesertTelemetry.native.log if this repeats.");
+    }
     return 0;
 }
 }
