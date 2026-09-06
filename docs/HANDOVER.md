@@ -143,9 +143,16 @@ No implementation/config/game change during measurement; package unchanged.
 
 ## Remaining / one next step
 
-Stay in PID27140; no reinstall required. Next: user approaches one of the known lit
-fire lamps, leaves it ON and reports ready; then record physical A-B-A one phase
-at a time. Cold-start availability and camera pairing are measured, not merely a host-test
+Stay in PID27140; no reinstall required. **A1 ON baseline captured** in
+`artifacts/light-research/unified-lamp-aba-pid27140-20260906-A1-on.jsonl`:
+309/309available samples,88distinct captures,frames44038..44347. Player
+(-10529.909,609.15674,-4419.7046) is at known lamp2
+(-10529.755,611.292,-4420.300). All four lamp regions present in every distinct
+capture. Spatial test fixed in advance: horizontal distance<0.65 and vertical
+distance<3 from the four previously measured positions. Lamp2 has1..2 point
+contributions, summed linear luminance0.05925..0.15509 (animated, not lumens).
+Next instruction to user: switch this lamp OFF once, stay there, report AUS;
+capture B before requesting ON again. Cold-start availability and camera pairing are measured, not merely a host-test
 claim. User prefers DMM; never replace game files with the optional helper without
 a new request. Do not modify ASI loader/other mods.
 
