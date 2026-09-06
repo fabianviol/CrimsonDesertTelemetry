@@ -539,6 +539,14 @@ int main(int argc, char** argv)
         const auto enabled = ReadTestConfig("[Server]\nPort=27329\n[Overlay]\nEnabled=1\n");
         Require(enabled.enabled && enabled.visible && enabled.port == 27329, "Explicit opt-in preserves HUD configuration");
         const auto hidden = ReadTestConfig("[Overlay]\nEnabled=1\nInitiallyVisible=0\n");
+        Require(enabled.hdrPaperWhiteNits == 200.f && config.hdrPaperWhiteNits == 200.f,
+            "HDR UI paper white must have a safe 200 nit default");
+        Require(ReadTestConfig("[Overlay]\nHdrPaperWhiteNits=250\n[Notifications]\nEnabled=1\n").hdrPaperWhiteNits == 250.f,
+            "Status-only rendering must retain HDR brightness configuration");
+        Require(ReadTestConfig("[Overlay]\nEnabled=1\nHdrPaperWhiteNits=0\n").hdrPaperWhiteNits == 80.f &&
+            ReadTestConfig("[Overlay]\nEnabled=1\nHdrPaperWhiteNits=9999\n").hdrPaperWhiteNits == 500.f &&
+            ReadTestConfig("[Overlay]\nEnabled=1\nHdrPaperWhiteNits=nan\n").hdrPaperWhiteNits == 200.f,
+            "HDR brightness must clamp to 80-500 nits and reject nonfinite input");
         Require(hidden.enabled && !hidden.visible && hidden.toggleKey == 119, "Initially hidden HUD must remain toggleable");
         Require(!ReadTestConfig(nullptr).notifications && !ReadTestConfig("").notifications,
             "Missing/empty configuration must not silently install notification graphics hooks");

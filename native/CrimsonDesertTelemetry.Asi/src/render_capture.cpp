@@ -217,7 +217,7 @@ bool Prepare()
     probeQueue->Release();
     if (enable != MH_OK) { error = ERROR_INVALID_FUNCTION; return false; }
     executeEnabled = true;
-    ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", 1000 / intervalMs);
+    ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", intervalMs ? 1000 / intervalMs : 0u);
     return true;
 }
 }
@@ -409,10 +409,33 @@ bool OwnsCodeAddress(uint64_t address)
 void InitializeCaptureForTest(uint64_t moduleBase)
 {
     gameBase = moduleBase;
-    intervalMs = 1;
+    // Smoke steps are explicit, one-shot calls. Sleep(2) need not advance
+    // GetTickCount64, so a wall-clock throttle can silently skip a test step.
+    // Production StartCapture still derives its interval from the sample rate.
+    intervalMs = 0;
     const auto result = MH_Initialize();
     if (result != MH_OK && result != MH_ERROR_ALREADY_INITIALIZED) { phase = Phase::Failed; return; }
     phase = Phase::Discover;
+}
+
+const char* CapturePhaseForTest()
+{
+    AcquireSRWLockShared(&lock);
+    const auto current = phase;
+    ReleaseSRWLockShared(&lock);
+    switch (current)
+    {
+        case Phase::Discover: return "discover (no source recorded)";
+        case Phase::Found: return "found (not prepared)";
+        case Phase::Preparing: return "preparing";
+        case Phase::Ready: return "ready (no copy recorded)";
+        case Phase::Recorded: return "recorded (not submitted)";
+        case Phase::Submitting: return "submitting";
+        case Phase::WaitingGpu: return "waiting-gpu (fence incomplete)";
+        case Phase::Failed: return "failed";
+        case Phase::Stopped: return "stopped";
+    }
+    return "unknown";
 }
 #endif
 }

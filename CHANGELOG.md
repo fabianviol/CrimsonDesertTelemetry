@@ -11,6 +11,12 @@
   markers and notifications in the package INI. F8 toggles the corner HUD, F9
   diagnostics and F10 markers. The radar uses camera pitch/roll and projection;
   nearby contributions share detail panels while retaining individual raw values.
+- Add D3D12 HDR10 and scRGB rendering for the HUD, markers and notices, alongside
+  8-bit and 10-bit SDR. Select the path from the game's format/color space without
+  changing its settings or metadata. Composite HDR UI in linear light, preserving
+  pixels outside the UI and scene alpha. `[Overlay] HdrPaperWhiteNits=200` adjusts
+  all HDR UI white brightness within 80–500 nits. Three new automated HDR tests
+  pass; live HDR-display/game validation has not been performed.
 - Pair GPU light readback with the renderer's valid-prefix counter, completion
   fence and captured camera. Decode only that current prefix, fixing retained
   buffer-tail ghost contributions from 1.3.0-preview.1/2. GPU sample indices are
@@ -28,10 +34,12 @@
   Add offline `check-update <exe>` diagnostics and preserved recovery helpers;
   unknown executables remain barred from native hooks, with no automatic promotion
   of current direct-layout candidates. Native tests now run in normal PR CI.
-- Verify 56 managed tests, HTTP/WebSocket smoke, 11 native CTest paths and package
-  validation. A fresh installed 2.0.0 start passed a progressing player/camera/light
+- Before the HDR addition, verify 56 managed tests, HTTP/WebSocket smoke,
+  11 native CTest paths and package validation. A fresh installed 2.0.0 start passed a progressing player/camera/light
   API check and user acceptance. No DLSS/NVIDIA runtime dependency is required;
-  AMD/Intel in-game setups remain untested. HUD rendering remains D3D12/8-bit SDR.
+  AMD/Intel in-game setups remain untested. The final native Release rebuild and
+  expanded 14-test suite pass, including the three new HDR paths and recovery
+  across SDR/scRGB transitions on the same swapchain.
 
 ### Authored spotlight direction (developed before 2.0.0)
 

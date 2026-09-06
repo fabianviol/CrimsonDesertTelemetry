@@ -1,7 +1,7 @@
 Crimson Desert Telemetry 2.0.0
 =============================
 
-Live light, player and camera data for Crimson Desert: a local HTTP/WebSocket API,
+Live light, player and camera data for Crimson Desert: local HTTP and WebSocket APIs,
 fullscreen light markers and a 3D light radar with the camera's viewing frustum.
 Inspect current light positions, linear HDR color and brightness, plus direction
 and cone angles for spot contributions. Fires, candles, lanterns and glass/crystal
@@ -18,8 +18,11 @@ Requirements and compatibility
 - Current full-feature baseline: Steam build 25116796, EXE 1.0.0.2760.
 - No NVIDIA GPU, DLSS, Streamline, Nsight or PIX dependency in the runtime paths.
   Upscaling-off operation was tested. Actual AMD/Intel game runs remain untested.
-- In-game UI requires DirectX 12 and 8-bit SDR. HDR is unsupported;
-  frame generation is unvalidated.
+- DirectX 12 UI supports 8-bit/10-bit SDR, HDR10 (10-bit PQ/Rec.2020) and FP16
+  scRGB. HUD, light markers and notices automatically use the game's buffer
+  format/color space. Unknown combinations remain unsupported. All 14 native
+  tests, including three HDR tests, pass; a live HDR display/game run is untested. Frame generation
+  remains unvalidated. Telemetry/light capture has no HDR-output gate.
 - Unknown EXEs fail closed for native light instrumentation. A game update may
   require an updated mod profile; matching an EXE hash alone is not sufficient.
 
@@ -31,7 +34,8 @@ Install or upgrade
 3. Import this ZIP into Definitive Mod Manager or JSON Mod Manager, then enable it.
    Alternatively, put its payload files beside the game EXE using your ASI loader.
    Keep your existing loader and other mods. A complete install/uninstall matrix
-   across both managers is still pending; local DMM use was verified.
+   across both managers is still pending; local DMM use before the HDR addition
+   was verified.
 4. Edit CrimsonDesertTelemetry.ini before launch if desired, then restart the game.
    Merge preferences into the new sections rather than keeping a stale whole INI.
 
@@ -52,6 +56,9 @@ contributions, captured at 20 Hz by default. NearbyRadius uses game units, not m
 [LightOverlay] Radius=35, MaxMarkers=512 and MaxLabels=6 bound visual clutter.
 Nearby contributions share a detail box, but retain their individual raw values.
 AutoScale adapts the HUD to resolution; Scale and Opacity are adjustable in the INI.
+[Overlay] HdrPaperWhiteNits=200 sets white brightness for all HDR UI, clamped to
+80-500 nits. This also applies to markers/notices when the corner HUD is disabled.
+No game HDR settings or metadata are changed. Configuration changes need a restart.
 
 [Notifications] shows a brief success notice when requested data is ready (default
 six seconds, clamped to 5-10 seconds). It may appear during the visible loading
@@ -65,14 +72,15 @@ is independently controlled by [Server]. Configuration changes require a restart
 Returning to the title screen may leave data/HUD visible for several seconds before
 they become stale; the user can hide the views with their keys.
 
-Local API
----------
+Local HTTP and WebSocket APIs
+----------------------------
 HTTP:      http://127.0.0.1:27311/v1/snapshot
 Health:    http://127.0.0.1:27311/v1/health
 Schema:    http://127.0.0.1:27311/v1/schema
 WebSocket: ws://127.0.0.1:27311/v1/stream
 
-The server listens on loopback only. HTTP v1 routes remain unchanged. Lights use
+HTTP snapshots and WebSocket stream messages both carry JSON. The server listens
+on loopback only. HTTP v1 routes remain unchanged. Lights use
 additive JSON schema 1.4; disabling Lights.Enabled restores schema 1.1. The API
 includes player position/root orientation and the independent native render camera.
 Do not start a second host on the same port while the ASI-managed host is running.
@@ -88,8 +96,13 @@ they are not normalized lamp colors or a measurement of the final visible pixel.
 
 The radar is filtered, not a complete 360-degree light inventory. World markers
 have no scene-depth test and may appear through walls. Spot-arrow/frustum lengths
-are schematic. Display swatches are an SDR visualization of HDR data. Fast camera
+are schematic. Display swatches visualize HDR data, not the game's tone mapping. Fast camera
 movement can expose capture/projection latency. Root orientation is not body pose.
+
+HDR UI is blended over the game in linear light. Pixels outside the UI stay
+unchanged; the compositor does not tone-map the whole scene. HDR rendering uses
+two additional full-resolution GPU textures and a scene copy/composite while UI
+is drawn. The SDR path has no additional compositor pass.
 
 Safety and diagnostics
 ----------------------

@@ -1,6 +1,22 @@
 # Mod-manager validation
 
-## Current: 2.0.0 local release verification (2026-09-06)
+## Current: 2.0.0 HDR validation package (2026-09-07)
+
+The HDR follow-up passes the native Release build and all14 CTests, including
+software GPU pixel-readback and scRGB ImGui/notification/resize tests. See
+[overlay validation](OVERLAY_VALIDATION.md). No live HDR game/display acceptance
+is available, and this updated ASI has not been installed during this pass.
+
+Separate package: `artifacts/mod-manager/v2.0.0-hdr-20260907-001024/CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`.
+SHA-256: `8B92CE3AC3E4EC09A468DF772AC84BFFA127895E3507D317A28FB8B775D71E80`.
+ASI SHA-256: `C781D4F04B2A24D7403DA073150CDC86406B7537D32120E2773946B64619F26E`.
+This archive contains the rebuilt native ASI/current INI and README, plus unchanged
+managed binaries/runtime metadata from the earlier verified2.0.0 package. Nine-file
+validation, negative controls, ZIP/expanded equality and comparison of the bundled
+README/INI against current sources passed. The earlier immutable ZIP below is
+preserved byte-for-byte; this is not a silent replacement or a published release.
+
+## Previous: 2.0.0 local release verification before HDR (2026-09-06)
 
 The installed 2.0.0 package passed a fresh game start and a progressing live API
 check; the user confirmed it works. The included INI enables authored/rendered

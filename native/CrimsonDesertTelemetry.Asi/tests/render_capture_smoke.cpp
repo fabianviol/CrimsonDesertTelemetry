@@ -13,6 +13,7 @@
 namespace cdt::render
 {
 void InitializeCaptureForTest(uint64_t base);
+const char* CapturePhaseForTest();
 void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner);
 }
 // The smoke executable links only memory/log support from imported research.
@@ -25,6 +26,34 @@ void Check(bool value, const char* message) { if (!value) { std::cerr << message
 void Hr(HRESULT value, const char* message) { if (FAILED(value)) { std::cerr << std::hex << value << ' '; Check(false,message); } }
 template<class T, size_t N> void Put(std::array<uint8_t,N>& data, size_t offset, T value)
 { memcpy(data.data()+offset,&value,sizeof(value)); }
+
+void CheckCapture(bool value, const cdt::render::Mapping* bridge, ID3D12Device* device, const char* message)
+{
+    if (value) return;
+    std::cerr << message << ": phase=" << cdt::render::CapturePhaseForTest()
+        << ", state=" << static_cast<uint32_t>(bridge->header.state)
+        << ", sequence=" << bridge->header.sampleSequence << ", frame=" << bridge->header.frameNumber
+        << ", capture-error=0x" << std::hex << cdt::render::CaptureFailureCode()
+        << ", bridge-error=0x" << bridge->header.error
+        << ", device-removed=0x" << device->GetDeviceRemovedReason() << std::dec << '\n';
+    ExitProcess(1);
+}
+
+void WaitForSample(const cdt::render::Mapping* bridge, ID3D12Device* device,
+    uint64_t sequence, uint32_t frame, const char* message)
+{
+    // Let the production five-second capture timeout report a fault first.
+    // A fixed iteration count depended on the machine's Sleep granularity.
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(6);
+    while (bridge->header.sampleSequence<sequence && std::chrono::steady_clock::now()<deadline)
+    {
+        cdt::render::PollCapture();
+        if (cdt::render::CaptureFailureCode()!=0) break;
+        if (bridge->header.sampleSequence<sequence) Sleep(5);
+    }
+    CheckCapture(bridge->header.state==cdt::render::Status::Active &&
+        bridge->header.sampleSequence==sequence && bridge->header.frameNumber==frame, bridge, device, message);
+}
 }
 int main(int argc, char** argv)
 {
@@ -116,16 +145,19 @@ int main(int argc, char** argv)
     // A malformed/missing/undersized counter cannot silently downgrade a pair
     // to the former light-only capture. These calls occur before discovery.
     CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),0,0);
-    Put(counterInner,0x168,uint64_t{0}); Sleep(2); capture(); PollCapture();
+    Put(counterInner,0x168,uint64_t{0}); capture(); PollCapture();
     Put(counterInner,0x168,reinterpret_cast<uint64_t>(shortCounter.Get()));
-    Sleep(2); capture(); PollCapture();
-    Put(counterInner,0x168,reinterpret_cast<uint64_t>(counterUpload.Get())); Sleep(2); capture(); PollCapture();
-    Put(counterInner,0x168,reinterpret_cast<uint64_t>(source.Get())); Sleep(2); capture(); PollCapture();
+    capture(); PollCapture();
+    Put(counterInner,0x168,reinterpret_cast<uint64_t>(counterUpload.Get())); capture(); PollCapture();
+    Put(counterInner,0x168,reinterpret_cast<uint64_t>(source.Get())); capture(); PollCapture();
     Check(bridge->header.sampleSequence==0,"invalid counter published a light-only sample");
-    Put(counterInner,0x168,reinterpret_cast<uint64_t>(counter.Get())); Sleep(2); capture();
+    Put(counterInner,0x168,reinterpret_cast<uint64_t>(counter.Get())); capture();
     PollCapture(); // prepare readback and install real same-device submission hook
-    Sleep(2);
+    CheckCapture(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,
+        bridge,device.Get(),"capture preparation did not become ready");
     capture();
+    CheckCapture(std::strcmp(CapturePhaseForTest(),"recorded (not submitted)")==0,
+        bridge,device.Get(),"capture step did not record a GPU copy");
     Put(owner,0x8F8,uint32_t{99}); // Publication must keep the index captured BEFORE GPU execution.
     Hr(list->Close(),"target close");
     ID3D12CommandList* unrelatedLists[]{unrelated.Get()}; queue->ExecuteCommandLists(1,unrelatedLists);
@@ -139,9 +171,7 @@ int main(int argc, char** argv)
     for (int i=0;i<30;++i) { PollCapture(); Sleep(5); }
     Check(bridge->header.sampleSequence==0,"readback published before GPU fence completion");
     Hr(gate->Signal(1),"release gate");
-    for (int i=0;i<400 && bridge->header.sampleSequence==0;++i) { PollCapture(); Sleep(5); }
-    Check(bridge->header.state==Status::Active && bridge->header.sampleSequence==1 && bridge->header.frameNumber==100,
-        "completed sample not published");
+    WaitForSample(bridge,device.Get(),1,100,"completed sample not published");
     Check(bridge->header.flags==15 && memcmp(bridge->lights,light.data(),sizeof(light))==0,"wrong light data/flags");
     Check(memcmp(bridge->scene,constants.data(),SceneBytes)==0,"camera not paired");
     Check(memcmp(bridge->counters,counterData.data(),CounterBytes)==0,"counter bytes not paired with completed light copy");
@@ -156,15 +186,14 @@ int main(int argc, char** argv)
     Put(counterInner,0x168,reinterpret_cast<uint64_t>(counter2.Get())); Put(owner,0x8F8,uint32_t{1});
     capture(); Put(owner,0x8F8,uint32_t{98});
     Hr(list->Close(),"second close"); queue->ExecuteCommandLists(1,lists);
-    for (int i=0;i<400 && bridge->header.sampleSequence<2;++i) { PollCapture(); Sleep(5); }
-    Check(bridge->header.sampleSequence==2 && bridge->header.frameNumber==101,"recurring capture failed");
+    WaitForSample(bridge,device.Get(),2,101,"recurring capture failed");
     Check(memcmp(bridge->scene,constants.data(),SceneBytes)==0,"second camera not paired");
     Check(memcmp(bridge->counters,counterData2.data(),CounterBytes)==0 &&
         bridge->header.outputResource==reinterpret_cast<uint64_t>(source2.Get()) &&
         bridge->header.counterResource==reinterpret_cast<uint64_t>(counter2.Get()) && bridge->header.bufferIndex==1,
         "second resource bank reused the first counter or publication-time index");
     Put(constants,0x20,uint32_t{102}); Put(counterInner,0x168,uint64_t{0});
-    Sleep(2); capture(); PollCapture();
+    capture(); PollCapture();
     Check(bridge->header.sampleSequence==2 && bridge->header.frameNumber==101,
         "failed counter resolution republished the previous pair as a new frame");
     Put(counterInner,0x168,reinterpret_cast<uint64_t>(counter2.Get()));
@@ -195,11 +224,10 @@ int main(int argc, char** argv)
         Put(counterInner,0x168,reinterpret_cast<uint64_t>(foreignCounter.Get()));
     }
     else Put(holder,8,reinterpret_cast<uint64_t>(computeList.Get()));
-    Sleep(2);
     capture();
     PollCapture();
-    Check(bridge->header.state==Status::Fault && bridge->header.error==ERROR_INVALID_HANDLE && bridge->header.sampleSequence==2,
-        "changed queue type/counter device not refused before copy");
+    CheckCapture(bridge->header.state==Status::Fault && bridge->header.error==ERROR_INVALID_HANDLE && bridge->header.sampleSequence==2,
+        bridge,device.Get(),"changed queue type/counter device not refused before copy");
     StopCapture(); Check(bridge->header.state==Status::Stopped,"stop retained active result");
     UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
     std::cout<<"Real D3D12/WARP: invalid counters refused; unrelated submission ignored; blocked GPU withheld; exact fence published paired scene/lights/256 counter bytes; alternating resource identities frozen at capture; "

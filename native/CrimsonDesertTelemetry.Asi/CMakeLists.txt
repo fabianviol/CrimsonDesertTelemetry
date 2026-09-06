@@ -35,7 +35,7 @@ add_library(cdt_imgui STATIC
 target_include_directories(cdt_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(cdt_imgui PUBLIC d3d12 dxgi d3dcompiler)
 
-add_library(cdt_overlay STATIC src/overlay_model.cpp src/overlay_client.cpp src/overlay_hud.cpp src/overlay_graphics.cpp)
+add_library(cdt_overlay STATIC src/overlay_model.cpp src/overlay_client.cpp src/overlay_hud.cpp src/overlay_graphics.cpp src/overlay_hdr.cpp)
 target_compile_features(cdt_overlay PUBLIC cxx_std_20)
 target_compile_definitions(cdt_overlay PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_overlay PRIVATE /W4 /WX /permissive-)
@@ -158,6 +158,19 @@ add_test(NAME light-overlay-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --
 set_tests_properties(light-overlay-d3d12 PROPERTIES TIMEOUT 45)
 add_test(NAME light-overlay-only-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --lights-only)
 set_tests_properties(light-overlay-only-d3d12 PROPERTIES TIMEOUT 45)
+
+add_executable(CrimsonDesertTelemetryHdrTests tests/overlay_hdr_tests.cpp src/overlay_hdr.cpp)
+target_compile_features(CrimsonDesertTelemetryHdrTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetryHdrTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetryHdrTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryHdrTests PRIVATE /W4 /WX /permissive-)
+target_link_libraries(CrimsonDesertTelemetryHdrTests PRIVATE d3d12 dxgi d3dcompiler)
+add_test(NAME overlay-hdr-composite COMMAND CrimsonDesertTelemetryHdrTests)
+set_tests_properties(overlay-hdr-composite PROPERTIES TIMEOUT 45)
+add_test(NAME overlay-scrgb-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --scrgb)
+set_tests_properties(overlay-scrgb-d3d12 PROPERTIES TIMEOUT 45)
+add_test(NAME notifications-scrgb-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --scrgb-notices)
+set_tests_properties(notifications-scrgb-d3d12 PROPERTIES TIMEOUT 45)
 
 add_executable(CrimsonDesertTelemetryClientSmoke tests/client_smoke.cpp)
 target_link_libraries(CrimsonDesertTelemetryClientSmoke PRIVATE cdt_overlay ws2_32 bcrypt crypt32)

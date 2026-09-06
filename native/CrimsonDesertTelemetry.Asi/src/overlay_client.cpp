@@ -320,6 +320,7 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.staleMs = std::clamp(integer(L"StaleMilliseconds", 1000), 100, 10000);
     config.scale = IniFloat(ini, L"Scale", 1.0f, 0.5f, 3.0f);
     config.opacity = IniFloat(ini, L"Opacity", 0.92f, 0.2f, 1.0f);
+    config.hdrPaperWhiteNits = IniFloat(ini, L"HdrPaperWhiteNits", 200.0f, 80.0f, 500.0f);
     config.port = static_cast<unsigned short>(std::clamp(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()), 1024u, 65535u));
     return config;
 }

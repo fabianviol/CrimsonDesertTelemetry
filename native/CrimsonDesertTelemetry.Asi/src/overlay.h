@@ -26,6 +26,7 @@ void DrawNotice(const Notice& notice, const Config& config, bool hudVisible, boo
 bool InstallGraphics(const Config& config) noexcept;
 void MaintainGraphics() noexcept;
 const char* GraphicsStatus() noexcept;
+const char* GraphicsOutputLabel() noexcept;
 unsigned long long RenderedFrames() noexcept;
 void SetVisibleForTest(bool visible) noexcept;
 void SetLightVisibleForTest(bool visible) noexcept;

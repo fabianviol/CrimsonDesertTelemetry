@@ -350,7 +350,7 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20,diagnostics+135,Muted,"Camera forward  " + VectorText(sample.cameraForward,3),13);
     text(20,diagnostics+156,Muted,"Player up       " + VectorText(sample.playerUp,3),13);
     text(20,diagnostics+177,Muted,"Build " + view.sample.build,13);
-    text(20,diagnostics+198,Muted,"D3D12 / SDR  |  passive HUD  |  no mouse capture",13);
+    text(20,diagnostics+198,Muted,std::string(GraphicsOutputLabel()) + "  |  passive HUD  |  no mouse capture",13);
     text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
 }
 

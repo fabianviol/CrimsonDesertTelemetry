@@ -1,4 +1,48 @@
-# Current checkpoint — GitHub 2.0.0 release preparation, 2026-09-06, Codex/Astra
+# Current checkpoint — HDR added; publication paused, 2026-09-07, Codex/Astra
+
+User stopped the GitHub release after learning the old HUD explicitly disabled
+HDR output, then authorized implementing HDR without a live HDR display/game test.
+**No v2.0.0 tag, draft or public release was created.** Main was pushed through
+`1e7d999` (lighting-first README/media/credits); repository About/video updated.
+WebSocket is unchanged: `/v1/stream` carries JSON; HTTP snapshots remain available.
+
+Implemented original D3D12 HDR compositor: HDR10 R10/PQ/Rec.2020 and FP16 linear
+scRGB, alongside unchanged direct SDR rendering (8-bit plus 10-bit SDR). UI goes
+into a transparent FP16 target, then converts/mixes with the game in linear light.
+No game tone mapping, output color-space setting or HDR metadata is changed.
+Transparent finite scene pixels and scene alpha are preserved. UI reference white
+is `[Overlay] HdrPaperWhiteNits=200`, clamped80–500, shared by all UI/notices.
+Mode/format changes pause incompatible drawing and rebuild only after our GPU fence.
+Two extra full-resolution GPU textures/copy/composite are used for HDR UI; not SDR.
+
+Verification: native Release build and **14/14 CTests PASS** (8.73s), including all
+previous SDR/light/notification/WebSocket tests. New offscreen WARP tests verify
+PQ/scRGB pixel goldens, alpha, gamut conversion, negative/extended scRGB and repeated
+states; real ImGui scRGB tests cover notices/fonts/4K/resize, plus FP16→SDR→FP16.
+This is synthetic GPU evidence, NOT live HDR-game acceptance. No HDR-capable setup
+available per user. Sources/tests: `overlay_hdr.*`, `overlay_graphics.cpp`,
+`overlay_hdr_tests.cpp`, `graphics_smoke.cpp`; details in OVERLAY_VALIDATION.md.
+
+GitHub CI34062330798 passed managed56/API but exposed flaky native capture smoke:
+Sleep(2) can leave GetTickCount64 unchanged and throttle away one-shot test calls.
+Old binary reproduced both missing capture and skipped queue rejection. Fixed
+test-only interval=0, phase diagnostics and6s deadline; production20Hz/5s policy
+unchanged. Targeted and full native runs pass. CI log stays ignored under
+`artifacts/github-release-v2.0.0/`. A fresh GitHub CI must verify the saved update.
+
+HDR validation ZIP (803152bytes):
+`artifacts/mod-manager/v2.0.0-hdr-20260907-001024/CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`.
+SHA256 `8B92CE3AC3E4EC09A468DF772AC84BFFA127895E3507D317A28FB8B775D71E80`;
+ASI `C781D4F04B2A24D7403DA073150CDC86406B7537D32120E2773946B64619F26E`.
+Nine-file validator/negative controls/ZIP equality PASS; README and INI explicitly
+match current sources. It uses the newly built ASI and unchanged managed/runtime
+payload from the verified pre-HDR2.0 package (host source/ABI/API unchanged).
+The original versioned ZIP hash still matches E8A268...; no replacement occurred.
+
+Next: verify fresh GitHub CI, then await resumption of the stopped publication.
+No ASI was installed into the game during this HDR pass. Nexus remains untouched.
+
+## Previous checkpoint — GitHub 2.0.0 release preparation
 
 User authorized GitHub publication, fully refreshed descriptions with lighting
 first, the supplied screenshot/video, and Codex coauthor credit. Nexus publication

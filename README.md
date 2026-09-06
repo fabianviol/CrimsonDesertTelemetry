@@ -1,10 +1,10 @@
 # Crimson Desert Telemetry
 
-**Live light, player and camera data for Crimson Desert — with a local API, fullscreen light markers and a 3D light radar.**
+**Live light, player and camera data for Crimson Desert — with local HTTP and WebSocket APIs, fullscreen light markers and a 3D light radar.**
 
 Version **2.0.0** brings lighting to the foreground: inspect the positions, colors and brightness of current light contributions from fires, candles, lanterns and glass/crystal lamps, alongside the player and render camera. Use the data in your own overlays, tools and lighting integrations.
 
-[Download 2.0.0](https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0)
+[Releases](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 · [Watch the demo](https://youtu.be/eyRkkTXAU64)
 · [API reference](docs/API.md)
 · [Client examples](examples)
@@ -27,7 +27,9 @@ Version **2.0.0** brings lighting to the foreground: inspect the positions, colo
 
 Lighting, both HUD views and status notices are enabled in the supplied configuration. Each can be configured separately; the HUD is not required to consume the API.
 
-**No NVIDIA or DLSS requirement.** The camera is read directly from the engine, not from a DLSS/Streamline data stream. Light capture and the overlay use standard DirectX 12 interfaces. Neither Nsight nor PIX is needed to run the mod. AMD/Intel game compatibility has not yet been tested; the overlay currently supports **DirectX 12 with an 8-bit SDR swapchain**, not HDR.
+**No NVIDIA or DLSS requirement.** The camera is read directly from the engine, not from a DLSS/Streamline data stream. Light capture and the overlay use standard DirectX 12 interfaces. Neither Nsight nor PIX is needed to run the mod. AMD/Intel game compatibility has not yet been tested.
+
+**SDR and HDR overlays.** The DirectX 12 renderer supports 8-bit and 10-bit SDR, HDR10 (10-bit PQ/Rec.2020), and FP16 scRGB. It automatically uses the game's buffer format and color space for the HUD, light markers and notices. All 14 native tests pass, including three new HDR tests, real ImGui rendering and SDR/scRGB transitions; no live HDR-display/game test has been performed. [Validation details](docs/OVERLAY_VALIDATION.md).
 
 ## Install or upgrade
 
@@ -43,7 +45,7 @@ Requirements:
 4. Import **and activate/deploy** the new package in Definitive Mod Manager (DMM) or JSON Mod Manager. Keep all included files together.
 5. Start the game and load a save. The local host starts automatically.
 
-DMM deployment and a packaged cold start were verified locally. A complete install/uninstall test matrix for both managers and other systems is still open; see the [validation record](docs/MOD_MANAGER_VALIDATION.md).
+DMM deployment and a packaged cold start were verified locally before the HDR addition. A complete install/uninstall test matrix for both managers and other systems is still open; see the [validation record](docs/MOD_MANAGER_VALIDATION.md).
 
 Do not merge old binaries or metadata into the new package. Preserve your INI preferences, but migrate them into the current sections. Replace both `.cfg` companions together with the DLLs; they contain .NET metadata and must **not** be renamed to `.json`, which DMM can interpret as game patches. Do not leave the former console ASI in a loader search path.
 
@@ -74,6 +76,7 @@ ManyLightsSampleRateHz=20
 [Overlay]
 Enabled=1
 Radar3D=1
+HdrPaperWhiteNits=200
 
 [LightOverlay]
 Enabled=1
@@ -90,7 +93,8 @@ DurationMilliseconds=6000
 - `NearbyRadius` controls the API's player-centered light radius; `LightOverlay.Radius` controls both light views. Distances are **game units**, not a claimed metre conversion.
 - Disable **Overlay, LightOverlay and Notifications** to skip all UI hooks/client. The server and light capture have their own switches.
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
-- Radar/marker colors are an SDR visualization of measured HDR values. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
+- `HdrPaperWhiteNits` controls all HDR UI brightness, including markers and notices with the corner HUD disabled. The default is 200 nits, clamped to 80–500. It does not change the game's HDR settings or metadata.
+- Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
 
 ### Startup and errors
@@ -108,7 +112,7 @@ Known behavior: after returning to the title screen without restarting, data/HUD
 
 ## Use the data
 
-The server binds to **IPv4 loopback only**, normally at `127.0.0.1:27311`.
+Connect through **HTTP** at `http://127.0.0.1:27311` or **WebSocket** at `ws://127.0.0.1:27311/v1/stream`. Both carry JSON; JSON is the data format, not a separate connection method. The server binds to **IPv4 loopback only**.
 
 | Endpoint | Purpose |
 |---|---|
@@ -161,7 +165,8 @@ Important boundaries:
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
 - The radar can show behind-camera contributions still present in the feed, but is **not** a complete 360-degree registry.
 - Fullscreen markers have **no scene-depth test** and can appear through walls. Fast motion can expose the latency between a light capture and the latest projection camera.
-- HDR overlays are unsupported. Frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
+- HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
+- Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
 - The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The bundled research console can change debug values when explicitly enabled and is off by default.
 
 ## Build, test and contribute

@@ -69,6 +69,8 @@ struct Config
     int toggleKey = 0x77, detailsKey = 0x78, corner = 0, staleMs = 1000;
     int lightToggleKey = 0x79, lightMaxMarkers = 512, lightMaxLabels = 6;
     float scale = 1.0f, opacity = 0.92f;
+    // SDR UI reference white for HDR10/scRGB output; does not alter API RGB.
+    float hdrPaperWhiteNits = 200.0f;
     float lightRadius = 35.0f;
     unsigned short port = 27311;
 };

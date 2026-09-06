@@ -1,6 +1,56 @@
 # In-game overlay validation
 
-## Current: 2.0.0 light visualization, 2026-09-06
+## Current: 2.0.0 HDR compositor, 2026-09-07
+
+The D3D12 UI now supports HDR10 and scRGB, in addition to 8-bit and 10-bit SDR.
+The radar, fullscreen markers and notifications automatically follow the game's
+buffer format and declared color space. `[Overlay] HdrPaperWhiteNits=200` sets
+white brightness for all HDR UI, clamped to 80–500 nits, including markers and
+notices while the corner HUD is disabled. No game HDR settings or metadata change.
+
+The final native Release rebuild and all 14 native CTest paths passed locally in
+8.73 seconds, including existing capture/guard, SDR UI/markers and WebSocket
+coverage. The three new HDR test paths passed:
+
+| Test | Verified | Result |
+|---|---|---|
+| `overlay-hdr-composite` | WARP readback: output-mode matrix, PQ/scRGB reference values, sRGB decode, Rec.709→2020 conversion, linear-light alpha, transparent finite-scene preservation, extended/negative scRGB, PQ extremes and repeated resource states | Pass |
+| `overlay-scrgb-d3d12` | Real ImGui rendering, resize recovery and FP16→8-bit SDR→FP16 transitions on the same swapchain, with correct labels and first-frame output | Pass |
+| `notifications-scrgb-d3d12` | Notification-only rendering through the scRGB path | Pass |
+
+These tests use offscreen WARP textures/hidden windows and do not require an HDR display. Live HDR-display
+and HDR game acceptance have not been performed; no suitable setup was available.
+Prior installed-game acceptance below predates this HDR addition. Release
+publication is paused; no HDR build has been declared live-game validated.
+
+Supported output selection is strict:
+
+| Buffer | Declared color space | Mode |
+|---|---|---|
+| R8G8B8A8/B8G8R8A8 UNORM, R10G10B10A2 UNORM | Full-range G22/Rec.709 | SDR |
+| R10G10B10A2 UNORM | Full-range PQ/Rec.2020 | HDR10 |
+| R16G16B16A16 FLOAT | Full-range linear/Rec.709 | scRGB |
+
+Unknown combinations remain unsupported. FP16 defaults to linear/scRGB; a 10-bit
+buffer defaults to SDR until a supported HDR color space is declared. Output-mode
+changes use the existing idle/rebuild path instead of changing the game output.
+
+Stock ImGui appearance is retained inside a transparent FP16 UI target. The
+compositor unpremultiplies and decodes that gamma-coded UI before blending over
+the scene in linear light. scRGB uses 1.0 = 80 nits; HDR10 decodes PQ to nits,
+converts UI Rec.709 primaries to Rec.2020, blends and re-encodes PQ. It preserves
+scene alpha and bypasses conversion for zero-alpha UI; it does not tone-map the
+whole game. Tests compare unchanged finite transparent pixels byte-for-byte;
+arbitrary FP16 NaN payload preservation is not claimed. The color conventions
+follow [Microsoft's Advanced Color guide](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range).
+
+HDR rendering owns two additional full-resolution GPU textures and records a
+scene copy/composite while UI is drawn. Shader compilation/allocation occurs on
+the initialization worker, with no extra SDR compositor pass. Performance on an
+HDR game setup has not been measured. This changes only UI presentation; the
+local HTTP and WebSocket APIs, JSON schemas and raw telemetry remain unchanged.
+
+## Previous: 2.0.0 light visualization before HDR, 2026-09-06
 
 The package enables a larger oblique 3D light radar in the corner HUD and an
 independent fullscreen light-marker layer. F8 toggles the corner HUD, F9 its
@@ -38,7 +88,7 @@ counter introduced in preview.3. The API reconstructs world positions with the
 capture-paired camera, while the HUD projects with the latest published camera.
 It is not synchronized to Present; precise motion alignment/latency remains
 unmeasured. There is no scene-depth test, so markers can show through walls.
-The supported HUD path is D3D12/8-bit SDR; HDR is unsupported. No DLSS, Streamline
+This pre-HDR package supported D3D12/8-bit SDR only. No DLSS, Streamline
 or NVIDIA runtime dependency is used, but AMD/Intel in-game setups and frame
 generation remain unvalidated. See [package evidence](MOD_MANAGER_VALIDATION.md).
 
@@ -123,6 +173,10 @@ Light-source research is paused and is not compiled or packaged in this release.
   Each submitted draw has a fence. Resize waits up to two seconds for owned GPU
   work; on timeout resources are retained, which can cause DXGI to reject that
   resize. A restart is then recommended instead of risking an in-flight release.
+- HDR uses an original compositor alongside the unchanged ImGui dependency.
+  The FP16 UI target and same-format scene copy finish in shader-resource state;
+  the backbuffer returns to Present. Same-direct-queue ordering and completion
+  fences govern reuse/destruction. SDR keeps its existing direct draw path.
 - Telemetry comes from `/v1/stream` on configured IPv4 loopback. Redirects/proxies
   are disabled. The dedicated WinHTTP worker parses bounded complete messages.
   Its blocking WebSocket receive never blocks rendering or graphics maintenance.
@@ -210,11 +264,13 @@ acceptance and remaining coverage are recorded above and below.
 
 ## Current limitations / release wording
 
-- **D3D12, 8-bit SDR only**. HDR, alternate render APIs and multi-queue presentation
-  are not supported by the HUD renderer. API sampling is independent of HUD visibility.
+- **D3D12: 8-bit/10-bit SDR, HDR10 and scRGB**. Other format/color-space combinations,
+  alternate render APIs and multi-queue presentation remain unsupported. HDR has
+  automated WARP coverage, not live display/game acceptance. API sampling is
+  independent of HUD visibility.
 - Other overlays, DXGI wrappers and frame generation need live coexistence testing.
   A late-loaded or unrecognized swapchain fails without guessing its command queue.
-- Current camera/player and lighting startup paths have local game acceptance.
+- The camera/player and lighting startup paths before HDR have local game acceptance.
   The HUD draws received directions without smoothing; low transport age alone
   does not prove Present-synchronous alignment. Exact motion latency and frame
   generation still need dedicated measurements.

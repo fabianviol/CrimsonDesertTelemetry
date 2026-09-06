@@ -1,4 +1,5 @@
 #include "overlay.h"
+#include "overlay_hdr.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -49,6 +50,9 @@ struct Renderer
     std::vector<ComPtr<ID3D12Resource>> buffers;
     std::vector<Frame> frames;
     UINT rtvSize{}, width{}, height{};
+    DXGI_FORMAT outputFormat = DXGI_FORMAT_UNKNOWN;
+    hdr::OutputMode outputMode = hdr::OutputMode::Unsupported;
+    std::unique_ptr<hdr::Compositor> compositor;
     UINT64 signalValue{}, draws{};
     ImGuiContext* context{};
     bool backend{}, fault{};
@@ -57,7 +61,8 @@ struct Renderer
     NoticeTracker notices;
 
     // Worker thread only. Font upload / shader compilation are never done in Present.
-    void Initialize(IDXGISwapChain3* swapchain, ID3D12CommandQueue* commandQueue, const Config& config)
+    void Initialize(IDXGISwapChain3* swapchain, ID3D12CommandQueue* commandQueue, const Config& config,
+        DXGI_COLOR_SPACE_TYPE colorSpace)
     {
         chain = swapchain;
         queue = commandQueue;
@@ -68,10 +73,18 @@ struct Renderer
             throw std::runtime_error("Swapchain queue mismatch");
         DXGI_SWAP_CHAIN_DESC1 desc{};
         Check(chain->GetDesc1(&desc));
+        outputFormat = desc.Format;
+        outputMode = hdr::ResolveOutput(desc.Format, colorSpace);
         if (desc.BufferCount < 2 || desc.BufferCount > 8 || desc.SampleDesc.Count != 1 || desc.Stereo ||
-            (desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM && desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM))
-            throw std::runtime_error("Overlay preview supports 8-bit SDR swapchains only");
+            outputMode == hdr::OutputMode::Unsupported)
+            throw std::runtime_error("Unsupported overlay swapchain format/color space");
         width = desc.Width; height = desc.Height;
+        if (outputMode != hdr::OutputMode::Sdr)
+        {
+            compositor = std::make_unique<hdr::Compositor>();
+            if (!compositor->Initialize(device.Get(), width, height, desc.Format))
+                throw std::runtime_error("HDR compositor initialization failed");
+        }
         frames.resize(desc.BufferCount);
         buffers.resize(desc.BufferCount);
         D3D12_DESCRIPTOR_HEAP_DESC heap{};
@@ -131,7 +144,7 @@ struct Renderer
         info.Device = device.Get();
         info.CommandQueue = queue.Get();
         info.NumFramesInFlight = static_cast<int>(frames.size());
-        info.RTVFormat = desc.Format;
+        info.RTVFormat = compositor ? DXGI_FORMAT_R16G16B16A16_FLOAT : desc.Format;
         info.SrvDescriptorHeap = srvHeap.Get();
         info.UserData = this;
         info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* init, D3D12_CPU_DESCRIPTOR_HANDLE* cpu, D3D12_GPU_DESCRIPTOR_HANDLE* gpu)
@@ -213,15 +226,27 @@ struct Renderer
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
         auto* commands = frame.commands.Get();
-        commands->ResourceBarrier(1, &barrier);
         auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
         rtv.ptr += static_cast<SIZE_T>(backBuffer) * rtvSize;
-        commands->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        if (compositor) compositor->BeginOverlay(commands);
+        else
+        {
+            commands->ResourceBarrier(1, &barrier);
+            commands->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        }
         ID3D12DescriptorHeap* heaps[] = {srvHeap.Get()};
         commands->SetDescriptorHeaps(1, heaps);
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commands);
-        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
-        commands->ResourceBarrier(1, &barrier);
+        if (compositor)
+        {
+            if (!compositor->Composite(commands, buffers[backBuffer].Get(), rtv, outputMode, config.hdrPaperWhiteNits))
+                throw std::runtime_error("HDR compositor rejected the frame");
+        }
+        else
+        {
+            std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+            commands->ResourceBarrier(1, &barrier);
+        }
         Check(commands->Close());
         ID3D12CommandList* lists[] = {commands};
         queue->ExecuteCommandLists(1, lists);
@@ -254,7 +279,10 @@ struct State
     ComPtr<IDXGISwapChain3> candidate;
     ComPtr<ID3D12CommandQueue> queue;
     HWND window{};
-    bool visible{}, details{}, lightVisible{}, toggleDown{}, detailsDown{}, lightToggleDown{}, resizing{}, failed{}, hdr{};
+    bool visible{}, details{}, lightVisible{}, toggleDown{}, detailsDown{}, lightToggleDown{}, resizing{}, failed{};
+    bool changingColorSpace{}, explicitColorSpace{};
+    DXGI_COLOR_SPACE_TYPE outputColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    std::atomic<const char*> outputLabel{"D3D12 / waiting"};
     std::atomic<const char*> status{"Waiting for the game's D3D12 swapchain. Restart the game if attached late."};
     std::atomic<unsigned long long> rendered{};
     CreateChain createChain{}; CreateHwnd createHwnd{};
@@ -262,6 +290,24 @@ struct State
     std::array<void*, 7> targets{};
 };
 State& Data() { static auto* state = new State; return *state; }
+void SetReadyStatus(State& state, hdr::OutputMode mode)
+{
+    if (mode == hdr::OutputMode::Hdr10)
+    {
+        state.outputLabel = "D3D12 / HDR10";
+        state.status = "Overlay ready: D3D12 / HDR10 (PQ/BT.2020). F8 HUD, F9 diagnostics, F10 lights.";
+    }
+    else if (mode == hdr::OutputMode::ScRgb)
+    {
+        state.outputLabel = "D3D12 / scRGB";
+        state.status = "Overlay ready: D3D12 / scRGB (linear FP16). F8 HUD, F9 diagnostics, F10 lights.";
+    }
+    else
+    {
+        state.outputLabel = "D3D12 / SDR";
+        state.status = "Overlay ready: D3D12 / SDR. F8 HUD, F9 diagnostics, F10 world lights (defaults).";
+    }
+}
 template<class T> bool Hook(void* target, void* replacement, T& original, size_t slot)
 {
     auto& state = Data();
@@ -281,7 +327,7 @@ bool Draw(IDXGISwapChain* chain, UINT flags) noexcept
     if (flags & (DXGI_PRESENT_TEST | DXGI_PRESENT_DO_NOT_WAIT)) return false;
     auto& state = Data();
     std::unique_lock lock(state.mutex, std::try_to_lock);
-    if (!lock.owns_lock() || state.resizing || !SameObject(chain, state.candidate.Get())) return false;
+    if (!lock.owns_lock() || state.resizing || state.changingColorSpace || !SameObject(chain, state.candidate.Get())) return false;
     try
     {
         const bool foreground = GetForegroundWindow() == GetAncestor(state.window, GA_ROOT);
@@ -295,7 +341,10 @@ bool Draw(IDXGISwapChain* chain, UINT flags) noexcept
         state.toggleDown = toggle; state.detailsDown = detail; state.lightToggleDown = lightToggle;
         const bool hudVisible = state.config.enabled && state.visible;
         const bool lightVisible = state.config.lightOverlay && state.lightVisible;
-        if ((!hudVisible && !lightVisible && !state.config.notifications) || state.hdr || !state.renderer) return false;
+        if ((!hudVisible && !lightVisible && !state.config.notifications) || !state.renderer) return false;
+        // Color-space changes are rebuilt on the worker after our GPU fence, not
+        // in Present. Never draw an SDR/PQ pipeline into the newly selected space.
+        if (hdr::ResolveOutput(state.renderer->outputFormat, state.outputColorSpace) != state.renderer->outputMode) return false;
         if (state.renderer->Draw(state.config, state.details, hudVisible, lightVisible)) { ++state.rendered; return true; }
     }
     catch (...)
@@ -349,7 +398,16 @@ void AfterResize(bool tracked) noexcept
 {
     if (!tracked) return;
     auto& state = Data();
-    try { std::lock_guard lock(state.mutex); state.resizing = false; }
+    try
+    {
+        std::lock_guard lock(state.mutex);
+        state.resizing = false;
+        if (!state.explicitColorSpace && state.candidate)
+        {
+            DXGI_SWAP_CHAIN_DESC1 desc{};
+            if (SUCCEEDED(state.candidate->GetDesc1(&desc))) state.outputColorSpace = hdr::DefaultColorSpace(desc.Format);
+        }
+    }
     catch (...) { }
 }
 HRESULT STDMETHODCALLTYPE OnResize(IDXGISwapChain* chain, UINT count, UINT width, UINT height, DXGI_FORMAT format, UINT flags)
@@ -383,15 +441,30 @@ HRESULT STDMETHODCALLTYPE OnResize1(IDXGISwapChain3* chain, UINT count, UINT wid
 }
 HRESULT STDMETHODCALLTYPE OnColorSpace(IDXGISwapChain3* chain, DXGI_COLOR_SPACE_TYPE color)
 {
-    const HRESULT result = Data().colorSpace(chain, color);
-    if (SUCCEEDED(result))
+    auto& state = Data();
+    bool tracked{};
     {
-        auto& state = Data();
+        std::lock_guard lock(state.mutex);
+        tracked = SameObject(chain, state.candidate.Get());
+        if (tracked) state.changingColorSpace = true;
+    }
+    const HRESULT result = Data().colorSpace(chain, color);
+    if (tracked)
+    {
         std::lock_guard lock(state.mutex);
         if (SameObject(chain, state.candidate.Get()))
         {
-            state.hdr = color != DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-            state.status = state.hdr ? "HDR/non-SDR output: HUD disabled in this preview; telemetry continues." : "SDR output selected.";
+            state.changingColorSpace = false;
+            if (SUCCEEDED(result))
+            {
+                state.explicitColorSpace = true;
+                if (state.outputColorSpace != color)
+                {
+                    state.outputColorSpace = color;
+                    state.failed = false;
+                    state.status = "Display color space changed; adapting the overlay.";
+                }
+            }
         }
     }
     return result;
@@ -432,7 +505,11 @@ void Track(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
         state.queue = queue;
         state.window = desc.OutputWindow;
         state.failed = false;
-        state.hdr = false; // DXGI default until the game's SetColorSpace1 call.
+        state.changingColorSpace = state.explicitColorSpace = false;
+        // Floating-point swapchains default to linear scRGB, not gamma SDR.
+        // Follow the game's successful SetColorSpace1 calls after creation.
+        state.outputColorSpace = hdr::DefaultColorSpace(desc.BufferDesc.Format);
+        state.outputLabel = "D3D12 / initializing";
         state.status = "Game D3D12 swapchain and its presentation queue captured; initializing HUD.";
     }
     catch (...) { Data().status = "Swapchain tracking failed; telemetry continues."; }
@@ -477,23 +554,45 @@ void MaintainGraphics() noexcept
     try
     {
         std::lock_guard lock(state.mutex);
-        if (!state.candidate || state.renderer || state.resizing || state.failed || state.hdr) return;
+        if (!state.candidate || state.resizing || state.changingColorSpace || state.failed) return;
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        if (FAILED(state.candidate->GetDesc1(&desc))) return;
+        const auto mode = hdr::ResolveOutput(desc.Format, state.outputColorSpace);
+        if (mode == hdr::OutputMode::Unsupported)
+        {
+            state.outputLabel = "D3D12 / unsupported color space";
+            state.status = "Unsupported display format/color space; overlays paused, telemetry continues.";
+            return;
+        }
+        if (state.renderer)
+        {
+            if (state.renderer->outputMode == mode && state.renderer->outputFormat == desc.Format)
+            {
+                if (!state.renderer->fault) SetReadyStatus(state, mode);
+                return;
+            }
+            // Existing GPU work owns these resources until its fence completes.
+            // Do not block Present or free in-flight uploads when HDR is toggled.
+            if (!state.renderer->Idle()) return;
+            state.renderer.reset();
+        }
         auto renderer = std::make_unique<Renderer>();
         try
         {
-            renderer->Initialize(state.candidate.Get(), state.queue.Get(), state.config);
+            renderer->Initialize(state.candidate.Get(), state.queue.Get(), state.config, state.outputColorSpace);
             state.renderer = std::move(renderer);
-            state.status = "Overlay ready: D3D12 / SDR. F8 HUD, F9 diagnostics, F10 world lights (defaults).";
+            SetReadyStatus(state, mode);
         }
         catch (...)
         {
             state.failed = true;
-            state.status = "HUD initialization failed or output format unsupported (requires D3D12, 8-bit SDR). Telemetry continues.";
+            state.status = "Overlay graphics initialization failed; see overlay log and D3D12 output settings. Telemetry continues.";
         }
     }
     catch (...) { state.status = "Overlay maintenance stopped after an error."; }
 }
 const char* GraphicsStatus() noexcept { return Data().status.load(); }
+const char* GraphicsOutputLabel() noexcept { return Data().outputLabel.load(); }
 unsigned long long RenderedFrames() noexcept { return Data().rendered.load(); }
 void SetVisibleForTest(bool visible) noexcept
 {

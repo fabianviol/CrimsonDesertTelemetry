@@ -5,8 +5,11 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
@@ -123,13 +126,23 @@ struct Pixels
 {
     UINT width{}, height{};
     std::vector<unsigned char> bgra;
+    // scRGB assertions use decoded linear FP16 values, never SDR byte casts.
+    std::vector<std::array<float, 3>> linearRgb;
     size_t Changed(int left, int top, int right, int bottom) const
     {
         size_t count = 0;
         for (int y = std::max(0, top); y < std::min(static_cast<int>(height), bottom); ++y)
             for (int x = std::max(0, left); x < std::min(static_cast<int>(width), right); ++x)
             {
-                const auto* pixel = bgra.data() + (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                const size_t index = static_cast<size_t>(y) * width + static_cast<size_t>(x);
+                if (!linearRgb.empty())
+                {
+                    const auto& pixel = linearRgb[index];
+                    if (std::abs(pixel[0] - .10f) + std::abs(pixel[1] - .15f) +
+                        std::abs(pixel[2] - .21f) > .035f) ++count;
+                    continue;
+                }
+                const auto* pixel = bgra.data() + index * 4;
                 // The UNORM clear is RGBA(0.10,0.15,0.21,1). Allow rounding.
                 if (std::abs(static_cast<int>(pixel[0]) - 54) + std::abs(static_cast<int>(pixel[1]) - 38) +
                     std::abs(static_cast<int>(pixel[2]) - 26) > 9) ++count;
@@ -139,14 +152,35 @@ struct Pixels
     size_t Different(const Pixels& other, int left, int top, int right, int bottom) const
     {
         Require(width == other.width && height == other.height, "Pixel comparison dimensions differ");
+        Require(linearRgb.empty() == other.linearRgb.empty(), "Pixel comparison color spaces differ");
         size_t count = 0;
         for (int y = std::max(0, top); y < std::min(static_cast<int>(height), bottom); ++y)
             for (int x = std::max(0, left); x < std::min(static_cast<int>(width), right); ++x)
             {
-                const size_t offset = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                const size_t index = static_cast<size_t>(y) * width + static_cast<size_t>(x);
+                if (!linearRgb.empty())
+                {
+                    const auto& a = linearRgb[index];
+                    const auto& b = other.linearRgb[index];
+                    if (std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2]) > .08f) ++count;
+                    continue;
+                }
+                const size_t offset = index * 4;
                 if (std::abs(static_cast<int>(bgra[offset]) - other.bgra[offset]) +
                     std::abs(static_cast<int>(bgra[offset + 1]) - other.bgra[offset + 1]) +
                     std::abs(static_cast<int>(bgra[offset + 2]) - other.bgra[offset + 2]) > 20) ++count;
+            }
+        return count;
+    }
+    size_t AboveSdrWhite(int left, int top, int right, int bottom) const
+    {
+        Require(!linearRgb.empty(), "Expected linear scRGB readback");
+        size_t count = 0;
+        for (int y = std::max(0, top); y < std::min(static_cast<int>(height), bottom); ++y)
+            for (int x = std::max(0, left); x < std::min(static_cast<int>(width), right); ++x)
+            {
+                const auto& pixel = linearRgb[static_cast<size_t>(y) * width + static_cast<size_t>(x)];
+                if (pixel[0] > 1.1f && pixel[1] > 1.1f && pixel[2] > 1.1f) ++count;
             }
         return count;
     }
@@ -156,6 +190,24 @@ struct Pixels
             static_cast<int>(std::ceil(x + radius)), static_cast<int>(std::ceil(y + radius)));
     }
 };
+void RequireScRgbUi(const Pixels& image, const Config& config, bool noticesOnly)
+{
+    const float width = static_cast<float>(image.width), height = static_cast<float>(image.height);
+    const float scale = noticesOnly ? std::min(std::max(1.f, height / 1080.f), width / 660.f) :
+        HudScale(width, height, config, true);
+    // These regions contain font glyphs, with no bright panel borders or radar
+    // primitives. 200-nit UI white is 2.5 scRGB units (80 nits per unit), so the
+    // light text must exceed 1.0; plain SDR rendering into FP16 would fail.
+    const int left = static_cast<int>((noticesOnly ? 36.f : 40.f) * scale);
+    const int top = static_cast<int>((noticesOnly ? 73.f : 54.f) * scale);
+    const int right = static_cast<int>((noticesOnly ? 620.f : 260.f) * scale);
+    const int bottom = static_cast<int>((noticesOnly ? 110.f : 79.f) * scale);
+    Require(image.AboveSdrWhite(left, top, right, bottom) > 20,
+        "scRGB ImGui font glyphs missing, incorrectly encoded, or clipped to SDR white");
+    Require(image.Changed(static_cast<int>(image.width) - 20, static_cast<int>(image.height) - 20,
+        static_cast<int>(image.width), static_cast<int>(image.height)) == 0,
+        "scRGB composition changed pixels outside the UI");
+}
 void RequireLightPixels(const Pixels& image, const Config& config, bool hudVisible)
 {
     const float width = static_cast<float>(image.width), height = static_cast<float>(image.height);
@@ -193,9 +245,22 @@ void RequireNoLightPixels(const Pixels& image)
         image.Around(width / 2 + focal * 2 / 8, height / 2 + focal * 2 / 8, 14) == 0,
         "Missing/stale/hidden light data retained fullscreen ghosts");
 }
+float DecodeHalf(std::uint16_t bits)
+{
+    const int exponent = (bits >> 10) & 31;
+    const int fraction = bits & 1023;
+    if (exponent == 31) return fraction ? std::numeric_limits<float>::quiet_NaN() :
+        (bits & 0x8000 ? -std::numeric_limits<float>::infinity() : std::numeric_limits<float>::infinity());
+    const float magnitude = exponent ? std::ldexp(1.f + static_cast<float>(fraction) / 1024.f, exponent - 15) :
+        std::ldexp(static_cast<float>(fraction), -24);
+    return bits & 0x8000 ? -magnitude : magnitude;
+}
 Pixels SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
 {
     const auto desc = buffer->GetDesc();
+    const bool scRgb = desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+    Require(scRgb || desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM, "Unsupported smoke readback format");
+    Require(!scRgb || !path, "scRGB smoke has no SDR BMP output; inspect its linear pixel assertions instead");
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
     UINT64 total{};
     gpu.device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &total);
@@ -219,11 +284,27 @@ Pixels SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
     D3D12_RANGE range{0, static_cast<SIZE_T>(total)};
     Check(readback->Map(0, &range, reinterpret_cast<void**>(&mapped)));
     const auto width = static_cast<UINT>(desc.Width);
-    std::vector<unsigned char> pixels(static_cast<size_t>(width) * desc.Height * 4);
+    const size_t pixelCount = static_cast<size_t>(width) * desc.Height;
+    std::vector<unsigned char> pixels(scRgb ? 0 : pixelCount * 4);
+    std::vector<std::array<float, 3>> linearRgb(scRgb ? pixelCount : 0);
+    const UINT pixelBytes = scRgb ? 8u : 4u;
     for (UINT y = 0; y < desc.Height; ++y)
         for (UINT x = 0; x < width; ++x)
         {
-            const auto input = mapped + footprint.Offset + static_cast<size_t>(y) * footprint.Footprint.RowPitch + x * 4;
+            const auto input = mapped + footprint.Offset + static_cast<size_t>(y) * footprint.Footprint.RowPitch + x * pixelBytes;
+            if (scRgb)
+            {
+                std::array<std::uint16_t, 4> half{};
+                std::memcpy(half.data(), input, sizeof(half));
+                auto& output = linearRgb[static_cast<size_t>(y) * width + x];
+                for (size_t channel = 0; channel < 4; ++channel)
+                {
+                    const float decoded = DecodeHalf(half[channel]);
+                    Require(std::isfinite(decoded), "scRGB output contains non-finite pixels");
+                    if (channel < 3) output[channel] = decoded;
+                }
+                continue;
+            }
             const auto output = pixels.data() + (static_cast<size_t>(y) * width + x) * 4;
             output[0] = input[2]; output[1] = input[1]; output[2] = input[0]; output[3] = 255;
         }
@@ -240,7 +321,7 @@ Pixels SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
         stream.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
         Require(stream.good(), "Could not save smoke image");
     }
-    return Pixels{width, desc.Height, std::move(pixels)};
+    return Pixels{width, desc.Height, std::move(pixels), std::move(linearRgb)};
 }
 }
 int wmain(int argc, wchar_t** argv)
@@ -249,7 +330,9 @@ int wmain(int argc, wchar_t** argv)
     {
         Config config; config.details = true;
         Require(!InstallGraphics(config), "Disabled HUD installed graphics hooks");
-        const bool noticesOnly = argc > 1 && _wcsicmp(argv[1], L"--notices") == 0;
+        const bool scRgbNotices = argc > 1 && _wcsicmp(argv[1], L"--scrgb-notices") == 0;
+        const bool scRgb = scRgbNotices || (argc > 1 && _wcsicmp(argv[1], L"--scrgb") == 0);
+        const bool noticesOnly = scRgbNotices || (argc > 1 && _wcsicmp(argv[1], L"--notices") == 0);
         const bool lightsOnly = argc > 1 && _wcsicmp(argv[1], L"--lights-only") == 0;
         const bool lightsMode = lightsOnly || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
         config.enabled = !noticesOnly && !lightsOnly;
@@ -259,7 +342,8 @@ int wmain(int argc, wchar_t** argv)
         // F10 state to enable drawing; the immutable startup config stays false.
         config.lightOverlayVisible = !lightsMode;
         config.radar3D = true;
-        const int imageArgument = noticesOnly || lightsMode ? 2 : 1;
+        const int imageArgument = noticesOnly || lightsMode || scRgb ? 2 : 1;
+        Require(!scRgb || argc == 2, "scRGB modes accept no BMP paths; they validate synthetic linear FP16 pixels");
         Require(InstallGraphics(config), "Graphics hooks not installed");
         WNDCLASSW windowClass{}; windowClass.lpfnWndProc = DefWindowProcW;
         windowClass.hInstance = GetModuleHandleW(nullptr); windowClass.lpszClassName = L"CDTGraphicsSmoke";
@@ -281,12 +365,15 @@ int wmain(int argc, wchar_t** argv)
         Check(gpu.commands->Close());
         Check(gpu.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&gpu.fence)));
         DXGI_SWAP_CHAIN_DESC1 desc{}; desc.Width = 960; desc.Height = 720;
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.BufferCount = 3;
+        const DXGI_FORMAT swapchainFormat = scRgb ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.Format = swapchainFormat; desc.BufferCount = 3;
         desc.SampleDesc.Count = 1; desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         ComPtr<IDXGISwapChain1> chain1;
         Check(factory->CreateSwapChainForHwnd(gpu.queue.Get(), window, &desc, nullptr, nullptr, &chain1));
         ComPtr<IDXGISwapChain3> chain; Check(chain1.As(&chain));
+        // FP16 defaults to G10/P709 scRGB. Do not require display HDR support or
+        // SetColorSpace1 success on this hidden software-rendered swapchain.
         MaintainGraphics();
         std::cout << GraphicsStatus() << '\n';
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc{}; heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; heapDesc.NumDescriptors = 1;
@@ -339,7 +426,8 @@ int wmain(int argc, wchar_t** argv)
         for (int i = 0; i < 8; ++i)
         {
             const auto image = frame(i % 2 == 0, i == 7 && argc > imageArgument ? argv[imageArgument] : nullptr,
-                nullptr, lightsMode && i == 7);
+                nullptr, (lightsMode || scRgb) && i == 7);
+            if (scRgb && i == 7) RequireScRgbUi(image, config, noticesOnly);
             if (lightsMode && i == 7)
             {
                 RequireLightPixels(image, config, !lightsOnly);
@@ -365,9 +453,14 @@ int wmain(int argc, wchar_t** argv)
         Check(chain->Present(0, DXGI_PRESENT_TEST));
         Require(RenderedFrames() == before, "Test-only present changed output");
         SetVisibleForTest(false);
-        const auto hiddenHud = frame(false, nullptr, nullptr, lightsMode);
+        const auto hiddenHud = frame(false, nullptr, nullptr, lightsMode || scRgb);
         Require(RenderedFrames() == before + (noticesOnly || lightsMode ? 1 : 0),
             "Independent notices/light markers did not survive hiding the full HUD");
+        if (scRgb)
+        {
+            if (noticesOnly) RequireScRgbUi(hiddenHud, config, true);
+            else Require(hiddenHud.Changed(0, 0, 960, 720) == 0, "Hidden scRGB HUD left visible pixels");
+        }
         if (lightsMode)
         {
             RequireLightPixels(hiddenHud, config, false);
@@ -435,19 +528,22 @@ int wmain(int argc, wchar_t** argv)
         }
         const auto afterHidden = RenderedFrames();
         SetVisibleForTest(!lightsOnly && !noticesOnly);
-        Check(chain->ResizeBuffers(2, 1280, 800, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
-        MaintainGraphics(); frame(false, nullptr);
+        Check(chain->ResizeBuffers(2, 1280, 800, swapchainFormat, 0));
+        MaintainGraphics(); const auto resizedImage = frame(false, nullptr, nullptr, scRgb);
         Require(RenderedFrames() == afterHidden + 1, "HUD/notifications did not resume after ResizeBuffers");
+        if (scRgb) RequireScRgbUi(resizedImage, config, noticesOnly);
         const UINT masks[] = {0, 0}; IUnknown* queues[] = {gpu.queue.Get(), gpu.queue.Get()};
-        Check(chain->ResizeBuffers1(2, 960, 720, DXGI_FORMAT_R8G8B8A8_UNORM, 0, masks, queues));
-        MaintainGraphics(); frame(true, nullptr);
+        Check(chain->ResizeBuffers1(2, 960, 720, swapchainFormat, 0, masks, queues));
+        MaintainGraphics(); const auto resizedImage1 = frame(true, nullptr, nullptr, scRgb);
         Require(RenderedFrames() == afterHidden + 2, "HUD/notifications did not resume after ResizeBuffers1");
+        if (scRgb) RequireScRgbUi(resizedImage1, config, noticesOnly);
         std::cout << "PASS visibility, test-only present, ResizeBuffers and ResizeBuffers1\n";
-        Check(chain->ResizeBuffers(2, 3840, 2160, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+        Check(chain->ResizeBuffers(2, 3840, 2160, swapchainFormat, 0));
         MaintainGraphics();
-        const auto largeImage = frame(false, argc > imageArgument + 1 ? argv[imageArgument + 1] : nullptr, nullptr, lightsMode);
+        const auto largeImage = frame(false, argc > imageArgument + 1 ? argv[imageArgument + 1] : nullptr, nullptr, lightsMode || scRgb);
         Require(RenderedFrames() == afterHidden + 3, "4K HUD/notifications did not render after resize");
         if (lightsMode) RequireLightPixels(largeImage, config, !lightsOnly);
+        if (scRgb) RequireScRgbUi(largeImage, config, noticesOnly);
         std::cout << "PASS 4K HUD rendering after resize with resolution-scaled font atlas\n";
         if (lightsMode && !lightsOnly)
         {
@@ -495,7 +591,34 @@ int wmain(int argc, wchar_t** argv)
                 "Unsupported build before any playing sample produced no on-screen error");
             std::cout << "PASS silent startup/loading and local bootstrap/unsupported errors without a host\n";
         }
+        if (scRgb && !noticesOnly)
+        {
+            // Keep the same swapchain and never call SetColorSpace1: its default
+            // encoding must follow each resized buffer format, including the
+            // first submitted UI frame after the worker rebuilds its pipeline.
+            const auto beforeTransition = RenderedFrames();
+            Check(chain->ResizeBuffers(2, 960, 720, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+            MaintainGraphics();
+            Require(std::strcmp(GraphicsOutputLabel(), "D3D12 / SDR") == 0 &&
+                std::strstr(GraphicsStatus(), "Overlay ready: D3D12 / SDR") != nullptr,
+                "FP16-to-UNORM resize did not restore SDR output label/status");
+            const auto sdrTransition = frame(false, nullptr, nullptr, true);
+            Require(RenderedFrames() == beforeTransition + 1 && !sdrTransition.bgra.empty() &&
+                sdrTransition.linearRgb.empty() && sdrTransition.Changed(0, 0, 960, 720) > 100,
+                "First SDR frame after FP16 resize did not render visible UI");
+            Check(chain->ResizeBuffers1(2, 960, 720, DXGI_FORMAT_R16G16B16A16_FLOAT, 0, masks, queues));
+            MaintainGraphics();
+            Require(std::strcmp(GraphicsOutputLabel(), "D3D12 / scRGB") == 0 &&
+                std::strstr(GraphicsStatus(), "Overlay ready: D3D12 / scRGB") != nullptr,
+                "UNORM-to-FP16 resize did not restore scRGB output label/status");
+            const auto hdrTransition = frame(true, nullptr, nullptr, true);
+            Require(RenderedFrames() == beforeTransition + 2,
+                "First scRGB frame after SDR resize did not render exactly once");
+            RequireScRgbUi(hdrTransition, config, false);
+            std::cout << "PASS same-swapchain scRGB-to-SDR-to-scRGB default-color transitions and first-frame UI\n";
+        }
         Check(gpu.device->GetDeviceRemovedReason());
+        if (scRgb) std::cout << "PASS synthetic D3D12/WARP scRGB Present/font/visibility/resize integration; no HDR display or live game tested\n";
         DestroyWindow(window);
         return 0;
     }

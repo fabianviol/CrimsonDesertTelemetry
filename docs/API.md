@@ -2,7 +2,8 @@
 
 Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
 contributions, separate authored light records, and independent player/camera
-poses through HTTP API **v1** and snapshot schemas **1.1–1.4**. Product, route and
+poses through local **HTTP and WebSocket APIs** with JSON snapshot schemas
+**1.1–1.4**. Routes remain **v1**. Product, route and
 schema versions are separate. Lights are enabled in the supplied package, which
 publishes additive schema 1.4; disabling lights retains schema 1.1.
 
@@ -46,6 +47,7 @@ ManyLightsSampleRateHz=20
 Enabled=1
 InitiallyVisible=1
 Radar3D=1
+HdrPaperWhiteNits=200
 
 [LightOverlay]
 Enabled=1
@@ -69,8 +71,12 @@ reports `playing` and the requested feeds are fresh; a valid empty light feed
 counts as ready. This can happen during the game's visible loading sequence.
 The configured 6000 ms duration is clamped to 5000–10000 ms. Local bootstrap/native
 faults and host errors can appear before valid game data or a working host exists;
-explicitly disabling notifications suppresses them. Drawing requires the supported
-D3D12/8-bit SDR path, so consult logs if graphics initialization fails.
+explicitly disabling notifications suppresses them. Drawing supports D3D12 SDR,
+HDR10 and scRGB output as described below, including notification-only operation.
+Consult logs if the output combination is unsupported or graphics initialization
+fails. `[Overlay] HdrPaperWhiteNits=200` controls all HDR UI white brightness,
+clamped to 80–500 nits, even when the corner HUD is disabled. It changes no API
+values, game HDR settings or metadata. A live HDR-output game run remains unvalidated.
 
 Disable `[Overlay] Enabled`, `[LightOverlay] Enabled` and `[Notifications] Enabled`
 to skip all UI hooks/client. Missing UI sections/keys default to disabled, whereas
@@ -533,11 +539,35 @@ no active-PSO/shader-identity gate is implemented.
 
 Camera/light telemetry has no DLSS, Streamline or NVIDIA runtime dependency.
 In-game validation used NVIDIA hardware; AMD/Intel game setups remain untested.
-The optional UI supports D3D12 with an 8-bit SDR swapchain. HDR is unsupported,
-and frame-generation/coexistence coverage remains incomplete. Marker projection
-uses the latest published camera, not a Present-synchronous camera, and performs
-no scene-depth test. Linear HDR swatches are an SDR visualization, not game tone
-mapping. Generic exposure normalization remains unfinished.
+Native light capture and the external host/API do not gate telemetry on the
+display's HDR output mode; a live HDR-output game run remains unvalidated.
+The API's linear HDR RGB values describe renderer contributions independently
+of the display mode.
+
+The optional D3D12 UI automatically selects these declared output combinations:
+
+| Buffer format | Declared color space | UI path |
+|---|---|---|
+| R8G8B8A8/B8G8R8A8 UNORM or R10G10B10A2 UNORM | Full-range G22/Rec.709 | SDR |
+| R10G10B10A2 UNORM | Full-range PQ/Rec.2020 | HDR10 |
+| R16G16B16A16 FLOAT | Full-range linear/Rec.709 | scRGB |
+
+Other combinations remain unsupported. A 10-bit buffer alone does not establish
+HDR; its declared color space matters. All views and notices share the selected
+path and `HdrPaperWhiteNits` setting. UI colors retain their existing appearance,
+then are decoded and composited over the game in linear light. HDR10 uses PQ
+decode/encode and Rec.709-to-Rec.2020 UI conversion; scRGB uses 80 nits per linear
+unit. Pixels without UI are preserved, with no whole-scene tone mapping.
+
+HDR rendering uses two extra full-resolution GPU textures plus a scene copy and
+composite while UI is drawn. SDR retains the existing direct rendering path.
+All 14 native tests passed, including the three new HDR paths and transitions
+between SDR and scRGB on the same swapchain. This is not live HDR-display/game
+validation. No API route, schema or raw light value changes accompany the UI work.
+Frame-generation/coexistence coverage remains incomplete.
+Marker projection uses the latest published camera, not a Present-synchronous
+camera, and performs no scene-depth test. Display swatches are a visualization,
+not game tone mapping. Generic light-exposure normalization remains unfinished.
 
 ## Troubleshooting
 
