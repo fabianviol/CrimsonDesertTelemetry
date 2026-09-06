@@ -9,13 +9,54 @@ smoothing or new hook. The miniHUD root arrow/camera cone are larger, outlined,
 and drawn above the light dots; dots retain measured HDR-derived color swatches.
 UI change commit `673651c`; counter fix `ff1f85b`.
 
-Current question is now RGB/luminance fluctuations, not ghost positions. User
-clarified that the blue lamp changes are thousandths, not extreme jumps, and it
-looks visually constant. Read-only diagnosis below; no code/config/game changes.
-One next step, if continuing: identify the common RGB multiplier BEFORE
-ProcessManyLights input; do not call it eye adaptation or lamp pulsation yet.
-Do not smooth raw API values or switch the HUD to authored colors without a
-requested implementation. A controlled preview.3 movement recording is still pending.
+Current discussion: API policy for several overlapping fire contributions.
+Recommendation (not implemented/approved): retain raw current contributions and
+offer a separately labelled grouped summary only with defensible membership;
+do not collapse nearby sources blindly or claim source-RGB sums reproduce pixels.
+Actual appearance also depends on spatial/angular attenuation, visibility,
+materials, indirect light and tone mapping. Source-derived summaries and a
+view-dependent Hue estimate must remain distinguishable from measurements.
+No code/config/game changes. Controlled preview.3 movement recording remains pending.
+One next technical step if continuing brightness work: capture the matching
+ExposureConstantBuffer alongside the existing light/counter sample to directly
+validate its dynamic scalar, after deciding the requested API representation.
+
+### Exposure cause and spot labels — 21:37 CEST continuation
+
+The upstream shader is identified: `InjectLightsCS` entryhash b606b219,
+`InjectLightGroupsCS`05125ef9. Local artifact prefix
+`artifacts/light-research/light-rgb-inject-20260906-2215-<entry>` (.ll/.json/.dxbc/.padxil;
+filename2215 is a label, not the measured live time). InjectLights LL458..506:
+q=1/max(0.0001,ExposureConstantBuffer._exposure0.x), b21/space35 byte0.
+Mode0 factor1; mode1=min(max(.01,q),.1+9.9*saturate(.01*q)); mode>=2=clamp(q,.05,150).
+SceneCB byte2748 bit1 adds multiplier.1 when set, else1. Do not infer that bit's
+meaning just from packed name `_isPhotosensitiveMode_isAllolwBlood`.
+
+Current CPU pack1438AF200 writes only SourceRGB(+3C)*SourceScale(+4C) to GPU+10.
+1438AF322..351 encodes GPU+3C as def+75<<1 when def+74 enabled, OR prioritybit;
+shader >>1 recovers mode directly, no+1. Read-only21:37:26 PID33348, stable18record
+source vector: all THREE selected anchor definitions have useExposureAdaptation=1,
+mode=1, four flicker floats+60..6C allzero. Blue def46A32A4B550, warm46A32A4C368,
+crystal46A32A4B7E0. AuthoredRGB/scale match the prior series. At21:38:01 coherent
+bridge frame60149 SceneCB byte2748=1: bit1 unset, no extra .1 dimming.
+Thus shader + active lamp settings establish the exposure-adaptation route.
+Observed common factors imply exposure0.x~23.9..26.2 in the active curve branch;
+this is INFERRED, not directly sampled/frame-paired exposure.
+
+Exposure binding: filterowner+10→renderer+690→exposureOwner+C0→wrapper+30→inner.
+Current owner46AF0028C00, inner46AF1597C40, resource(inner+168)=195830640.
+The resource is a readable COM object (not a proven GPU VA). Map method1437ACBE0
+uses cached CPU pointer inner+158; cache isNULL. No Map call/hook/new capture run;
+no currently available CPU Exposure0 value via this checked path. Not proof all
+possible CPU copies are absent. Plugin remains preview.3 unchanged.
+
+Spot question, API21:37:01/capture17210/frame57240/age15ms:68records=44spot+24point;
+nearest5gu=3spots, nearest10gu=5spots. Blue and warmglass match authored SPOT
+half-angle26.997278deg/downward; crystal POINT. Two nearest warm records around
+(-10507.66,610.9584,-4368.328) /(-10507.6455,610.92175,-4368.327) are actual
+SPOT27.109184deg/downward. Do not assign a physical object solely from proximity.
+HUD correctly reports decoded types, not all lights as SPOT. Internal spotlight
+representation does not promise a visually obvious narrow beam.
 
 ### Live RGB diagnosis — 21:26 CEST
 
