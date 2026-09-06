@@ -2,20 +2,54 @@
 
 ## Result / one next step
 
-**1.3.0-preview.3 is built, tested and packaged; NOT yet installed/live-validated.**
+**1.3.0-preview.3 is installed in PID33348; user reports the result is already great.**
 The actual GPU valid-prefix counter is now captured with its light buffer and
 the managed reader decodes only that prefix. No hardcoded33, color/motion heuristic,
 smoothing or new hook. The miniHUD root arrow/camera cone are larger, outlined,
 and drawn above the light dots; dots retain measured HDR-derived color swatches.
-UI change commit `673651c`; counter-fix source is in the commit carrying this checkpoint.
+UI change commit `673651c`; counter fix `ff1f85b`.
 
-One next step: user closes the game, installs preview.3 through DMM, restarts and
-returns to a fixed lamp. Check a progressing stationary control then movement:
-native counter[1] vs published prefix, paired resource identities, real anchor
-stability and absence of old camera-attached tails. The count need not be33 at
-another position. Preserve real firefly motion and pulsation. Only after that
-consider remaining label/focus layout jitter. Current unchanged game: PID788,
-started20:30, preview.2; no game/config/install writes performed this turn.
+Current question is now RGB/luminance fluctuations, not ghost positions. User
+clarified that the blue lamp changes are thousandths, not extreme jumps, and it
+looks visually constant. Read-only diagnosis below; no code/config/game changes.
+One next step, if continuing: identify the common RGB multiplier BEFORE
+ProcessManyLights input; do not call it eye adaptation or lamp pulsation yet.
+Do not smooth raw API values or switch the HUD to authored colors without a
+requested implementation. A controlled preview.3 movement recording is still pending.
+
+### Live RGB diagnosis — 21:26 CEST
+
+Artifact `artifacts/light-research/overlay-blue-rgb-diagnostic-20260906-2126.jsonl`,
+21:26:07.933..15.863:483 playing API rows,481 rendered available/2 bridge-changing,
+120 distinct captures, native frames25140..25533. Player/camera direction fixed;
+camera Y varies0.0157. PID33348 started21:17:34. Separate coherent bridge check:
+ABI2/flags15, frame28097, validCount68 (input counter0=2693), bank1,
+output18DD79DB0/counter18DD79520. No counterless fallback or old bank-count pattern.
+
+Blue glass (-10510.692,611.6332,-4371.4375), warm glass
+(-10493.734,611.61084,-4364.254) and crystal(-10528.074,611.3604,-4354.011)
+are each present exactly once in120/120 captures; positions exactly stable.
+Authored colors and rendererScale stay bit-identical in483/483 rows:
+blue1.977898, warm7.5021653, crystal3.0008664.
+
+Blue rendered luminance ranges0.061520785..0.067384094 (~9.53% max/min),
+largest adjacent step0.000529051 /0.8511%, median absolute step0.000124909.
+Start0.06157888→end0.06684646, small reversals, no parity alternation.
+Normalized blue RGB stays effectively constant: R/B~0.7190869,G/B~0.8528073.
+All nine RGB channels across the three anchors fit
+`renderRGB = commonFactor * M * authoredRendererRGB` to1.285e-6 relative spread;
+commonFactor0.038209728..0.041851336, anchor luminance correlations>0.9999999995.
+This proves common scaling of these controls, not a changing blue hue or source
+swap. Each anchor changes sampleIndex23 times/seven slots; never use it as identity.
+
+Shader evidence (same Process LL below): ordinary nonnegative input RGB receives
+a static 5%-luminance floor and constant matrix
+M=[[.61312,.33951,.04737],[.07020,.91636,.01345],[.02062,.10958,.86980]].
+No dynamic multiplier on that path. ExposureConstantBuffer is read only in its
+negative-RGB special route. The factor's actual upstream cause is NOT established.
+Older blue-glass factor-of-two report at research handover3733 was real amplitude
+evidence but never proof of pulsing. Current HUD shows renderer-scaled values,
+not just the constant authored color; luminance is derived from those same RGB.
 
 ### Why this bound is the engine's, not a visual heuristic
 
