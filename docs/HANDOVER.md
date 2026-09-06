@@ -1,4 +1,4 @@
-# Current checkpoint — 2.0.0 published; Nexus scan pending, 2026-09-07, Codex/Astra
+# Current checkpoint — published 2.0.0 ZIP passes user live test, 2026-09-07, Codex/Astra
 
 User authorized both releases. GitHub **2.0.0 is public**:
 https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0
@@ -10,6 +10,12 @@ Published asset 547756043: `CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`,
 ZIP SHA256 `3212DD1FD6CDEE5F537C2000572965648B97D0AC38335381E65BEF086FBBE214`.
 ASI SHA256 `D5D6337637E4582704105B9D95C803E2A7F7F6AD87DA31E57AF6D20167C3E4F9`.
 This GitHub-built archive is distinct from the preserved local validation ZIPs.
+
+Post-publication acceptance: the user explicitly tested the **GitHub release ZIP**
+in the live game and reported "funktioniert alles" (2026-09-07). This confirms
+the published package, including the HDR implementation, works on their setup;
+it is not merely acceptance of the older local build. No new independent API or
+capture measurements were taken in this follow-up; output mode was not specified.
 
 Nexus https://www.nexusmods.com/crimsondesert/mods/3374 was updated through its
 editor/uploader: the new lighting-first 2.0 description is saved; the same ZIP
@@ -26,8 +32,9 @@ Native Release and 14/14 CTests pass; GitHub also verifies 56 managed tests and
 HTTP/WebSocket coverage. HDR10/scRGB uses the original linear-light UI compositor
 with configurable 200-nit white (80–500); SDR retains its direct path. HDR evidence
 is WARP/synthetic plus real ImGui integration/SDR↔scRGB transitions, **not live HDR
-display/game acceptance**. No suitable HDR setup was available; prior in-game
-acceptance predates HDR. Full native lighting still targets exact Steam 25116796.
+display/game acceptance**. No suitable HDR setup was available; the new live test
+above does not establish actual HDR-output/display coverage. Full native lighting
+still targets exact Steam 25116796.
 API v1/WebSocket `/v1/stream` and raw schemas remain unchanged; no complete-light,
 permanent-OFF, persistent physical-ID or exact-pixel-color claim is made.
 
