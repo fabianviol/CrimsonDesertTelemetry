@@ -1,11 +1,23 @@
-# Current checkpoint — 2.0.0 prepared, 2026-09-06, Codex/Astra
+# Current checkpoint — 2.0.0 live startup verified, 2026-09-06, Codex/Astra
 
 User requested version **2.0.0**, not another preview, for the forthcoming release.
-The new package is built and locally tested; NOT uploaded/tagged/published or
-installed into the game. User confirmed preview.4 in game; current PID was not
-rechecked. **One next step: close game, install 2.0.0 via DMM, cold-load a save and
-confirm silent loading → six-second ready notice, player/camera/lights and HUD.**
-Do that final packaged live check before GitHub/Nexus publishing.
+User reports "läuft" after installation/restart. **2.0.0 is installed and the
+packaged live data path passes.** NOT uploaded/tagged/published. PID40280 started
+23:20:22 CEST; loaded bin64/CrimsonDesertTelemetry.asi disk hash matches the package
+below. Current-start native log confirms exact-build/context detour and recurring
+20Hz capture with paired counter/fence; bootstrap starts hostPID39732, no errors.
+
+Read-only API control23:23:25→27 CEST: playing/tested, sequence4767→4845,
+captureSequence2460→2480, frame8436→8496, light age16→15ms, malformed0;
+18 authored sources and56 filtered contributions within configured radius.
+Player and camera are independent, available poses; health.error=null.
+These are contributions, not counts of distinct physical lamps.
+
+**One next step: ask user to confirm the visual notice timing (silent loading,
+then six-second success) before proceeding to GitHub/Nexus preparation.** INI says
+6000ms and notice lifecycle/raster tests passed; the appended overlay log has no
+timestamps, so it does not independently prove this run's on-screen timing.
+New untracked `media/` belongs to the user/other work and was left untouched.
 
 - Native EXE hash, hook/caller guards and scene/wrapper/GPU contract now derive from
   `definitions/build-25116796.json` via CMake. Production StartCapture validates PE,
