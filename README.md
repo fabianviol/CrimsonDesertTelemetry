@@ -4,7 +4,7 @@
 
 Version **2.0.0** brings lighting to the foreground: inspect the positions, colors and brightness of current light contributions from fires, candles, lanterns and glass/crystal lamps, alongside the player and render camera. Use the data in your own overlays, tools and lighting integrations.
 
-[Releases](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
+[Download 2.0.0](https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0)
 · [Watch the demo](https://youtu.be/eyRkkTXAU64)
 · [API reference](docs/API.md)
 · [Client examples](examples)

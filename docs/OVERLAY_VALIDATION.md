@@ -21,7 +21,8 @@ coverage. The three new HDR test paths passed:
 These tests use offscreen WARP textures/hidden windows and do not require an HDR display. Live HDR-display
 and HDR game acceptance have not been performed; no suitable setup was available.
 Prior installed-game acceptance below predates this HDR addition. Release
-publication is paused; no HDR build has been declared live-game validated.
+publication was resumed by the user after automated verification; no HDR build
+has been declared live-game validated.
 
 Supported output selection is strict:
 

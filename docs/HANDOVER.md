@@ -1,4 +1,14 @@
-# Current checkpoint — HDR added; publication paused, 2026-09-07, Codex/Astra
+# Current checkpoint — GitHub 2.0 publication resumed, 2026-09-07, Codex/Astra
+
+User explicitly reauthorized publication after HDR completion. Release source is
+the green-tested09d9462 plus documentation-only closeout/release wording updates.
+The tag-triggered workflow will build and test a fresh package, then create a
+draft. Verify its payload/download and publish latest2.0.0; preserve every local
+pre-release ZIP. NEXUS_AUTO_PUBLISH was rechecked unset, so Nexus remains excluded.
+No tag/release existed at resumption. Replace this paragraph with final release
+URL, source tag and public asset digest after successful publication.
+
+## Previous checkpoint — HDR added; publication paused
 
 User stopped the GitHub release after learning the old HUD explicitly disabled
 HDR output, then authorized implementing HDR without a live HDR display/game test.
