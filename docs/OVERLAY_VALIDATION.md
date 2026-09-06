@@ -1,6 +1,52 @@
 # In-game overlay validation
 
-## Current: 1.3.0-preview.2 light visualization, 2026-09-06
+## Current: 2.0.0 light visualization, 2026-09-06
+
+The package enables a larger oblique 3D light radar in the corner HUD and an
+independent fullscreen light-marker layer. F8 toggles the corner HUD, F9 its
+diagnostics and F10 fullscreen markers. The user confirmed the enlarged radar,
+camera frustum and grouped detail UI in game on preview.4, then confirmed the
+installed 2.0.0 package after restart. The
+[in-game demonstration](https://youtu.be/eyRkkTXAU64) and
+[supplied screenshot](../media/screenshot1.jpg) show the light visualization.
+
+The radar uses measured camera forward/right/up, vertical FOV and aspect for its
+pitch/roll-aware frustum. Nearby contribution cards group by complete-link
+distance at most 0.15 game units while preserving individual current RGB values.
+No RGB sum, smoothing or physical-object identity is invented; GPU slots appear
+only in diagnostics. The raw API arrays are unchanged by presentation grouping.
+
+All six UI/client test paths passed: model, HUD, notifications, combined lights,
+lights-only and WebSocket. Raster fixtures cover nearby independent contributions,
+camera pitch/roll with unchanged yaw, invalid projection/basis, clipping, stale
+clearing, resizing and 800×480/4K. Pitched 4K and compact images were visually
+inspected. The final 2.0.0 suite passed 11 native CTest paths in total, 56 managed
+tests, HTTP/WebSocket smoke and package validation. These are local automated
+checks; synthetic raster fixtures are not game screenshots.
+
+A fresh installed 2.0.0 run passed progressing API/capture/frame counters with
+independent player/camera poses and available lights. The user subsequently
+accepted success appearing as soon as fresh requested data is available, even
+during visible loading. Startup/loading/discovery waiting messages are silent;
+the configured success duration is 6000 ms. Local errors can render independently
+of a working host or native game hooks, subject to the supported graphics path.
+Returning to the title screen can leave HUD/data visible for several seconds
+until stale or another load. This accepted edge case remains; F8/F10 hide the views.
+
+Only current filtered contributions are drawn, using the paired valid-prefix
+counter introduced in preview.3. The API reconstructs world positions with the
+capture-paired camera, while the HUD projects with the latest published camera.
+It is not synchronized to Present; precise motion alignment/latency remains
+unmeasured. There is no scene-depth test, so markers can show through walls.
+The supported HUD path is D3D12/8-bit SDR; HDR is unsupported. No DLSS, Streamline
+or NVIDIA runtime dependency is used, but AMD/Intel in-game setups and frame
+generation remain unvalidated. See [package evidence](MOD_MANAGER_VALIDATION.md).
+
+## Historical: 1.3.0-preview.2 light visualization, 2026-09-06
+
+This checkpoint predates the valid-prefix fix and enlarged/grouped preview.4 UI.
+Its 337-record replay is parser/projection evidence only: preview.1/2 could include
+stale buffer-tail contributions, so it is not a valid current-light-count control.
 
 Adds a compact oblique light radar to the corner HUD and an independently toggled
 fullscreen world-marker layer in the same ASI. F8 HUD, F9 diagnostics, F10 markers.
@@ -16,7 +62,7 @@ combined and marker-only images are in `build/light-overlay-*.bmp` (synthetic te
 data, not game screenshots). Reader/projection also accepts the real A2 JSONL:
 337 records, 178 in front of its recorded camera, 77 in the viewport.
 
-**Next live check:** install through DMM with the game closed; verify marker
+**Then-pending live check:** install through DMM with the game closed; verify marker
 alignment at a known lamp, pan/turn/walk, then F8/F10 independently. Projection
 uses latest published camera, not a frame-synchronous Present camera; motion
 latency remains unmeasured. HDR/frame-generation/recording coverage remains open.
@@ -54,7 +100,7 @@ Complete actual-game / NVIDIA recording acceptance is **pending**. Do not descri
 the graphics smoke test as an in-game test.
 Light-source research is paused and is not compiled or packaged in this release.
 
-## Implementation
+## Current implementation
 
 - Dear ImGui 1.91.9b, MinHook 1.3.4 and JSON for Modern C++ 3.12.0 are pinned by
   official archive URL and SHA-256 in the native CMake project. They are statically
@@ -65,9 +111,10 @@ Light-source research is paused and is not compiled or packaged in this release.
   The font atlas is baked at the matching size, not just enlarged as a bitmap.
   `[Overlay] AutoScale=0` disables this; `Scale` remains a user multiplier. The HUD
   is clamped to fit small windows and secondary text has increased contrast.
-- An optional `[Overlay]` module in the existing ASI draws an English passive HUD.
-  The host is still an external, read-only game-memory reader. The HUD **does hook
-  DXGI code**; the previous blanket "ASI has no hooks" description no longer applies.
+- `[Overlay]` and `[LightOverlay]` draw passive English views; the packaged INI
+  enables both. Missing UI configuration defaults off. The host is an external
+  memory reader, while the ASI hooks DXGI for display and instruments the renderer
+  for GPU light capture. Blanket "read-only ASI" or "no hooks" claims do not apply.
 - Hooks factory CreateSwapChain/CreateSwapChainForHwnd, Present/Present1,
   ResizeBuffers/ResizeBuffers1 and SetColorSpace1. The actual D3D12 device and
   presentation queue come from swapchain creation, never from an arbitrary queue.
@@ -83,13 +130,15 @@ Light-source research is paused and is not compiled or packaged in this release.
   network. Source timestamp plus local monotonic age controls staleness. Disconnect,
   malformed data and loading clear live values. No player direction is invented
   from camera direction, movement, or body animation.
-- No WndProc replacement, input capture or game-memory modification. Foreground-only
-  key-edge polling controls visibility/details. Config is read before launch.
+- The passive HUD does not replace WndProc or capture input. Foreground-only
+  key-edge polling controls visibility/details. Native light capture separately
+  installs guarded code detours and GPU copies. Config is read at startup.
 - The graphics-enabled ASI is pinned for process lifetime. **No hot-unload**. All
-  changes/install/uninstall require a closed game. Overlay-disabled startup creates
-  no graphics hooks. Graphics smoke test executables are not part of the mod ZIP.
+  changes/install/uninstall require a closed game. All three UI modules (Overlay,
+  LightOverlay and Notifications) must be disabled to skip UI hooks/client.
+  Light capture is independent. Graphics smoke executables are not in the mod ZIP.
 
-## Automated verification
+## Historical preview.6 automated verification
 
 Verified locally on 2026-08-30:
 
@@ -132,7 +181,11 @@ Also run the existing managed tests, bootstrap smoke test and package validator.
 The manager payload now contains **nine files**, including THIRD-PARTY-NOTICES.txt,
 and no loose JSON or EXE. This does not replace manager acceptance tests.
 
-## Required manual acceptance
+## Historical preview.6 manual acceptance checklist
+
+Preserved as the checklist for that earlier candidate, not as an unresolved 2.0.0
+release gate. Its defaults and camera-source descriptions are historical. Current
+acceptance and remaining coverage are recorded above and below.
 
 1. Close the game. Import preview.6 with DMM; enable/deploy it and launch normally.
    Ensure there is only one enabled telemetry ASI and preserve customized INI settings.
@@ -158,14 +211,18 @@ and no loose JSON or EXE. This does not replace manager acceptance tests.
 ## Current limitations / release wording
 
 - **D3D12, 8-bit SDR only**. HDR, alternate render APIs and multi-queue presentation
-  are not supported by the first HUD renderer. Telemetry remains independent.
+  are not supported by the HUD renderer. API sampling is independent of HUD visibility.
 - Other overlays, DXGI wrappers and frame generation need live coexistence testing.
   A late-loaded or unrecognized swapchain fails without guessing its command queue.
-- The camera-arrow fix passed offline tests and a recorded right turn; renewed
-  in-game verification is pending. The HUD draws the received direction without
-  smoothing. Low transport age is not proof of a current engine transform;
-  renderer copies include historical states. See `CAMERA_LAYOUT.md`.
+- Current camera/player and lighting startup paths have local game acceptance.
+  The HUD draws received directions without smoothing; low transport age alone
+  does not prove Present-synchronous alignment. Exact motion latency and frame
+  generation still need dedicated measurements.
 - Character switch, animated body pose and worldspace identifiers remain outside
-  the currently validated telemetry contract. Light-source support is not included.
-- Public release should remain a clearly labelled preview until the manual checklist
-  is completed. Publish source, license notices and supported-build limitations together.
+  the validated telemetry contract. Light telemetry is included, but the filtered
+  feed is not a complete lamp registry and omission does not establish permanent
+  OFF. Linear HDR values are renderer contributions, not physical lumens or final
+  pixel colors; exposure normalization remains unfinished.
+- The user selected version 2.0.0 and accepted its startup/title-screen behavior.
+  Keep tested-build, graphics and remaining manager-lifecycle limits alongside
+  the release; historical preview checklists do not establish new coverage.

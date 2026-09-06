@@ -12,7 +12,9 @@ Contributions are welcome, especially independent validation on other machines a
 6. Run the Release build and test commands from the README.
 7. Record external research sources in `docs/PROVENANCE.md`.
 
-Never submit game binaries, decompiled game code, private keys, access tokens, complete memory dumps, or personal save files. Small synthetic byte fixtures are welcome. Contributions that write to the game, bypass anti-cheat systems, or enable competitive cheating are out of scope.
+Never submit game binaries, decompiled game code, private keys, access tokens, complete memory dumps, or personal save files. Small synthetic byte fixtures are welcome. Scoped native instrumentation for telemetry is supported, but must be guarded, documented and covered by proportional tests. Anti-cheat bypasses, arbitrary gameplay-control features and competitive cheating are out of scope.
+
+Native camera/light updates must validate the shared build contract, instruction boundaries, hook/caller context and data layout; changing only the allowed EXE hash is not sufficient. Start with `docs/UPDATE_RECOVERY.md` and preserve existing findings. The offline `check-update` command reports evidence, not approval for a new build.
 
 Keep public schema changes backward-compatible whenever possible. New optional fields are preferred over renaming or removing existing fields.
 

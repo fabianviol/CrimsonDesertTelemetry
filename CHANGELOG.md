@@ -1,11 +1,48 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 - 2026-09-06
+
+- Publish current filtered renderer light contributions through HTTP/WebSocket:
+  world position, linear HDR RGB, derived luminance and recognized spotlight
+  direction/cone. Authored source records remain a separate feed; the two overlap
+  and must not be summed. HTTP routes remain `/v1/*`, with additive schema 1.4
+  when lights are enabled and schema 1.1 when disabled.
+- Enable lighting, the corner HUD with a larger 3D light radar, fullscreen light
+  markers and notifications in the package INI. F8 toggles the corner HUD, F9
+  diagnostics and F10 markers. The radar uses camera pitch/roll and projection;
+  nearby contributions share detail panels while retaining individual raw values.
+- Pair GPU light readback with the renderer's valid-prefix counter, completion
+  fence and captured camera. Decode only that current prefix, fixing retained
+  buffer-tail ghost contributions from 1.3.0-preview.1/2. GPU sample indices are
+  transient slots, not physical-light identities.
+- Unify telemetry bootstrap, guarded native renderer capture and the optional
+  research console into one ASI. Console/explorer remain disabled by default.
+  The external host reads memory; the native light path uses hooks and GPU copies.
+- Keep normal startup/loading notices silent. Success starts when the API reports
+  playing and requested data is fresh, including during visible loading; its INI
+  duration is 6000 ms. Actionable local/host/native errors can appear immediately.
+  The user accepted this behavior and several seconds of retained HUD/data after
+  returning to the title screen.
+- Generate managed/native build contracts from validated definitions, reject
+  malformed profiles, and check exact native hook/caller contexts before patching.
+  Add offline `check-update <exe>` diagnostics and preserved recovery helpers;
+  unknown executables remain barred from native hooks, with no automatic promotion
+  of current direct-layout candidates. Native tests now run in normal PR CI.
+- Verify 56 managed tests, HTTP/WebSocket smoke, 11 native CTest paths and package
+  validation. A fresh installed 2.0.0 start passed a progressing player/camera/light
+  API check and user acceptance. No DLSS/NVIDIA runtime dependency is required;
+  AMD/Intel in-game setups remain untested. HUD rendering remains D3D12/8-bit SDR.
+
+### Authored spotlight direction (developed before 2.0.0)
 
 - Add a normalized world-space `direction` for authored spotlights by rotating
   their verified local +Z cone axis with the source-record quaternion. Point
-  lights and invalid rotations omit it. Opt-in light snapshots now use additive
-  schema 1.3; the disabled-light schema remains 1.1.
+  lights and invalid rotations omit it. This introduced additive schema 1.3;
+  2.0.0 light snapshots use schema 1.4 and the disabled-light schema remains 1.1.
+
+The entries below preserve the behavior and evidence of earlier releases.
+Old HUD defaults, light exclusions and preview acceptance gates are historical;
+the 2.0.0 entry and current validation documents describe the present package.
 
 ## 1.2.1 - 2026-09-04
 

@@ -1,6 +1,59 @@
 # Mod-manager validation
 
-## v1.2.0 engine-light release candidate (2026-09-04)
+## Current: 2.0.0 local release verification (2026-09-06)
+
+The installed 2.0.0 package passed a fresh game start and a progressing live API
+check; the user confirmed it works. The included INI enables authored/rendered
+lights, both HUD views and notifications. The optional console/explorer remain
+disabled. This is one ASI with native renderer instrumentation and an external
+memory-reading host, not an untouched read-only game run.
+
+Local Release verification passed:
+
+- Managed build with zero warnings and all 56 managed regression tests.
+- HTTP/WebSocket smoke and all 11 native CTest paths, including paired GPU light/
+  counter readback, exact-hook rejection and UI/client/notification coverage.
+- Package validator and negative cases, plus expanded/ZIP payload equality.
+- Exact current EXE hook/caller anchors match the generated build contract;
+  negative production `StartCapture` cases leave code untouched with no trampoline.
+
+Verified pre-publication package:
+`CrimsonDesertTelemetry-v2.0.0-ModManagers.zip`.
+SHA-256: `E8A268B2B0A9D2C592A13789E0C67FC0F5C7E75BF81F09ADE7736B5784D16D12`.
+ASI SHA-256: `F2B62762945EC0E3A1FEDFB5B8836FB927A1DF81520A777D1F4EE6A521B1387D`.
+The package was built before this public-documentation refresh; these hashes
+identify the artifact tested below, not any subsequently repackaged archive.
+
+The game started at 23:20:22 CEST (PID 40280). Its loaded ASI's disk hash matched
+the package, and the current-start log recorded guarded capture at 20 Hz with
+paired counter/fence plus a successfully started host (PID 39732). The read-only
+API control at 23:23:25–27 CEST reported `playing`/`tested`, sequence 4767→4845,
+capture sequence 2460→2480, engine frame 8436→8496 and light age 16→15 ms. Player
+and camera poses were independently available, with no health error. That scene
+contained 18 authored records and 56 filtered contributions inside the configured
+radius, with zero malformed records; these are not distinct physical-lamp counts.
+
+On a later repeated startup, the user accepted the success notice appearing as
+soon as data arrives, during visible loading. Its INI duration is 6000 ms; precise
+screen duration was not separately measured. Returning to the title screen can
+leave HUD/data visible for several seconds until stale or another load, also
+explicitly accepted. The measured PID/API trace above belongs to the earlier run.
+
+This establishes the tested local startup/data path, not a complete mod-manager
+lifecycle matrix. DMM disable/uninstall/owned-host cleanup and the complete JSON
+Mod Manager lifecycle still lack a current full acceptance record. Preserve
+custom INI settings and verify installed binaries plus both `.cfg` companions
+after upgrades; earlier DMM installs sometimes retained old metadata. Always close
+the game before replacing the ASI. AMD/Intel in-game hardware, HDR and frame
+generation are not established by these checks; HUD rendering supports D3D12/8-bit SDR.
+
+## Historical records
+
+The following entries describe their named artifacts only. Earlier defaults,
+test counts, camera/light limitations and preview acceptance gates do not override
+the current 2.0.0 result above.
+
+## Historical: v1.2.0 engine-light release candidate (2026-09-04)
 
 The managed Release build and all 43 regression tests passed, including the new
 direct camera and direct scene/light layouts. All three native CTests, four API
@@ -12,7 +65,7 @@ player, orientation, camera and available engine lights; 230 source records yiel
 Final package: `CrimsonDesertTelemetry-v1.2.0-ModManagers.zip`.
 SHA-256: `2102189439F629FF564ECFCC837C6F54F931AA701EEBC55E1C2521FC2EF87EDE`.
 
-## v1.1.0 automatic-compatibility release candidate (2026-09-01)
+## Historical: v1.1.0 automatic-compatibility release candidate (2026-09-01)
 
 The managed Release build, 37 managed regression tests, loopback HTTP/WebSocket
 smoke test, all three native CTests and package/ZIP validators passed. Forced
@@ -42,7 +95,7 @@ package adds its exact build definition and release-version metadata; runtime da
 sources are unchanged. That exact path selects the same confirmed six RVAs without
 the automatic scan and does not require a redundant second movement test.
 
-## v1.0.0 release candidate (2026-08-31)
+## Historical: v1.0.0 release candidate (2026-08-31)
 
 The release package has been built locally with the MIT license, native camera
 reader and HUD disabled by default. The following checks passed for this artifact:
@@ -75,7 +128,7 @@ JSON Mod Manager lifecycle validation remains pending; do not advertise it as
 fully tested. The preview records below are historical evidence, not additional
 checks of the final archive.
 
-## Preview.7 native-camera candidate (2026-08-30)
+## Historical: preview.7 native-camera candidate (2026-08-30)
 
 The managed host now uses the native engine camera, validated after a cold start
 with upscaling off. The previous HUD remains, with a single-source diagnostic
@@ -87,7 +140,7 @@ HTTP/WebSocket smoke, expanded-package validation, and ZIP payload verification.
 Package SHA-256: `FD893319C0B16BFF07B159701C7C4069F5CB5D2EA797A75B5C775D4C8FD42F67`.
 The installed DMM/game files were not changed by this build.
 
-## Preview.4 in-game observation / preview.6 candidate (2026-08-30)
+## Historical: preview.4 in-game observation / preview.6 candidate (2026-08-30)
 
 The new optional Dear ImGui HUD has native model, isolated D3D12 and loopback
 WebSocket tests. Its manager ZIP adds THIRD-PARTY-NOTICES.txt (nine payload files).
@@ -169,11 +222,12 @@ loader. The badge's cause was not investigated; the file hashes and loaded-modul
 check establish deployment and loading independently of that ambiguous display.
 This startup check does not replace movement, reload, or shutdown lifecycle tests.
 
-## Still pending
+## Historical preview.2 pending checks
 
 - DMM: clean disable/uninstall and game shutdown with owned-host cleanup.
 - JSON Mod Manager 9.9.4: import, deploy, startup, and uninstall the same archive.
 - Repeat the game lifecycle tests through the ASI bootstrap, including failure
   paths for missing runtime, an occupied port, and unsupported game builds.
 
-Do not describe the preview as a fully validated release until these pass.
+These were the preview.2 acceptance gates. The current scope of completed and
+outstanding 2.0.0 validation is recorded at the beginning of this document.

@@ -1,10 +1,15 @@
 # API reference
 
-Public contract for Crimson Desert Telemetry, HTTP API **v1**, snapshot schemas
-**1.1–1.4**. These are separate version numbers. Schema 1.4 is implemented in the
-unified 1.3.0-preview.1 candidate. Its native capture passed local cold-start,
-camera-movement and physical lamp A-B-A checks on exact build25116796;
-this does not establish coverage of every lighting path or hardware setup.
+Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
+contributions, separate authored light records, and independent player/camera
+poses through HTTP API **v1** and snapshot schemas **1.1–1.4**. Product, route and
+schema versions are separate. Lights are enabled in the supplied package, which
+publishes additive schema 1.4; disabling lights retains schema 1.1.
+
+The installed 2.0.0 package passed a fresh-start, progressing live-data check on
+exact Steam build 25116796. Earlier native-capture checks covered cold start,
+camera movement and a physical lamp A-B-A experiment. These establish the tested
+paths, not complete lighting coverage or compatibility with every hardware setup.
 
 ## Connect
 
@@ -22,7 +27,8 @@ The server listens on IPv4 loopback only. There is no API key, authentication,
 TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it to
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
-Configure the ASI before starting the game:
+Configure the ASI before starting the game. These relevant settings match the
+included 2.0.0 INI; the complete file also contains display and research options:
 
 ```ini
 [Server]
@@ -37,7 +43,14 @@ ManyLights=1
 ManyLightsSampleRateHz=20
 
 [Overlay]
-Enabled=0
+Enabled=1
+InitiallyVisible=1
+Radar3D=1
+
+[LightOverlay]
+Enabled=1
+InitiallyVisible=1
+Radius=35
 
 [Notifications]
 Enabled=1
@@ -45,15 +58,26 @@ DurationMilliseconds=6000
 ```
 
 `Port` supports 1024–65535; `SampleRateHz` supports 1–240. `NearbyRadius` supports
-1–100000 game units. The ASI clamps values
-outside those ranges. Changes require a game restart. HUD enablement is independent
-of telemetry. Keep the `.cfg` runtime metadata unchanged; it is not user configuration.
+1–100000 game units and `ManyLightsSampleRateHz` supports 1–60. The ASI clamps values
+outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
+metadata unchanged; it is not user configuration. F8 toggles the corner HUD,
+F9 diagnostics and F10 fullscreen markers. Display radius does not expand the
+API's source coverage or its configured nearby radius.
 
-Startup/loading/ready/error notices are independent of the full HUD. Disable both
-`[Overlay] Enabled` and `[Notifications] Enabled` to avoid all UI hooks/client.
-Lighting capture has its own `[Lights]` switches and still instruments the renderer
-when enabled. Notices also consult loopback health while no fresh snapshot exists,
-so an unsupported build can report its reason before the first game sample.
+Normal startup/loading/discovery notices are silent. Success appears once the API
+reports `playing` and the requested feeds are fresh; a valid empty light feed
+counts as ready. This can happen during the game's visible loading sequence.
+The configured 6000 ms duration is clamped to 5000–10000 ms. Local bootstrap/native
+faults and host errors can appear before valid game data or a working host exists;
+explicitly disabling notifications suppresses them. Drawing requires the supported
+D3D12/8-bit SDR path, so consult logs if graphics initialization fails.
+
+Disable `[Overlay] Enabled`, `[LightOverlay] Enabled` and `[Notifications] Enabled`
+to skip all UI hooks/client. Missing UI sections/keys default to disabled, whereas
+the packaged INI explicitly enables them. Lighting has independent `[Lights]`
+switches: hiding/disabling the views does not stop capture. The external host
+reads memory, while native ManyLights capture uses guarded renderer hooks and GPU
+readback in the ASI. It is an instrumented path, not an untouched baseline.
 
 Alternatively, from a source checkout with the .NET 8 SDK:
 
@@ -66,6 +90,10 @@ second host on a port already used by the ASI. A manually started `serve` proces
 can wait for the game and survive game restarts. An ASI-owned host normally exits
 with the game: clients must also handle a disconnected socket, not only a `stopped`
 message. A final state message is not guaranteed before process termination.
+
+`--lights` enables light reading in the host; rendered light data also requires
+the running ASI's supported native capture bridge. A standalone CLI does not
+install that renderer instrumentation.
 
 ## HTTP endpoints
 
@@ -137,6 +165,12 @@ as its layout. It does **not** mean that executable received a manual in-game te
 `executableSha256` always describes the installed EXE; `executableVersion` can be
 null. This health-only object is additive metadata and is not part of snapshot schema 1.1.
 
+Automatic relocation covers historical player/camera reference layouts. It does
+not enable native lighting on an unknown EXE, and the current direct camera/scene
+layout has no automatic promotion path. `check-update <exe>` reports offline
+anchor/recovery results without enabling a candidate; see
+[update recovery](UPDATE_RECOVERY.md).
+
 Possible `status` values:
 
 | Status | Interpretation |
@@ -153,6 +187,9 @@ Possible `status` values:
 flag. Loading screens, changing objects, invalid reads and a stalled camera render
 context can all produce it. It must not be used as proof that a particular game UI
 or worldspace transition is occurring. Statuses may be skipped between polls.
+Conversely, `playing` data may arrive while the loading screen is still visible.
+Returning to the title screen can retain HUD/data for several seconds until stale
+or another load. This accepted behavior is not a reliable title-screen detector.
 
 ## Snapshot contract
 
@@ -205,7 +242,7 @@ numbers, NaN values, addresses, process handles or memory blobs in this contract
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry in the current candidate. Compare as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry in 2.0.0. Compare as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -285,7 +322,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 |---|---|
 | `sampleIndex` | Index within this GPU sample, **not an object ID**. |
 | `position` | World position in the same coordinates as the player. |
-| `colorLinear` | Current linear HDR renderer RGB, including measured animation/pulsation. Not sRGB or lumens. |
+| `colorLinear` | Current linear HDR renderer RGB, which can vary with effects and exposure. Not sRGB, lumens or an exposure-normalized source intensity. |
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
@@ -299,8 +336,10 @@ camera frame, paired-counter bounds and completion flags. No previous successful
 result is relabelled as fresh. An invalid counter makes rendered lights unavailable;
 the reader does not fall back to scanning the entire allocation.
 
-Use rendered contributions for current local illumination, authored records for
-their separate base/selection metadata. They overlap: **do not sum both feeds**.
+Use rendered contributions as measured inputs to a local-lighting consumer and
+authored records for their separate base/selection metadata. Renderer RGB alone
+does not predict final scene pixels or a physical lamp's output. The arrays
+overlap: **do not sum both feeds**.
 One physical flame can contribute multiple records. Absence does not distinguish
 OFF from culling/unloaded sources; no generic enabled flag or permanent identity is
 invented. Sun/sky, emissive surfaces and every other possible lighting path are not
@@ -476,18 +515,29 @@ Ignore unknown optional fields/capability strings and handle null or missing
 optional fields. The published schema is strict for the supported 1.1/1.2/1.3/1.4 shapes
 (`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
-Reject an unsupported major version explicitly. Breaking contract changes require
-a new major API/product version; build offsets are not part of the public API.
+Reject an unsupported API/schema major version explicitly. Breaking contract
+changes require a new major contract version; product 2.0.0 retains API v1 and
+does not imply schema 2.0. Build offsets are not part of the public API.
 
 Not included: complete global/emissive lighting, weather/time of day, durable worldspace
 identifiers, bones, animated pose, event history or GPU timestamps. The current build's
 full SceneConstantBuffer validates the camera independently of player distance; the
 older indirect camera layouts retain their 50-game-unit distance guard.
-The [documented game build](../README.md#current-support) is manually validated.
-Other executable hashes are accepted only when the complete guarded layout is
-resolved uniquely and live values continue to pass runtime validation. This is
-reported as automatic compatibility, not manual validation. All failures remain
-closed. AMD/Intel hardware compatibility has not yet been tested.
+The [documented game build](../README.md#compatibility-and-limits) is manually validated.
+Historical player/camera layouts can accept other executable hashes only through
+complete unique guarded resolution and continuing runtime validation; this is
+reported as automatic compatibility. The current direct-layout/native lighting
+path remains tied to its exact validated build and rejects unknown native hook
+targets. An unchanged EXE hash does not detect every shader-only asset change;
+no active-PSO/shader-identity gate is implemented.
+
+Camera/light telemetry has no DLSS, Streamline or NVIDIA runtime dependency.
+In-game validation used NVIDIA hardware; AMD/Intel game setups remain untested.
+The optional UI supports D3D12 with an 8-bit SDR swapchain. HDR is unsupported,
+and frame-generation/coexistence coverage remains incomplete. Marker projection
+uses the latest published camera, not a Present-synchronous camera, and performs
+no scene-depth test. Linear HDR swatches are an SDR visualization, not game tone
+mapping. Generic exposure normalization remains unfinished.
 
 ## Troubleshooting
 

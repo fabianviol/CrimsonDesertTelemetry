@@ -1,4 +1,24 @@
-# Current checkpoint — 2.0.0 startup behavior accepted, 2026-09-06, Codex/Astra
+# Current checkpoint — GitHub 2.0.0 release preparation, 2026-09-06, Codex/Astra
+
+User authorized GitHub publication, fully refreshed descriptions with lighting
+first, the supplied screenshot/video, and Codex coauthor credit. Nexus publication
+is separate, not requested in this turn. Repository variable NEXUS_AUTO_PUBLISH
+was verified unset before publication; the Nexus workflow must remain inactive.
+
+README, release notes, package README, API/provenance/validation and contributor
+guidance now describe the unified 2.0 feature set and its actual limits. Screenshot
+`media/screenshot1.jpg` is public with permission; the large local MP4 stays ignored.
+Demo: https://youtu.be/eyRkkTXAU64. No plugin/gameplay/config changes in this pass.
+Publication audit found no game binaries, captures or credential material in the
+unpublished product commits; independent research remains local and unchanged.
+
+Next: push main, verify GitHub CI, then tag v2.0.0. The existing release workflow
+builds a fresh package and creates a draft; verify its asset before publishing.
+Do not replace the locally tested ZIP below. Its hash records the live-tested
+pre-description-refresh package, not the new GitHub build. No release published
+at this checkpoint; replace this paragraph with the actual result after completion.
+
+## Previous checkpoint — 2.0.0 startup behavior accepted
 
 User requested version **2.0.0**, not another preview, for the forthcoming release.
 User reports "läuft" after installation/restart. **2.0.0 is installed and the
@@ -24,9 +44,8 @@ Known accepted edge case: returning to the title screen without restarting can
 leave HUD/data visible for several seconds, until stale or another load. Cause
 unproven (continued engine activity vs state detection); user explicitly says leave
 it alone because the HUD can be hidden. Do not reopen this as a release blocker.
-**One next step: GitHub/Nexus release preparation when requested; no further plugin
-changes for these accepted startup/title-screen observations.** Nothing published.
-New untracked `media/` belongs to the user/other work and was left untouched.
+No further plugin changes for these accepted startup/title-screen observations.
+Publication status and the authorized media use are superseded by the top checkpoint.
 
 - Native EXE hash, hook/caller guards and scene/wrapper/GPU contract now derive from
   `definitions/build-25116796.json` via CMake. Production StartCapture validates PE,
