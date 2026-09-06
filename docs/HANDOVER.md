@@ -5,8 +5,9 @@
 User requested one telemetry product/ASI, including the former console, automatic
 filtered ManyLights and the revised camera anchor. CrimsonHue is only a future
 Philips Hue consumer. Candidate **1.3.0-preview.1**, implementation commit **afcc1cc**,
-has passed automatic in-game startup/data and deliberate camera/player movement
-checks. The physical A-B-A check of this combined version remains open.
+has passed automatic in-game startup/data, deliberate camera/player movement and
+a controlled physical lamp A-B-A check. Core integration live checks are complete
+for this tested build/setup; broader coverage and update hardening remain separate.
 
 - Single ASI source: `native/CrimsonDesertTelemetry.Asi`; imported console0.3.17
   commands retained under `src/console`, original research/releases preserved.
@@ -82,8 +83,8 @@ Immutable DMM ZIP:
 SHA256 `A22A9254DCA5D3E6A3946E6CCFC4D1C6AA08AE831F8EAA168695686190E613CA`.
 Expanded package:
 `artifacts/mod-manager/v1.3.0-preview.1-20260906-193800-829-148b0879/CrimsonDesertTelemetry`.
-Source is the unified implementation commit containing this checkpoint; no source
-changes are pending before the user's first in-game test.
+Package source is implementation commit afcc1cc. Later recorder/documentation
+commits do not change this immutable package.
 
 ## Live result — 2026-09-06, ~19:44–19:45 CEST
 
@@ -141,28 +142,44 @@ malformed (not published); its raw cause is not established. These small availab
 coverage issues are retained for later hardening, not hidden as a perfect run.
 No implementation/config/game change during measurement; package unchanged.
 
+## Physical lamp A-B-A result — 2026-09-06, PID27140
+
+**Passed**, independently cross-checked. Recordings in `artifacts/light-research/`:
+`unified-lamp-aba-pid27140-20260906-A1-on.jsonl`, matching `...-B-off.jsonl`
+and `...-A2-on.jsonl`. Deduplicate on rendered captureSequence, not API rows.
+
+| Phase | Available API rows | Target present / distinct captures | Each of three controls present |
+|---|---:|---:|---:|
+| A1 ON | 309/309 | 88/88 | 88/88 |
+| B OFF | 305/305 | 0/87 | 87/87 |
+| A2 ON | 286/286 | 89/89 | 89/89 |
+
+Selection fixed before B: horizontal distance<0.65 and absolute vertical
+difference<3 from each of the four previously measured lamp positions, any kind.
+Target lamp2 reference is (-10529.755,611.292,-4420.300). Its point contribution
+returns at the same position (A1/A2 world ranges overlap); A2 summed linear
+luminance0.05925..0.12702 varies with animation, not physical lumens.
+All900 API rows available;264 distinct captures, max rendered age79ms, malformed0.
+Native frames progress: A1 44038..44347, B49983..50290, A2 56024..56332.
+
+A1→B interaction moved the player slightly and changed camera distance/FOV
+(55→50degrees); the whole experiment was not camera-fixed. Crucially, B→A2
+player position (-10530.006,609.15674,-4419.3315), camera X/Z, basis and50degree
+FOV are identical, with mean camera Y drift<0.001. Reappearance is therefore
+not explained by a changed view. Three neighbors remain positive controls.
+No implementation/config changes or manual instrumentation commands during
+these recordings. This verifies the physical switch's rendered effect, not a
+generic persistent OFF field or physical lamp ID. Last user-reported state: ON.
+
 ## Remaining / one next step
 
-Stay in PID27140; no reinstall required. **A1 ON baseline captured** in
-`artifacts/light-research/unified-lamp-aba-pid27140-20260906-A1-on.jsonl`:
-309/309available samples,88distinct captures,frames44038..44347. Player
-(-10529.909,609.15674,-4419.7046) is at known lamp2
-(-10529.755,611.292,-4420.300). All four lamp regions present in every distinct
-capture. Spatial test fixed in advance: horizontal distance<0.65 and vertical
-distance<3 from the four previously measured positions. Lamp2 has1..2 point
-contributions, summed linear luminance0.05925..0.15509 (animated, not lumens).
-**B OFF captured** in the matching `...-B-off.jsonl`:305/305available samples,
-87distinct captures15680..15766,frames49983..50290,max render age79ms,malformed0.
-Target lamp2 has **zero contributions in87/87**; lamps1/3/4 remain present in87/87.
-Player moved slightly during interaction to(-10530.006,609.15674,-4419.3315).
-Camera distance/FOV changed(A1:55deg,B:50deg), heading unchanged; retain this
-control detail rather than claiming identical views. Next: request lamp ON once,
-stay there and report AN; record A2 and complete the comparison before declaring
-A-B-A passed. Cold-start availability and camera pairing are measured, not merely a host-test
-claim. User prefers DMM; never replace game files with the optional helper without
-a new request. Do not modify ASI loader/other mods.
+Core integration checks are complete: cold start, moving-camera world pairing,
+and physical lamp switching. No reinstall or additional toggle required. User
+prefers DMM; never replace game files with the optional helper without a new
+request, and do not modify the ASI loader/other mods.
 
-Do not claim the remaining switch test completed. Console/explorer is
-integrated but disabled in this package; its startup debug capture was not exercised
-in the combined real game yet. Native automatic compatibility beyond the exact
-supported EXE remains a separate follow-up, not a reason to guess offsets.
+Next development step, when requested: bounded reliability/update hardening,
+starting with the movement run's isolated bridge-changing/rejected-record cases
+above. Console/explorer is integrated but disabled; its startup debug capture
+has not been exercised in the combined real game. Native automatic compatibility
+beyond the exact supported EXE is still unimplemented; retain fail-closed guards.

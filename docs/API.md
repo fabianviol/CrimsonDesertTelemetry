@@ -2,7 +2,9 @@
 
 Public contract for Crimson Desert Telemetry, HTTP API **v1**, snapshot schemas
 **1.1–1.4**. These are separate version numbers. Schema 1.4 is implemented in the
-unified 1.3.0-preview.1 candidate; its new native capture still requires live validation.
+unified 1.3.0-preview.1 candidate. Its native capture passed local cold-start,
+camera-movement and physical lamp A-B-A checks on exact build25116796;
+this does not establish coverage of every lighting path or hardware setup.
 
 ## Connect
 

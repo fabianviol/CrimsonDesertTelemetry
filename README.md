@@ -54,8 +54,9 @@ The latter uses the camera saved with that capture, not the latest camera. Do no
 add both arrays together: they overlap. A missing rendered contribution is not a
 durable OFF state; culling and scene loading also affect visibility. Stable physical
 IDs, physical lumens and coverage of every lighting mechanism are not claimed.
-With `[Lights] Enabled=0`, schema 1.1 remains unchanged. Live validation of the
-new unified native capture is required before treating this candidate as a release.
+With `[Lights] Enabled=0`, schema 1.1 remains unchanged. The unified capture passed
+local cold-start, moving-camera and physical lamp A-B-A checks on build `25116796`.
+It remains a preview, not a claim of broad hardware or complete lighting coverage.
 
 **DLSS is not required.** Camera data comes directly from the game's native
 render-camera source, including with upscaling disabled. That source is resolved
