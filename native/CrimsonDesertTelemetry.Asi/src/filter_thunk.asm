@@ -1,5 +1,6 @@
 ; Hooked immediately after engine Dispatch: R12=filtered BufferD3D12 outer,
-; RBX=engine command wrapper. MinHook relocates the whole displaced instruction
+; RBX=engine command wrapper, original R15=paired counter outer, R13=owner.
+; MinHook relocates the whole displaced instruction
 ; mov rbx,[rsp+50h] into CdtFilterTrampoline. No INT3/remove/rearm window exists.
 ; Save every GPR, RFLAGS and XMM0..15; dynamically align and provide shadow space.
 ; The helper is compiled for the normal MSVC x64/SSE2 ABI (no /arch:AVX).
@@ -45,6 +46,8 @@ CdtFilterThunk PROC
     movdqu [rsp+110h],xmm15
     mov rcx,r12
     mov rdx,rbx
+    mov r8,[r15] ; original R15, saved before using R15 as the save-area pointer
+    mov r9,r13
     call CdtCaptureFilter
     movdqu xmm0,[rsp+20h]
     movdqu xmm1,[rsp+30h]

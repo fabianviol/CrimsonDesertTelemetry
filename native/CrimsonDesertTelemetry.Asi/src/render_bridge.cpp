@@ -42,6 +42,7 @@ bool OpenBridge()
     mapping->header.sceneBytes = SceneBytes;
     mapping->header.rawCount = RecordCount;
     mapping->header.stride = RecordStride;
+    mapping->header.counterBytes = CounterBytes;
     mapping->header.state = Status::Waiting;
     EndWrite();
     return true;
@@ -60,19 +61,25 @@ void PublishStatus(Status state, uint32_t error, uint32_t flags)
     ReleaseSRWLockExclusive(&publishLock);
 }
 
-void PublishSample(const void* scene, const void* lights, uint64_t capturedTickMs)
+void PublishSample(const void* scene, const void* lights, const void* counters, uint64_t capturedTickMs,
+    uint64_t outputResource, uint64_t counterResource, uint64_t owner, uint32_t bufferIndex)
 {
     if (!mapping) return;
     AcquireSRWLockExclusive(&publishLock);
     BeginWrite();
     memcpy(mapping->scene, scene, SceneBytes);
     memcpy(mapping->lights, lights, LightBytes);
+    memcpy(mapping->counters, counters, CounterBytes);
     ++mapping->header.sampleSequence;
     mapping->header.capturedTickMs = capturedTickMs;
     mapping->header.publishedTickMs = GetTickCount64();
     mapping->header.frameNumber = At<uint32_t>(scene, 0x20);
     mapping->header.error = 0;
-    mapping->header.flags = ExactBuild | FenceCompleted | PairedScene;
+    mapping->header.flags = ExactBuild | FenceCompleted | PairedScene | PairedCounter;
+    mapping->header.outputResource = outputResource;
+    mapping->header.counterResource = counterResource;
+    mapping->header.owner = owner;
+    mapping->header.bufferIndex = bufferIndex;
     mapping->header.state = Status::Active;
     EndWrite();
     ReleaseSRWLockExclusive(&publishLock);

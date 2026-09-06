@@ -41,11 +41,13 @@ int main()
     std::thread writer([&]
     {
         std::vector<uint8_t> lights(LightBytes);
+        std::array<uint8_t, CounterBytes> counters{};
         for (uint32_t n = 1; n <= 120; ++n)
         {
             Put(scene, 0x20, n);
             memset(lights.data(), static_cast<int>(n), lights.size());
-            PublishSample(scene.data(), lights.data(), GetTickCount64());
+            counters.fill(static_cast<uint8_t>(n));
+            PublishSample(scene.data(), lights.data(), counters.data(), GetTickCount64(), n + 1000, n + 2000, 3000, n % 2);
         }
         done = true;
     });
@@ -63,7 +65,12 @@ int main()
         uint32_t sceneFrame{}; memcpy(&sceneFrame, copy->scene + 0x20, 4);
         Check(frame == sceneFrame && copy->lights[0] == frame && copy->lights[LightBytes-1] == frame,
             "seqlock accepted torn camera/light pair");
-        Check(copy->header.flags == 7 && copy->header.sampleSequence == frame, "sample metadata mismatch");
+        Check(copy->header.version == 2 && copy->header.flags == 15 && copy->header.sampleSequence == frame,
+            "sample metadata mismatch");
+        Check(copy->header.counterBytes == CounterBytes && copy->counters[0] == frame &&
+            copy->counters[CounterBytes-1] == frame && copy->header.outputResource == frame + 1000 &&
+            copy->header.counterResource == frame + 2000 && copy->header.owner == 3000 &&
+            copy->header.bufferIndex == frame % 2, "seqlock accepted torn light/counter resource pair");
         ++accepted;
     }
     writer.join();

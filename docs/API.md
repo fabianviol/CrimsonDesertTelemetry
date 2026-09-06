@@ -276,6 +276,10 @@ also has `captureSequence`, the captured engine `frameNumber`, `capturedAt`,
 GPU positions are converted using **this paired camera**, not the envelope's newer camera.
 The sample is published only after the GPU fence completes; samples older than 500 ms
 are unavailable. The default native capture rate is 20 Hz, independent of API publication.
+From 1.3.0-preview.3, lights and their GPU valid-prefix count are copied in the same
+command list and completed by the same fence. Only that prefix is decoded: retained
+capacity-tail records are not current lights, even when their fields look plausible.
+Preview.1/2 lacked this bound and could publish camera-attached ghost contributions.
 
 | Contribution field | Meaning |
 |---|---|
@@ -291,7 +295,9 @@ outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing an
 include `unavailableReason`, for example `bridge-missing`, `bridge-waiting`,
 `bridge-stale`, `native-fault`, `legacy-plugin-conflict`, or `unsupported-build`.
 The bridge validates protocol, PID **and process creation time**, sequence, dimensions,
-camera frame and completion flags. No previous successful result is relabelled as fresh.
+camera frame, paired-counter bounds and completion flags. No previous successful
+result is relabelled as fresh. An invalid counter makes rendered lights unavailable;
+the reader does not fall back to scanning the entire allocation.
 
 Use rendered contributions for current local illumination, authored records for
 their separate base/selection metadata. They overlap: **do not sum both feeds**.

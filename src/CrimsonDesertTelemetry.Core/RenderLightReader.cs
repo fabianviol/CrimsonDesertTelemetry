@@ -11,7 +11,9 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     public const int SceneBytes = 2816;
     public const int RawCount = 32768;
     public const int Stride = 48;
-    public const int TotalBytes = HeaderBytes + SceneBytes + RawCount * Stride;
+    public const int CounterBytes = 256;
+    public const int CounterOffset = HeaderBytes + SceneBytes + RawCount * Stride;
+    public const int TotalBytes = CounterOffset + CounterBytes;
     public const long MaximumAgeMilliseconds = 500;
     private MemoryMappedFile? _mapping;
     private MemoryMappedViewAccessor? _view;
@@ -73,12 +75,13 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
         long nowTickMs, (float X, float Y, float Z) player, float nearbyRadius)
     {
         if (snapshot.Length != TotalBytes || BitConverter.ToUInt32(snapshot, 0) != 0x52445443 ||
-            BitConverter.ToUInt32(snapshot, 4) != 1 || BitConverter.ToUInt32(snapshot, 8) != HeaderBytes ||
+            BitConverter.ToUInt32(snapshot, 4) != 2 || BitConverter.ToUInt32(snapshot, 8) != HeaderBytes ||
             BitConverter.ToUInt32(snapshot, 12) != TotalBytes || (BitConverter.ToUInt64(snapshot, 16) & 1) != 0 ||
             BitConverter.ToUInt32(snapshot, 24) != expectedPid ||
             BitConverter.ToInt64(snapshot, 32) != expectedStartFileTime ||
             BitConverter.ToUInt32(snapshot, 68) != SceneBytes ||
-            BitConverter.ToUInt32(snapshot, 72) != RawCount || BitConverter.ToUInt32(snapshot, 76) != Stride)
+            BitConverter.ToUInt32(snapshot, 72) != RawCount || BitConverter.ToUInt32(snapshot, 76) != Stride ||
+            BitConverter.ToUInt32(snapshot, 116) != CounterBytes)
             throw new InvalidDataException("Native render bridge version, bounds or process identity disagree.");
         if (!float.IsFinite(player.X) || !float.IsFinite(player.Y) || !float.IsFinite(player.Z) ||
             !float.IsFinite(nearbyRadius) || nearbyRadius is <= 0 or > 100000)
@@ -92,8 +95,10 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 0 => "bridge-waiting", 2 => "unsupported-build", 3 => "native-fault",
                 4 => "legacy-plugin-conflict", 5 => "game-stopped", _ => "bridge-invalid"
             });
-        if (BitConverter.ToUInt32(snapshot, 84) != 7)
-            throw new InvalidDataException("Render sample lacks build, fence or scene validation.");
+        if (BitConverter.ToUInt32(snapshot, 84) != 15 || BitConverter.ToUInt64(snapshot, 88) == 0 ||
+            BitConverter.ToUInt64(snapshot, 96) == 0 ||
+            BitConverter.ToUInt64(snapshot, 88) == BitConverter.ToUInt64(snapshot, 96))
+            throw new InvalidDataException("Render sample lacks build, fence, scene or paired-counter validation.");
         var capturedTick = BitConverter.ToInt64(snapshot, 48);
         var publishedTick = BitConverter.ToInt64(snapshot, 56);
         var sequence = BitConverter.ToUInt64(snapshot, 40);
@@ -106,12 +111,18 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
         if (scene.FrameNumber != BitConverter.ToUInt32(snapshot, 64))
             throw new InvalidDataException("Render sample and paired camera frame disagree.");
         var camera = scene.Camera;
+        // ProcessManyLightsCS appends at RWByteAddressBuffer byte 4 (DWORD[1]).
+        // InitSortingData[Indirect]CS independently limits valid keys to this
+        // prefix. A pi marker in the retained capacity tail is NOT freshness.
+        var validCount = BitConverter.ToUInt32(snapshot, CounterOffset + 4);
+        if (validCount > RawCount)
+            throw new InvalidDataException("Filtered light count exceeds its resource capacity.");
         var sources = new List<RenderedLightSnapshot>();
         var active = 0;
         var malformed = 0;
         var outside = 0;
         var radiusSquared = (double)nearbyRadius * nearbyRadius;
-        for (var index = 0; index < RawCount; index++)
+        for (var index = 0; index < validCount; index++)
         {
             var record = snapshot.AsSpan(HeaderBytes + SceneBytes + index * Stride, Stride);
             var marker = F(record, 12);

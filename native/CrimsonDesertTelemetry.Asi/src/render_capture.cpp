@@ -26,10 +26,13 @@ SRWLOCK lock = SRWLOCK_INIT;
 Phase phase = Phase::Stopped;
 uint64_t gameBase{}, hookAddress{}, lastAttempt{}, capturedAt{}, issuedAt{}, fenceValue{};
 uint32_t intervalMs = 50, capturedFrame{}, lastFrame{}, error{};
+uint64_t capturedOutputResource{}, capturedCounterResource{}, capturedOwner{};
+uint32_t capturedBufferIndex = UINT32_MAX;
 bool hasFrame{}, executeEnabled{};
 std::atomic<bool> hookEnabled{};
 ID3D12Resource* discoverySource{};
 ID3D12Resource* pendingSource{};
+ID3D12Resource* pendingCounter{};
 ID3D12Resource* readback{};
 ID3D12Fence* fence{};
 IUnknown* preparedDeviceIdentity{};
@@ -65,6 +68,17 @@ bool Resolve(uint64_t outer, uint64_t command, ID3D12Resource*& source, ID3D12Gr
         (desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 &&
         (list->GetType() == D3D12_COMMAND_LIST_TYPE_DIRECT || list->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE);
 }
+bool ResolveCounter(uint64_t outer, ID3D12Resource*& counter)
+{
+    uint64_t inner{}, resource{};
+    // Do not assume the CPU wrapper's stride/count encoding for this counter.
+    // The exact binding identifies it; the native descriptor bounds the copy.
+    if (!Read(outer + 0x30, inner) || !Read(inner + 0x168, resource) || !resource) return false;
+    counter = reinterpret_cast<ID3D12Resource*>(resource);
+    const auto desc = counter->GetDesc();
+    return desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && desc.Width >= CounterBytes &&
+        (desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0;
+}
 void Fail(uint32_t code)
 {
     error = code;
@@ -73,15 +87,16 @@ void Fail(uint32_t code)
     // releasing them without a completion fence would itself be unsafe.
 }
 
-void Record(uint64_t outer, uint64_t command)
+void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
 {
     if (phase != Phase::Discover && phase != Phase::Ready) return;
     const uint64_t now = GetTickCount64();
     if (now - lastAttempt < intervalMs) return;
     lastAttempt = now;
     ID3D12Resource* source{};
+    ID3D12Resource* counter{};
     ID3D12GraphicsCommandList* list{};
-    if (!Resolve(outer, command, source, list)) return;
+    if (!Resolve(outer, command, source, list) || !ResolveCounter(counterOuter, counter) || source == counter) return;
     if (phase == Phase::Discover)
     {
         source->AddRef();
@@ -91,11 +106,15 @@ void Record(uint64_t outer, uint64_t command)
         return;
     }
     IUnknown* sourceDevice{};
+    IUnknown* counterDevice{};
     IUnknown* listDevice{};
     const bool sameDevice = SUCCEEDED(source->GetDevice(IID_PPV_ARGS(&sourceDevice))) &&
+        SUCCEEDED(counter->GetDevice(IID_PPV_ARGS(&counterDevice))) &&
         SUCCEEDED(list->GetDevice(IID_PPV_ARGS(&listDevice))) &&
-        sourceDevice == preparedDeviceIdentity && listDevice == preparedDeviceIdentity && list->GetType() == queueType;
+        sourceDevice == preparedDeviceIdentity && counterDevice == preparedDeviceIdentity &&
+        listDevice == preparedDeviceIdentity && list->GetType() == queueType;
     if (sourceDevice) sourceDevice->Release();
+    if (counterDevice) counterDevice->Release();
     if (listDevice) listDevice->Release();
     if (!sameDevice) { Fail(ERROR_INVALID_HANDLE); return; }
     std::array<uint8_t, SceneBytes> confirmation{};
@@ -103,21 +122,41 @@ void Record(uint64_t outer, uint64_t command)
     memcpy(&capturedFrame, scene.data() + 0x20, sizeof(capturedFrame));
     if (hasFrame && capturedFrame == lastFrame) return;
     source->AddRef();
+    counter->AddRef();
     list->AddRef();
     pendingSource = source;
+    pendingCounter = counter;
     pendingList = list;
     capturedAt = now;
-    D3D12_RESOURCE_BARRIER barrier{};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = source;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    list->ResourceBarrier(1, &barrier);
+    // These identities belong to THIS recorded pair. Never resolve them again
+    // when the worker publishes: the renderer may already have switched banks.
+    capturedOutputResource = reinterpret_cast<uint64_t>(source);
+    capturedCounterResource = reinterpret_cast<uint64_t>(counter);
+    capturedOwner = owner;
+    capturedBufferIndex = UINT32_MAX;
+    uint32_t currentIndex{};
+    if (owner && Read(owner + 0x8F8, currentIndex)) capturedBufferIndex = currentIndex;
+    std::array<D3D12_RESOURCE_BARRIER, 2> barriers{};
+    for (auto& barrier : barriers)
+    {
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    }
+    barriers[0].Transition.pResource = source;
+    barriers[1].Transition.pResource = counter;
+    list->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
     list->CopyBufferRegion(readback, 0, source, 0, LightBytes);
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    list->ResourceBarrier(1, &barrier);
+    // The counter is a GPU-written buffer, not a CPU count. Copy its bounded
+    // prefix before subsequent engine passes reuse it, on the SAME list/fence.
+    list->CopyBufferRegion(readback, LightBytes, counter, 0, CounterBytes);
+    for (auto& barrier : barriers)
+    {
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+    list->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
     // A camera update concurrent with recording invalidates this pair. Still
     // submit and fence the copy, but never publish the mismatched sample.
     if (!ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) capturedAt = 0;
@@ -161,6 +200,7 @@ bool Prepare()
     heap.Type = D3D12_HEAP_TYPE_READBACK;
     heap.CreationNodeMask = heap.VisibleNodeMask = 1;
     auto desc = discoverySource->GetDesc();
+    desc.Width = LightBytes + CounterBytes;
     desc.Flags = D3D12_RESOURCE_FLAG_NONE;
     hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
         D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
@@ -179,16 +219,16 @@ bool Prepare()
     probeQueue->Release();
     if (enable != MH_OK) { error = ERROR_INVALID_FUNCTION; return false; }
     executeEnabled = true;
-    ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, submission fence; instrumented run.", 1000 / intervalMs);
+    ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", 1000 / intervalMs);
     return true;
 }
 }
 
-void CaptureFilter(uint64_t outer, uint64_t command)
+void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
 {
     // Never block the renderer behind worker-side Map/publication/initialization.
     if (!TryAcquireSRWLockExclusive(&lock)) return;
-    __try { Record(outer, command); }
+    __try { Record(outer, command, counterOuter, owner); }
     __except (EXCEPTION_EXECUTE_HANDLER) { Fail(GetExceptionCode()); }
     ReleaseSRWLockExclusive(&lock);
 }
@@ -236,15 +276,17 @@ void PollCapture()
         else if (completed >= fenceValue)
         {
             void* mapped{};
-            D3D12_RANGE range{0, LightBytes};
+            D3D12_RANGE range{0, LightBytes + CounterBytes};
             const HRESULT hr = readback->Map(0, &range, &mapped);
             if (FAILED(hr) || !mapped) Fail(static_cast<uint32_t>(hr));
             else
             {
-                if (capturedAt) PublishSample(scene.data(), mapped, capturedAt);
+                if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
+                    capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex);
                 const D3D12_RANGE noWrites{0,0};
                 readback->Unmap(0, &noWrites);
                 pendingSource->Release(); pendingSource = nullptr;
+                pendingCounter->Release(); pendingCounter = nullptr;
                 pendingList->Release(); pendingList = nullptr;
                 lastFrame = capturedFrame; hasFrame = true;
                 phase = Phase::Ready;
@@ -292,4 +334,5 @@ void InitializeCaptureForTest(uint64_t moduleBase)
 #endif
 }
 
-extern "C" void CdtCaptureFilter(uint64_t outer, uint64_t command) { cdt::render::CaptureFilter(outer, command); }
+extern "C" void CdtCaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
+{ cdt::render::CaptureFilter(outer, command, counterOuter, owner); }

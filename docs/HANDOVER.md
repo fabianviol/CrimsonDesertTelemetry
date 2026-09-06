@@ -1,19 +1,61 @@
-# Current checkpoint — light HUD, 2026-09-06, Codex/Astra
+# Current checkpoint — filtered light tail fix, 2026-09-06, Codex/Astra
 
 ## Result / one next step
 
-**1.3.0-preview.2 now has live video/API feedback: real lamp alignment works,
-but the rendered feed also publishes camera-attached ghost contributions.**
-Do not fix this by smoothing or hiding moving lights: some moving lights in the
-first video really are fireflies (user identification). The user confirms there
-are no actual lights at the jumping ghost positions in the second video.
+**1.3.0-preview.3 is built, tested and packaged; NOT yet installed/live-validated.**
+The actual GPU valid-prefix counter is now captured with its light buffer and
+the managed reader decodes only that prefix. No hardcoded33, color/motion heuristic,
+smoothing or new hook. The miniHUD root arrow/camera cone are larger, outlined,
+and drawn above the light dots; dots retain measured HDR-derived color swatches.
+UI change commit `673651c`; counter-fix source is in the commit carrying this checkpoint.
 
-Next: determine/capture the filtered buffer's actual valid length/consumer range,
-with resource identity to distinguish alternating buffers. Remove invalid tail
-records based on measured validity, not a hardcoded33 or frozen-RGB heuristic.
-Only afterwards quieten label/focus layout. No source/plugin/config/game changes
-were made during this diagnosis; current game remains open, user moved after
-the recorded stationary control and then stopped again.
+One next step: user closes the game, installs preview.3 through DMM, restarts and
+returns to a fixed lamp. Check a progressing stationary control then movement:
+native counter[1] vs published prefix, paired resource identities, real anchor
+stability and absence of old camera-attached tails. The count need not be33 at
+another position. Preserve real firefly motion and pulsation. Only after that
+consider remaining label/focus layout jitter. Current unchanged game: PID788,
+started20:30, preview.2; no game/config/install writes performed this turn.
+
+### Why this bound is the engine's, not a visual heuristic
+
+Current EXE function0x143CB5000 selects matching counter/output wrappers from
+owner+0x638/+0x648 using owner+0x8F8. At existing hook0x143CB65CA, R12=output,
+original R15=counter, R13=owner, RBX=command wrapper. The ASM thunk now passes
+all four; original R15 is read from [r15] after R15 becomes the saved-stack pointer.
+Both GPU copies are on the same command list before the same submission fence;
+resource refs and capture-time identities survive through publication.
+
+Game archive shader `ProcessManyLightsCS` atomically increments **byte4 / DWORD[1]**,
+using the previous value as its output index (stride48, capacity32768).
+Independent consumers `InitSortingDataCS` and `InitSortingDataIndirectCS` read
+byte4 and give only indices<count valid sorting keys; the tail receives -1.
+`SetDispatchIndirectArgumentsRecursiveCS` uses CPU literal _srcStartIndex=4
+as a BYTE offset, not DWORD[4]. DWORD[0] and the later consumer's DWORD[2] are
+not this filtered-prefix length. A special input.color.w>99999 producer route
+can write at input index without incrementing; it does not enlarge consumer range.
+
+Reproducible archive lookup: CrimsonForge `hashlittle(case-sensitive UTF8name,
+0xC5EDE)` matched three known entry controls. Entry hashes:29588660 (Process),
+84574902 (InitSorting),5eecfe7e (Indirect),a2b2b7e9 (DispatchArguments).
+Extracted variant paths `shadercache__/63bb3e83_9d3ccf48_5_<entry>_3_deba1dcd_b13a9f29.padxil`,
+group0017. Evidence prefix `artifacts/light-research/filtered-count-exact-20260906-2113-<entry>`:
+.padxil/.dxbc/.ll/.json. Process shader hash c40f89b9b04627219c4b77a1736da3b7;
+LL1075 append, LL1101 output; InitSorting LL86 load, LL169 prefix bound.
+One archive variant per kernel inspected, not every permutation/live PSO hash.
+
+Native bridge ABI v2 appends256 counterbytes after lights; header88/96/104 stores
+output/counter/owner addresses,112 bankindex (UINT32_MAX unknown),116 counterBytes.
+Flags15 require paired counter. C# rejects v1, absent identities and counts>32768;
+zero is a valid empty current list. Existing public JSON schema1.4 is unchanged.
+
+Verification: 50/50 managed tests; native bridge concurrent publication test;
+capture/thunk CTests2/2 plus foreign-device rejection; 80,000 parallel thunks
+preserve registers/flags and all four arguments. D3D12 test holds GPU execution
+behind a fence, verifies all counterbytes, alternating resource pairs and frozen
+capture-time identities, rejects missing/undersized/non-UAV/aliased counters.
+Graphics smoke passed and small/4K preview rendered; small image visually checked.
+Package validation passed. These tests do not replace the pending game check.
 
 ### Live diagnosis — 20:40 CEST
 
@@ -42,7 +84,7 @@ that every constant-color light is invalid. Actual GPU resource identities/count
 are not exposed yet. Producer+recorded transport age103..349ms; the recorder
 skipped84 API sequences but saw57/58 captures (not proof of HUD packet loss).
 
-Code confirms the gap: native `render_capture.cpp` copies every accepted matching
+Preview.2 code confirmed the gap: native `render_capture.cpp` copied every accepted matching
 48x32768 resource without publishing its identity or valid count. Managed
 `RenderLightReader.cs` scans all32768 slots, treating position.w≈pi as validity.
 The old pi criterion in `GPU_LIGHT_LAYOUTS_25116796.md` came from an UNFILTERED
@@ -54,12 +96,12 @@ so changing neighbors/indices also make labels jump; fix presentation separately
 ## Package / controls
 
 Immutable ZIP:
-`artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.2-ModManagers.zip`
-SHA256 `861EDB458198BC2707FC2B306E4CC5AE896B5BB32B485700641D5A952FF3DC4C`.
+`artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.3-ModManagers.zip`
+SHA256 `5F107B18B5B1677A8366F6102503A1077BEF6FA4D8865E452F09C45A8B203372`.
 Expanded:
-`artifacts/mod-manager/v1.3.0-preview.2-20260906-202637-330-d5111e42/CrimsonDesertTelemetry`.
-ASI SHA256 `2B6949AA85E4305A127BC1BFAAFC2F202425CB26EA5572D1D51151B1D440B714`.
-Previous preview.1 ZIP remains unchanged for rollback. Never overwrite releases,
+`artifacts/mod-manager/v1.3.0-preview.3-20260906-211037-749-5c0dd6b7/CrimsonDesertTelemetry`.
+ASI SHA256 `B45170BD2F1BC691C1902CEF2993ABE28C83443CF79C791893F0F26E66916CF2`.
+Previous preview.1/2 ZIPs remain unchanged for rollback. Never overwrite releases,
 replace the ASI loader/other mods, or install directly instead of the user's DMM.
 
 - F8: corner HUD; F9: diagnostics; F10: fullscreen light markers.
@@ -97,7 +139,7 @@ uses the latest published camera basis/FOV/aspect, rejecting near/behind/invalid
 points. It is not a Present-synchronous camera: fast-motion latency/alignment is
 the primary live-check risk. Drawing still requires D3D12 / 8-bit SDR.
 
-## Verification this change
+## Previous preview.2 HUD verification
 
 Release build and **6/6 native UI/client tests pass**: overlay-model, overlay-d3d12,
 notifications-d3d12, light-overlay-d3d12, light-overlay-only-d3d12, overlay-websocket.

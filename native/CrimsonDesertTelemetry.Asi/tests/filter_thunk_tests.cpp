@@ -12,9 +12,9 @@ extern "C" int CdtTestInvoke();
 extern "C" { void* CdtFilterTrampoline = nullptr; }
 std::atomic<uint32_t> calls{};
 std::atomic<bool> valid{true};
-extern "C" void CdtObserveCapture(uint64_t outer, uint64_t command)
+extern "C" void CdtObserveCapture(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
 {
-    if (outer != 0xCC || command != 0x44) valid = false;
+    if (outer != 0xCC || command != 0x44 || counterOuter != 0xFF || owner != 0xDD) valid = false;
     ++calls;
 }
 int main()
@@ -28,5 +28,5 @@ int main()
     const auto disabled=MH_DisableHook(CdtTestSite);
     if (!valid || calls!=80000 || disabled!=MH_OK || !CdtTestInvoke())
     { std::cerr<<"register/flags restoration, displaced instruction or capture count failed: "<<calls<<'\n'; return 1; }
-    std::cout<<"8 threads / 80000 hooks: all 15 GPRs, RFLAGS, XMM0..15, stack and displaced mov preserved; every capture observed.\n";
+    std::cout<<"8 threads / 80000 hooks: all 15 GPRs, RFLAGS, XMM0..15, stack and displaced mov preserved; four original-register arguments verified in every capture.\n";
 }

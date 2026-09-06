@@ -12,7 +12,8 @@ internal static class RenderLightReaderTests
     private const int SceneBytes = 2816;
     private const int RecordBytes = 48;
     private const int RecordCount = 32768;
-    private const int TotalBytes = HeaderBytes + SceneBytes + RecordCount * RecordBytes;
+    private const int CounterOffset = HeaderBytes + SceneBytes + RecordCount * RecordBytes;
+    private const int TotalBytes = CounterOffset + 256;
 
     public static void DecodeFields()
     {
@@ -117,11 +118,13 @@ internal static class RenderLightReaderTests
 
         foreach (var (offset, value, description) in new (int Offset, uint Value, string Description)[]
         {
-            (0, 0, "magic"), (4, 2, "version"), (8, 255, "header length"),
+            (0, 0, "magic"), (4, 1, "old counterless version"), (8, 255, "header length"),
             (12, TotalBytes - 1, "total length"), (24, ProcessId + 1, "PID"),
             (28, 6, "unknown native state"), (68, SceneBytes - 1, "scene length"),
             (72, RecordCount - 1, "record count"), (76, RecordBytes - 1, "record stride"),
-            (84, 3, "missing coherence flags"), (84, 15, "unknown coherence flags")
+            (84, 7, "missing paired counter flag"), (84, 31, "unknown coherence flags"),
+            (88, 0, "missing light resource"), (96, 0, "missing counter resource"),
+            (96, 1000, "aliased light and counter resource"), (116, 0, "missing counter bytes")
         })
         {
             var corrupt = (byte[])bytes.Clone();
@@ -143,6 +146,51 @@ internal static class RenderLightReaderTests
         MappingFailureIsolation();
     }
 
+    public static void ValidPrefix()
+    {
+        var bytes = Snapshot();
+        Record(bytes, 0, (1, 0, 0), (1, .5f, .25f), -1, (0, 0, 1));
+        Record(bytes, 1, (2, 0, 0), (.2f, .4f, 1), -1, (0, 0, 1));
+        Record(bytes, 2, (3, 0, 0), (2, .5f, .1f), -1, (0, 0, 1));
+        Record(bytes, 200, (4, 0, 0), (3, .5f, .1f), -1, (0, 0, 1));
+        // A complete, plausible old tail survives the GPU compaction pass.
+        // Neither input-count DWORD[0] nor downstream DWORD[2] is its valid length.
+        U32(bytes, CounterOffset, 2236); U32(bytes, CounterOffset + 8, 777);
+        U32(bytes, CounterOffset + 4, 2);
+        var first = Decode(bytes);
+        Check(first.Sources is { Count: 2 } && first.Diagnostics.ActiveRecords == 2 &&
+              first.Diagnostics.Malformed == 0 && first.Diagnostics.OutsideRadius == 0,
+            "The reader scanned a plausible retained tail or used the wrong GPU counter.");
+
+        // Camera motion used to turn that stale tail into camera-attached ghosts.
+        var moved = (byte[])bytes.Clone();
+        F(moved, HeaderBytes + 0x80, 15);
+        F(moved, HeaderBytes + 0x410, -15); // Matching world-view translation.
+        var movingResult = Decode(moved, player: (15, 20, 30));
+        Check(movingResult.Sources is { Count: 2 } && movingResult.Sources.All(light => light.SampleIndex < 2),
+            "Camera movement resurrected retained tail records.");
+
+        // Another resource bank may have a different prefix and equally old tail.
+        U64(moved, 88, 3000); U64(moved, 96, 4000);
+        U32(moved, CounterOffset + 4, 1);
+        Check(Decode(moved, player: (15, 20, 30)).Sources is { Count: 1 },
+            "Alternating resources reused the previous bank's valid length.");
+
+        U32(bytes, CounterOffset + 4, 0);
+        Check(Decode(bytes).Sources is { Count: 0 } && Decode(bytes).Diagnostics.ActiveRecords == 0,
+            "An empty current prefix exposed old lights.");
+        // Becoming valid must publish a record even with completely unchanged RGB.
+        U32(bytes, CounterOffset + 4, 3);
+        Check(Decode(bytes).Sources is { Count: 3 }, "A newly valid constant-color light was suppressed.");
+        U32(bytes, CounterOffset + 4, RecordCount);
+        Record(bytes, RecordCount - 1, (5, 0, 0), (1, 1, 1), -1, (0, 0, 1));
+        Check(Decode(bytes).Sources is { Count: 5 }, "The maximum valid capacity was truncated.");
+        U32(bytes, CounterOffset + 4, RecordCount + 1);
+        ExpectInvalid(() => Decode(bytes), "An overflowing GPU count was clamped or accepted.");
+        U32(bytes, CounterOffset + 4, uint.MaxValue);
+        ExpectInvalid(() => Decode(bytes), "A negative/wrapped GPU count was accepted.");
+    }
+
     private static RenderLightsSnapshot Decode(byte[] bytes, long now = CapturedTick + 100,
         (float X, float Y, float Z)? player = null, float nearbyRadius = 10) =>
         RenderLightReader.Decode(bytes, ProcessId, ProcessStart, now, player ?? (10, 20, 30), nearbyRadius);
@@ -150,13 +198,14 @@ internal static class RenderLightReaderTests
     private static byte[] Snapshot()
     {
         var bytes = new byte[TotalBytes];
-        U32(bytes, 0, 0x52445443); U32(bytes, 4, 1);
+        U32(bytes, 0, 0x52445443); U32(bytes, 4, 2);
         U32(bytes, 8, HeaderBytes); U32(bytes, 12, TotalBytes);
         U64(bytes, 16, 2); U32(bytes, 24, ProcessId); U32(bytes, 28, 1);
         U64(bytes, 32, ProcessStart); U64(bytes, 40, 7);
         U64(bytes, 48, CapturedTick); U64(bytes, 56, CapturedTick + 10);
         U32(bytes, 64, 42); U32(bytes, 68, SceneBytes);
-        U32(bytes, 72, RecordCount); U32(bytes, 76, RecordBytes); U32(bytes, 84, 7);
+        U32(bytes, 72, RecordCount); U32(bytes, 76, RecordBytes); U32(bytes, 84, 15);
+        U64(bytes, 88, 1000); U64(bytes, 96, 2000); U32(bytes, 116, 256);
         EngineCameraTests.SceneBytes().CopyTo(bytes, HeaderBytes);
         return bytes;
     }
@@ -172,6 +221,7 @@ internal static class RenderLightReaderTests
         H(bytes, offset + 32, 0); H(bytes, offset + 34, 1); H(bytes, offset + 36, 0);
         H(bytes, offset + 38, cone);
         H(bytes, offset + 40, look.X); H(bytes, offset + 42, look.Y); H(bytes, offset + 44, look.Z);
+        U32(bytes, CounterOffset + 4, Math.Max(BitConverter.ToUInt32(bytes, CounterOffset + 4), (uint)index + 1));
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };

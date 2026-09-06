@@ -41,6 +41,7 @@ var tests = new (string Name, Action Run)[]
     ("scene constants own frame freshness", EngineCameraTests.SceneConstantsFreshness),
     ("render lights decode paired world-space data", RenderLightReaderTests.DecodeFields),
     ("render lights reject malformed data", RenderLightReaderTests.Validation),
+    ("render lights exclude retained tails using paired GPU count", RenderLightReaderTests.ValidPrefix),
     ("render bridge protocol and freshness", RenderLightReaderTests.ProtocolAndFreshness),
     ("engine lights decode verified fields", EngineLightReaderTests.DecodeFields),
     ("engine lights reject and diagnose fields", EngineLightReaderTests.Validation),
