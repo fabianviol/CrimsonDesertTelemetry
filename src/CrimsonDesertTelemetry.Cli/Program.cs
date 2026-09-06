@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 const string baseSchemaVersion = "1.1";
-const string lightsSchemaVersion = "1.3";
+const string lightsSchemaVersion = "1.4";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions
@@ -528,7 +528,10 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
             if (lightOptions.Enabled && resolved.Compatibility.Mode == "tested" && definition.EngineLights is { } lightDefinition)
                 lights = new EngineLightReader(reader,
                     checked((ulong)process.MainModule!.BaseAddress.ToInt64()), lightDefinition);
-            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, lightOptions);
+            var rendered = lightOptions.Enabled && resolved.Compatibility.Mode == "tested" &&
+                           resolved.GameBuild == "25116796"
+                ? new RenderLightReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
+            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered, lightOptions);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -572,7 +575,7 @@ TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, flo
     frame.Timestamp,
     new GameSnapshot(build, "playing"),
     coordinateSystem,
-    CapabilitiesFor(orientation, supportsLights),
+    CapabilitiesFor(orientation, supportsLights, lights?.Rendered is not null && lights.Rendered.UnavailableReason != "unsupported-build"),
     new PlayerSnapshot(ToVector(player), orientation),
     ToCameraConsensus(new RenderCameraConsensus(
         frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates)),
@@ -580,11 +583,12 @@ TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, flo
         frame.Rediscovered, captureDurationMicroseconds),
     lights);
 
-IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation, bool supportsLights = false)
+IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation, bool supportsLights = false, bool supportsRendered = false)
 {
     IEnumerable<string> result = capabilities;
     if (orientation is not null) result = result.Append("player.orientation");
     if (supportsLights) result = result.Append("lights.engine");
+    if (supportsRendered) result = result.Append("lights.rendered");
     return result.ToArray();
 }
 
@@ -594,7 +598,7 @@ TelemetrySnapshot ToUnavailableSnapshot(RuntimeContext runtime, long sequence, s
     DateTimeOffset.UtcNow,
     new GameSnapshot(runtime.GameBuild, state),
     coordinateSystem,
-    CapabilitiesFor(null, runtime.SupportsLights),
+    CapabilitiesFor(null, runtime.SupportsLights, runtime.Rendered is not null),
     null,
     null,
     null,
@@ -681,6 +685,7 @@ sealed class RuntimeContext(
     PlayerOrientationReader? orientation,
     EngineCameraReader camera,
     EngineLightReader? lights,
+    RenderLightReader? rendered,
     LightOptions lightOptions) : IDisposable
 {
     public Process Process { get; } = process;
@@ -692,6 +697,7 @@ sealed class RuntimeContext(
     public PlayerOrientationReader? Orientation { get; } = orientation;
     public EngineCameraReader Camera { get; } = camera;
     public EngineLightReader? Lights { get; } = lights;
+    public RenderLightReader? Rendered { get; } = rendered;
     public LightOptions LightOptions { get; } = lightOptions;
     public bool SupportsLights => Lights is not null;
 
@@ -729,13 +735,21 @@ sealed class RuntimeContext(
         return (player, ReadOrientation(player));
     }
 
-    public EngineLightsSnapshot? CaptureLights((float X, float Y, float Z) player) =>
-        !LightOptions.Enabled ? null : Lights is null
-            ? UnsupportedLights()
-            : Lights.Capture(player, LightOptions.NearbyRadius);
+    public EngineLightsSnapshot? CaptureLights((float X, float Y, float Z) player)
+    {
+        if (!LightOptions.Enabled) return null;
+        var authored = Lights?.Capture(player, LightOptions.NearbyRadius) ?? UnsupportedLights();
+        return authored with { Rendered = Rendered?.Capture(player, LightOptions.NearbyRadius)
+            ?? RenderLightReader.Unavailable("unsupported-build") };
+    }
 
-    public EngineLightsSnapshot? UnavailableLights(string reason) =>
-        !LightOptions.Enabled ? null : Lights is null ? UnsupportedLights() : Lights.Unavailable(LightOptions.NearbyRadius, reason);
+    public EngineLightsSnapshot? UnavailableLights(string reason)
+    {
+        if (!LightOptions.Enabled) return null;
+        var authored = Lights?.Unavailable(LightOptions.NearbyRadius, reason) ?? UnsupportedLights();
+        return authored with { Rendered = RenderLightReader.Unavailable(
+            Rendered is null ? "unsupported-build" : reason) };
+    }
 
     private EngineLightsSnapshot UnsupportedLights() => new(
         "unavailable", EngineLightReader.SourceName, LightOptions.NearbyRadius, null,
@@ -743,6 +757,7 @@ sealed class RuntimeContext(
 
     public void Dispose()
     {
+        Rendered?.Dispose();
         Reader.Dispose();
         Process.Dispose();
     }

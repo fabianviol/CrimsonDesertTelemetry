@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(CrimsonDesertTelemetryAsi VERSION 1.0.0 LANGUAGES C CXX)
+project(CrimsonDesertTelemetryAsi VERSION 1.0.0 LANGUAGES C CXX ASM_MASM)
 
 include(FetchContent)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -60,6 +60,21 @@ foreach(header imstb_rectpack.h imstb_textedit.h imstb_truetype.h)
     file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt" "\n${header} (embedded in Dear ImGui)\n${stb_license}\n")
 endforeach()
 
+set(CDT_CONSOLE_SOURCES
+    src/console/breakpoint.cpp src/console/console.cpp src/console/debugcmd.cpp
+    src/console/discovery.cpp src/console/explorer.cpp src/console/manylights.cpp
+    src/console/mem.cpp src/console/rtti.cpp src/console/util.cpp)
+# The preserved research sources predate /WX; keep their warnings visible without
+# relaxing warnings for newly integrated production code.
+set_source_files_properties(${CDT_CONSOLE_SOURCES} PROPERTIES COMPILE_OPTIONS "/WX-;/wd4996")
+add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
+    src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm ${CDT_CONSOLE_SOURCES})
+target_compile_features(cdt_instruments PUBLIC cxx_std_20)
+target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+target_include_directories(cdt_instruments PUBLIC src)
+target_link_libraries(cdt_instruments PUBLIC minhook d3d12 dxgi bcrypt psapi user32)
+
 add_library(CrimsonDesertTelemetryAsi SHARED src/bootstrap.cpp)
 target_compile_features(CrimsonDesertTelemetryAsi PRIVATE cxx_std_20)
 target_compile_definitions(CrimsonDesertTelemetryAsi PRIVATE
@@ -68,7 +83,7 @@ target_compile_definitions(CrimsonDesertTelemetryAsi PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX)
 target_compile_options(CrimsonDesertTelemetryAsi PRIVATE /W4 /WX /permissive-)
-target_link_libraries(CrimsonDesertTelemetryAsi PRIVATE ws2_32 bcrypt cdt_overlay)
+target_link_libraries(CrimsonDesertTelemetryAsi PRIVATE ws2_32 bcrypt cdt_overlay cdt_instruments)
 set_target_properties(CrimsonDesertTelemetryAsi PROPERTIES
     PREFIX ""
     OUTPUT_NAME "CrimsonDesertTelemetry"
@@ -85,6 +100,37 @@ target_compile_options(CrimsonDesertTelemetryBootstrapSmoke PRIVATE /W4 /WX /per
 target_link_libraries(CrimsonDesertTelemetryBootstrapSmoke PRIVATE ws2_32)
 
 enable_testing()
+add_executable(CrimsonDesertTelemetryBuildGuardTests tests/build_guard_tests.cpp src/build_guard.cpp)
+target_compile_features(CrimsonDesertTelemetryBuildGuardTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetryBuildGuardTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetryBuildGuardTests PRIVATE CDT_BUILD_GUARD_TEST
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryBuildGuardTests PRIVATE /W4 /WX /permissive-)
+add_test(NAME native-build-guard COMMAND CrimsonDesertTelemetryBuildGuardTests)
+add_executable(CrimsonDesertTelemetryRenderBridgeTests tests/render_bridge_tests.cpp src/render_bridge.cpp)
+target_compile_features(CrimsonDesertTelemetryRenderBridgeTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetryRenderBridgeTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetryRenderBridgeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryRenderBridgeTests PRIVATE /W4 /WX /permissive-)
+add_test(NAME render-bridge COMMAND CrimsonDesertTelemetryRenderBridgeTests)
+add_executable(CrimsonDesertTelemetryRenderCaptureSmoke tests/render_capture_smoke.cpp
+    src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/console/mem.cpp src/console/util.cpp)
+target_compile_features(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE CDT_RENDER_CAPTURE_TEST
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+target_link_libraries(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE minhook d3d12 dxgi psapi user32)
+add_test(NAME render-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke)
+set_tests_properties(render-capture-d3d12 PROPERTIES TIMEOUT 20)
+add_executable(CrimsonDesertTelemetryFilterThunkTests tests/filter_thunk_tests.cpp
+    tests/thunk_fixture.asm src/filter_thunk.asm)
+target_compile_features(CrimsonDesertTelemetryFilterThunkTests PRIVATE cxx_std_20)
+target_compile_definitions(CrimsonDesertTelemetryFilterThunkTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryFilterThunkTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+target_link_libraries(CrimsonDesertTelemetryFilterThunkTests PRIVATE minhook)
+add_test(NAME render-filter-thunk COMMAND CrimsonDesertTelemetryFilterThunkTests)
+set_tests_properties(render-filter-thunk PROPERTIES TIMEOUT 15)
 add_executable(CrimsonDesertTelemetryOverlayTests tests/overlay_tests.cpp)
 target_link_libraries(CrimsonDesertTelemetryOverlayTests PRIVATE cdt_overlay)
 target_compile_options(CrimsonDesertTelemetryOverlayTests PRIVATE /W4 /WX /permissive-)
@@ -95,6 +141,8 @@ target_link_libraries(CrimsonDesertTelemetryGraphicsSmoke PRIVATE cdt_overlay)
 target_compile_options(CrimsonDesertTelemetryGraphicsSmoke PRIVATE /W4 /WX /permissive-)
 add_test(NAME overlay-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke)
 set_tests_properties(overlay-d3d12 PROPERTIES TIMEOUT 45)
+add_test(NAME notifications-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --notices)
+set_tests_properties(notifications-d3d12 PROPERTIES TIMEOUT 45)
 
 add_executable(CrimsonDesertTelemetryClientSmoke tests/client_smoke.cpp)
 target_link_libraries(CrimsonDesertTelemetryClientSmoke PRIVATE cdt_overlay ws2_32 bcrypt crypt32)

@@ -1,8 +1,8 @@
 # API reference
 
 Public contract for Crimson Desert Telemetry, HTTP API **v1**, snapshot schemas
-**1.1** and **1.2**. These are separate version numbers. This document describes the
-shipped implementation, not planned features or historical memory-scanning tools.
+**1.1–1.4**. These are separate version numbers. Schema 1.4 is implemented in the
+unified 1.3.0-preview.1 candidate; its new native capture still requires live validation.
 
 ## Connect
 
@@ -29,17 +29,29 @@ Port=27311
 SampleRateHz=60
 
 [Lights]
-Enabled=0
+Enabled=1
 NearbyRadius=100
+ManyLights=1
+ManyLightsSampleRateHz=20
 
 [Overlay]
 Enabled=0
+
+[Notifications]
+Enabled=1
+DurationMilliseconds=6000
 ```
 
 `Port` supports 1024–65535; `SampleRateHz` supports 1–240. `NearbyRadius` supports
 1–100000 game units. The ASI clamps values
 outside those ranges. Changes require a game restart. HUD enablement is independent
 of telemetry. Keep the `.cfg` runtime metadata unchanged; it is not user configuration.
+
+Startup/loading/ready/error notices are independent of the full HUD. Disable both
+`[Overlay] Enabled` and `[Notifications] Enabled` to avoid all UI hooks/client.
+Lighting capture has its own `[Lights]` switches and still instruments the renderer
+when enabled. Notices also consult loopback health while no fresh snapshot exists,
+so an unsupported build can report its reason before the first game sample.
 
 Alternatively, from a source checkout with the .NET 8 SDK:
 
@@ -102,7 +114,7 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` with lights disabled; additive `1.3` when the light module is requested. |
+| `schemaVersion` | string | `1.1` with lights disabled; additive `1.4` when the light module is requested. |
 | `status` | string | Sampler status; see below. |
 | `gameRunning` | boolean | Sampler's current process-presence observation, not a guarantee of playable data. |
 | `supportedBuild` | boolean or null | `null` before support is known; `false` when compatibility checks rejected the executable; `true` after a runtime was opened through either compatibility mode. On `error`, do not interpret it as successful live-data validation. |
@@ -184,14 +196,14 @@ and successful CLI `snapshot`/`track` output. The following examples are synthet
 
 ### Envelope and availability
 
-All top-level fields in the 1.1 example are required. Schemas 1.2 and 1.3 additionally
-require `lights`. `vector3` below means an object
+All top-level fields in the 1.1 example are required. Schemas 1.2–1.4 additionally
+require `lights`; 1.4 also requires `lights.rendered`. `vector3` below means an object
 with three required, finite JSON numbers: `x`, `y`, `z`. There are no string-encoded
 numbers, NaN values, addresses, process handles or memory blobs in this contract.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` normally or `1.2` with requested light telemetry. Compare versions as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry in the current candidate. Compare as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -211,15 +223,17 @@ Currently known capabilities:
 - `player.orientation`: validated player physics-root orientation for this sample.
 - `lights.engine`: the exact-build Engine-Light reader is available. Its presence
   does not mean `lights.status` is currently `available`.
+- `lights.rendered`: this exact build has a supported native filtered-ManyLights bridge;
+  require `lights.rendered.status == "available"` before consuming its sources.
 
 Important: `loading`/`stopped` messages still list the three base capabilities, but
 their `player`, `camera`, and `quality` fields are null. Capabilities alone are not
 a validity check. Require `game.state == "playing"` and the objects you need.
 
-### Optional engine lights (schema 1.3)
+### Authored engine lights
 
-The light module is disabled by default and currently gated to the exact validated
-Steam build `25050808` executable hash. Requesting it on another build produces
+The authored reader is gated to the exact validated Steam build `25050808` or
+`25116796` executable hashes. Requesting it on another build produces
 `lights.status="unavailable"` with reason `unsupported-build`; it never guesses
 offsets. A changing or unreadable scene walk likewise publishes no source array.
 
@@ -232,6 +246,7 @@ Each source can contain:
 | `position` | Validated world position in the same game coordinates as the player. |
 | `kind` | `point` or `spot` only when the engine encoding is recognized; otherwise omitted. |
 | `direction` | Normalized world-space emission direction for a `spot`, obtained by rotating local +Z with its validated transform quaternion. Omitted for point lights and if the quaternion is invalid. |
+| `coneHalfAngleDegrees` | Recognized spotlight cone half-angle; omitted for point lights. |
 | `colorLinear` | Engine record's emitted linear RGB base color. |
 | `recordActive` | Record-maintenance flag; **not** a promise that the light is visibly emitting. |
 | `rendererSelected` | Whether this record is selected for the mapped renderer path. |
@@ -249,6 +264,40 @@ checks its backlink and vector bounds, copies the contiguous records, then resol
 the complete walk again. One complete retry is allowed; no previous light snapshot
 is reused after failure. This protects against scene transitions but is not an
 engine-frame atomicity guarantee.
+
+### Current rendered light contributions (schema 1.4)
+
+`lights.rendered` is independent of the authored reader's availability. It has
+`status`, `source="filtered-manylights"`, and `diagnostics`. An available sample
+also has `captureSequence`, the captured engine `frameNumber`, `capturedAt`,
+`ageMilliseconds`, its paired `camera`, and `sources` (possibly empty). Camera-relative
+GPU positions are converted using **this paired camera**, not the envelope's newer camera.
+The sample is published only after the GPU fence completes; samples older than 500 ms
+are unavailable. The default native capture rate is 20 Hz, independent of API publication.
+
+| Contribution field | Meaning |
+|---|---|
+| `sampleIndex` | Index within this GPU sample, **not an object ID**. |
+| `position` | World position in the same coordinates as the player. |
+| `colorLinear` | Current linear HDR renderer RGB, including measured animation/pulsation. Not sRGB or lumens. |
+| `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
+| `kind` | Recognized `point` or `spot`; otherwise omitted. |
+| `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
+
+Diagnostics count active records, published records, malformed records and records
+outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and
+include `unavailableReason`, for example `bridge-missing`, `bridge-waiting`,
+`bridge-stale`, `native-fault`, `legacy-plugin-conflict`, or `unsupported-build`.
+The bridge validates protocol, PID **and process creation time**, sequence, dimensions,
+camera frame and completion flags. No previous successful result is relabelled as fresh.
+
+Use rendered contributions for current local illumination, authored records for
+their separate base/selection metadata. They overlap: **do not sum both feeds**.
+One physical flame can contribute multiple records. Absence does not distinguish
+OFF from culling/unloaded sources; no generic enabled flag or permanent identity is
+invented. Sun/sky, emissive surfaces and every other possible lighting path are not
+claimed covered. The unified native path is exact-build gated, unlike the basic
+player/camera compatibility resolver.
 
 ```json
 {
@@ -416,16 +465,16 @@ are diagnostics, not this public snapshot contract.
 ## Compatibility and limits
 
 Ignore unknown optional fields/capability strings and handle null or missing
-optional fields. The published schema is strict for the supported 1.1/1.2/1.3 shapes
+optional fields. The published schema is strict for the supported 1.1/1.2/1.3/1.4 shapes
 (`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
 Reject an unsupported major version explicitly. Breaking contract changes require
 a new major API/product version; build offsets are not part of the public API.
 
-Not included: fire/effect illumination, weather/time of day, worldspace identifiers, bones,
-animated pose, input injection, event history, engine frame IDs or GPU timestamps.
-The current camera validator rejects positions more than 50 game units from the
-player; distant free-camera/cutscene setups may therefore report unavailable data.
+Not included: complete global/emissive lighting, weather/time of day, durable worldspace
+identifiers, bones, animated pose, event history or GPU timestamps. The current build's
+full SceneConstantBuffer validates the camera independently of player distance; the
+older indirect camera layouts retain their 50-game-unit distance guard.
 The [documented game build](../README.md#current-support) is manually validated.
 Other executable hashes are accepted only when the complete guarded layout is
 resolved uniquely and live values continue to pass runtime validation. This is

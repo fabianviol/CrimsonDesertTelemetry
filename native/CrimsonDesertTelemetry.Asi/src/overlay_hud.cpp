@@ -95,8 +95,8 @@ void DrawHud(const View& view, const Config& config, const bool details)
     if (!details) return;
     draw->AddLine(point(20, 354), point(490, 354), IM_COL32(40, 61, 76, 255));
     text(20, 368, White, "DIAGNOSTICS", 14);
-    text(20, 395, Muted, std::format("Schema 1.1  |  sequence {}  |  {:.1f} received Hz",
-        view.sample.sequence, live ? view.rateHz : 0.0), 13);
+    text(20, 395, Muted, std::format("Schema {}  |  sequence {}  |  {:.1f} received Hz",
+        view.sample.schemaVersion, view.sample.sequence, live ? view.rateHz : 0.0), 13);
     text(20, 416, Muted, view.hasSample ? std::format("Sample age {:.0f} ms  |  capture {} us (not latency)",
         AgeMs(view, now), view.sample.captureUs) : "Sample age --  |  capture --", 13);
     text(20, 437, Muted, std::format("Camera sources {}/{}  |  states {}  |  rebound {}",
@@ -106,6 +106,38 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20, 500, Muted, "Player up       " + VectorText(sample.playerUp, 3), 13);
     text(20, 521, Muted, "Build " + view.sample.build, 13);
     text(20, 542, Muted, "D3D12 / SDR  |  passive HUD  |  no mouse capture", 13);
-    text(20, 570, Cyan, "Player + camera telemetry. Light-source discovery is not included.", 12);
+    text(20, 570, Cyan, "Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"), 12);
+}
+
+void DrawNotice(const Notice& notice, const Config& config, bool hudVisible, bool details)
+{
+    const auto display = ImGui::GetIO().DisplaySize;
+    const float scale = std::min(std::max(1.0f, display.y / 1080.0f), display.x / 660.0f);
+    if (scale < .3f) return;
+    const float margin = 20 * scale, width = 620 * scale;
+    float x = margin, y = margin;
+    auto* font = ImGui::GetFont();
+    const float wrap = width - 36 * scale;
+    const auto detailSize = font->CalcTextSizeA(15 * scale, wrap, wrap,
+        notice.detail.c_str(), nullptr);
+    const float height = 60 * scale + detailSize.y;
+    // Default HUD uses top-left too. Place notices beside it when possible,
+    // otherwise below. Bottom-left/right HUDs do not consume this origin.
+    if (hudVisible && config.corner == 0)
+    {
+        const float hudScale = HudScale(display.x, display.y, config, details);
+        const float beside = 550 * hudScale;
+        if (beside + width + margin <= display.x) x = beside;
+        else y = (details ? 640 : 384) * hudScale;
+    }
+    y = std::min(y, std::max(margin, display.y - height - margin));
+    auto* draw = ImGui::GetForegroundDrawList();
+    const ImVec2 start(x,y), end(x+width,y+height);
+    const ImU32 accent = notice.error ? IM_COL32(255,157,111,255) : Cyan;
+    draw->AddRectFilled(start, end, IM_COL32(9,20,30,240), 8 * scale);
+    draw->AddRect(start, end, accent, 8 * scale);
+    draw->AddText(font, 13 * scale, ImVec2(x+18*scale,y+10*scale), Muted, "CRIMSON DESERT TELEMETRY");
+    draw->AddText(font, 18 * scale, ImVec2(x+18*scale,y+29*scale), accent, notice.title.c_str());
+    draw->AddText(font, 15 * scale, ImVec2(x+18*scale,y+55*scale), White, notice.detail.c_str(), nullptr, wrap);
 }
 }

@@ -52,7 +52,9 @@ public sealed record EngineLightsSnapshot(
     IReadOnlyList<EngineLightSnapshot>? Sources,
     EngineLightDiagnosticsSnapshot Diagnostics,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? UnavailableReason = null);
+    string? UnavailableReason = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    RenderLightsSnapshot? Rendered = null);
 
 public sealed record EngineLightSnapshot(
     CameraVector3 Position,
@@ -66,7 +68,9 @@ public sealed record EngineLightSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CameraVector3? RendererRgbLinear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CameraVector3? Direction = null);
+    CameraVector3? Direction = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    float? ConeHalfAngleDegrees = null);
 
 public sealed record EngineLightDiagnosticsSnapshot(
     int SourceRecords,
@@ -79,3 +83,27 @@ public sealed record EngineLightDiagnosticsSnapshot(
     long WalkChanged,
     long WalkRetrySucceeded,
     long WalkUnavailable);
+
+public sealed record RenderLightsSnapshot(
+    string Status,
+    string Source,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ulong? CaptureSequence,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? FrameNumber,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? CapturedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AgeMilliseconds,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CameraSnapshot? Camera,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<RenderedLightSnapshot>? Sources,
+    RenderLightDiagnosticsSnapshot Diagnostics,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UnavailableReason = null);
+
+public sealed record RenderedLightSnapshot(
+    int SampleIndex,
+    CameraVector3 Position,
+    CameraVector3 ColorLinear,
+    float LuminanceLinear,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CameraVector3? Direction,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] float? ConeHalfAngleDegrees);
+
+public sealed record RenderLightDiagnosticsSnapshot(
+    int ActiveRecords, int PublishedRecords, int Malformed, int OutsideRadius);

@@ -16,3 +16,6 @@ UpgradeLog*.htm
 *.dmp
 *.jsonl
 *.mp4
+/research/
+/external/
+/archive/

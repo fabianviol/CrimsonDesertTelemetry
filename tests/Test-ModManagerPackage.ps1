@@ -35,8 +35,21 @@ function Assert-Payload([hashtable]$Files) {
     if ($null -eq $runtime.runtimeOptions) { throw 'Invalid .NET runtime configuration.' }
     $ini = [Text.Encoding]::UTF8.GetString($Files['CrimsonDesertTelemetry.ini'])
     if ($ini -notmatch '(?m)^\[Overlay\]' -or $ini -notmatch '(?m)^ToggleKey=119\r?$') { throw 'Missing overlay configuration.' }
-    if ($ini -notmatch '(?ms)^\[Lights\].*?^Enabled=0\r?$' -or $ini -notmatch '(?m)^NearbyRadius=100\r?$') {
-        throw 'Engine lights must be present and disabled by default.'
+    $notifications = [regex]::Match($ini, '(?ms)^\[Notifications\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
+    if ($notifications -notmatch '(?m)^Enabled=1\r?$' -or $notifications -notmatch '(?m)^DurationMilliseconds=6000\r?$') {
+        throw 'Missing independent startup notification defaults.'
+    }
+    $lights = [regex]::Match($ini, '(?ms)^\[Lights\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
+    foreach ($setting in @('Enabled=1', 'NearbyRadius=100', 'ManyLights=1', 'ManyLightsSampleRateHz=20')) {
+        if ($lights -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
+            throw "Missing unified light default: $setting"
+        }
+    }
+    foreach ($setting in @('EnableConsole=0', 'EnableExplorer=0', 'AllowWrite=0', 'AllowCall=0',
+        'AllowDebugCommands=0', 'AllowBreakpoints=0', 'AllowManyLights=0')) {
+        if ($ini -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
+            throw "Research instruments must be opt-in: $setting"
+        }
     }
     $notices = [Text.Encoding]::UTF8.GetString($Files['THIRD-PARTY-NOTICES.txt'])
     foreach ($dependency in @('Dear ImGui', 'MinHook', 'JSON for Modern C++', 'Tristan Grimmer', 'Sean Barrett')) {
@@ -62,6 +75,7 @@ if ($SelfTest) {
     Assert-Rejected { Assert-PackageNames ($expectedNames + 'crimson-desert-telemetry.runtimeconfig.json') } 'Old runtime JSON was accepted.'
     Assert-Rejected { Assert-PackageNames ($expectedNames | Where-Object { $_ -ne 'crimson-desert-telemetry.deps.cfg' }) } 'Missing dependency metadata was accepted.'
     Assert-Rejected { Assert-PackageNames ($expectedNames + 'unexpected.exe') } 'A loose EXE was accepted.'
+    Assert-Rejected { Assert-PackageNames ($expectedNames + 'CrimsonHueConsole.asi') } 'A second console ASI was accepted.'
     Write-Output 'PASS package validator regression cases'
 }
 

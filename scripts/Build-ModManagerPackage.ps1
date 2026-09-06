@@ -1,10 +1,18 @@
 param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]*$')]
-    [string]$Version = '1.2.0'
+    [string]$Version = '1.3.0-preview.1'
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$artifactRoot = Join-Path $repoRoot 'artifacts\mod-manager'
+$archive = Join-Path $artifactRoot "CrimsonDesertTelemetry-v$Version-ModManagers.zip"
+if (Test-Path -LiteralPath $archive) {
+    throw "Release already exists; choose a new version instead of replacing it: $archive"
+}
+$buildStamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$stagingRoot = Join-Path $artifactRoot "v$Version-$buildStamp"
+$packageRoot = Join-Path $stagingRoot 'CrimsonDesertTelemetry'
 $cmake = $null
 $cmakeCommand = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($cmakeCommand) { $cmake = $cmakeCommand.Source }
@@ -22,10 +30,7 @@ if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) {
 
 $nativeSource = Join-Path $repoRoot 'native\CrimsonDesertTelemetry.Asi'
 $nativeBuild = Join-Path $repoRoot 'build\native-package'
-$managedPublish = Join-Path $repoRoot 'build\managed-package'
-$artifactRoot = Join-Path $repoRoot 'artifacts\mod-manager'
-$packageRoot = Join-Path $artifactRoot 'CrimsonDesertTelemetry'
-$archive = Join-Path $artifactRoot "CrimsonDesertTelemetry-v$Version-ModManagers.zip"
+$managedPublish = Join-Path $repoRoot "build\managed-package\v$Version-$buildStamp"
 
 function Assert-WithinRepo([string]$Path) {
     $resolvedRepo = [IO.Path]::GetFullPath($repoRoot).TrimEnd('\') + '\'
@@ -46,7 +51,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Native ASI configure failed.' }
 & $cmake --build $nativeBuild --config Release
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI build failed.' }
 
-if (Test-Path -LiteralPath $packageRoot) { Remove-Item -LiteralPath $packageRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $packageRoot | Out-Null
 
 $files = @(
@@ -65,11 +69,12 @@ foreach ($file in $files) {
     Copy-Item -LiteralPath $file.Source -Destination (Join-Path $packageRoot $file.Name)
 }
 
-if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+# No -Force: also refuse a release created by another build while this one ran.
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $archive -CompressionLevel Optimal
 
 & (Join-Path $repoRoot 'tests\Test-ModManagerPackage.ps1') -PackageDirectory $packageRoot -ArchivePath $archive -SelfTest
 
 $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256
 Write-Output "Package: $archive"
+Write-Output "Expanded package: $packageRoot"
 Write-Output "SHA-256: $($hash.Hash)"

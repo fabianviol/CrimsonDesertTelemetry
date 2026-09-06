@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include <winhttp.h>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -16,7 +17,7 @@ namespace cdt::overlay
 namespace
 {
 constexpr size_t MaximumTelemetryMessageBytes = 4 * 1024 * 1024;
-struct Shared { std::mutex mutex; View view; };
+struct Shared { std::mutex mutex; View view; std::string healthStatus, healthError; };
 // Deliberately process-lifetime: callbacks/worker teardown must not run in DllMain.
 Shared& SharedView() { static auto* shared = new Shared; return *shared; }
 struct HttpHandle
@@ -45,7 +46,7 @@ float IniFloat(const std::filesystem::path& ini, const wchar_t* key, float fallb
 }
 void Connect(const Config config, HANDLE stop)
 {
-    if (!config.enabled) return;
+    if (!config.enabled && !config.notifications) return;
     while (WaitForSingleObject(stop, 0) == WAIT_TIMEOUT)
     {
         View view;
@@ -130,6 +131,51 @@ void Connect(const Config config, HANDLE stop)
     }
 }
 struct WorkerArgs { Config config; HANDLE stop; std::filesystem::path directory; };
+void PollHealth(unsigned short port)
+{
+    // This is a bounded diagnostic read on the maintenance worker, never on the
+    // game's render thread. Unsupported builds do not produce stream snapshots.
+    std::string status, error;
+    try
+    {
+        HttpHandle session(WinHttpOpen(L"CrimsonDesertTelemetryStatus/1", WINHTTP_ACCESS_TYPE_NO_PROXY,
+            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+        if (!session.value) throw std::runtime_error("Health session failed");
+        WinHttpSetTimeouts(session.value, 500, 500, 500, 500);
+        HttpHandle connection(WinHttpConnect(session.value, L"127.0.0.1", port, 0));
+        HttpHandle request(WinHttpOpenRequest(connection.value, L"GET", L"/v1/health", nullptr,
+            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0));
+        DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+        if (!request.value || !WinHttpSetOption(request.value, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect)) ||
+            !WinHttpSendRequest(request.value, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+            !WinHttpReceiveResponse(request.value, nullptr)) throw std::runtime_error("Health unavailable");
+        DWORD code{}, size = sizeof(code);
+        if (!WinHttpQueryHeaders(request.value, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &code, &size, WINHTTP_NO_HEADER_INDEX) || code != 200)
+            throw std::runtime_error("Health response failed");
+        std::string body;
+        std::array<char, 4096> bytes{};
+        for (unsigned reads = 0; reads < 5; ++reads)
+        {
+            DWORD received{};
+            if (!WinHttpReadData(request.value, bytes.data(), static_cast<DWORD>(bytes.size()), &received))
+                throw std::runtime_error("Health read failed");
+            if (!received) break;
+            body.append(bytes.data(), received);
+            if (body.size() > 16384) throw std::runtime_error("Health size limit");
+        }
+        const auto json = nlohmann::json::parse(body);
+        status = json.at("status").get<std::string>();
+        if (json.contains("error") && json["error"].is_string()) error = json["error"].get<std::string>();
+        if (status.size() > 64) status = "error";
+        if (error.size() > 300) error.resize(300);
+    }
+    catch (...) { status = "host-unreachable"; }
+    auto& shared = SharedView();
+    std::lock_guard guard(shared.mutex);
+    shared.healthStatus = std::move(status);
+    shared.healthError = std::move(error);
+}
 DWORD WINAPI Worker(void* parameter)
 {
     auto* args = static_cast<WorkerArgs*>(parameter);
@@ -142,9 +188,25 @@ DWORD WINAPI Worker(void* parameter)
         if (!installed) return 1;
         std::thread([args] { try { Connect(args->config, args->stop); } catch (...) { } }).detach();
         std::string last;
+        std::string lastNotice;
+        NoticeTracker notices;
+        Clock::time_point lastHealth{};
         while (WaitForSingleObject(args->stop, 50) == WAIT_TIMEOUT)
         {
             MaintainGraphics();
+            if (args->config.notifications && Clock::now() - lastHealth >= std::chrono::seconds(2))
+            {
+                View current;
+                TryRead(current);
+                if (!IsLive(current, Clock::now(), args->config.staleMs)) PollHealth(args->config.port);
+                else
+                {
+                    auto& shared = SharedView();
+                    std::lock_guard guard(shared.mutex);
+                    shared.healthStatus.clear(); shared.healthError.clear();
+                }
+                lastHealth = Clock::now();
+            }
             const std::string status = GraphicsStatus();
             if (status != last)
             {
@@ -152,6 +214,15 @@ DWORD WINAPI Worker(void* parameter)
                 log.flush();
                 last = status;
             }
+            View view;
+            TryRead(view);
+            const auto notice = notices.Update(view, args->config, Clock::now());
+            const std::string noticeText = notice ? notice->title + ": " + notice->detail : "";
+            if (!noticeText.empty() && noticeText != lastNotice)
+            {
+                log << "Status: " << noticeText << '\n'; log.flush();
+            }
+            lastNotice = noticeText;
         }
     }
     catch (...) { return 2; }
@@ -164,6 +235,8 @@ bool TryRead(View& view)
     std::unique_lock lock(shared.mutex, std::try_to_lock);
     if (!lock.owns_lock()) return false;
     view = shared.view;
+    view.healthStatus = shared.healthStatus;
+    view.healthError = shared.healthError;
     return true;
 }
 void RunClient(Config config, HANDLE stopEvent) { Connect(config, stopEvent); }
@@ -178,7 +251,12 @@ Config LoadConfig(const std::filesystem::path& ini)
     Config config;
     const auto integer = [&](const wchar_t* key, int fallback) { return static_cast<int>(GetPrivateProfileIntW(L"Overlay", key, fallback, ini.c_str())); };
     config.enabled = integer(L"Enabled", config.enabled ? 1 : 0) != 0;
-    if (!config.enabled) return config;
+    config.notifications = GetPrivateProfileIntW(L"Notifications", L"Enabled", 0, ini.c_str()) != 0;
+    config.lightsExpected = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str()) != 0;
+    config.renderedExpected = config.lightsExpected && GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, ini.c_str()) != 0;
+    config.notificationDurationMs = static_cast<int>(std::clamp(
+        GetPrivateProfileIntW(L"Notifications", L"DurationMilliseconds", 6000, ini.c_str()), 1000u, 30000u));
+    if (!config.enabled && !config.notifications) return config;
     config.visible = integer(L"InitiallyVisible", 1) != 0;
     config.details = integer(L"ShowDetails", 0) != 0;
     config.autoScale = integer(L"AutoScale", 1) != 0;
@@ -200,7 +278,7 @@ void Start(const HMODULE module, HANDLE stopEvent, const std::filesystem::path& 
             _wcsicmp(std::filesystem::path(executable.data()).filename().c_str(), L"CrimsonDesert.exe") != 0) return;
         const auto config = LoadConfig(directory / L"CrimsonDesertTelemetry.ini");
         // Return before pinning the module, creating HUD workers, hooks or a client.
-        if (!config.enabled) return;
+        if (!config.enabled && !config.notifications) return;
         const auto name = std::format(L"Local\\CrimsonDesertTelemetry.Overlay.{}", GetCurrentProcessId());
         HANDLE singleton = CreateMutexW(nullptr, FALSE, name.c_str());
         if (!singleton) return;

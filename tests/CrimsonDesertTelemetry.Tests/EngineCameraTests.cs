@@ -132,28 +132,93 @@ internal static class EngineCameraTests
 
     public static void DirectCameraLayout()
     {
-        const ulong moduleBase = 0x140000000;
-        const ulong camera = 0x200000;
-        const ulong source = 0x210000;
-        var definition = BuildDefinition.LoadAll(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")))
-            .Single(value => value.SteamBuildId == "25116796").EngineCamera
-            ?? throw new InvalidOperationException("Direct camera definition is not embedded.");
-        var memory = new Memory();
-        var code = definition.CameraReferencePattern.Split(' ')
-            .Select(token => token == "??" ? (byte)0 : Convert.ToByte(token, 16)).ToArray();
-        BitConverter.GetBytes(checked((int)((long)definition.CameraGlobalRva -
-            (long)definition.CameraReferenceRva - 7))).CopyTo(code, 3);
-        memory.Blocks[moduleBase + definition.CameraReferenceRva] = code;
-        memory.Q(moduleBase + definition.CameraGlobalRva, camera);
-        memory.Q(camera, moduleBase + definition.CameraVtableRva);
-        memory.U(camera + checked((ulong)definition.FrameCounterOffset), 100);
-        memory.Q(camera + 0x428, source);
-        memory.Blocks[source] = SourceBytes();
-        var reader = new EngineCameraReader(memory, moduleBase, definition, () => TimeSpan.Zero);
-        Check(reader.Capture((10, 20, 30)).Camera.Address == source,
+        var fixture = new DirectFixture();
+        Check(fixture.Reader.Capture((10, 20, 30)).Camera.Address == DirectFixture.SourceAddress,
             "Direct camera layout did not resolve its source.");
-        memory.Q(camera, moduleBase + definition.CameraVtableRva + 8);
-        Reject(() => reader.Capture((10, 20, 30)), "Direct camera layout accepted the wrong camera type.");
+        fixture.Memory.Q(DirectFixture.Camera, DirectFixture.Base + fixture.Definition.CameraVtableRva + 8);
+        Reject(() => fixture.Reader.Capture((10, 20, 30)), "Direct camera layout accepted the wrong camera type.");
+    }
+
+    public static void SceneConstantsValidation()
+    {
+        var bytes = SceneBytes();
+        var scene = SceneConstantsDecoder.Decode(bytes);
+        Check(scene.FrameNumber == 42 && scene.ScreenWidth == 3840 && scene.ScreenHeight == 2160 &&
+            scene.Camera.Position == new CameraVector3(10, 20, 30) && double.IsNaN(scene.Camera.DistanceFromPlayer),
+            "Scene constants required a player anchor or mapped the wrong camera fields.");
+        var distant = SceneConstantsDecoder.Decode(bytes, 0x90000, (-1000, 0, -1000));
+        Check(distant.Camera.DistanceFromPlayer > 50 && distant.Camera.Address == 0x90000,
+            "Self-identifying scene still depends on player proximity.");
+        F(bytes, 0x870, 1000); F(bytes, 0x874, 2000); F(bytes, 0x878, 3000);
+        Check(SceneConstantsDecoder.Decode(bytes).Camera.Position == scene.Camera.Position,
+            "Rendering origin was substituted for the actual view position.");
+        void Bad(Action<byte[]> change, string message)
+        {
+            var invalid = SceneBytes(); change(invalid);
+            Reject(() => SceneConstantsDecoder.Decode(invalid), message);
+        }
+        Bad(data => F(data, 0x38, 1f / 2560), "Mismatched screen reciprocal was accepted.");
+        Bad(data => F(data, 0x34, float.NaN), "Non-finite resolution was accepted.");
+        Bad(data => F(data, 0xAC0, 1), "Wrong scene layout signature was accepted.");
+        Bad(data => F(data, 0x410, 0), "World view translation disagreed with the camera.");
+        Bad(data => F(data, 0x450, 10), "Relative view matrix silently introduced another origin.");
+        Bad(data => F(data, 0x420, -1), "Relative and world camera bases disagreed.");
+        Bad(data => { F(data, 0x408, -1); F(data, 0x448, -1); }, "View matrices disagreed with the view direction.");
+        Reject(() => SceneConstantsDecoder.Decode(new byte[0x868]), "Truncated scene constants accepted.");
+        Reject(() => SceneConstantsDecoder.Decode(new byte[0xB01]), "Unexpected scene constants layout accepted.");
+    }
+
+    public static void SceneConstantsFreshness()
+    {
+        var fixture = new DirectFixture();
+        _ = fixture.Reader.Capture((10, 20, 30));
+        fixture.Now = TimeSpan.FromSeconds(1);
+        fixture.Memory.U(DirectFixture.Camera + (ulong)fixture.Definition.FrameCounterOffset, 101);
+        Reject(() => fixture.Reader.Capture((10, 20, 30)),
+            "Advancing context hid a stale SceneConstantBuffer.");
+        BitConverter.GetBytes(uint.MaxValue).CopyTo(fixture.Source, 0x20);
+        _ = fixture.Reader.Capture((10, 20, 30));
+        fixture.Now = TimeSpan.FromSeconds(2);
+        BitConverter.GetBytes(0u).CopyTo(fixture.Source, 0x20);
+        _ = fixture.Reader.Capture((-1000, 0, -1000));
+        var sourceReads = 0;
+        fixture.Memory.BeforeRead = (address, _) =>
+        {
+            if (address == DirectFixture.SourceAddress)
+                BitConverter.GetBytes(++sourceReads).CopyTo(fixture.Source, 0x20);
+        };
+        Reject(() => fixture.Reader.Capture((10, 20, 30)), "Two different scene frames accepted as coherent.");
+        Check(sourceReads == 6, "Scene constants capture exceeded its bounded retry budget.");
+    }
+
+    private sealed class DirectFixture
+    {
+        public const ulong Base = 0x140000000;
+        public const ulong Camera = 0x200000;
+        public const ulong SourceAddress = 0x210000;
+        public Memory Memory { get; } = new();
+        public byte[] Source => Memory.Blocks[SourceAddress];
+        public EngineCameraDefinition Definition { get; }
+        public EngineCameraReader Reader { get; }
+        public TimeSpan Now;
+
+        public DirectFixture()
+        {
+            Definition = BuildDefinition.LoadAll(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")))
+                .Single(value => value.SteamBuildId == "25116796").EngineCamera
+                ?? throw new InvalidOperationException("Direct camera definition is not embedded.");
+            var code = Definition.CameraReferencePattern.Split(' ')
+                .Select(token => token == "??" ? (byte)0 : Convert.ToByte(token, 16)).ToArray();
+            BitConverter.GetBytes(checked((int)((long)Definition.CameraGlobalRva -
+                (long)Definition.CameraReferenceRva - 7))).CopyTo(code, 3);
+            Memory.Blocks[Base + Definition.CameraReferenceRva] = code;
+            Memory.Q(Base + Definition.CameraGlobalRva, Camera);
+            Memory.Q(Camera, Base + Definition.CameraVtableRva);
+            Memory.U(Camera + checked((ulong)Definition.FrameCounterOffset), 100);
+            Memory.Q(Camera + 0x428, SourceAddress);
+            Memory.Blocks[SourceAddress] = SceneBytes();
+            Reader = new EngineCameraReader(Memory, Base, Definition, () => Now);
+        }
     }
 
     private sealed class Fixture
@@ -227,6 +292,20 @@ internal static class EngineCameraTests
         F(bytes, 0x98, 1); F(bytes, 0x3E0, 1); F(bytes, 0x3F4, 1);
         F(bytes, 0x4E0, 1.20628512f); F(bytes, 0x4F4, 2.14450693f);
         F(bytes, 0x50C, 1); F(bytes, 0x518, .2f); F(bytes, 0x860, .2f);
+        return bytes;
+    }
+
+    internal static byte[] SceneBytes()
+    {
+        var bytes = new byte[SceneConstantsDecoder.SourceLength];
+        SourceBytes().CopyTo(bytes, 0);
+        BitConverter.GetBytes(42u).CopyTo(bytes, 0x20);
+        F(bytes, 0x30, 3840); F(bytes, 0x34, 2160);
+        F(bytes, 0x38, 1f / 3840); F(bytes, 0x3C, 1f / 2160);
+        F(bytes, 0x408, 1);
+        F(bytes, 0x410, -10); F(bytes, 0x414, -20); F(bytes, 0x418, -30); F(bytes, 0x41C, 1);
+        F(bytes, 0x420, 1); F(bytes, 0x434, 1); F(bytes, 0x448, 1); F(bytes, 0x45C, 1);
+        F(bytes, 0xAC0, 6360000f);
         return bytes;
     }
     private static void F(byte[] bytes, int offset, float value) => BitConverter.GetBytes(value).CopyTo(bytes, offset);

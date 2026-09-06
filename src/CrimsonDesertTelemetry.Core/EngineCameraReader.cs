@@ -61,19 +61,26 @@ public sealed class EngineCameraReader
             try
             {
                 var before = ReadChain();
-                var counter = Counter(before.Context);
-                var first = _reader.Read(Pointer(before.Source), SourceLength);
-                var second = _reader.Read(Pointer(before.Source), SourceLength);
+                var contextCounter = Counter(before.Context);
+                var sourceLength = _directCamera ? SceneConstantsDecoder.SourceLength : SourceLength;
+                var first = _reader.Read(Pointer(before.Source), sourceLength);
+                var second = _reader.Read(Pointer(before.Source), sourceLength);
                 var after = ReadChain();
-                if (before != after || counter != Counter(after.Context) || !SameCameraFields(first, second))
+                if (before != after || contextCounter != Counter(after.Context) ||
+                    (_directCamera ? !first.AsSpan().SequenceEqual(second) : !SameCameraFields(first, second)))
                     continue;
-                var camera = Decode(second, after.Source, playerPosition);
+                var scene = _directCamera ? SceneConstantsDecoder.Decode(second, after.Source, playerPosition) : null;
+                var camera = scene?.Camera ?? Decode(second, after.Source, playerPosition);
+                // The scene object's counter can advance even when its constants
+                // have stopped updating. The buffer's own frame is authoritative
+                // for the measured direct layout; the older layout is unchanged.
+                var counter = scene?.FrameNumber ?? contextCounter;
                 var now = _clock();
                 var relocated = _lastChain is not null && _lastChain != after;
                 if (_lastChain is null || relocated || counter != _lastCounter)
                     _lastProgress = now;
                 else if (now - _lastProgress >= TimeSpan.FromSeconds(1))
-                    throw new InvalidDataException("Native camera render context is not advancing.");
+                    throw new InvalidDataException("Native camera source is not advancing.");
                 _lastChain = after;
                 _lastCounter = counter;
                 // Existing v1 quality counts describe one directly validated source,
@@ -146,6 +153,10 @@ public sealed class EngineCameraReader
 
     public static RenderCameraConstantsCandidate Decode(byte[] bytes, ulong address,
         (float X, float Y, float Z) player)
+        => DecodeCamera(bytes, address, player, requirePlayerProximity: true);
+
+    internal static RenderCameraConstantsCandidate DecodeCamera(byte[] bytes, ulong address,
+        (float X, float Y, float Z)? player, bool requirePlayerProximity)
     {
         if (bytes.Length < SourceLength) throw new InvalidDataException("Truncated native camera source.");
         float F(int offset) => BitConverter.ToSingle(bytes, offset);
@@ -154,8 +165,10 @@ public sealed class EngineCameraReader
         var forward = V(0x90);
         var right = new Vector3(F(0x3E0), F(0x3F0), F(0x400));
         var up = new Vector3(F(0x3E4), F(0x3F4), F(0x404));
-        var distance = Vector3.Distance(position, new Vector3(player.X, player.Y, player.Z));
-        if (!Finite(position) || !float.IsFinite(distance) || distance > 50 ||
+        var distance = player is { } reference
+            ? Vector3.Distance(position, new Vector3(reference.X, reference.Y, reference.Z)) : float.NaN;
+        if (!Finite(position) || (player is not null && !float.IsFinite(distance)) ||
+            (requirePlayerProximity && (!float.IsFinite(distance) || distance > 50)) ||
             !Unit(right) || !Unit(up) || !Unit(forward) ||
             Math.Abs(Vector3.Dot(right, up)) > .01f || Math.Abs(Vector3.Dot(right, forward)) > .01f ||
             Math.Abs(Vector3.Dot(up, forward)) > .01f ||

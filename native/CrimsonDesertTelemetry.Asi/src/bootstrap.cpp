@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include "overlay.h"
+#include "instruments.h"
 
 #include <algorithm>
 #include <array>
@@ -394,6 +395,13 @@ DWORD WINAPI BootstrapThread(void*)
         return 7;
     }
 }
+
+DWORD WINAPI InstrumentsThread(void*)
+{
+    try { cdt::instruments::Run(g_stopEvent); }
+    catch (...) { try { Log(L"Native instruments stopped after an unexpected error."); } catch (...) {} }
+    return 0;
+}
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
@@ -404,12 +412,20 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(instance);
         g_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (g_stopEvent == nullptr) return FALSE;
+        // Sole process attach. Preserve early console/debug-owner capture before
+        // asynchronous bootstrap; the imported proxy DllMain is not compiled.
+        cdt::instruments::EarlyAttach(instance);
+        HANDLE instruments = CreateThread(nullptr, 0, InstrumentsThread, nullptr, 0, nullptr);
+        if (instruments) CloseHandle(instruments);
         HANDLE thread = CreateThread(nullptr, 0, BootstrapThread, nullptr, 0, nullptr);
         if (thread == nullptr)
         {
-            CloseHandle(g_stopEvent);
-            g_stopEvent = nullptr;
-            return FALSE;
+            // Early hooks or the instrument worker may already exist. Returning
+            // FALSE here unloads code underneath them; retain the ASI and let
+            // its worker observe shutdown instead. The OS owns the event until
+            // process exit, including any in-flight worker wait.
+            SetEvent(g_stopEvent);
+            return TRUE;
         }
         CloseHandle(thread);
     }

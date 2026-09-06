@@ -1,9 +1,12 @@
 Crimson Desert Telemetry
 ========================
 
-This release package targets Definitive Mod Manager and JSON Mod Manager.
+This unified preview package targets Definitive Mod Manager and JSON Mod Manager.
 Complete install/uninstall and in-game validation in both managers is still pending.
-It starts the read-only Crimson Desert Telemetry host automatically with the game.
+One ASI starts the read-only external host and instruments the renderer for filtered
+ManyLights readback. It also contains the optional research console; do not load
+the old CrimsonHueConsole.asi alongside it. The unified capture needs a live restart
+test before this candidate is considered a validated release.
 The optional English in-game Dear ImGui HUD is completely disabled by default.
 The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
@@ -22,8 +25,8 @@ Requirements
 
 Default API
 -----------
-HTTP v1 remains unchanged. The default player/camera payload uses JSON schema 1.1;
-opt-in engine-light payloads use additive schema 1.2.
+HTTP v1 remains unchanged. Lights are enabled by default in this candidate and use
+additive JSON schema 1.4. Disabling [Lights] Enabled restores schema 1.1.
 HTTP:      http://127.0.0.1:27311/v1/snapshot
 Health:    http://127.0.0.1:27311/v1/health
 Schema:    http://127.0.0.1:27311/v1/schema
@@ -36,16 +39,25 @@ rate is 1-240 Hz. The server listens on loopback only.
 
 Nearby engine lights
 --------------------
-Set Enabled=1 in the [Lights] section to opt in. NearbyRadius is measured in game
-units; no metre conversion is claimed. This module is available only for the exact
-validated builds 25050808 and 25116796 and fails closed on other executable hashes. It reports
-verified engine records, not fire/effect illumination, physical lumens or range.
+[Lights] Enabled=1 enables authored light records. ManyLights=1 additionally enables
+automatic filtered renderer samples at ManyLightsSampleRateHz=20 on exact build
+25116796. NearbyRadius is measured in game units, not claimed metres. Set Enabled=0
+to disable both paths, or ManyLights=0 to disable only native lighting instrumentation.
+Current filtered contributions include position, linear HDR RGB/luminance and spot
+direction/cone, using a paired camera. They include the researched fire/candle path.
+The authored and filtered arrays overlap; do not add them together. Missing filtered
+data is not a physical OFF status. No permanent IDs, physical lumens, range or complete
+coverage of sun/sky/emissive lighting are claimed. See docs/API.md in the source repo.
 
 In-game HUD
 -----------
 To enable: set Enabled=1 in the [Overlay] section of CrimsonDesertTelemetry.ini
-and restart the game. The default Enabled=0 skips all HUD graphics hooks, hotkeys
-and its WebSocket client. Missing HUD configuration also defaults to disabled.
+and restart the game. The default Enabled=0 disables the full HUD and its hotkeys.
+Separate startup notices are enabled by [Notifications] Enabled=1. They show loading,
+ready and actionable errors at the top left; readiness disappears after six seconds,
+errors persist until resolved. A visible HUD moves notices out of its top-left area.
+Disable both sections to skip all UI graphics hooks/client. They require D3D12/SDR;
+if drawing fails, use the logs. Missing configuration defaults both UI features off.
 Telemetry remains active independently through [Server] Enabled=1.
 
 F8: show/hide the HUD. F9: show/hide diagnostics. No mouse input is captured.
@@ -69,7 +81,8 @@ The ASI must load before the game's swapchain is created. Always restart the gam
 after installing or changing configuration. Hot-unloading the ASI is not supported.
 
 The telemetry host reads game memory. The optional HUD hooks DXGI functions to draw
-inside the game but does not modify gameplay values. See THIRD-PARTY-NOTICES.txt
+inside the game. Native lighting adds a guarded game detour and D3D12 submission hook;
+optional research-console commands can alter game debug values. See THIRD-PARTY-NOTICES.txt
 for Dear ImGui, MinHook and JSON library licenses.
 
 Camera compatibility
@@ -82,7 +95,8 @@ HTTP/WebSocket JSON 1.1 player/camera contract is unchanged. Camera quality coun
 for the single validated source; farPlane is null (no validated finite distance).
 Camera timestamps indicate sampling time, not when the engine produced a frame.
 Each capture checks both pointer routes, object types, successive field reads and
-the render-context counter. Missing/changing data or a stalled counter is rejected.
+the source's own frame counter on current build (render-context counter on older builds).
+Missing/changing data or a stalled counter is rejected.
 These checks do not guarantee engine-frame atomicity.
 
 The .deps.cfg and .runtimeconfig.cfg files contain unmodified .NET JSON metadata.
@@ -93,11 +107,15 @@ text file under %LOCALAPPDATA%\CrimsonDesertTelemetry\Runtime, outside all mod a
 game folders. Cache files are keyed by the configuration's SHA-256 and verified
 before reuse. No executable or game data is copied to that cache.
 
-Upgrading the first test package
--------------------------------
-Replace the old package folder completely while the mod is disabled and the game
-is closed. Do not merge over it: leftover .deps.json/.runtimeconfig.json files
-would still be detected as invalid mods. Keep your INI settings if customized.
+Upgrading / merging the former two plugins
+-----------------------------------------
+Close the game first. Disable the old telemetry and CrimsonHueConsole packages in
+your mod manager before enabling this single package. Preserve the old files/config
+in a backup outside loader search paths. Never leave the old console ASI active:
+native instrumentation refuses that conflict. Do not replace your ASI loader or
+other mods. The source checkout also contains scripts/Install-UnifiedPlugin.ps1,
+a bounded backup/install/restore helper for direct game-folder installations.
+Keep useful INI preferences, but migrate them into the unified INI sections.
 If your manager keeps an older Enabled=1 in [Overlay], change it to 0 manually
 to disable the HUD. Configuration changes require a game restart.
 
@@ -106,5 +124,6 @@ Logs
 CrimsonDesertTelemetry.bootstrap.log records plugin startup.
 CrimsonDesertTelemetry.host.log records host diagnostics.
 CrimsonDesertTelemetry.overlay.log records native HUD initialization/status.
+CrimsonDesertTelemetry.native.log records integrated console and light capture status.
 
 This unofficial community project is not affiliated with Pearl Abyss.

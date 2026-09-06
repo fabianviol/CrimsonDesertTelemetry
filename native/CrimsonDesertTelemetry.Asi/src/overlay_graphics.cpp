@@ -54,6 +54,7 @@ struct Renderer
     bool backend{}, fault{};
     Clock::time_point previousFrame = Clock::now();
     View latest;
+    NoticeTracker notices;
 
     // Worker thread only. Font upload / shader compilation are never done in Present.
     void Initialize(IDXGISwapChain3* swapchain, ID3D12CommandQueue* commandQueue, const Config& config)
@@ -169,7 +170,7 @@ struct Renderer
             ImGui::DestroyContext(context);
         }
     }
-    bool Draw(const Config& config, bool details)
+    bool Draw(const Config& config, bool details, bool hudVisible)
     {
         if (fault || !context) return false;
         if (FAILED(device->GetDeviceRemovedReason())) { fault = true; return false; }
@@ -180,6 +181,8 @@ struct Renderer
         const UINT backBuffer = chain->GetCurrentBackBufferIndex();
         if (backBuffer >= buffers.size()) return false;
         TryRead(latest);
+        const auto notice = notices.Update(latest, config, Clock::now());
+        if (!hudVisible && !notice) return false;
         ContextScope scope(context);
         auto& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
@@ -188,7 +191,8 @@ struct Renderer
         previousFrame = now;
         ImGui_ImplDX12_NewFrame();
         ImGui::NewFrame();
-        DrawHud(latest, config, details);
+        if (hudVisible) DrawHud(latest, config, details);
+        if (notice) DrawNotice(*notice, config, hudVisible, details);
         ImGui::Render();
         Check(frame.allocator->Reset());
         Check(frame.commands->Reset(frame.allocator.Get(), nullptr));
@@ -271,13 +275,14 @@ bool Draw(IDXGISwapChain* chain, UINT flags) noexcept
     try
     {
         const bool foreground = GetForegroundWindow() == GetAncestor(state.window, GA_ROOT);
-        const bool toggle = state.config.toggleKey && (GetAsyncKeyState(state.config.toggleKey) & 0x8000);
-        const bool detail = state.config.detailsKey && (GetAsyncKeyState(state.config.detailsKey) & 0x8000);
+        const bool toggle = state.config.enabled && state.config.toggleKey && (GetAsyncKeyState(state.config.toggleKey) & 0x8000);
+        const bool detail = state.config.enabled && state.config.detailsKey && (GetAsyncKeyState(state.config.detailsKey) & 0x8000);
         if (foreground && toggle && !state.toggleDown) state.visible = !state.visible;
         if (foreground && detail && !state.detailsDown) state.details = !state.details;
         state.toggleDown = toggle; state.detailsDown = detail;
-        if (!state.visible || state.hdr || !state.renderer) return false;
-        if (state.renderer->Draw(state.config, state.details)) { ++state.rendered; return true; }
+        const bool hudVisible = state.config.enabled && state.visible;
+        if ((!hudVisible && !state.config.notifications) || state.hdr || !state.renderer) return false;
+        if (state.renderer->Draw(state.config, state.details, hudVisible)) { ++state.rendered; return true; }
     }
     catch (...)
     {
@@ -434,14 +439,15 @@ HRESULT STDMETHODCALLTYPE OnCreateHwnd(IDXGIFactory2* factory, IUnknown* device,
 }
 bool InstallGraphics(const Config& config) noexcept
 {
-    if (!config.enabled) return false;
+    if (!config.enabled && !config.notifications) return false;
     try
     {
         auto& state = Data();
         state.config = config;
         state.visible = config.visible;
         state.details = config.details;
-        if (MH_Initialize() != MH_OK) return false;
+        const auto hookInit = MH_Initialize();
+        if (hookInit != MH_OK && hookInit != MH_ERROR_ALREADY_INITIALIZED) return false;
         ComPtr<IDXGIFactory2> factory;
         Check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
         auto** table = *reinterpret_cast<void***>(factory.Get());

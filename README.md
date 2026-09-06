@@ -1,11 +1,11 @@
 # Crimson Desert Telemetry
 
-Crimson Desert Telemetry is an independent, open-source, read-only telemetry layer for Crimson Desert. It exposes player and render-camera state through a local HTTP/WebSocket API and newline-delimited JSON so lighting systems, overlays, accessibility tools, and other community projects can consume the same neutral interface.
+Crimson Desert Telemetry is an independent, open-source telemetry layer for Crimson Desert. It exposes player, render-camera and lighting data through a local HTTP/WebSocket API and newline-delimited JSON. CrimsonHue is a separate, future Philips Hue consumer of this API, not the telemetry implementation.
 
 [Download the mod-manager package](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 | [API reference](docs/API.md) | [Client examples](examples)
 
-The external telemetry host opens the game for read-only access. The optional ASI starts and manages that host and includes a separately configurable Dear ImGui HUD, **disabled by default**. When enabled, the HUD hooks DXGI presentation functions to draw inside the game; it does not modify gameplay values. With `[Overlay] Enabled=0`, no HUD hooks, hotkeys or HUD WebSocket client start; telemetry remains active. New executable builds are accepted only if the complete guarded layout can be resolved unambiguously; otherwise they fail closed.
+The external telemetry host opens the game for read-only access. One ASI starts that host and contains the native ManyLights capture, optional Dear ImGui HUD and optional research console. ManyLights capture instruments the renderer and copies its filtered light buffer; it is not an untouched/read-only game run. HUD and console are disabled by default. Disabling the HUD does not disable lighting capture. Basic telemetry can recognize guarded compatible builds; native lighting instrumentation requires the exact validated executable hash and instruction signatures and otherwise fails closed.
 
 ## Current support
 
@@ -34,21 +34,28 @@ Currently exposed:
 - near plane, vertical field of view, and aspect ratio (`farPlane` is currently unknown/null);
 - single-source validation and capture timing.
 
-Builds `25050808` and `25116796` additionally support an **optional, disabled-by-default** nearby
-engine-light feed. Enable it before launch with:
+Builds `25050808` and `25116796` support nearby authored engine-light records.
+The unified **1.3.0-preview.1 candidate** additionally captures current filtered
+ManyLights on exact build `25116796`, including the researched fire, candle and
+glass/crystal light contributions. The candidate enables lights by default:
 
 ```ini
 [Lights]
 Enabled=1
 NearbyRadius=100
+ManyLights=1
+ManyLightsSampleRateHz=20
 ```
 
-It reports only verified engine light records inside that player-centred radius,
-including a world-space emission direction for spotlights. Point lights omit the
-direction because it has no semantic meaning for them. Fire/effect illumination,
-physical lumens, range and a generic `enabled` claim are not included. With the
-module disabled, schema 1.1 and the existing player/camera payload remain unchanged;
-enabled light output uses additive schema 1.3.
+Schema 1.4 keeps authored records in `lights.sources` and adds current rendered
+contributions in `lights.rendered.sources`: world position, current linear HDR RGB,
+derived linear luminance and, for recognized spots, direction and cone half-angle.
+The latter uses the camera saved with that capture, not the latest camera. Do not
+add both arrays together: they overlap. A missing rendered contribution is not a
+durable OFF state; culling and scene loading also affect visibility. Stable physical
+IDs, physical lumens and coverage of every lighting mechanism are not claimed.
+With `[Lights] Enabled=0`, schema 1.1 remains unchanged. Live validation of the
+new unified native capture is required before treating this candidate as a release.
 
 **DLSS is not required.** Camera data comes directly from the game's native
 render-camera source, including with upscaling disabled. That source is resolved
@@ -62,14 +69,28 @@ See [native camera evidence and remaining tests](docs/ENGINE_CAMERA_RESEARCH.md)
 
 ## Quick start
 
+### Startup and loading status
+
+The unified candidate displays brief status notices at the top left independently
+of the full HUD: startup, scene loading, ready, and actionable errors. Ready messages
+disappear after six seconds; unresolved errors stay visible. A visible top-left HUD
+moves the notices beside it (below on narrow screens). They share the existing
+D3D12/SDR drawing backend; HDR or graphics-hook failure can prevent on-screen notices,
+in which case check the bootstrap/native/overlay logs.
+
+`[Notifications] Enabled=1` enables these notices in the candidate package;
+`DurationMilliseconds=6000` controls the ready duration. Set it to `Enabled=0` to
+disable them. No HUD hotkeys become active solely because notices are enabled.
+
 For integrations, start with the [API reference and client examples](docs/API.md).
 It documents every endpoint and data field, coordinate conventions, null/state
 handling, WebSocket delivery, freshness and reconnection.
 
 ### Optional in-game HUD
 
-The HUD is completely disabled by default, including when its configuration is
-missing. To opt in, edit `CrimsonDesertTelemetry.ini` and restart the game:
+The full HUD is disabled by default, including when its configuration is missing.
+Startup notices have their separate setting above. To opt into the full HUD,
+edit `CrimsonDesertTelemetry.ini` and restart the game:
 
 ```ini
 [Overlay]
@@ -97,8 +118,8 @@ compass directions; player-root orientation is not the animated body pose.
 
 The development setup passed a user-observed in-game restart test with the native
 camera source. Broader compatibility tests remain open; see
-[the overlay test checklist](docs/OVERLAY_VALIDATION.md). Engine-light telemetry is
-opt-in and build-gated. Disabling/uninstalling the ASI requires closing the game; hot-unload
+[the overlay test checklist](docs/OVERLAY_VALIDATION.md). Lighting is separately
+configurable and build-gated. Disabling/uninstalling the ASI requires closing the game; hot-unload
 is intentionally unsupported.
 
 ### Mod-manager package

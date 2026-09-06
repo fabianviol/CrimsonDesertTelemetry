@@ -64,6 +64,8 @@ int wmain(const int argc, wchar_t** argv)
     const auto directory = std::filesystem::absolute(argv[1]).parent_path();
     const auto ini = directory / L"CrimsonDesertTelemetry.ini";
     const auto port = static_cast<unsigned short>(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()));
+    const std::string schemaMarker = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str())
+        ? "\"schemaVersion\":\"1.4\"" : "\"schemaVersion\":\"1.1\"";
     if (std::filesystem::exists(directory / L"crimson-desert-telemetry.deps.json") ||
         std::filesystem::exists(directory / L"crimson-desert-telemetry.runtimeconfig.json"))
     {
@@ -89,7 +91,7 @@ int wmain(const int argc, wchar_t** argv)
     while (std::chrono::steady_clock::now() < deadline)
     {
         const auto health = HttpGet(port, "/v1/health");
-        if (health.starts_with("HTTP/1.1 200") && health.find("\"schemaVersion\":\"1.1\"") != std::string::npos)
+        if (health.starts_with("HTTP/1.1 200") && health.find(schemaMarker) != std::string::npos)
         {
             const auto schema = HttpGet(port, "/v1/schema");
             if (!schema.starts_with("HTTP/1.1 200") ||

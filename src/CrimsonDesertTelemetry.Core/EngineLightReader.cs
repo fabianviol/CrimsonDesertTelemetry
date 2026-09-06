@@ -159,7 +159,7 @@ public sealed class EngineLightReader
             }
 
             sources.Add(new EngineLightSnapshot(position, kind, color, active != 0, selected != 0,
-                rendererScale, rendererRgb, direction));
+                rendererScale, rendererRgb, direction, kind == "spot" ? cone * 180 / MathF.PI : null));
         }
 
         return new EngineLightDecodeResult(sources, count, malformed, outsideRadius, unsupportedKind,
