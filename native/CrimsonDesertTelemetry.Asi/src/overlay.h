@@ -5,7 +5,8 @@
 
 namespace cdt::overlay
 {
-// HUD and separate startup notices each opt in. Both off means no UI hooks/client.
+// HUD, world light markers and startup notices opt in independently.
+// All three off means no UI hooks/client.
 Config LoadConfig(const std::filesystem::path& ini);
 // Called only from a bootstrap worker, never from DllMain itself.
 void Start(HMODULE module, HANDLE stopEvent, const std::filesystem::path& directory) noexcept;
@@ -14,6 +15,7 @@ void Publish(View view);
 // Blocking receive loop for a dedicated worker; the ASI keeps it for process lifetime.
 void RunClient(Config config, HANDLE stopEvent);
 void DrawHud(const View& view, const Config& config, bool details);
+void DrawLightOverlay(const View& view, const Config& config);
 void DrawNotice(const Notice& notice, const Config& config, bool hudVisible, bool details);
 
 // The graphics runtime is process-lifetime. No hot-unload is supported.
@@ -22,4 +24,5 @@ void MaintainGraphics() noexcept;
 const char* GraphicsStatus() noexcept;
 unsigned long long RenderedFrames() noexcept;
 void SetVisibleForTest(bool visible) noexcept;
+void SetLightVisibleForTest(bool visible) noexcept;
 }

@@ -40,11 +40,18 @@ void Frame(SOCKET socket, const std::string& payload, unsigned char type = 0x81)
 {
     std::string frame(1, static_cast<char>(type));
     if (payload.size() < 126) frame.push_back(static_cast<char>(payload.size()));
-    else
+    else if (payload.size() <= 65535)
     {
         frame.push_back(126);
         frame.push_back(static_cast<char>((payload.size() >> 8) & 255));
         frame.push_back(static_cast<char>(payload.size() & 255));
+    }
+    else
+    {
+        frame.push_back(127);
+        const auto length = static_cast<std::uint64_t>(payload.size());
+        for (int shift = 56; shift >= 0; shift -= 8)
+            frame.push_back(static_cast<char>((length >> shift) & 255));
     }
     Send(socket, frame + payload);
 }
@@ -126,7 +133,8 @@ int main()
         timeval immediate{};
         Require(select(0, &pending, nullptr, nullptr, &immediate) == 0, "Disabled HUD opened a connection");
         std::cout << "PASS disabled HUD skips WebSocket connection\n";
-        config.enabled = true;
+        // Marker-only startup must connect without the HUD or notices enabled.
+        config.lightOverlay = true;
         client.worker = std::thread([&] { RunClient(config, client.stop); });
         {
             Socket peer; peer.value = Accept(listener.value); Upgrade(peer.value);
@@ -136,10 +144,27 @@ int main()
             Frame(peer.value, playing.substr(30), 0x80);
             const auto live = Await([](const View& v) { return v.hasSample && v.sample.sequence == 1; });
             Require(IsLive(live, Clock::now(), 1000) && live.sample.playerPosition.has_value(), "Live fragmented sample");
-            Frame(peer.value, MakeSample(2, "loading").dump());
-            const auto loading = Await([](const View& v) { return v.hasSample && v.sample.sequence == 2; });
-            Require(!loading.sample.playerPosition, "Loading retained coordinates");
-            std::cout << "PASS WinHTTP WebSocket upgrade, fragmented telemetry and loading invalidation\n";
+            auto lightSample = MakeSample(2, "playing");
+            lightSample["schemaVersion"] = "1.4";
+            auto sources = nlohmann::json::array();
+            for (int i = 0; i < 1200; ++i)
+                sources.push_back({{"sampleIndex", i}, {"position", {{"x", i * .01}, {"y", 3}, {"z", 10}}},
+                    {"colorLinear", {{"x", .8}, {"y", .2}, {"z", .05}}}, {"luminanceLinear", .317}, {"kind", "point"}});
+            lightSample["lights"] = {{"status", "available"}, {"sources", nlohmann::json::array()},
+                {"rendered", {{"status", "available"}, {"ageMilliseconds", 20}, {"sources", sources}}}};
+            const auto lightJson = lightSample.dump();
+            Require(lightJson.size() > 65536, "Large light payload fixture too small");
+            Frame(peer.value, lightJson.substr(0, 50000), 0x01);
+            Frame(peer.value, lightJson.substr(50000), 0x80);
+            const auto lights = Await([](const View& v) { return v.hasSample && v.sample.sequence == 2; });
+            Require(lights.sample.renderedLights.records && lights.sample.renderedLights.records->size() == 1200,
+                "Large fragmented light payload missing");
+            View same; Require(TryRead(same) && same.sample.renderedLights.records == lights.sample.renderedLights.records,
+                "Render-thread View copies must share immutable light storage");
+            Frame(peer.value, MakeSample(3, "loading").dump());
+            const auto loading = Await([](const View& v) { return v.hasSample && v.sample.sequence == 3; });
+            Require(!loading.sample.playerPosition && !loading.sample.renderedLights.records, "Loading retained coordinates/lights");
+            std::cout << "PASS marker-only WebSocket, >64KiB fragmented lights, shared storage and loading invalidation\n";
         }
         Await([](const View& v) { return !v.connected; });
         {

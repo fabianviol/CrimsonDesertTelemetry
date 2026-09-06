@@ -5,7 +5,7 @@ Crimson Desert Telemetry is an independent, open-source telemetry layer for Crim
 [Download the mod-manager package](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 | [API reference](docs/API.md) | [Client examples](examples)
 
-The external telemetry host opens the game for read-only access. One ASI starts that host and contains the native ManyLights capture, optional Dear ImGui HUD and optional research console. ManyLights capture instruments the renderer and copies its filtered light buffer; it is not an untouched/read-only game run. HUD and console are disabled by default. Disabling the HUD does not disable lighting capture. Basic telemetry can recognize guarded compatible builds; native lighting instrumentation requires the exact validated executable hash and instruction signatures and otherwise fails closed.
+The external telemetry host opens the game for read-only access. One ASI starts that host and contains the native ManyLights capture, optional Dear ImGui HUD and optional research console. ManyLights capture instruments the renderer and copies its filtered light buffer; it is not an untouched/read-only game run. The light-visualization preview enables both HUD views; the research console stays off. Disabling the HUD does not disable lighting capture. Basic telemetry can recognize guarded compatible builds; native lighting instrumentation requires the exact validated executable hash and instruction signatures and otherwise fails closed.
 
 ## Current support
 
@@ -35,7 +35,7 @@ Currently exposed:
 - single-source validation and capture timing.
 
 Builds `25050808` and `25116796` support nearby authored engine-light records.
-The unified **1.3.0-preview.1 candidate** additionally captures current filtered
+The unified **1.3.0-preview.2 candidate** additionally captures current filtered
 ManyLights on exact build `25116796`, including the researched fire, candle and
 glass/crystal light contributions. The candidate enables lights by default:
 
@@ -89,22 +89,44 @@ handling, WebSocket delivery, freshness and reconnection.
 
 ### Optional in-game HUD
 
-The full HUD is disabled by default, including when its configuration is missing.
-Startup notices have their separate setting above. To opt into the full HUD,
-edit `CrimsonDesertTelemetry.ini` and restart the game:
+The light-visualization preview enables both HUD views. Missing configuration
+still defaults them off. Startup notices have their separate setting above.
+Edit `CrimsonDesertTelemetry.ini` before restarting the game:
 
 ```ini
 [Overlay]
 Enabled=1
+Radar3D=1
+
+[LightOverlay]
+Enabled=1
+Radius=35
+MaxMarkers=512
+MaxLabels=6
 ```
 
 `InitiallyVisible=0` only starts an enabled HUD hidden; it does **not** disable its
 hooks or client. F8 cannot activate a HUD disabled with `Enabled=0`.
 
 The English, passive Dear ImGui HUD shows independent player-root and camera
-headings, camera pitch/FOV and player XYZ. **F8** toggles visibility; **F9** toggles
-diagnostics. It never captures the mouse. Key codes, corner, scale and opacity are
+headings, camera pitch/FOV and player XYZ. Its oblique 3D radar adds current light
+contributions around the player, with height stems and a camera-view guide.
+`Radar3D=0` restores the original compass. **F8** toggles this corner HUD; **F9**
+toggles diagnostics. **F10** independently toggles fullscreen world-light markers,
+including compact position, RGB, linear-luminance and distance labels. Spot arrows
+use a schematic length, not measured light range. No mouse input is captured.
+Key codes, corner, scale and opacity are
 configured in `CrimsonDesertTelemetry.ini` before launch.
+
+Both light views use the current **filtered rendered feed**, not a persistent lamp
+registry or the sum of authored/rendered sources. Behind-camera lights appear on
+the radar only if still present in that feed. No historical markers are retained
+as live data. The configured radius is in game units, not metres. Fullscreen
+markers have **no depth test** and can appear through walls. Marker colors are an
+SDR visualization of HDR values, not an exact reconstruction of scene tone mapping.
+World positions retain capture-paired reconstruction; screen projection uses the
+latest published camera. Fast-movement alignment requires a live visual check.
+Disable Overlay, LightOverlay and Notifications to disable all UI hooks/client.
 
 `AutoScale=1` scales the panel and font with render resolution (2x at 2160p relative
 to 1080p); `Scale` remains an additional multiplier.

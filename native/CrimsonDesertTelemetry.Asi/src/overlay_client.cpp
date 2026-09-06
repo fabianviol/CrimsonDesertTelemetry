@@ -28,10 +28,11 @@ struct HttpHandle
     HttpHandle(const HttpHandle&) = delete;
     HttpHandle& operator=(const HttpHandle&) = delete;
 };
-float IniFloat(const std::filesystem::path& ini, const wchar_t* key, float fallback, float minimum, float maximum)
+float IniFloat(const std::filesystem::path& ini, const wchar_t* key, float fallback, float minimum, float maximum,
+    const wchar_t* section = L"Overlay")
 {
     std::array<wchar_t, 64> wide{};
-    GetPrivateProfileStringW(L"Overlay", key, L"", wide.data(), static_cast<DWORD>(wide.size()), ini.c_str());
+    GetPrivateProfileStringW(section, key, L"", wide.data(), static_cast<DWORD>(wide.size()), ini.c_str());
     std::array<char, 64> value{};
     for (size_t i = 0; wide[i] && i < value.size() - 1; ++i)
     {
@@ -46,7 +47,7 @@ float IniFloat(const std::filesystem::path& ini, const wchar_t* key, float fallb
 }
 void Connect(const Config config, HANDLE stop)
 {
-    if (!config.enabled && !config.notifications) return;
+    if (!config.enabled && !config.notifications && !config.lightOverlay) return;
     while (WaitForSingleObject(stop, 0) == WAIT_TIMEOUT)
     {
         View view;
@@ -96,8 +97,10 @@ void Connect(const Config config, HANDLE stop)
                 if (type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) continue;
                 try
                 {
-                    auto sample = ParseSample(message, std::chrono::system_clock::now());
                     const auto now = Clock::now();
+                    // Start receipt age before parsing a potentially large light
+                    // payload; parsing time must not extend its freshness budget.
+                    auto sample = ParseSample(message, std::chrono::system_clock::now());
                     // A repeated sample must not refresh its age, even if the peer resends it.
                     if (view.hasSample && sample.sequence <= view.sample.sequence)
                         throw std::runtime_error("Non-increasing sequence");
@@ -251,12 +254,22 @@ Config LoadConfig(const std::filesystem::path& ini)
     Config config;
     const auto integer = [&](const wchar_t* key, int fallback) { return static_cast<int>(GetPrivateProfileIntW(L"Overlay", key, fallback, ini.c_str())); };
     config.enabled = integer(L"Enabled", config.enabled ? 1 : 0) != 0;
+    const auto lightInteger = [&](const wchar_t* key, int fallback) {
+        return static_cast<int>(GetPrivateProfileIntW(L"LightOverlay", key, fallback, ini.c_str()));
+    };
+    config.lightOverlay = lightInteger(L"Enabled", 0) != 0;
+    config.lightOverlayVisible = lightInteger(L"InitiallyVisible", 1) != 0;
+    config.lightToggleKey = std::clamp(lightInteger(L"ToggleKey", 121), 0, 255);
+    config.lightMaxMarkers = std::clamp(lightInteger(L"MaxMarkers", 512), 1, 2048);
+    config.lightMaxLabels = std::clamp(lightInteger(L"MaxLabels", 6), 0, 16);
+    config.lightRadius = IniFloat(ini, L"Radius", 35.0f, 1.0f, 500.0f, L"LightOverlay");
+    config.radar3D = integer(L"Radar3D", 1) != 0;
     config.notifications = GetPrivateProfileIntW(L"Notifications", L"Enabled", 0, ini.c_str()) != 0;
     config.lightsExpected = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str()) != 0;
     config.renderedExpected = config.lightsExpected && GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, ini.c_str()) != 0;
     config.notificationDurationMs = static_cast<int>(std::clamp(
         GetPrivateProfileIntW(L"Notifications", L"DurationMilliseconds", 6000, ini.c_str()), 1000u, 30000u));
-    if (!config.enabled && !config.notifications) return config;
+    if (!config.enabled && !config.notifications && !config.lightOverlay) return config;
     config.visible = integer(L"InitiallyVisible", 1) != 0;
     config.details = integer(L"ShowDetails", 0) != 0;
     config.autoScale = integer(L"AutoScale", 1) != 0;
@@ -278,7 +291,7 @@ void Start(const HMODULE module, HANDLE stopEvent, const std::filesystem::path& 
             _wcsicmp(std::filesystem::path(executable.data()).filename().c_str(), L"CrimsonDesert.exe") != 0) return;
         const auto config = LoadConfig(directory / L"CrimsonDesertTelemetry.ini");
         // Return before pinning the module, creating HUD workers, hooks or a client.
-        if (!config.enabled && !config.notifications) return;
+        if (!config.enabled && !config.notifications && !config.lightOverlay) return;
         const auto name = std::format(L"Local\\CrimsonDesertTelemetry.Overlay.{}", GetCurrentProcessId());
         HANDLE singleton = CreateMutexW(nullptr, FALSE, name.c_str());
         if (!singleton) return;

@@ -1,6 +1,7 @@
 #include "overlay_model.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <bitset>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -13,7 +14,74 @@ namespace
 {
 using Json = nlohmann::json;
 constexpr size_t MaximumTelemetryMessageBytes = 4 * 1024 * 1024;
-LightSummary ReadLights(const Json& value, std::uint32_t maximum)
+constexpr std::uint32_t MaximumRenderedRecords = 32768;
+float Number(const Json& value)
+{
+    if (!value.is_number()) throw std::runtime_error("Invalid telemetry number");
+    const float result = value.get<float>();
+    if (!std::isfinite(result)) throw std::runtime_error("Non-finite telemetry");
+    return result;
+}
+Vec3 Vector(const Json& value)
+{
+    return {Number(value.at("x")), Number(value.at("y")), Number(value.at("z"))};
+}
+bool Finite(const Vec3 value)
+{
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+double Dot(const Vec3 a, const Vec3 b)
+{
+    return static_cast<double>(a.x) * b.x + static_cast<double>(a.y) * b.y + static_cast<double>(a.z) * b.z;
+}
+Vec3 Direction(const Json& value)
+{
+    const auto result = Vector(value);
+    const double length = std::sqrt(Dot(result, result));
+    if (length < 0.9 || length > 1.1) throw std::runtime_error("Invalid direction");
+    return result;
+}
+Vec3 LightVector(const Json& value)
+{
+    const auto result = Vector(value);
+    if (std::abs(result.x) > 10000000 || std::abs(result.y) > 10000000 || std::abs(result.z) > 10000000)
+        throw std::runtime_error("Invalid optional light vector");
+    return result;
+}
+LightRecord ReadLightRecord(const Json& value)
+{
+    LightRecord result;
+    const auto& index = value.at("sampleIndex");
+    if (!index.is_number_integer() || index < 0 || index >= MaximumRenderedRecords)
+        throw std::runtime_error("Invalid optional light index");
+    result.sampleIndex = index.get<int>();
+    result.position = LightVector(value.at("position"));
+    result.colorLinear = LightVector(value.at("colorLinear"));
+    result.luminanceLinear = Number(value.at("luminanceLinear"));
+    if (result.colorLinear.x < 0 || result.colorLinear.y < 0 || result.colorLinear.z < 0 ||
+        result.luminanceLinear < 0)
+        throw std::runtime_error("Invalid optional light color");
+    if (value.contains("kind"))
+    {
+        result.kind = value.at("kind").get<std::string>();
+        if (result.kind != "point" && result.kind != "spot")
+            throw std::runtime_error("Invalid optional light kind");
+    }
+    if (value.contains("direction"))
+    {
+        result.direction = Direction(value.at("direction"));
+        if (result.kind != "spot" || std::abs(Dot(*result.direction, *result.direction) - 1.0) > 0.01)
+            throw std::runtime_error("Invalid optional spotlight direction");
+    }
+    if (value.contains("coneHalfAngleDegrees"))
+    {
+        result.coneHalfAngleDegrees = Number(value.at("coneHalfAngleDegrees"));
+        if (result.kind != "spot" || *result.coneHalfAngleDegrees <= 0 || *result.coneHalfAngleDegrees > 90)
+            throw std::runtime_error("Invalid optional spotlight cone");
+    }
+    return result;
+}
+LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered = false)
 {
     LightSummary result;
     try
@@ -34,6 +102,23 @@ LightSummary ReadLights(const Json& value, std::uint32_t maximum)
                 if (!std::isfinite(*result.ageMilliseconds) || *result.ageMilliseconds < 0)
                     throw std::runtime_error("Invalid optional light age");
             }
+            if (rendered)
+            {
+                if (!result.ageMilliseconds || *result.ageMilliseconds > 500)
+                    throw std::runtime_error("Missing or stale rendered light age");
+                auto records = std::make_shared<std::vector<LightRecord>>();
+                records->reserve(sources.size());
+                std::bitset<MaximumRenderedRecords> seen;
+                for (const auto& source : sources)
+                {
+                    auto record = ReadLightRecord(source);
+                    const auto index = static_cast<size_t>(record.sampleIndex);
+                    if (seen.test(index)) throw std::runtime_error("Duplicate optional light index");
+                    seen.set(index);
+                    records->push_back(std::move(record));
+                }
+                result.records = std::move(records);
+            }
         }
         else if (result.status == "unavailable")
         {
@@ -51,23 +136,6 @@ LightSummary ReadLights(const Json& value, std::uint32_t maximum)
         result.status = "invalid";
         result.unavailableReason = "invalid-light-summary";
     }
-    return result;
-}
-float Number(const Json& value)
-{
-    const float result = value.get<float>();
-    if (!std::isfinite(result)) throw std::runtime_error("Non-finite telemetry");
-    return result;
-}
-Vec3 Vector(const Json& value)
-{
-    return {Number(value.at("x")), Number(value.at("y")), Number(value.at("z"))};
-}
-Vec3 Direction(const Json& value)
-{
-    const auto result = Vector(value);
-    const float length = std::sqrt(result.x * result.x + result.y * result.y + result.z * result.z);
-    if (length < 0.9f || length > 1.1f) throw std::runtime_error("Invalid direction");
     return result;
 }
 double SourceAge(const std::string& text, const std::chrono::system_clock::time_point now)
@@ -114,6 +182,41 @@ std::optional<float> Heading(const Vec3 direction)
     return std::fmod(angle + 360.0f, 360.0f);
 }
 
+std::optional<ScreenPoint> ProjectWorld(const Vec3 world, const Sample& sample, const float width, const float height)
+{
+    if (!Finite(world) || !std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0 ||
+        !sample.cameraPosition || !sample.cameraForward || !sample.cameraRight || !sample.cameraUp ||
+        !sample.fov || !sample.aspectRatio || !sample.nearPlane)
+        return std::nullopt;
+    const auto position = *sample.cameraPosition, forward = *sample.cameraForward,
+        right = *sample.cameraRight, up = *sample.cameraUp;
+    if (!Finite(position) || !Finite(forward) || !Finite(right) || !Finite(up) ||
+        !std::isfinite(*sample.fov) || *sample.fov <= 0 || *sample.fov >= 180 ||
+        !std::isfinite(*sample.aspectRatio) || *sample.aspectRatio <= 0 ||
+        !std::isfinite(*sample.nearPlane) || *sample.nearPlane <= 0)
+        return std::nullopt;
+    const Vec3 cross{right.y * up.z - right.z * up.y, right.z * up.x - right.x * up.z,
+        right.x * up.y - right.y * up.x};
+    if (std::abs(Dot(forward, forward) - 1.0) > .02 || std::abs(Dot(right, right) - 1.0) > .02 ||
+        std::abs(Dot(up, up) - 1.0) > .02 || std::abs(Dot(right, up)) > .02 ||
+        std::abs(Dot(right, forward)) > .02 || std::abs(Dot(up, forward)) > .02 ||
+        std::abs(Dot(cross, forward) - 1.0) > .03)
+        return std::nullopt;
+    const Vec3 delta{world.x - position.x, world.y - position.y, world.z - position.z};
+    if (!Finite(delta)) return std::nullopt;
+    const double depth = Dot(delta, forward);
+    if (depth <= *sample.nearPlane) return std::nullopt;
+    const double halfHeight = std::tan(static_cast<double>(*sample.fov) * std::numbers::pi / 360.0) * depth;
+    const double halfWidth = halfHeight * *sample.aspectRatio;
+    if (!std::isfinite(halfHeight) || !std::isfinite(halfWidth) || halfHeight <= 0 || halfWidth <= 0)
+        return std::nullopt;
+    const ScreenPoint result{
+        static_cast<float>((1.0 + Dot(delta, right) / halfWidth) * width * .5),
+        static_cast<float>((1.0 - Dot(delta, up) / halfHeight) * height * .5), static_cast<float>(depth)};
+    if (!std::isfinite(result.x) || !std::isfinite(result.y) || !std::isfinite(result.depth)) return std::nullopt;
+    return result;
+}
+
 float HudScale(float width, float height, const Config& config, bool details)
 {
     if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0) return 0;
@@ -151,7 +254,7 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
         const auto& lights = root.at("lights");
         sample.authoredLights = ReadLights(lights, 8192);
         if (lights.is_object() && lights.contains("rendered"))
-            sample.renderedLights = ReadLights(lights.at("rendered"), 32768);
+            sample.renderedLights = ReadLights(lights.at("rendered"), MaximumRenderedRecords, true);
     }
     // Non-playing samples must not accidentally show coordinates from an older state.
     if (sample.state != "playing") return sample;
@@ -181,6 +284,18 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
         sample.pitch = std::asin(std::clamp(sample.cameraForward->y, -1.0f, 1.0f)) * 180.0f / std::numbers::pi_v<float>;
         sample.fov = Number(camera.at("verticalFovDegrees"));
         if (*sample.fov <= 0 || *sample.fov >= 180) throw std::runtime_error("Invalid FOV");
+        // Legacy/minimal camera envelopes remain usable for the existing HUD.
+        // World markers require explicit projection metadata via ProjectWorld.
+        if (camera.contains("aspectRatio"))
+        {
+            sample.aspectRatio = Number(camera.at("aspectRatio"));
+            if (*sample.aspectRatio <= 0) throw std::runtime_error("Invalid camera aspect ratio");
+        }
+        if (camera.contains("nearPlane"))
+        {
+            sample.nearPlane = Number(camera.at("nearPlane"));
+            if (*sample.nearPlane <= 0) throw std::runtime_error("Invalid camera near plane");
+        }
     }
     if (root.contains("quality") && !root.at("quality").is_null())
     {
@@ -200,6 +315,27 @@ double AgeMs(const View& view, const Clock::time_point now)
 bool IsLive(const View& view, const Clock::time_point now, const int staleMs)
 {
     return view.connected && view.hasSample && AgeMs(view, now) <= staleMs && view.sample.state == "playing";
+}
+bool RenderedLightsLive(const View& view, const Clock::time_point now, const int staleMs)
+{
+    const auto& lights = view.sample.renderedLights;
+    if (!IsLive(view, now, staleMs) || lights.status != "available" || !lights.records || !lights.ageMilliseconds ||
+        !std::isfinite(*lights.ageMilliseconds) || *lights.ageMilliseconds < 0)
+        return false;
+    // Published render age ends at host decoding. Envelope age accounts for
+    // transport and time in this client; its camera timestamp slightly predates
+    // light decoding, so the resulting freshness bound is conservative.
+    return *lights.ageMilliseconds + AgeMs(view, now) <= 500.0;
+}
+std::string LightFeedStatus(const View& view, const Clock::time_point now, const int staleMs)
+{
+    if (!IsLive(view, now, staleMs)) return Status(view, now, staleMs);
+    const auto& lights = view.sample.renderedLights;
+    if (lights.status == "not-reported") return "LIGHT FEED NOT REPORTED";
+    if (lights.status == "invalid") return "INVALID LIGHT DATA";
+    if (lights.status != "available") return "LIGHT DATA UNAVAILABLE";
+    if (!RenderedLightsLive(view, now, staleMs)) return "STALE LIGHT DATA";
+    return "LIVE RENDERED LIGHTS";
 }
 std::string Status(const View& view, const Clock::time_point now, const int staleMs)
 {

@@ -35,6 +35,18 @@ function Assert-Payload([hashtable]$Files) {
     if ($null -eq $runtime.runtimeOptions) { throw 'Invalid .NET runtime configuration.' }
     $ini = [Text.Encoding]::UTF8.GetString($Files['CrimsonDesertTelemetry.ini'])
     if ($ini -notmatch '(?m)^\[Overlay\]' -or $ini -notmatch '(?m)^ToggleKey=119\r?$') { throw 'Missing overlay configuration.' }
+    $overlay = [regex]::Match($ini, '(?ms)^\[Overlay\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
+    foreach ($setting in @('Enabled=1', 'Radar3D=1')) {
+        if ($overlay -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
+            throw "Missing light HUD preview default: $setting"
+        }
+    }
+    $worldOverlay = [regex]::Match($ini, '(?ms)^\[LightOverlay\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
+    foreach ($setting in @('Enabled=1', 'InitiallyVisible=1', 'ToggleKey=121', 'Radius=35', 'MaxMarkers=512', 'MaxLabels=6')) {
+        if ($worldOverlay -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
+            throw "Missing independent world-light overlay default: $setting"
+        }
+    }
     $notifications = [regex]::Match($ini, '(?ms)^\[Notifications\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
     if ($notifications -notmatch '(?m)^Enabled=1\r?$' -or $notifications -notmatch '(?m)^DurationMilliseconds=6000\r?$') {
         throw 'Missing independent startup notification defaults.'

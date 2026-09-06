@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 using namespace cdt::overlay;
@@ -28,6 +29,157 @@ Config ReadTestConfig(const char* contents)
     }
     else Require(std::filesystem::remove(cleanup.path), "Missing-INI fixture setup");
     return LoadConfig(cleanup.path);
+}
+void ProjectionTests()
+{
+    Sample sample;
+    sample.cameraPosition = Vec3{10, 20, 30};
+    sample.cameraForward = Vec3{0, 0, 1}; sample.cameraRight = Vec3{1, 0, 0}; sample.cameraUp = Vec3{0, 1, 0};
+    sample.fov = 90.f; sample.aspectRatio = 2.f; sample.nearPlane = .1f;
+    const auto close = [](float actual, float expected) { return std::abs(actual - expected) < .01f; };
+    auto point = ProjectWorld({10, 20, 40}, sample, 1000, 500);
+    Require(point && close(point->x, 500) && close(point->y, 250) && close(point->depth, 10),
+        "World point ahead must project to viewport center with camera depth");
+    point = ProjectWorld({20, 20, 40}, sample, 1000, 500);
+    Require(point && close(point->x, 750) && close(point->y, 250), "Rightward world projection and camera aspect");
+    point = ProjectWorld({10, 25, 40}, sample, 1000, 500);
+    Require(point && close(point->x, 500) && close(point->y, 125), "Upward world projection must decrease screen Y");
+    point = ProjectWorld({50, 20, 40}, sample, 1000, 500);
+    Require(point && point->x > 1000, "Offscreen projection is left to caller clipping");
+    Require(!ProjectWorld({10, 20, 29}, sample, 1000, 500), "Behind-camera lights must disappear");
+    Require(!ProjectWorld({10, 20, 30.05f}, sample, 1000, 500), "Lights inside camera near plane must disappear");
+    auto invalid = sample; invalid.cameraPosition.reset();
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Missing camera must not use zero position");
+    invalid = sample; invalid.cameraRight = invalid.cameraUp;
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Nonorthogonal camera basis must fail projection");
+    invalid = sample; invalid.cameraRight = Vec3{-1, 0, 0};
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Mirrored camera basis must fail projection");
+    invalid = sample; invalid.cameraForward = Vec3{0, 0, 2};
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Nonunit camera basis must fail projection");
+    for (const auto bad : {0.f, -1.f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+    {
+        invalid = sample; invalid.aspectRatio = bad;
+        Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Invalid camera aspect accepted");
+        invalid = sample; invalid.nearPlane = bad;
+        Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Invalid camera near plane accepted");
+        invalid = sample; invalid.fov = bad;
+        Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Invalid camera FOV accepted");
+    }
+    invalid = sample; invalid.fov = 180.f;
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Degenerate FOV accepted");
+    invalid = sample; invalid.aspectRatio.reset();
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Missing aspect must not be guessed");
+    invalid = sample; invalid.nearPlane.reset();
+    Require(!ProjectWorld({10, 20, 40}, invalid, 1000, 500), "Missing near plane must not be guessed");
+    Require(!ProjectWorld({std::numeric_limits<float>::infinity(), 20, 40}, sample, 1000, 500),
+        "Nonfinite world point accepted");
+    Require(!ProjectWorld({10, 20, 40}, sample, 0, 500), "Empty viewport accepted");
+    Require(!ProjectWorld({10, 20, 40}, sample, 1000, std::numeric_limits<float>::quiet_NaN()),
+        "Nonfinite viewport accepted");
+    // Turn 90 degrees: +X becomes forward and -Z becomes screen right.
+    sample.cameraForward = Vec3{1, 0, 0}; sample.cameraRight = Vec3{0, 0, -1};
+    point = ProjectWorld({20, 25, 20}, sample, 1000, 500);
+    Require(point && close(point->x, 750) && close(point->y, 125) && close(point->depth, 10),
+        "Rotated-camera projection ignored the current envelope basis");
+    // Pitch upward 45 degrees while retaining a right-handed orthogonal basis.
+    const float diagonal = std::sqrt(.5f);
+    sample.cameraForward = Vec3{0, diagonal, diagonal}; sample.cameraRight = Vec3{1, 0, 0};
+    sample.cameraUp = Vec3{0, diagonal, -diagonal};
+    point = ProjectWorld({10, 30, 40}, sample, 1000, 500);
+    Require(point && close(point->x, 500) && close(point->y, 250), "Pitched camera projection ignored vertical basis");
+    std::cout << "PASS world projection, rotated camera, near/behind rejection and invalid metadata\n";
+}
+void RenderedLightTests(nlohmann::json json, std::chrono::system_clock::time_point now)
+{
+    using Json = nlohmann::json;
+    const auto point = Json::parse(R"({"sampleIndex":3,"position":{"x":1,"y":2,"z":13},
+        "colorLinear":{"x":2.5,"y":0.75,"z":0.1},"luminanceLinear":1.25,"kind":"point"})");
+    auto spot = point;
+    spot["sampleIndex"] = 9; spot["kind"] = "spot";
+    spot["direction"] = {{"x", 0}, {"y", -1}, {"z", 0}}; spot["coneHalfAngleDegrees"] = 27;
+    auto unknown = point; unknown["sampleIndex"] = 32767; unknown.erase("kind");
+    json["schemaVersion"] = "1.4";
+    json["camera"]["aspectRatio"] = 2.0; json["camera"]["nearPlane"] = .1;
+    json["lights"] = {{"status", "available"}, {"sources", Json::array({point})},
+        {"rendered", {{"status", "available"}, {"ageMilliseconds", 125}, {"sources", Json::array({point, spot, unknown})},
+            {"camera", {{"position", {{"x", 1000}, {"y", 2000}, {"z", 3000}}}}}}}};
+    auto sample = ParseSample(json.dump(), now);
+    Require(sample.renderedLights.records && sample.renderedLights.records->size() == 3 &&
+        sample.renderedLights.publishedRecords == 3 && !sample.authoredLights.records,
+        "Only rendered contributions may enter immutable drawable records; never sum authored records");
+    Require(sample.aspectRatio == 2.f && sample.nearPlane && std::abs(*sample.nearPlane - .1f) < .0001f,
+        "Envelope camera projection metadata was not parsed");
+    const auto& first = sample.renderedLights.records->at(0);
+    Require(first.sampleIndex == 3 && first.position.z == 13 && first.colorLinear.x == 2.5f &&
+        first.luminanceLinear == 1.25f && first.kind == "point" && !first.direction && !first.coneHalfAngleDegrees,
+        "Rendered world position/HDR color must be preserved without applying paired camera translation again");
+    const auto& second = sample.renderedLights.records->at(1);
+    Require(second.direction && second.direction->y == -1 && second.coneHalfAngleDegrees == 27.f && second.kind == "spot",
+        "Rendered spot emission direction and cone were not preserved");
+    Require(sample.renderedLights.records->at(2).kind.empty(), "Unknown light kind must remain unknown");
+    const auto projected = ProjectWorld(first.position, sample, 1000, 500);
+    Require(projected && std::abs(projected->x - 500) < .01 && std::abs(projected->y - 250) < .01,
+        "World lights must project with the latest envelope camera, not the old paired camera");
+    View view; view.connected = true; view.hasSample = true; view.sample = sample;
+    view.received = Clock::time_point{} + std::chrono::seconds(10);
+    const View copy = view;
+    Require(copy.sample.renderedLights.records == view.sample.renderedLights.records,
+        "Rendering View copies must share immutable light storage");
+    Require(RenderedLightsLive(view, view.received, 1000), "Fresh rendered data should be drawable");
+    Require(RenderedLightsLive(view, view.received + std::chrono::milliseconds(375), 1000), "500ms freshness boundary");
+    Require(!RenderedLightsLive(view, view.received + std::chrono::milliseconds(376), 1000), "Expired light data persisted");
+    view.sample.sourceAgeMs = 200;
+    Require(RenderedLightsLive(view, view.received + std::chrono::milliseconds(175), 1000), "Transport-age freshness boundary");
+    Require(!RenderedLightsLive(view, view.received + std::chrono::milliseconds(176), 1000),
+        "Transport delay must contribute to rendered staleness");
+    Require(!RenderedLightsLive(view, view.received, 100), "Stale camera envelope must hide light markers");
+    view.sample.sourceAgeMs = 0;
+    view.connected = false;
+    Require(!RenderedLightsLive(view, view.received, 1000), "Disconnected renderer must clear light markers");
+    view.connected = true; view.sample.state = "loading";
+    Require(!RenderedLightsLive(view, view.received, 1000), "Loading must hide light markers");
+    const auto rejectFeed = [&](Json invalid)
+    {
+        const auto parsed = ParseSample(invalid.dump(), now);
+        Require(parsed.playerPosition && parsed.cameraPosition && parsed.renderedLights.status == "invalid" &&
+            !parsed.renderedLights.records && !parsed.renderedLights.publishedRecords,
+            "Malformed rendered records must clear their feed while preserving core player/camera");
+    };
+    for (const auto& bad : {Json(nullptr), Json(true), Json("bad"), Json(1e100)})
+    {
+        auto invalid = json; invalid["lights"]["rendered"]["sources"][0]["position"]["x"] = bad; rejectFeed(invalid);
+        invalid = json; invalid["lights"]["rendered"]["sources"][0]["colorLinear"]["x"] = bad; rejectFeed(invalid);
+    }
+    auto invalid = json; invalid["lights"]["rendered"]["sources"][0]["colorLinear"]["x"] = -1; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][0]["luminanceLinear"] = -1; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][0]["sampleIndex"] = 32768; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][0]["sampleIndex"] = 1.5; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][1]["sampleIndex"] = 3; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][1]["direction"]["y"] = 0; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][1]["coneHalfAngleDegrees"] = 91; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][0]["kind"] = "invented"; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"][0].erase("luminanceLinear"); rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"].erase("ageMilliseconds"); rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["ageMilliseconds"] = 501; rejectFeed(invalid);
+    invalid = json; invalid["lights"]["rendered"]["sources"] = Json(std::vector<std::nullptr_t>(32769)); rejectFeed(invalid);
+    auto empty = json; empty["lights"]["rendered"]["sources"] = Json::array();
+    view.sample = ParseSample(empty.dump(), now);
+    Require(RenderedLightsLive(view, view.received, 1000) && view.sample.renderedLights.records->empty(),
+        "Available zero-current-contribution sample must not be confused with missing data");
+    json["lights"]["rendered"] = {{"status", "unavailable"}, {"unavailableReason", "bridge-changing"}};
+    sample = ParseSample(json.dump(), now);
+    Require(!sample.renderedLights.records && !sample.renderedLights.publishedRecords,
+        "Unavailable rendered snapshot must not carry forward prior successful records");
+    view.sample = sample;
+    Require(!RenderedLightsLive(view, view.received, 1000), "Unavailable rendered snapshot must not remain drawable");
+    json["lights"].erase("rendered");
+    sample = ParseSample(json.dump(), now);
+    Require(!sample.renderedLights.records && sample.renderedLights.status == "not-reported",
+        "A newly missing feed must not carry forward records");
+    json.erase("lights"); json["schemaVersion"] = "1.1";
+    sample = ParseSample(json.dump(), now);
+    Require(sample.playerPosition && !sample.renderedLights.records, "Schema1.1 core compatibility was lost");
+    std::cout << "PASS bounded current rendered records, HDR/color/direction, transport freshness and invalid-feed isolation\n";
 }
 void NoticeTests()
 {
@@ -143,10 +295,40 @@ void NoticeTests()
         "An intentionally unrequested rendered feed prevented readiness");
     std::cout << "PASS notification lifecycle, error recovery, debounce and HUD independence\n";
 }
-int main()
+void SnapshotFileTest(const char* filename)
+{
+    std::ifstream input(filename);
+    Require(input.good(), "Recorded snapshot fixture could not be opened");
+    std::string line;
+    Require(static_cast<bool>(std::getline(input, line)), "Recorded snapshot fixture is empty");
+    const auto wrapper = nlohmann::json::parse(line);
+    const auto& json = wrapper.at("snapshot");
+    const auto sample = ParseSample(json.dump(), std::chrono::system_clock::now());
+    Require(sample.renderedLights.status == "available" && sample.renderedLights.records &&
+        sample.renderedLights.records->size() == json.at("lights").at("rendered").at("sources").size(),
+        "Actual recorded rendered sources were rejected or changed in count");
+    size_t projected = 0, visible = 0;
+    for (const auto& record : *sample.renderedLights.records)
+    {
+        const auto point = ProjectWorld(record.position, sample, 3840, 2160);
+        if (!point) continue;
+        ++projected;
+        if (point->x >= 0 && point->x < 3840 && point->y >= 0 && point->y < 2160) ++visible;
+    }
+    Require(projected > 0 && visible > 0, "Recorded camera/light sample did not produce any visible projections");
+    std::cout << "PASS recorded snapshot: " << sample.renderedLights.records->size() << " current contributions, "
+        << projected << " in front of camera, " << visible << " within viewport\n";
+}
+int main(int argc, char** argv)
 {
     try
     {
+        if (argc == 3 && std::string_view(argv[1]) == "--snapshot")
+        {
+            SnapshotFileTest(argv[2]);
+            return 0;
+        }
+        Require(argc == 1, "Usage: overlay-tests [--snapshot recorded.jsonl]");
         Config config;
         Require(!config.enabled, "HUD must default to disabled");
         Require(!ReadTestConfig(nullptr).enabled, "Missing INI must disable HUD");
@@ -164,6 +346,23 @@ int main()
         Require(notices.notifications && !notices.enabled && notices.notificationDurationMs == 7000 &&
             notices.port == 27329 && notices.lightsExpected && !notices.renderedExpected,
             "Notification-only INI must load server/light expectations without enabling the full HUD");
+        Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121,
+            "World markers must default off and retain independent visibility/hotkey defaults");
+        const auto markers = ReadTestConfig("[Overlay]\nEnabled=0\nAutoScale=0\nScale=1.5\nRadar3D=0\n"
+            "[Notifications]\nEnabled=0\n[LightOverlay]\nEnabled=1\nInitiallyVisible=0\nToggleKey=122\n"
+            "MaxMarkers=200\nMaxLabels=4\nRadius=42.5\n[Server]\nPort=27329\n");
+        Require(markers.lightOverlay && !markers.enabled && !markers.notifications && !markers.lightOverlayVisible &&
+            markers.lightToggleKey == 122 && markers.lightMaxMarkers == 200 && markers.lightMaxLabels == 4 &&
+            markers.lightRadius == 42.5f && !markers.autoScale && markers.scale == 1.5f && !markers.radar3D &&
+            markers.port == 27329, "World markers alone must retain client, scale and independent toggle configuration");
+        const auto largeMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=99999\nMaxLabels=999\nRadius=99999\nToggleKey=999\n");
+        Require(largeMarkers.lightMaxMarkers == 2048 && largeMarkers.lightMaxLabels == 16 &&
+            largeMarkers.lightRadius == 500 && largeMarkers.lightToggleKey == 255, "Large marker settings must be bounded");
+        const auto smallMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=0\nMaxLabels=-1\nRadius=0\nToggleKey=-1\n");
+        Require(smallMarkers.lightMaxMarkers == 1 && smallMarkers.lightMaxLabels == 0 && smallMarkers.lightRadius == 1 &&
+            smallMarkers.lightToggleKey == 0, "Small/negative marker settings must be bounded");
+        Require(ReadTestConfig("[LightOverlay]\nEnabled=1\nRadius=nan\n").lightRadius == 35,
+            "Nonfinite marker radius must use the safe default");
         std::cout << "PASS HUD defaults off, missing configuration, explicit opt-in and hidden mode\n";
         Require(std::abs(HudScale(1920, 1080, config, false) - 1.0f) < 0.001f, "1080p HUD scale");
         Require(std::abs(HudScale(3840, 2160, config, false) - 2.0f) < 0.001f, "4K HUD scale");
@@ -184,6 +383,8 @@ int main()
                 "right":{"x":1,"y":0,"z":0},"verticalFovDegrees":60},
             "quality":{"consensusCopies":3,"validCopies":4,"distinctStates":1,"rediscovered":false,"captureDurationMicroseconds":120}})");
         auto sample = ParseSample(json.dump(), now);
+        ProjectionTests();
+        RenderedLightTests(json, now);
         Require(sample.playerPosition && sample.playerPosition->x == 123, "Player position");
         Require(sample.playerHeading && std::abs(*sample.playerHeading - 90) < 0.01, "Independent player heading");
         Require(sample.cameraHeading && std::abs(*sample.cameraHeading) < 0.01, "Independent camera heading");

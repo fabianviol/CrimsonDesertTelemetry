@@ -5,9 +5,10 @@ This unified preview package targets Definitive Mod Manager and JSON Mod Manager
 Complete install/uninstall and in-game validation in both managers is still pending.
 One ASI starts the read-only external host and instruments the renderer for filtered
 ManyLights readback. It also contains the optional research console; do not load
-the old CrimsonHueConsole.asi alongside it. The unified capture needs a live restart
-test before this candidate is considered a validated release.
-The optional English in-game Dear ImGui HUD is completely disabled by default.
+the old CrimsonHueConsole.asi alongside it. Unified capture passed local cold-start,
+moving-camera and lamp A-B-A checks on exact build 25116796 in preview.1.
+Preview.2 adds a 3D light radar and fullscreen world markers, both initially enabled.
+The new light visualization still requires its own live alignment check.
 The native render camera is read directly. A cold start with upscaling off and
 controlled yaw/pitch changes passed on the development NVIDIA setup; the user also
 confirmed working in-game HUD behavior after restarting with preview.7. The HUD
@@ -51,16 +52,29 @@ coverage of sun/sky/emissive lighting are claimed. See docs/API.md in the source
 
 In-game HUD
 -----------
-To enable: set Enabled=1 in the [Overlay] section of CrimsonDesertTelemetry.ini
-and restart the game. The default Enabled=0 disables the full HUD and its hotkeys.
+The [Overlay] section enables the corner HUD; Radar3D=1 replaces its compass with
+an oblique, player-centered light overview. Radar3D=0 restores the original compass.
+The independent [LightOverlay] section enables fullscreen markers and compact
+position/RGB/linear-luminance labels. Both views are enabled in this preview.
 Separate startup notices are enabled by [Notifications] Enabled=1. They show loading,
 ready and actionable errors at the top left; readiness disappears after six seconds,
 errors persist until resolved. A visible HUD moves notices out of its top-left area.
-Disable both sections to skip all UI graphics hooks/client. They require D3D12/SDR;
-if drawing fails, use the logs. Missing configuration defaults both UI features off.
+Disable Overlay, LightOverlay and Notifications to skip all UI graphics hooks/client.
+They require D3D12/SDR; if drawing fails, use the logs. Missing sections default off.
 Telemetry remains active independently through [Server] Enabled=1.
 
-F8: show/hide the HUD. F9: show/hide diagnostics. No mouse input is captured.
+F8: corner HUD. F9: diagnostics. F10: fullscreen light markers, independently of F8.
+No mouse input is captured. Markers use measured filtered light contributions,
+not persistent lamp IDs; overlapping contributions can belong to one lamp.
+Only fresh data is drawn. The radar may show lights behind the camera if those
+records remain in the filtered feed; this is not a complete 360-degree registry.
+World markers have no scene-depth test and can appear through walls. Spot arrows
+show direction with a schematic length, not measured light range. Display colors
+are an SDR visualization of linear HDR RGB, not an exact match to scene tone mapping.
+World positions already use the capture-paired camera; projection uses the latest
+published camera. Fast-camera marker alignment/latency needs live validation.
+LightOverlay.Radius=35 (game units), MaxMarkers=512 and MaxLabels=6 bound clutter.
+Radius applies to both light views and cannot restore records culled by the source.
 Player-root heading (cyan) and camera heading (amber) are independent. X/Z labels
 are world axes, not compass north. Player orientation is not an animated body pose.
 Coordinates use game units. Loading/disconnected/stale values are not shown live.
@@ -68,10 +82,10 @@ Coordinates use game units. Loading/disconnected/stale values are not shown live
 The first HUD preview supports DirectX 12 and 8-bit SDR only. HDR and frame
 generation are not validated. NVIDIA recording requires an actual recording test.
 Edit [Overlay] settings in the INI before launch: Enabled, InitiallyVisible,
-ShowDetails, ToggleKey, DetailsKey, Corner, AutoScale, Scale, Opacity, StaleMilliseconds.
+ShowDetails, Radar3D, ToggleKey, DetailsKey, Corner, AutoScale, Scale, Opacity, StaleMilliseconds.
 InitiallyVisible=0 only hides an enabled HUD; its hooks and client remain active.
 F8 cannot enable a HUD that was disabled at startup with Enabled=0.
-Keys are decimal Windows virtual-key codes; 119=F8, 120=F9, 0=disabled.
+Keys are decimal Windows virtual-key codes; 119=F8, 120=F9, 121=F10, 0=disabled.
 Corner: 0=top left, 1=top right, 2=bottom left, 3=bottom right.
 AutoScale=1 scales with render height relative to 1080p (2x at 2160p), including the
 font atlas. AutoScale=0 uses the original fixed size. Scale is an additional

@@ -1,185 +1,104 @@
-# Current checkpoint — unified telemetry, 2026-09-06, Codex/Astra
+# Current checkpoint — light HUD, 2026-09-06, Codex/Astra
 
-## Result and scope
+## Result / one next step
 
-User requested one telemetry product/ASI, including the former console, automatic
-filtered ManyLights and the revised camera anchor. CrimsonHue is only a future
-Philips Hue consumer. Candidate **1.3.0-preview.1**, implementation commit **afcc1cc**,
-has passed automatic in-game startup/data, deliberate camera/player movement and
-a controlled physical lamp A-B-A check. Core integration live checks are complete
-for this tested build/setup; broader coverage and update hardening remain separate.
+**1.3.0-preview.2 is built, tested and ready for DMM installation.** It adds the
+requested 3D corner radar and independently toggled fullscreen light markers
+to the existing single ASI. The game was confirmed closed during preparation;
+nothing was installed or changed in the game directory.
 
-- Single ASI source: `native/CrimsonDesertTelemetry.Asi`; imported console0.3.17
-  commands retained under `src/console`, original research/releases preserved.
-- Native recurring postfilter capture: exact EXE hash + callsite signature,
-  scoped detour, D3D12 copy on the actual command list and completion fence from
-  its submission queue. Readback paired with a copied full SceneConstantBuffer.
-- API schema1.4: existing authored `lights.sources` plus `lights.rendered.sources`
-  with world position, linear HDR RGB/luminance, recognized point/spot and spot
-  direction/cone. They overlap; do not sum them or invent physical IDs/OFF states.
-- Camera source was already direct, contrary to the old camera handover premise.
-  Current scene is `*(module+0x6B4EFB8)`; **dereference scene+0x428** for the full
-  0xB00-byte buffer. Own frame+0x20, viewPos+0x80. Decoder validates full structure,
-  projection and matrix consistency independently of player distance.
-- Native bridge `Local\CrimsonDesertTelemetry.Render.<pid>` validates PID +
-  process-start FILETIME, protocol, seqlock, paired frame and fence flags; reject
-  samples older than500ms. Native capture default20Hz, API60Hz. No stale success reuse.
-- Lights default on in candidate; HUD and research console/explorer default off.
-  Old CrimsonHueConsole.asi is a conflict, not a second required plugin.
-- User additionally requested in-game startup/loading/ready/error notices independent
-  of the full HUD. `[Notifications] Enabled=1` default, ready visible6s, errors
-  remain until recovery. UI reuses D3D12/SDR rendering, not a second ASI. Full HUD
-  remains optional; parser updated to accept schema1.3/1.4 too.
+Next: user installs the new ZIP through DMM, replacing/deactivating preview.1,
+then loads near known lamps. Visually check stationary marker alignment, turn/
+pitch/walk and independent F8/F10 toggles. **This visualization has not yet been
+validated in the real game.** Do not confuse its GPU fixture tests with live proof.
 
-## Preserved workspace
+## Package / controls
 
-Product Git history remains in `C:\DEV\CrimsonDesertTelemetry`.
-Research Git history moved intact from `C:\DEV\CrimsonHue\research` to `research/`.
-963 capture/artifact files moved without file collisions into `artifacts/`.
-`external/` checkouts moved intact. Old root source/docs/tests/definitions,
-standalone copies, bundled runtime and old root ZIP moved to
-`archive/crimsonhue-workspace-20260906/`; no original files were deleted. Empty
-directory layouts also retained there. These large/private trees are Git-ignored;
-the research repository still commits independently. Historical absolute Hue
-research/artifact paths map to this product root. Hue now only has placeholder
-README and synchronized assistant rules. Product rules are synchronized too.
+Immutable ZIP:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.2-ModManagers.zip`
+SHA256 `861EDB458198BC2707FC2B306E4CC5AE896B5BB32B485700641D5A952FF3DC4C`.
+Expanded:
+`artifacts/mod-manager/v1.3.0-preview.2-20260906-202637-330-d5111e42/CrimsonDesertTelemetry`.
+ASI SHA256 `2B6949AA85E4305A127BC1BFAAFC2F202425CB26EA5572D1D51151B1D440B714`.
+Previous preview.1 ZIP remains unchanged for rollback. Never overwrite releases,
+replace the ASI loader/other mods, or install directly instead of the user's DMM.
 
-## Evidence and limits
+- F8: corner HUD; F9: diagnostics; F10: fullscreen light markers.
+- Package enables both views. `[Overlay] Radar3D=0` restores the old compass.
+- `[LightOverlay]`: Enabled=1, InitiallyVisible=1, ToggleKey=121, Radius=35,
+  MaxMarkers=512, MaxLabels=6. Configurable bounds: 2048 markers / 16 labels;
+  label placement examines at most 64 candidates. Units are game units, not metres.
+- Missing config defaults UI modules off. Overlay/LightOverlay/Notifications must
+  all be disabled to skip UI hooks/client. HUD-hidden does not stop light capture.
+- Existing notices and single ASI/host/config architecture remain. Console/explorer
+  stay disabled. User wants DMM; settings require restart, no hot-unload.
 
-Camera live check in old-plugin PID28640:30/30 valid samples,30 distinct source
-frames, source0x3852A770C00,3840x2160. `_renderingOriginPos` was ~1.03 above player,
-not a replacement for player position. That was the previous process; see current
-live result below.
+## Implementation / limits
 
-Existing measured light A-B-A, packed direction, source and consumer evidence:
-`../research/light-source-tests/CODEX_HANDOVER_FIRE.md` (latest experiments at end)
-and `GPU_LIGHT_LAYOUTS_25116796.md` in that folder. The camera handover has been
-marked with the verified newer result. Do not restart resolved research paths.
+`native/CrimsonDesertTelemetry.Asi/src/overlay_*.{h,cpp}`:
+strict bounded rendered-record parsing; immutable shared record storage avoids
+copying arrays every Present. Optional invalid/missing feeds clear records, not
+core telemetry. Render freshness includes producer age, transport, parsing and
+time since receipt, capped at 500ms. No historical markers kept as live.
 
-No promise of every game's lighting path, physical lumens/range, persistent IDs
-or generic enabled state. Filtered contributions are current renderer outputs;
-absence also includes culling/loading. Sun/sky/emissive coverage is not solved.
-Update hardening: basic player/camera guarded relocation remains; new native code
-uses exact known executable **25116796**, SHA256
+Corner HUD retains XYZ/root/camera numbers; oblique player-centered radar adds
+colored contributions, schematic height stems, root/camera yaw and view guide.
+Fullscreen rings/labels show measured XYZ, linear HDR RGB/luminance, distance,
+sample-local index and spot cone/direction when available. Center-priority labels
+avoid HUD/reticle/other rings. Fixed-length arrows are schematic, not light range.
+
+Only current **filtered rendered** records are used; do not sum authored+rendered.
+Radar can show behind-camera records only if the feed retains them, not complete
+360-degree coverage. No scene-depth test: markers may show through walls. HDR
+swatches are SDR visualization, not the game's tone mapping. No physical lumens,
+stable object IDs, generic OFF field or sun/sky/emissive completeness claimed.
+
+World coordinates already use capture-paired reconstruction; screen projection
+uses the latest published camera basis/FOV/aspect, rejecting near/behind/invalid
+points. It is not a Present-synchronous camera: fast-motion latency/alignment is
+the primary live-check risk. Drawing still requires D3D12 / 8-bit SDR.
+
+## Verification this change
+
+Release build and **6/6 native UI/client tests pass**: overlay-model, overlay-d3d12,
+notifications-d3d12, light-overlay-d3d12, light-overlay-only-d3d12, overlay-websocket.
+Real D3D12 readback tests cover height-sensitive radar, projected rings/spot arrow,
+behind/near clipping, stale/missing clearing, initially-hidden then shown,
+independent toggles, Present/Present1, both resize paths, 4K and center detail card.
+The center card initially failed visual QA because its placement gap intersected
+the reticle margin; fixed and protected by a dedicated pixel regression.
+
+Visually inspected small/4K test images: `build/light-overlay-*.bmp` (synthetic).
+WebSocket test covers marker-only startup, >64KiB fragmented light payload,
+immutable shared storage and loading invalidation. Actual recorded A2 JSONL
+accepted by `CrimsonDesertTelemetryOverlayTests --snapshot <file>`: 337 records,
+178 in front of its camera, 77 inside viewport. ZIP/expanded nine-file payload,
+configuration and no-loose-JSON/no-second-ASI validation passed.
+
+## Established baseline / preserved research
+
+Previous detailed integration checkpoint is preserved in Git:
+`git show 0d7ac9b:docs/HANDOVER.md`. Implementation `afcc1cc`; recorder fix
+`73aea96`. That preview.1 passed cold start, real camera/player movement and
+physical lamp A-B-A in PID27140 (now closed): target88/88 → 0/87 → 89/89;
+three controls always present, B/A2 same view. 900 API rows, max rendered age79ms.
+Artifacts: `artifacts/light-research/unified-lamp-aba-pid27140-20260906-*.jsonl`.
+
+Movement artifact `unified-camera-movement-pid27140-20260906-01.jsonl` in the same
+folder: 917 distinct captures, two static anchors stable throughout; filtered
+crystal omissions are not OFF. Twelve transient bridge-changing rows and38
+captures with one rejected record remain bounded reliability follow-ups.
+Light capture/source itself is unchanged in preview.2.
+
+Exact native-supported Steam build25116796, EXE SHA256
 `4D99C15C58BD20A94D354D10AE395D1FAC777D59EF52CBA8080DC3FC8DC6F454`.
-Different EXEs refuse hooks. Automatic native relocation is a later task.
+Native instrumentation fails closed on other hashes; automatic relocation and
+combined real-game console startup validation remain separate tasks.
 
-## Built and tested
-
-- 49 managed tests,4 API client/example tests,8 native CTests pass. Native tests
-  cover seqlock coherence, delayed real D3D12 queue/fence completion and repeat
-  capture,80,000 multithreaded detour calls preserving registers/flags/XMM, loader-safe
-  SHA vectors and exact installed EXE, HUD/client and HUD-independent notices.
-  Final missing-requested-feed correction passed rebuilt overlay-model suite.
-- Packaged ASI bootstrap started its real managed host from `.cfg` metadata;
-  schema1.4 health/schema endpoints responded. Test host exited; no game files changed.
-- Notification-only D3D12 render/resize tests passed,4K image visually inspected
-  (`build/notice-preview-4k.ppm`). Optional direct migration/restore helper tested
-  against a temporary fixture only. Release ZIP overwrite guard tested.
-- Research commit **af5485b** preserves migration pointers and camera correction.
-
-Immutable DMM ZIP:
-`artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.1-ModManagers.zip`
-SHA256 `A22A9254DCA5D3E6A3946E6CCFC4D1C6AA08AE831F8EAA168695686190E613CA`.
-Expanded package:
-`artifacts/mod-manager/v1.3.0-preview.1-20260906-193800-829-148b0879/CrimsonDesertTelemetry`.
-Package source is implementation commit afcc1cc. Later recorder/documentation
-commits do not change this immutable package.
-
-## Live result — 2026-09-06, ~19:44–19:45 CEST
-
-User installed through DMM, restarted, loaded and reported the success notice.
-PID **27140**, start19:41:38.708. Exactly one loaded ASI, telemetry SHA256
-`851856C3D78103ABEF972C1B0BD41C4C4BE9A78AE933D0A74F1285C414AF733E`, matching
-the candidate; no CrimsonHueConsole loaded. Native log confirms exact-build
-postfilter detour and submission-fenced capture ready. No native fault/refusal.
-HostPID25296, health `playing`, schema1.4, exact supported build. One initial
-duplicate-bootstrap/port-owner skip precedes the successful host start; not a
-second loaded ASI or a later host failure.
-
-Read-only API check: **40/40 available** over5.24s;40 distinct captured game frames
-9243..9480, capture sequence2719..2798. Roughly15 captures/s observed (20Hz configured
-target, not a measured20Hz guarantee). Data age15..78ms, mean45.95ms, malformed0.
-13 authored records;119..130 current rendered contributions within the configured
-100-game-unit player radius (not119..130 physical lamps). A preceding sample had
-343 total active records,218 outside radius and125 published.
-
-Blue IC glass, Twilight Glass Lamp and Twilight Crystal each matched their previously
-measured world positions in all40 samples, with no position spread at API precision.
-The two glass-lamp directions were downward and cone half-angle~27degrees;
-crystal classified point and correctly omitted direction. Player was
-(-10502.611,610.52814,-4373.8613). Camera was essentially stationary aside from
-~0.0013 vertical variation, so **not a deliberate movement-pairing proof**.
-No manual command, breakpoint, switch or config change was issued during this check.
-Native/overlay logs show Starting→Waiting→Loading→Telemetry is ready.
-
-## Movement result — 2026-09-06, ~19:49–19:50 CEST
-
-User deliberately turned/pitched camera and walked forward/backward in PID27140.
-Existing API recorder updated for bounded4MiB light payloads (commit73aea96).
-Capture: `artifacts/light-research/unified-camera-movement-pid27140-20260906-01.jsonl`,
-201489649bytes,3597 WS samples over59.909s (~60.025Hz),917 distinct rendered captures
-7228..8144, native frames23018..26020. No API sequence skips/duplicates/regressions.
-Camera coordinate spans13.6485/7.26307/18.4697; player spans4.671/0.15198/8.0373 game
-units. This is a real movement control, not another stationary recording.
-
-Both static glass anchors occurred in917/917 distinct captures with **identical
-world positions at API precision** throughout. Maximum distance to rounded prior
-references0.000413 game units. Crystal occurred in469/917, also identical position;
-448 captures omitted it (even without a kind filter). Do not label that OFF;
-view-dependent filtering remains the relevant distinction.
-
-Latest envelope camera differs from paired light camera by up to1.713 game units
-and13.99degrees across all available WS samples. Using that latest camera would
-incorrectly shift the static lights; actual paired-camera conversion stays stable.
-Thus pairing passed this real movement test.
-
-Quality caveats: authoredavailable3597/3597; renderedavailable3585/3597. Twelve
-isolated `bridge-changing` samples, max33.047ms to recovery, correctly publish no
-rendered values. No stale/native-fault result. Rendered age across all samples:
-median47ms,p9578ms,max94ms. On38 distinct captures one record was rejected as
-malformed (not published); its raw cause is not established. These small availability/
-coverage issues are retained for later hardening, not hidden as a perfect run.
-No implementation/config/game change during measurement; package unchanged.
-
-## Physical lamp A-B-A result — 2026-09-06, PID27140
-
-**Passed**, independently cross-checked. Recordings in `artifacts/light-research/`:
-`unified-lamp-aba-pid27140-20260906-A1-on.jsonl`, matching `...-B-off.jsonl`
-and `...-A2-on.jsonl`. Deduplicate on rendered captureSequence, not API rows.
-
-| Phase | Available API rows | Target present / distinct captures | Each of three controls present |
-|---|---:|---:|---:|
-| A1 ON | 309/309 | 88/88 | 88/88 |
-| B OFF | 305/305 | 0/87 | 87/87 |
-| A2 ON | 286/286 | 89/89 | 89/89 |
-
-Selection fixed before B: horizontal distance<0.65 and absolute vertical
-difference<3 from each of the four previously measured lamp positions, any kind.
-Target lamp2 reference is (-10529.755,611.292,-4420.300). Its point contribution
-returns at the same position (A1/A2 world ranges overlap); A2 summed linear
-luminance0.05925..0.12702 varies with animation, not physical lumens.
-All900 API rows available;264 distinct captures, max rendered age79ms, malformed0.
-Native frames progress: A1 44038..44347, B49983..50290, A2 56024..56332.
-
-A1→B interaction moved the player slightly and changed camera distance/FOV
-(55→50degrees); the whole experiment was not camera-fixed. Crucially, B→A2
-player position (-10530.006,609.15674,-4419.3315), camera X/Z, basis and50degree
-FOV are identical, with mean camera Y drift<0.001. Reappearance is therefore
-not explained by a changed view. Three neighbors remain positive controls.
-No implementation/config changes or manual instrumentation commands during
-these recordings. This verifies the physical switch's rendered effect, not a
-generic persistent OFF field or physical lamp ID. Last user-reported state: ON.
-
-## Remaining / one next step
-
-Core integration checks are complete: cold start, moving-camera world pairing,
-and physical lamp switching. No reinstall or additional toggle required. User
-prefers DMM; never replace game files with the optional helper without a new
-request, and do not modify the ASI loader/other mods.
-
-Next development step, when requested: bounded reliability/update hardening,
-starting with the movement run's isolated bridge-changing/rejected-record cases
-above. Console/explorer is integrated but disabled; its startup debug capture
-has not been exercised in the combined real game. Native automatic compatibility
-beyond the exact supported EXE is still unimplemented; retain fail-closed guards.
+Product is this repository. `research/` is the preserved independent Git repo
+(migration commit af5485b); `external/`, `artifacts/`, and original workspace under
+`archive/crimsonhue-workspace-20260906/` are preserved/ignored. CrimsonHue is only
+the future Hue consumer. No original files were deleted. Research entry points:
+`research/light-source-tests/CODEX_HANDOVER_FIRE.md`,
+`GPU_LIGHT_LAYOUTS_25116796.md` beside it, and
+`research/console-enabler/HANDOVER.md`. Do not restart resolved research paths.

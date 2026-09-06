@@ -170,7 +170,7 @@ struct Renderer
             ImGui::DestroyContext(context);
         }
     }
-    bool Draw(const Config& config, bool details, bool hudVisible)
+    bool Draw(const Config& config, bool details, bool hudVisible, bool lightVisible)
     {
         if (fault || !context) return false;
         if (FAILED(device->GetDeviceRemovedReason())) { fault = true; return false; }
@@ -182,7 +182,7 @@ struct Renderer
         if (backBuffer >= buffers.size()) return false;
         TryRead(latest);
         const auto notice = notices.Update(latest, config, Clock::now());
-        if (!hudVisible && !notice) return false;
+        if (!hudVisible && !lightVisible && !notice) return false;
         ContextScope scope(context);
         auto& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
@@ -191,6 +191,16 @@ struct Renderer
         previousFrame = now;
         ImGui_ImplDX12_NewFrame();
         ImGui::NewFrame();
+        // Both passes share this frame/backbuffer. Light markers are independent
+        // of the corner HUD; draw that panel afterwards to preserve readability.
+        if (lightVisible)
+        {
+            auto drawingConfig = config;
+            drawingConfig.visible = hudVisible;
+            drawingConfig.details = details;
+            drawingConfig.lightOverlayVisible = lightVisible;
+            DrawLightOverlay(latest, drawingConfig);
+        }
         if (hudVisible) DrawHud(latest, config, details);
         if (notice) DrawNotice(*notice, config, hudVisible, details);
         ImGui::Render();
@@ -244,7 +254,7 @@ struct State
     ComPtr<IDXGISwapChain3> candidate;
     ComPtr<ID3D12CommandQueue> queue;
     HWND window{};
-    bool visible{}, details{}, toggleDown{}, detailsDown{}, resizing{}, failed{}, hdr{};
+    bool visible{}, details{}, lightVisible{}, toggleDown{}, detailsDown{}, lightToggleDown{}, resizing{}, failed{}, hdr{};
     std::atomic<const char*> status{"Waiting for the game's D3D12 swapchain. Restart the game if attached late."};
     std::atomic<unsigned long long> rendered{};
     CreateChain createChain{}; CreateHwnd createHwnd{};
@@ -277,12 +287,16 @@ bool Draw(IDXGISwapChain* chain, UINT flags) noexcept
         const bool foreground = GetForegroundWindow() == GetAncestor(state.window, GA_ROOT);
         const bool toggle = state.config.enabled && state.config.toggleKey && (GetAsyncKeyState(state.config.toggleKey) & 0x8000);
         const bool detail = state.config.enabled && state.config.detailsKey && (GetAsyncKeyState(state.config.detailsKey) & 0x8000);
+        const bool lightToggle = state.config.lightOverlay && state.config.lightToggleKey &&
+            (GetAsyncKeyState(state.config.lightToggleKey) & 0x8000);
         if (foreground && toggle && !state.toggleDown) state.visible = !state.visible;
         if (foreground && detail && !state.detailsDown) state.details = !state.details;
-        state.toggleDown = toggle; state.detailsDown = detail;
+        if (foreground && lightToggle && !state.lightToggleDown) state.lightVisible = !state.lightVisible;
+        state.toggleDown = toggle; state.detailsDown = detail; state.lightToggleDown = lightToggle;
         const bool hudVisible = state.config.enabled && state.visible;
-        if ((!hudVisible && !state.config.notifications) || state.hdr || !state.renderer) return false;
-        if (state.renderer->Draw(state.config, state.details, hudVisible)) { ++state.rendered; return true; }
+        const bool lightVisible = state.config.lightOverlay && state.lightVisible;
+        if ((!hudVisible && !lightVisible && !state.config.notifications) || state.hdr || !state.renderer) return false;
+        if (state.renderer->Draw(state.config, state.details, hudVisible, lightVisible)) { ++state.rendered; return true; }
     }
     catch (...)
     {
@@ -439,13 +453,14 @@ HRESULT STDMETHODCALLTYPE OnCreateHwnd(IDXGIFactory2* factory, IUnknown* device,
 }
 bool InstallGraphics(const Config& config) noexcept
 {
-    if (!config.enabled && !config.notifications) return false;
+    if (!config.enabled && !config.notifications && !config.lightOverlay) return false;
     try
     {
         auto& state = Data();
         state.config = config;
         state.visible = config.visible;
         state.details = config.details;
+        state.lightVisible = config.lightOverlayVisible;
         const auto hookInit = MH_Initialize();
         if (hookInit != MH_OK && hookInit != MH_ERROR_ALREADY_INITIALIZED) return false;
         ComPtr<IDXGIFactory2> factory;
@@ -468,7 +483,7 @@ void MaintainGraphics() noexcept
         {
             renderer->Initialize(state.candidate.Get(), state.queue.Get(), state.config);
             state.renderer = std::move(renderer);
-            state.status = "HUD ready: D3D12 / SDR. F8 visibility, F9 diagnostics (defaults).";
+            state.status = "Overlay ready: D3D12 / SDR. F8 HUD, F9 diagnostics, F10 world lights (defaults).";
         }
         catch (...)
         {
@@ -485,5 +500,11 @@ void SetVisibleForTest(bool visible) noexcept
     auto& state = Data();
     std::lock_guard lock(state.mutex);
     state.visible = visible;
+}
+void SetLightVisibleForTest(bool visible) noexcept
+{
+    auto& state = Data();
+    std::lock_guard lock(state.mutex);
+    state.lightVisible = visible;
 }
 }

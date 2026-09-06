@@ -1,4 +1,28 @@
-# In-game overlay: 1.0.0 release preparation
+# In-game overlay validation
+
+## Current: 1.3.0-preview.2 light visualization, 2026-09-06
+
+Adds a compact oblique light radar to the corner HUD and an independently toggled
+fullscreen world-marker layer in the same ASI. F8 HUD, F9 diagnostics, F10 markers.
+Both views enabled in this preview's INI; missing configuration remains opt-in.
+Filtered rendered records only, no scene-depth test, no invented persistent IDs.
+
+Release build and six native overlay/client/notification test targets pass.
+Real D3D12 fixture readback verifies projected markers, spot direction, behind/near
+clipping, changing radar heights, independent and initially-hidden toggles,
+stale/missing clearing, Present/Present1, both resize paths and 4K. The aimed-at
+center label's collision gap was corrected after visual inspection. Small/4K
+combined and marker-only images are in `build/light-overlay-*.bmp` (synthetic test
+data, not game screenshots). Reader/projection also accepts the real A2 JSONL:
+337 records, 178 in front of its recorded camera, 77 in the viewport.
+
+**Next live check:** install through DMM with the game closed; verify marker
+alignment at a known lamp, pan/turn/walk, then F8/F10 independently. Projection
+uses latest published camera, not a frame-synchronous Present camera; motion
+latency remains unmeasured. HDR/frame-generation/recording coverage remains open.
+Light-source reconstruction/capture itself is unchanged from the tested preview.1.
+
+## Historical: 1.0.0 release preparation
 
 The user confirmed working in-game behavior after restarting with preview.7.
 Version 1.0.0 keeps that camera backend and makes the HUD opt-in: `[Overlay] Enabled=0`

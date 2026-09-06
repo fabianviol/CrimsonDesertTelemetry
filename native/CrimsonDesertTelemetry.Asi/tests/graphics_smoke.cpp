@@ -3,8 +3,12 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <array>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <numbers>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -66,7 +70,116 @@ View Fixture()
     s.pitch = 15.0f; s.fov = 50.0f; s.consensus = 48; s.validCopies = 100; s.distinctStates = 7; s.captureUs = 510;
     return view;
 }
-void SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
+View LightFixture(float aspect)
+{
+    auto view = Fixture();
+    auto& sample = view.sample;
+    sample.schemaVersion = "1.4";
+    sample.orientationSource = "scene-constants-test-fixture";
+    const Vec3 camera{-10528, 611, -4354};
+    sample.cameraPosition = camera;
+    sample.cameraForward = Vec3{0, 0, 1}; sample.cameraRight = Vec3{1, 0, 0}; sample.cameraUp = Vec3{0, 1, 0};
+    sample.cameraHeading = 0.0f; sample.pitch = 0.0f; sample.fov = 60.0f;
+    sample.aspectRatio = aspect; sample.nearPlane = 0.1f;
+    sample.playerPosition = Vec3{camera.x, camera.y - 1, camera.z + 0.5f};
+    sample.playerForward = Vec3{0, 0, 1}; sample.playerHeading = 0.0f;
+    const auto position = [&](float x, float y, float z) { return Vec3{camera.x + x, camera.y + y, camera.z + z}; };
+    // Four visible contributions at different elevations, one behind the camera,
+    // and one before its near plane. Indices are sample-local, not object IDs.
+    const std::vector<LightRecord> records{
+        {0, position(0, 0, 10), {0.85f, 0.30f, 0.08f}, 0.40f, "point", std::nullopt, std::nullopt},
+        {1, position(-3, 2, 12), {1.20f, 0.65f, 0.12f}, 0.74f, "point", std::nullopt, std::nullopt},
+        {2, position(4, 1, 14), {0.30f, 0.60f, 1.80f}, 0.63f, "spot", Vec3{0, -1, 0}, 27.0f},
+        {3, position(-4, -2, -8), {0.85f, 0.05f, 1.20f}, 0.30f, "point", std::nullopt, std::nullopt},
+        {4, position(0.01f, 0.005f, 0.02f), {0, 2, 0}, 1.40f, "point", std::nullopt, std::nullopt},
+        {5, position(2, -2, 8), {0.06f, 0.15f, 0.85f}, 0.19f, "point", std::nullopt, std::nullopt}
+    };
+    sample.authoredLights.status = "available";
+    sample.authoredLights.publishedRecords = 2u;
+    sample.renderedLights.status = "available";
+    sample.renderedLights.publishedRecords = static_cast<std::uint32_t>(records.size());
+    sample.renderedLights.ageMilliseconds = 12;
+    sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(records);
+    return view;
+}
+struct Pixels
+{
+    UINT width{}, height{};
+    std::vector<unsigned char> bgra;
+    size_t Changed(int left, int top, int right, int bottom) const
+    {
+        size_t count = 0;
+        for (int y = std::max(0, top); y < std::min(static_cast<int>(height), bottom); ++y)
+            for (int x = std::max(0, left); x < std::min(static_cast<int>(width), right); ++x)
+            {
+                const auto* pixel = bgra.data() + (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                // The UNORM clear is RGBA(0.10,0.15,0.21,1). Allow rounding.
+                if (std::abs(static_cast<int>(pixel[0]) - 54) + std::abs(static_cast<int>(pixel[1]) - 38) +
+                    std::abs(static_cast<int>(pixel[2]) - 26) > 9) ++count;
+            }
+        return count;
+    }
+    size_t Different(const Pixels& other, int left, int top, int right, int bottom) const
+    {
+        Require(width == other.width && height == other.height, "Pixel comparison dimensions differ");
+        size_t count = 0;
+        for (int y = std::max(0, top); y < std::min(static_cast<int>(height), bottom); ++y)
+            for (int x = std::max(0, left); x < std::min(static_cast<int>(width), right); ++x)
+            {
+                const size_t offset = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                if (std::abs(static_cast<int>(bgra[offset]) - other.bgra[offset]) +
+                    std::abs(static_cast<int>(bgra[offset + 1]) - other.bgra[offset + 1]) +
+                    std::abs(static_cast<int>(bgra[offset + 2]) - other.bgra[offset + 2]) > 20) ++count;
+            }
+        return count;
+    }
+    size_t Around(float x, float y, float radius) const
+    {
+        return Changed(static_cast<int>(std::floor(x - radius)), static_cast<int>(std::floor(y - radius)),
+            static_cast<int>(std::ceil(x + radius)), static_cast<int>(std::ceil(y + radius)));
+    }
+};
+void RequireLightPixels(const Pixels& image, const Config& config, bool hudVisible)
+{
+    const float width = static_cast<float>(image.width), height = static_cast<float>(image.height);
+    // Independently calculated pinhole projection for the fixture's vertical60°
+    // FOV. Deliberately do not call ProjectWorld: this is a renderer integration
+    // check, not a second assertion using the implementation's own result.
+    const float focal = height / (2 * std::tan(std::numbers::pi_v<float> / 6));
+    const float scale = HudScale(width, height, config, true);
+    const float radius = 13 * scale;
+    Require(image.Around(width / 2 + focal * 4 / 14, height / 2 - focal / 14, radius) > 10,
+        "Projected blue spot marker missing");
+    Require(image.Around(width / 2 + focal * 2 / 8, height / 2 + focal * 2 / 8, radius) > 10,
+        "Projected lower light marker missing");
+    if (!hudVisible)
+    {
+        Require(image.Around(width / 2, height / 2, radius) > 10, "Projected central light marker missing");
+        Require(image.Around(width / 2 - focal * 3 / 12, height / 2 - focal * 2 / 12, radius) > 10,
+            "Projected elevated light marker missing");
+    }
+    const float spotX = width / 2 + focal * 4 / 14, spotY = height / 2 - focal / 14;
+    Require(image.Changed(static_cast<int>(spotX - 4 * scale), static_cast<int>(spotY + 16 * scale),
+        static_cast<int>(spotX + 4 * scale), static_cast<int>(spotY + 40 * scale)) > 4,
+        "Downward spot direction arrow missing");
+    // Both excluded records would project here if depth/near clipping failed.
+    Require(image.Around(width / 2 + focal / 2, height / 2 - focal / 4, 8 * scale) == 0,
+        "A behind-camera or near-plane light produced a screen ghost");
+    if (hudVisible)
+        Require(image.Changed(static_cast<int>(55 * scale), static_cast<int>(135 * scale),
+            static_cast<int>(235 * scale), static_cast<int>(270 * scale)) > 100,
+            "Combined light HUD radar area was not rendered");
+}
+void RequireNoLightPixels(const Pixels& image)
+{
+    const float width = static_cast<float>(image.width), height = static_cast<float>(image.height);
+    const float focal = height / (2 * std::tan(std::numbers::pi_v<float> / 6));
+    Require(image.Around(width / 2, height / 2, 14) == 0 &&
+        image.Around(width / 2 + focal * 4 / 14, height / 2 - focal / 14, 14) == 0 &&
+        image.Around(width / 2 + focal * 2 / 8, height / 2 + focal * 2 / 8, 14) == 0,
+        "Missing/stale/hidden light data retained fullscreen ghosts");
+}
+Pixels SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
 {
     const auto desc = buffer->GetDesc();
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
@@ -101,15 +214,19 @@ void SaveBuffer(Gpu& gpu, ID3D12Resource* buffer, const wchar_t* path)
             output[0] = input[2]; output[1] = input[1]; output[2] = input[0]; output[3] = 255;
         }
     D3D12_RANGE noWrite{}; readback->Unmap(0, &noWrite);
-    BITMAPFILEHEADER file{}; file.bfType = 0x4D42; file.bfOffBits = sizeof(file) + sizeof(BITMAPINFOHEADER);
-    file.bfSize = file.bfOffBits + static_cast<DWORD>(pixels.size());
-    BITMAPINFOHEADER info{}; info.biSize = sizeof(info); info.biWidth = static_cast<LONG>(width);
-    info.biHeight = -static_cast<LONG>(desc.Height); info.biPlanes = 1; info.biBitCount = 32;
-    std::ofstream stream(path, std::ios::binary);
-    stream.write(reinterpret_cast<const char*>(&file), sizeof(file));
-    stream.write(reinterpret_cast<const char*>(&info), sizeof(info));
-    stream.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
-    Require(stream.good(), "Could not save smoke image");
+    if (path)
+    {
+        BITMAPFILEHEADER file{}; file.bfType = 0x4D42; file.bfOffBits = sizeof(file) + sizeof(BITMAPINFOHEADER);
+        file.bfSize = file.bfOffBits + static_cast<DWORD>(pixels.size());
+        BITMAPINFOHEADER info{}; info.biSize = sizeof(info); info.biWidth = static_cast<LONG>(width);
+        info.biHeight = -static_cast<LONG>(desc.Height); info.biPlanes = 1; info.biBitCount = 32;
+        std::ofstream stream(path, std::ios::binary);
+        stream.write(reinterpret_cast<const char*>(&file), sizeof(file));
+        stream.write(reinterpret_cast<const char*>(&info), sizeof(info));
+        stream.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
+        Require(stream.good(), "Could not save smoke image");
+    }
+    return Pixels{width, desc.Height, std::move(pixels)};
 }
 }
 int wmain(int argc, wchar_t** argv)
@@ -119,9 +236,16 @@ int wmain(int argc, wchar_t** argv)
         Config config; config.details = true;
         Require(!InstallGraphics(config), "Disabled HUD installed graphics hooks");
         const bool noticesOnly = argc > 1 && _wcsicmp(argv[1], L"--notices") == 0;
-        config.enabled = !noticesOnly;
+        const bool lightsOnly = argc > 1 && _wcsicmp(argv[1], L"--lights-only") == 0;
+        const bool lightsMode = lightsOnly || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
+        config.enabled = !noticesOnly && !lightsOnly;
         config.notifications = noticesOnly;
-        const int imageArgument = noticesOnly ? 2 : 1;
+        config.lightOverlay = lightsMode;
+        // Regression control: InitiallyVisible=0 must still allow the runtime
+        // F10 state to enable drawing; the immutable startup config stays false.
+        config.lightOverlayVisible = !lightsMode;
+        config.radar3D = true;
+        const int imageArgument = noticesOnly || lightsMode ? 2 : 1;
         Require(InstallGraphics(config), "Graphics hooks not installed");
         WNDCLASSW windowClass{}; windowClass.lpfnWndProc = DefWindowProcW;
         windowClass.hInstance = GetModuleHandleW(nullptr); windowClass.lpszClassName = L"CDTGraphicsSmoke";
@@ -154,9 +278,12 @@ int wmain(int argc, wchar_t** argv)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc{}; heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; heapDesc.NumDescriptors = 1;
         ComPtr<ID3D12DescriptorHeap> rtvHeap;
         Check(gpu.device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeap)));
-        const auto frame = [&](bool present1, const wchar_t* screenshot)
+        const auto frame = [&](bool present1, const wchar_t* screenshot, const View* supplied = nullptr, bool inspect = false)
         {
-            Publish(Fixture());
+            DXGI_SWAP_CHAIN_DESC1 current{}; Check(chain->GetDesc1(&current));
+            auto view = supplied ? *supplied : lightsMode ?
+                LightFixture(static_cast<float>(current.Width) / static_cast<float>(current.Height)) : Fixture();
+            Publish(std::move(view));
             ComPtr<ID3D12Resource> buffer;
             Check(chain->GetBuffer(chain->GetCurrentBackBufferIndex(), IID_PPV_ARGS(&buffer)));
             const auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -170,18 +297,84 @@ int wmain(int argc, wchar_t** argv)
             DXGI_PRESENT_PARAMETERS parameters{};
             Check(present1 ? chain->Present1(0, 0, &parameters) : chain->Present(0, 0));
             gpu.Wait();
-            if (screenshot) SaveBuffer(gpu, buffer.Get(), screenshot);
+            if (screenshot || inspect) return SaveBuffer(gpu, buffer.Get(), screenshot);
+            return Pixels{};
         };
-        for (int i = 0; i < 8; ++i) frame(i % 2 == 0, i == 7 && argc > imageArgument ? argv[imageArgument] : nullptr);
+        if (lightsMode)
+        {
+            SetVisibleForTest(false);
+            RequireNoLightPixels(frame(false, nullptr, nullptr, true));
+            Require(RenderedFrames() == 0, "Initially hidden light overlay submitted a draw");
+            SetLightVisibleForTest(true);
+            SetVisibleForTest(!lightsOnly);
+        }
+        Pixels referenceLights;
+        for (int i = 0; i < 8; ++i)
+        {
+            const auto image = frame(i % 2 == 0, i == 7 && argc > imageArgument ? argv[imageArgument] : nullptr,
+                nullptr, lightsMode && i == 7);
+            if (lightsMode && i == 7)
+            {
+                RequireLightPixels(image, config, !lightsOnly);
+                referenceLights = image;
+            }
+        }
         Require(RenderedFrames() == 8, "Present/Present1 did not render exactly once per frame");
         std::cout << "PASS D3D12 Present/Present1 and multi-frame resource reuse\n";
+        if (lightsMode && !lightsOnly)
+        {
+            auto flat = LightFixture(960.0f / 720.0f);
+            auto records = *flat.sample.renderedLights.records;
+            for (auto& record : records) record.position.y = flat.sample.playerPosition->y;
+            flat.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(std::move(records));
+            const auto flattenedImage = frame(false, nullptr, &flat, true);
+            const float scale = HudScale(960, 720, config, true);
+            Require(referenceLights.Different(flattenedImage, static_cast<int>(55 * scale), static_cast<int>(135 * scale),
+                static_cast<int>(235 * scale), static_cast<int>(270 * scale)) > 10,
+                "Light radar ignored record height changes");
+            std::cout << "PASS 3D light radar responds to changing light elevations\n";
+        }
         const auto before = RenderedFrames();
         Check(chain->Present(0, DXGI_PRESENT_TEST));
         Require(RenderedFrames() == before, "Test-only present changed output");
-        SetVisibleForTest(false); frame(false, nullptr);
-        Require(RenderedFrames() == before + (noticesOnly ? 1 : 0), "Notification-only rendering must be independent of HUD visibility");
+        SetVisibleForTest(false);
+        const auto hiddenHud = frame(false, nullptr, nullptr, lightsMode);
+        Require(RenderedFrames() == before + (noticesOnly || lightsMode ? 1 : 0),
+            "Independent notices/light markers did not survive hiding the full HUD");
+        if (lightsMode)
+        {
+            RequireLightPixels(hiddenHud, config, false);
+            auto centerOnly = LightFixture(960.0f / 720.0f);
+            const std::vector<LightRecord> oneRecord{centerOnly.sample.renderedLights.records->front()};
+            centerOnly.sample.renderedLights.records = std::make_shared<const std::vector<LightRecord>>(oneRecord);
+            centerOnly.sample.renderedLights.publishedRecords = 1u;
+            const auto centerImage = frame(false, nullptr, &centerOnly, true);
+            const float centerScale = HudScale(static_cast<float>(centerImage.width), static_cast<float>(centerImage.height), config, true);
+            const float centerX = static_cast<float>(centerImage.width) / 2;
+            const float centerY = static_cast<float>(centerImage.height) / 2;
+            // Reticle/ring pixels stop before this region. With no other lights
+            // or HUD, only the selected light's detail card can paint it. A gap
+            // of24 intersects the protected reticle and wrongly rejects every
+            // placement; the corrected gap leaves room for this right-hand card.
+            Require(centerImage.Changed(static_cast<int>(centerX + 50 * centerScale), static_cast<int>(centerY - 25 * centerScale),
+                static_cast<int>(centerX + 160 * centerScale), static_cast<int>(centerY + 25 * centerScale)) > 100,
+                "Selected central light detail card was blocked by the reticle");
+            auto stale = LightFixture(960.0f / 720.0f);
+            stale.sample.renderedLights.ageMilliseconds = 650;
+            RequireNoLightPixels(frame(false, nullptr, &stale, true));
+            auto missing = LightFixture(960.0f / 720.0f);
+            missing.sample.renderedLights = LightSummary{};
+            RequireNoLightPixels(frame(false, nullptr, &missing, true));
+            SetLightVisibleForTest(false);
+            const auto beforeOff = RenderedFrames();
+            RequireNoLightPixels(frame(false, nullptr, nullptr, true));
+            Require(RenderedFrames() == beforeOff, "All UI hidden still submitted an overlay draw");
+            SetLightVisibleForTest(true);
+            RequireLightPixels(frame(false, nullptr, nullptr, true), config, false);
+            std::cout << "PASS projected lights, spot arrow, depth clipping, stale/missing clearing and independent light visibility\n";
+        }
         const auto afterHidden = RenderedFrames();
-        SetVisibleForTest(true);
+        SetVisibleForTest(!lightsOnly && !noticesOnly);
         Check(chain->ResizeBuffers(2, 1280, 800, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
         MaintainGraphics(); frame(false, nullptr);
         Require(RenderedFrames() == afterHidden + 1, "HUD/notifications did not resume after ResizeBuffers");
@@ -192,8 +385,9 @@ int wmain(int argc, wchar_t** argv)
         std::cout << "PASS visibility, test-only present, ResizeBuffers and ResizeBuffers1\n";
         Check(chain->ResizeBuffers(2, 3840, 2160, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
         MaintainGraphics();
-        frame(false, argc > imageArgument + 1 ? argv[imageArgument + 1] : nullptr);
+        const auto largeImage = frame(false, argc > imageArgument + 1 ? argv[imageArgument + 1] : nullptr, nullptr, lightsMode);
         Require(RenderedFrames() == afterHidden + 3, "4K HUD/notifications did not render after resize");
+        if (lightsMode) RequireLightPixels(largeImage, config, !lightsOnly);
         std::cout << "PASS 4K HUD rendering after resize with resolution-scaled font atlas\n";
         Check(gpu.device->GetDeviceRemovedReason());
         DestroyWindow(window);

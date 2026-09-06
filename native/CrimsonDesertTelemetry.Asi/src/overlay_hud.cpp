@@ -1,9 +1,13 @@
 #include "overlay.h"
 #include <imgui.h>
 #include <algorithm>
+#include <array>
+#include <cfloat>
+#include <cstddef>
 #include <cmath>
 #include <format>
 #include <numbers>
+#include <vector>
 
 namespace cdt::overlay
 {
@@ -13,6 +17,77 @@ constexpr ImU32 White = IM_COL32(228, 239, 244, 255);
 constexpr ImU32 Muted = IM_COL32(174, 194, 207, 255);
 constexpr ImU32 Cyan = IM_COL32(49, 221, 208, 255);
 constexpr ImU32 Amber = IM_COL32(251, 188, 91, 255);
+constexpr ImU32 Panel = IM_COL32(9, 20, 30, 240);
+constexpr ImU32 Grid = IM_COL32(42, 67, 82, 190);
+
+struct Rect
+{
+    ImVec2 min, max;
+    bool Intersects(const Rect& other, float gap = 0) const
+    {
+        return min.x < other.max.x + gap && max.x + gap > other.min.x &&
+            min.y < other.max.y + gap && max.y + gap > other.min.y;
+    }
+    bool Contains(ImVec2 p, float gap = 0) const
+    {
+        return p.x >= min.x - gap && p.x <= max.x + gap &&
+            p.y >= min.y - gap && p.y <= max.y + gap;
+    }
+};
+
+std::optional<Rect> HudBounds(const Config& config, ImVec2 display)
+{
+    if (!config.enabled || !config.visible) return std::nullopt;
+    const float scale = HudScale(display.x, display.y, config, config.details);
+    if (scale < .3f) return std::nullopt;
+    const float width = 510 * scale, height = (config.details ? 600.f : 344.f) * scale;
+    const float margin = 20 * scale;
+    const ImVec2 origin((config.corner & 1) ? display.x - width - margin : margin,
+        (config.corner & 2) ? display.y - height - margin : margin);
+    return Rect{origin, ImVec2(origin.x + width, origin.y + height)};
+}
+
+ImU32 LightColor(Vec3 linear, int alpha = 255)
+{
+    // A chromatic HDR swatch: common-channel compression preserves linear ratios,
+    // followed by the sRGB transfer curve. This is not the game's final scene color.
+    const float peak = std::max({0.f, linear.x, linear.y, linear.z});
+    const auto channel = [peak](float value)
+    {
+        const float c = std::max(0.f, value) / (1.f + peak);
+        return c <= .0031308f ? 12.92f * c : 1.055f * std::pow(c, 1.f / 2.4f) - .055f;
+    };
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(channel(linear.x), channel(linear.y),
+        channel(linear.z), static_cast<float>(alpha) / 255.f));
+}
+
+float DistanceSquared(Vec3 a, Vec3 b)
+{
+    const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
+    return x*x + y*y + z*z;
+}
+
+void ScreenArrow(ImDrawList* draw, ImVec2 from, ImVec2 to, ImU32 color, float scale,
+    float thickness = 1.5f)
+{
+    const float dx = to.x - from.x, dy = to.y - from.y;
+    const float length = std::sqrt(dx*dx + dy*dy);
+    if (length < 2 * scale) return;
+    const float ux = dx / length, uy = dy / length;
+    const float head = std::min(6 * scale, length * .4f);
+    draw->AddLine(from, to, color, thickness * scale);
+    draw->AddLine(to, ImVec2(to.x - ux*head - uy*head*.55f,
+        to.y - uy*head + ux*head*.55f), color, thickness * scale);
+    draw->AddLine(to, ImVec2(to.x - ux*head + uy*head*.55f,
+        to.y - uy*head - ux*head*.55f), color, thickness * scale);
+}
+
+std::string LightKey(const Config& config)
+{
+    return config.lightToggleKey >= 0x70 && config.lightToggleKey <= 0x87
+        ? std::format("F{}", config.lightToggleKey - 0x70 + 1)
+        : std::format("VK {:02X}", config.lightToggleKey);
+}
 std::string Angle(const std::optional<float>& angle)
 {
     return angle ? std::format("{:.1f} deg", *angle) : "--";
@@ -21,6 +96,135 @@ std::string VectorText(const std::optional<Vec3>& vector, int precision = 2)
 {
     return vector ? std::format("{:.{}f}   {:.{}f}   {:.{}f}", vector->x, precision,
         vector->y, precision, vector->z, precision) : "--   --   --";
+}
+
+void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
+    const Config& config, ImVec2 origin, float scale)
+{
+    const auto at = [&](float x, float y)
+    {
+        return ImVec2(origin.x + x*scale, origin.y + y*scale);
+    };
+    const auto text = [&](float x, float y, ImU32 color, const std::string& value, float size)
+    {
+        draw->AddText(ImGui::GetFont(), size*scale, at(x,y), color, value.c_str());
+    };
+    const float radius = std::clamp(config.lightRadius, 1.f, 500.f);
+    const float unit = 80.f / radius;
+    // Fixed world yaw reference, player-centered. The ground is viewed obliquely;
+    // only the displayed vertical stem is bounded to this compact panel.
+    const auto ground = [&](float x, float z)
+    {
+        return at(124.f + (.8660254f*x + .5f*z)*unit,
+            181.f + (.25f*x - .4330127f*z)*unit);
+    };
+    const auto heightPoint = [&](ImVec2 p, float height)
+    {
+        p.y -= std::clamp(height*unit*.85f, -43.f, 55.f)*scale;
+        p.y = std::clamp(p.y,origin.y+118*scale,origin.y+230*scale);
+        return p;
+    };
+    text(20, 82, Cyan, "3D LIGHT RADAR", 12);
+    text(20, 99, Muted, "Player center / world yaw reference", 10);
+    draw->PushClipRect(at(16,113), at(234,235), true);
+    for (int ring = 1; ring <= 2; ++ring)
+    {
+        std::array<ImVec2, 64> points;
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const float a = static_cast<float>(i) * 2.f*std::numbers::pi_v<float> /
+                static_cast<float>(points.size());
+            points[i] = ground(std::sin(a)*radius*static_cast<float>(ring)*.5f,
+                std::cos(a)*radius*static_cast<float>(ring)*.5f);
+        }
+        draw->AddPolyline(points.data(), static_cast<int>(points.size()), Grid,
+            ImDrawFlags_Closed, scale);
+    }
+    for (int i = -1; i <= 1; ++i)
+    {
+        const float offset = static_cast<float>(i)*radius*.5f;
+        const float edge = std::sqrt(radius*radius - offset*offset);
+        draw->AddLine(ground(offset,-edge), ground(offset,edge), Grid, scale);
+        draw->AddLine(ground(-edge,offset), ground(edge,offset), Grid, scale);
+    }
+    const ImVec2 center = ground(0,0);
+    const bool lightLive = RenderedLightsLive(view, Clock::now(), config.staleMs);
+    if (sample.playerPosition)
+    {
+        if (sample.cameraPosition && sample.cameraHeading)
+        {
+            const Vec3 delta{sample.cameraPosition->x - sample.playerPosition->x,
+                sample.cameraPosition->y - sample.playerPosition->y,
+                sample.cameraPosition->z - sample.playerPosition->z};
+            if (delta.x*delta.x + delta.z*delta.z <= radius*radius)
+            {
+                const ImVec2 base = ground(delta.x,delta.z);
+                const ImVec2 camera = heightPoint(base,delta.y);
+                const float yaw = *sample.cameraHeading * std::numbers::pi_v<float> / 180.f;
+                const auto ray = [&](float angle, float length)
+                {
+                    auto p = ground(delta.x + std::sin(angle)*length,
+                        delta.z + std::cos(angle)*length);
+                    p.y += camera.y - base.y;
+                    return p;
+                };
+                if (sample.fov && sample.aspectRatio)
+                {
+                    const float half = std::atan(std::tan(*sample.fov *
+                        std::numbers::pi_v<float> / 360.f) * *sample.aspectRatio);
+                    const auto left = ray(yaw-half,radius*.62f);
+                    const auto right = ray(yaw+half,radius*.62f);
+                    draw->AddTriangleFilled(camera,left,right,IM_COL32(251,188,91,19));
+                    draw->AddLine(camera,left,IM_COL32(251,188,91,80),scale);
+                    draw->AddLine(camera,right,IM_COL32(251,188,91,80),scale);
+                }
+                draw->AddLine(base,camera,IM_COL32(251,188,91,100),scale);
+                draw->AddCircle(camera,3.f*scale,Amber,12,scale);
+                ScreenArrow(draw,camera,ray(yaw,radius*.45f),Amber,scale);
+            }
+        }
+        if (lightLive && sample.renderedLights.records)
+        {
+            struct Dot { ImVec2 base, tip; ImU32 color, halo; };
+            std::vector<Dot> dots;
+            const size_t markerLimit = static_cast<size_t>(std::clamp(config.lightMaxMarkers,1,2048));
+            dots.reserve(std::min(sample.renderedLights.records->size(),markerLimit));
+            for (const auto& light : *sample.renderedLights.records)
+            {
+                if (DistanceSquared(light.position,*sample.playerPosition) > radius*radius) continue;
+                const auto base = ground(light.position.x - sample.playerPosition->x,
+                    light.position.z - sample.playerPosition->z);
+                dots.push_back({base,heightPoint(base,light.position.y - sample.playerPosition->y),
+                    LightColor(light.colorLinear),LightColor(light.colorLinear,40)});
+                if (dots.size() >= markerLimit) break;
+            }
+            std::sort(dots.begin(),dots.end(),[](const Dot& a,const Dot& b){return a.base.y < b.base.y;});
+            for (const auto& dot : dots)
+            {
+                draw->AddCircleFilled(dot.base,1.5f*scale,IM_COL32(138,163,176,100),8);
+                draw->AddLine(dot.base,dot.tip,IM_COL32(140,174,190,85),scale);
+                draw->AddCircleFilled(dot.tip,6*scale,dot.halo,16);
+                draw->AddCircleFilled(dot.tip,3*scale,dot.color,12);
+                draw->AddCircle(dot.tip,3*scale,IM_COL32(224,239,245,170),12,.65f*scale);
+            }
+        }
+    }
+    if (sample.playerHeading)
+    {
+        const float yaw = *sample.playerHeading * std::numbers::pi_v<float> / 180.f;
+        ScreenArrow(draw,center,ground(std::sin(yaw)*radius*.4f,
+            std::cos(yaw)*radius*.4f),Cyan,scale,2);
+    }
+    draw->AddCircleFilled(center,4*scale,IM_COL32(9,20,30,255),16);
+    draw->AddCircle(center,4*scale,Cyan,16,1.5f*scale);
+    draw->PopClipRect();
+    const auto xAxis = ground(radius*.96f,0), zAxis = ground(0,radius*.96f);
+    draw->AddText(ImGui::GetFont(),10*scale,ImVec2(xAxis.x+5*scale,xAxis.y-5*scale),Muted,"+X");
+    draw->AddText(ImGui::GetFont(),10*scale,ImVec2(zAxis.x+4*scale,zAxis.y-12*scale),Muted,"+Z");
+    text(20,236,lightLive && sample.playerPosition ? Muted : Amber,
+        !lightLive ? LightFeedStatus(view,Clock::now(),config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
+        std::format("{:.0f} gu / filtered (not 360 complete)",radius),10);
+    text(20,249,Muted,"Height stems are schematic",9);
 }
 }
 
@@ -53,6 +257,9 @@ void DrawHud(const View& view, const Config& config, const bool details)
 
     const Sample empty{};
     const auto& sample = live ? view.sample : empty;
+    if (config.radar3D) DrawRadar(draw,view,sample,config,origin,scale);
+    else
+    {
     const ImVec2 center = point(121, 169);
     draw->AddCircle(center, 65 * scale, IM_COL32(60, 86, 102, 255), 64, scale);
     draw->AddCircle(center, 43 * scale, IM_COL32(28, 47, 61, 255), 64, scale);
@@ -79,6 +286,7 @@ void DrawHud(const View& view, const Config& config, const bool details)
     arrow(sample.cameraHeading, Amber, false, 59);
     arrow(sample.playerHeading, Cyan, true, 46);
     draw->AddCircleFilled(center, 3 * scale, White);
+    }
     text(250, 87, Cyan, "PLAYER ROOT", 13);
     text(250, 106, White, Angle(sample.playerHeading), 24);
     text(250, 144, Amber, "CAMERA", 13);
@@ -107,6 +315,209 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20, 521, Muted, "Build " + view.sample.build, 13);
     text(20, 542, Muted, "D3D12 / SDR  |  passive HUD  |  no mouse capture", 13);
     text(20, 570, Cyan, "Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"), 12);
+}
+
+void DrawLightOverlay(const View& view, const Config& config)
+{
+    if (!config.lightOverlay || !config.lightOverlayVisible) return;
+    const auto display = ImGui::GetIO().DisplaySize;
+    const float scale = std::min(std::max(1.f,display.y/1080.f),display.x/660.f);
+    if (scale < .3f || display.y < 120*scale) return;
+    auto* draw = ImGui::GetForegroundDrawList();
+    auto* font = ImGui::GetFont();
+    const auto hud = HudBounds(config,display);
+    const float margin = 20*scale;
+    const float radius = std::clamp(config.lightRadius,1.f,500.f);
+    const auto now = Clock::now();
+    const bool live = RenderedLightsLive(view,now,config.staleMs);
+    const auto& sample = view.sample;
+    struct Marker
+    {
+        const LightRecord* light;
+        ScreenPoint screen;
+        float distance, crosshairDistance;
+    };
+    std::vector<Marker> markers;
+    size_t inRange = 0;
+    bool cameraReady = false;
+    if (live && sample.cameraPosition && sample.cameraForward)
+    {
+        const float probeDistance = std::max(1.f,sample.nearPlane.value_or(0.f)*2.f);
+        const Vec3 probe{sample.cameraPosition->x + sample.cameraForward->x*probeDistance,
+            sample.cameraPosition->y + sample.cameraForward->y*probeDistance,
+            sample.cameraPosition->z + sample.cameraForward->z*probeDistance};
+        cameraReady = ProjectWorld(probe,sample,display.x,display.y).has_value();
+    }
+    if (live && sample.playerPosition && cameraReady && sample.renderedLights.records)
+    {
+        const size_t markerLimit = static_cast<size_t>(std::clamp(config.lightMaxMarkers,1,2048));
+        markers.reserve(std::min(sample.renderedLights.records->size(),markerLimit));
+        for (const auto& light : *sample.renderedLights.records)
+        {
+            const float distanceSquared = DistanceSquared(light.position,*sample.playerPosition);
+            if (distanceSquared > radius*radius) continue;
+            ++inRange;
+            const auto p = ProjectWorld(light.position,sample,display.x,display.y);
+            if (!p || p->x < 8*scale || p->y < 8*scale ||
+                p->x > display.x-8*scale || p->y > display.y-8*scale ||
+                (hud && hud->Contains(ImVec2(p->x,p->y),10*scale))) continue;
+            const float dx = p->x-display.x*.5f, dy = p->y-display.y*.5f;
+            markers.push_back({&light,*p,std::sqrt(distanceSquared),dx*dx+dy*dy});
+        }
+        const size_t keep = std::min(markers.size(),markerLimit);
+        std::partial_sort(markers.begin(),markers.begin()+static_cast<std::ptrdiff_t>(keep),markers.end(),
+            [](const Marker& a,const Marker& b)
+        {
+            return a.crosshairDistance < b.crosshairDistance;
+        });
+        markers.resize(keep);
+    }
+
+    std::string headline;
+    if (!live)
+    {
+        headline = LightFeedStatus(view,now,config.staleMs);
+        if (!sample.renderedLights.unavailableReason.empty())
+            headline += "  /  " + sample.renderedLights.unavailableReason.substr(0,52);
+    }
+    else if (!sample.playerPosition) headline = "RENDERED LIGHTS  /  player position unavailable";
+    else if (!cameraReady) headline = "RENDERED LIGHTS  /  camera projection unavailable";
+    else headline = std::format("RENDERED LIGHTS  /  {} in range  /  {} on screen",inRange,markers.size());
+    const std::string controls = std::format("{} hide  /  radius {:.0f} game units  /  aim to inspect",LightKey(config),radius);
+    const std::string caveat = "Filtered / no depth test / HDR swatches / spot arrows schematic";
+    float legendWidth = 0;
+    for (const auto* line : std::array<const std::string*,3>{&headline,&controls,&caveat})
+        legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
+    legendWidth = std::min(display.x-2*margin,legendWidth+28*scale);
+    const float legendHeight = 70*scale;
+    Rect legend{ImVec2(margin,display.y-margin-legendHeight),
+        ImVec2(margin+legendWidth,display.y-margin)};
+    if (hud && legend.Intersects(*hud,12*scale))
+    {
+        legend.min.x = display.x-margin-legendWidth;
+        legend.max.x = display.x-margin;
+        if (legend.Intersects(*hud,12*scale))
+        {
+            legend.max.y = std::max(legendHeight+margin,hud->min.y-12*scale);
+            legend.min.y = legend.max.y-legendHeight;
+        }
+    }
+
+    const size_t wantedLabels = std::min(markers.size(),static_cast<size_t>(std::clamp(config.lightMaxLabels,0,16)));
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto& marker = markers[i];
+        const ImVec2 p(marker.screen.x,marker.screen.y);
+        if (legend.Contains(p,10*scale)) continue;
+        const auto& light = *marker.light;
+        const bool selected = i == 0 && wantedLabels > 0;
+        const float ring = (selected ? 9.f : 6.f)*scale;
+        draw->AddCircle(p,ring+3*scale,LightColor(light.colorLinear,42),24,5*scale);
+        draw->AddCircle(p,ring,IM_COL32(4,12,19,235),24,4*scale);
+        draw->AddCircle(p,ring,LightColor(light.colorLinear),24,2*scale);
+        draw->AddCircleFilled(p,1.4f*scale,White,8);
+        if (selected)
+        {
+            draw->AddCircle(p,ring+4*scale,IM_COL32(230,244,247,170),32,scale);
+            draw->AddLine(ImVec2(p.x-ring-8*scale,p.y),ImVec2(p.x-ring-3*scale,p.y),White,scale);
+            draw->AddLine(ImVec2(p.x+ring+3*scale,p.y),ImVec2(p.x+ring+8*scale,p.y),White,scale);
+        }
+        if (light.kind == "spot" && light.direction)
+        {
+            const Vec3 end{light.position.x+light.direction->x,
+                light.position.y+light.direction->y,light.position.z+light.direction->z};
+            if (const auto projected = ProjectWorld(end,sample,display.x,display.y))
+            {
+                const float dx = projected->x-p.x, dy = projected->y-p.y;
+                const float length = std::sqrt(dx*dx+dy*dy);
+                if (length > .5f)
+                {
+                    const float ux = dx/length, uy = dy/length;
+                    const ImVec2 from(p.x+ux*(ring+3*scale),p.y+uy*(ring+3*scale));
+                    const ImVec2 to(p.x+ux*(ring+30*scale),p.y+uy*(ring+30*scale));
+                    ScreenArrow(draw,from,to,IM_COL32(4,12,19,230),scale,3.5f);
+                    ScreenArrow(draw,from,to,LightColor(light.colorLinear,225),scale);
+                }
+            }
+        }
+    }
+
+    std::vector<Rect> occupied{legend};
+    if (hud) occupied.push_back(*hud);
+    // Keep labels clear of the reticle as well as each other and the optional HUD.
+    occupied.push_back({ImVec2(display.x*.5f-22*scale,display.y*.5f-22*scale),
+        ImVec2(display.x*.5f+22*scale,display.y*.5f+22*scale)});
+    size_t labelCount = 0;
+    const size_t labelCandidates = std::min<size_t>(markers.size(),64);
+    for (size_t i = 0; i < labelCandidates && labelCount < wantedLabels; ++i)
+    {
+        const auto& marker = markers[i];
+        const auto& light = *marker.light;
+        const ImVec2 anchor(marker.screen.x,marker.screen.y);
+        if (legend.Contains(anchor,10*scale)) continue;
+        std::string kind = light.kind == "spot" ? "SPOT" : light.kind == "point" ? "POINT" : "UNKNOWN KIND";
+        std::array<std::string,4> lines{
+            std::format("{}  /  sample #{}",kind,light.sampleIndex),
+            std::format("XYZ  {:.2f} / {:.2f} / {:.2f}",light.position.x,light.position.y,light.position.z),
+            std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}",light.colorLinear.x,light.colorLinear.y,light.colorLinear.z),
+            std::format("Luminance {:.4g}  /  player distance {:.1f} gu",light.luminanceLinear,marker.distance)};
+        if (light.kind == "spot" && light.coneHalfAngleDegrees)
+            lines[0] += std::format("  /  half cone {:.1f} deg",*light.coneHalfAngleDegrees);
+        float width = 0;
+        for (const auto& line : lines)
+            width = std::max(width,font->CalcTextSizeA(12*scale,FLT_MAX,0,line.c_str()).x);
+        width += 26*scale;
+        const float height = 82*scale;
+        if (width > display.x-2*margin || height > display.y-2*margin) continue;
+        // Clear the 22px reticle half-width plus the 8px collision margin.
+        // A smaller gap rejects every placement for the aimed-at center light.
+        const float gap = 36*scale;
+        const std::array<ImVec2,8> offsets{{
+            {gap,-height*.5f},{-width-gap,-height*.5f},{gap,-height-gap},{gap,gap},
+            {-width-gap,-height-gap},{-width-gap,gap},{-width*.5f,-height-gap},{-width*.5f,gap}}};
+        std::optional<Rect> target;
+        for (const auto offset : offsets)
+        {
+            const float x = std::clamp(anchor.x+offset.x,margin,display.x-margin-width);
+            const float y = std::clamp(anchor.y+offset.y,margin,display.y-margin-height);
+            const Rect candidate{ImVec2(x,y),ImVec2(x+width,y+height)};
+            bool collision = false;
+            for (const auto& taken : occupied)
+                if (candidate.Intersects(taken,8*scale)) { collision = true; break; }
+            if (collision) continue;
+            // Labels must not conceal other source rings, including tightly packed lights.
+            for (const auto& other : markers)
+                if (candidate.Contains(ImVec2(other.screen.x,other.screen.y),11*scale))
+                { collision = true; break; }
+            if (!collision) { target = candidate; break; }
+        }
+        if (!target) continue;
+        occupied.push_back(*target);
+        const ImVec2 attach(std::clamp(anchor.x,target->min.x,target->max.x),
+            std::clamp(anchor.y,target->min.y,target->max.y));
+        draw->AddLine(anchor,attach,IM_COL32(8,18,27,230),3*scale);
+        draw->AddLine(anchor,attach,LightColor(light.colorLinear,185),scale);
+        draw->AddRectFilled(target->min,target->max,Panel,7*scale);
+        draw->AddRect(target->min,target->max,LightColor(light.colorLinear,175),7*scale);
+        draw->AddRectFilled(ImVec2(target->min.x,target->min.y+11*scale),
+            ImVec2(target->min.x+3*scale,target->max.y-11*scale),LightColor(light.colorLinear),scale);
+        for (size_t line = 0; line < lines.size(); ++line)
+            draw->AddText(font,12*scale,ImVec2(target->min.x+13*scale,
+                target->min.y+(10+17*static_cast<float>(line))*scale),line == 0 ? White : Muted,lines[line].c_str());
+        ++labelCount;
+    }
+
+    draw->AddRectFilled(legend.min,legend.max,Panel,8*scale);
+    draw->AddRect(legend.min,legend.max,live && cameraReady ? IM_COL32(49,221,208,110) : Amber,8*scale);
+    draw->PushClipRect(legend.min,legend.max,true);
+    const auto legendText = [&](float y,ImU32 color,const std::string& line)
+    {
+        draw->AddText(font,12*scale,ImVec2(legend.min.x+14*scale,legend.min.y+y*scale),color,line.c_str());
+    };
+    legendText(10,live && cameraReady && sample.playerPosition ? Cyan : Amber,headline);
+    legendText(29,White,controls);
+    legendText(48,Muted,caveat);
+    draw->PopClipRect();
 }
 
 void DrawNotice(const Notice& notice, const Config& config, bool hudVisible, bool details)
