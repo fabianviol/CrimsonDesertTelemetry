@@ -2,15 +2,54 @@
 
 ## Result / one next step
 
-**1.3.0-preview.2 is built, tested and ready for DMM installation.** It adds the
-requested 3D corner radar and independently toggled fullscreen light markers
-to the existing single ASI. The game was confirmed closed during preparation;
-nothing was installed or changed in the game directory.
+**1.3.0-preview.2 now has live video/API feedback: real lamp alignment works,
+but the rendered feed also publishes camera-attached ghost contributions.**
+Do not fix this by smoothing or hiding moving lights: some moving lights in the
+first video really are fireflies (user identification). The user confirms there
+are no actual lights at the jumping ghost positions in the second video.
 
-Next: user installs the new ZIP through DMM, replacing/deactivating preview.1,
-then loads near known lamps. Visually check stationary marker alignment, turn/
-pitch/walk and independent F8/F10 toggles. **This visualization has not yet been
-validated in the real game.** Do not confuse its GPU fixture tests with live proof.
+Next: determine/capture the filtered buffer's actual valid length/consumer range,
+with resource identity to distinguish alternating buffers. Remove invalid tail
+records based on measured validity, not a hardcoded33 or frozen-RGB heuristic.
+Only afterwards quieten label/focus layout. No source/plugin/config/game changes
+were made during this diagnosis; current game remains open, user moved after
+the recorded stationary control and then stopped again.
+
+### Live diagnosis — 20:40 CEST
+
+Video reviewed in extracted frames:
+`C:\Users\fabia\Videos\NVIDIA\Crimson Desert\Crimson Desert 2026.09.06 - 20.36.51.02.mp4`.
+Player moves without an intentional camera pan. #41/#170/#192 shift together
+by about(-5.96,+0.16,+0.89) world units while a lamp contribution near
+(-10491.68,610.89,-4370.00) remains world-fixed. These are not just jumping labels.
+
+Read-only artifact `artifacts/light-research/overlay-static-lamp-diagnostic-20260906-2037.jsonl`
+was actually recorded20:40:01.903..05.791:151/151 playing/available rows,57 distinct
+captures/native frames29329..29521, zero malformed/unavailable. Player XYZ and
+camera X/Z/basis/FOV are constant; camera Y bobs0.01826. Native frame parity
+separates two exact populations:
+
+| Native frames | Captures | Published / within35 | Frozen tail, indices>=33 |
+|---|---:|---:|---:|
+| Odd | 27 | 332 / 236 | 299 |
+| Even | 30 | 335 / 222 | 302 |
+
+Only indices0..32 change RGB. Every tail record has exactly frozen RGB within its
+parity group and camera-relative XYZ spread<=0.0001001; world Y follows camera
+bob. #41/#192 match the video. Known glass anchor(-10493.734,611.61084,-4364.254)
+remains world-fixed57/57. Strong stale-tail/alternating-buffer evidence, not proof
+that every constant-color light is invalid. Actual GPU resource identities/count
+are not exposed yet. Producer+recorded transport age103..349ms; the recorder
+skipped84 API sequences but saw57/58 captures (not proof of HUD packet loss).
+
+Code confirms the gap: native `render_capture.cpp` copies every accepted matching
+48x32768 resource without publishing its identity or valid count. Managed
+`RenderLightReader.cs` scans all32768 slots, treating position.w≈pi as validity.
+The old pi criterion in `GPU_LIGHT_LAYOUTS_25116796.md` came from an UNFILTERED
+buffer observation, not proof of current filtered-tail lifetime. A completed GPU
+copy and paired scene camera do not prove every copied slot was rewritten.
+Separately, HUD focus rank and collision-based label placements are stateless,
+so changing neighbors/indices also make labels jump; fix presentation separately.
 
 ## Package / controls
 
