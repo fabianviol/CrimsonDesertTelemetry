@@ -1,4 +1,33 @@
-# Current checkpoint — published 2.0.0 ZIP passes user live test, 2026-09-07, Codex/Astra
+# Current checkpoint — ambient stream feasibility, 2026-09-07, Codex/Astra
+
+User noticed CrimsonHue needs environmental light in addition to local lights;
+authorized a bounded investigation of existing sources. **Published 2.0.0 and
+its HTTP/WebSocket schemas are unchanged; ambient is not implemented.** No live
+instrumentation or game installation changes in this check.
+
+Two actual offline shader producers found, not only matching names:
+`csPrecomputeAmbient` (entry6acf206f) and
+`GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (entryca7a87f5) write
+`g_texPrecomputedAmbientUAV`, float4 stride16, u2 space39 in the inspected
+variants. Directional ambient/SH coefficient evidence is strong; not a single
+ready-to-stream RGB. Existing GI reflection has a 1024-byte
+`PrecomputedAmbientConstantBuffer` (b32 space35), but the runtime producer,
+UAV-to-CBV link, decoding/exposure convention and behavior indoors are unverified.
+Sky ambient must not be advertised as measured local illumination at the player.
+
+Reuse findings/paths/hashes in
+`research/light-source-tests/GPU_LIGHT_LAYOUTS_25116796.md`, final ambient section.
+Ignored evidence: `artifacts/light-research/ambient-check-20260907-sky*`;
+16 representative sky-compute entries decoded/validated, 491,971 bytes total.
+Already available SceneConstants contain sun/moon directions, not ambient RGB;
+do not restart camera discovery or equate atmosphere input parameters with output.
+
+**Next:** identify the live ambient producer/output, validate actual resource
+bounds and immediately read back the compact result with fence/scene provenance;
+then compare daylight and shade/interior. Reuse existing graphics instrumentation.
+Only after validation define an additive ambient stream; no broad GI investigation.
+
+## Previous checkpoint — published 2.0.0 ZIP passes user live test
 
 User authorized both releases. GitHub **2.0.0 is public**:
 https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0
