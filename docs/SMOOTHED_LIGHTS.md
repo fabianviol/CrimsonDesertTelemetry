@@ -80,6 +80,19 @@ fresh **`capturedAt`/`sourceCaptureSequence`** progress. `publishedAt` can advan
 while the source sample is repeated. Network silence/host failure cannot deliver
 an explicit error message, so a local freshness watchdog remains mandatory.
 
+## Live validation
+
+Private local-lights.1 passed a 12-second stationary game capture on build25116796
+(PID23572, 2026-09-07): 717 messages on each WebSocket,188 matched GPU captures,
+no unavailable samples, age0..94ms. All8791 contribution comparisons and22773
+EMA lane checks passed; repeated publications did not advance smoothing.
+One nearby two-contribution fire and one blue singleton each retained one
+tracking ID despite changing raw sample indices. Measured summed absolute
+luminance-step variation fell by44.53% and16.10%, respectively. This does not
+establish physical Hue output, movement/culling behavior, off/on acceptance or
+the accuracy of spatial grouping for every scene object. Evidence is in the
+current product handover; raw captures remain private ignored artifacts.
+
 ## Configuration
 
 In future packages (restart after edits):

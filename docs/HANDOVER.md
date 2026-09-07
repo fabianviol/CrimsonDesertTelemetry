@@ -1,4 +1,4 @@
-# Current checkpoint — separate smoothed local-light feed ready for Hue test, 2026-09-07, Codex/Astra
+# Current checkpoint — smoothed local-light live stand test passed, 2026-09-07, Codex/Astra
 
 User additionally requested grouped/smoothed **local lights**, not ambient, for
 immediate CrimsonHue consumption. Implemented in telemetry, no CrimsonHue edits.
@@ -17,7 +17,7 @@ publishedAt, and use colorLinear once, not add contributions/raw stream again.
 INI `[LightSmoothing] TimeConstantMilliseconds=200, GroupRadius=0.15`; CLI flags
 also available. No ambient schema or physical lamp output added.
 
-Private **normal-light** DMM package ready, not installed/published:
+Private **normal-light** DMM package installed and running in PID23572, not published:
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-local-lights.1-ModManagers.zip`
 SHA256 `97D1480A3DBFAA14F484879C813D79D3B00639A68BD87E927E110CCF41A7005B`;
 ASI SHA256 `B80FEA8597F1399EECBBA982C396D7E0651E36E32387CB82A38E2A0764AA1400`.
@@ -31,14 +31,41 @@ sample permutation/rate independence, disappearance/staleness/invalid controls,
 32768 dense records and 4096 tracked groups, unchanged raw serialization and
 separate subscriptions/health faults. Real loopback HTTP/WS smoke passes; native
 16/16 CTests pass. Package validator passes. Packaged ASI bootstrap on a copied
-fixture at port27316 successfully forwards nondefault333ms config. These are
-synthetic/offline checks; **live-game/Hue acceptance remains pending**.
-Original public2.0.0 and both ambient ZIPs remain immutable. No game files changed.
+fixture at port27316 successfully forwards nondefault333ms config. These checks
+are synthetic/offline; the following stand test is separate real-game evidence.
 
-**Next:** user installs local-lights.1 via DMM (only one telemetry package active),
-loads near lights; check progressing raw and smoothed feeds together before Hue
-integration. Ambient remains open: first proper outdoor capture still missing;
-previous readback was loading/menu only. See checkpoint below to resume it.
+Live PID23572 (started22:39:07), installed ASI hash matches B80FEA85...; native
+log confirms normal20Hz ManyLights, no ambient probe. API playing, user standing
+at(-10502.611,610.52826,-4373.8613). 12s simultaneous WS capture: **717 raw +717
+derived messages,188 distinct captures**, all available, age0..94ms (mean46.38).
+Player position unchanged; raw telemetry sequence12423->13147. Matched all188
+GPU capture sequences,8791 contributions unchanged,22773 EMA lane checks and
+529 repeated-capture checks passed, no violations. Group count39..43; not a
+claim that every scene source was static or every group has physical identity.
+
+Nearest known fire at(-10507.645,610.937,-4368.322): two contributions in all188
+captures, **one tracking ID despite161 distinct sample-index combinations**.
+Raw/smoothed mean luminance0.830806/0.830421; summed absolute step variation
+9.57781->5.31268 (**44.53% reduction**). Blue singleton at
+(-10510.692,611.633,-4371.438): one ID despite84 index values; step variation
+0.0206773->0.0173479 (**16.10% reduction**). Reduction is the measured temporal
+variation of this short run, not color accuracy or a universal noise measure.
+No lamp was toggled during this capture; physical Hue and movement/off/culling
+acceptance are not claimed by the stand test.
+
+Evidence: `artifacts/light-research/smoothed-live-20260907-pid23572-a/`
+raw.jsonl,smoothed.jsonl,before.json,after.json,validation.json. Reproduce with
+`scripts/Capture-LightStreams.ps1` (bounded, read-only API; new directory) and
+`scripts/Test-LightStreamCapture.ps1` (offline; creates new validation.json).
+Original public2.0.0 and both ambient ZIPs remain immutable. No game files changed
+by the assistant; the user installed the preview through their workflow.
+
+**Next:** for one additional live negative control, ask user to switch off the
+nearby fire and compare raw/derived absence (do not infer canonical off from
+filtered absence alone). The stream is now ready for a first CrimsonHue consumer
+test; see docs/SMOOTHED_LIGHTS.md. Ambient remains open: first proper outdoor
+capture still missing. Enable Research/AmbientProbe=1 and restart only after
+the local-light test; it pauses the source needed by the smoothed feed.
 
 ## Previous checkpoint — ambient readback works; explicit-start probe.2 ready
 
