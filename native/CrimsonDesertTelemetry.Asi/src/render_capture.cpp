@@ -52,6 +52,7 @@ std::filesystem::path ambientDirectory;
 uint32_t ambientRun{};
 bool ambientAcceptRequests{};
 AmbientRecordHeader ambientHeader{};
+ExposureCacheContext ambientExposure{};
 std::array<std::atomic<uint64_t>, 2> ambientHits{};
 uint64_t ambientReportAt{};
 uint32_t ambientSamples{};
@@ -113,6 +114,12 @@ bool ReadScene(std::array<uint8_t, SceneBytes>& result)
     if (!Read(gameBase + contract::SceneGlobalRva, root) || !Read(root + contract::SceneRootPointerOffset, data)) return false;
     // +428 is a pointer to the SceneConstantBuffer, not an inline structure.
     return ch::mem::SafeRead(reinterpret_cast<void*>(data), result.data(), result.size()) && ValidateScene(result.data());
+}
+bool ReadExposure(uint64_t sky, ExposureCacheSample& result)
+{
+    return ReadExposureCache(sky, result, [](uint64_t address, void* data, size_t bytes) {
+        return ch::mem::SafeRead(reinterpret_cast<void*>(address), data, bytes);
+    });
 }
 bool Resolve(uint64_t outer, uint64_t command, ID3D12Resource*& source, ID3D12GraphicsCommandList*& list)
 {
@@ -203,6 +210,13 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     if (!ReadScene(scene) || !ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) return;
     memcpy(&capturedFrame, scene.data() + contract::FrameOffset, sizeof(capturedFrame));
     if (hasFrame && capturedFrame == lastFrame) return;
+    if (ambientMode)
+    {
+        ExposureCacheSample cache{};
+        const auto begin = GetTickCount64();
+        const bool valid = ReadExposure(owner, cache);
+        BeginExposureCache(ambientExposure, cache, valid, begin);
+    }
     source->AddRef();
     if (counter) counter->AddRef();
     list->AddRef();
@@ -243,6 +257,12 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     // A camera update concurrent with recording invalidates this pair. Still
     // submit and fence the copy, but never publish the mismatched sample.
     if (!ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) capturedAt = 0;
+    if (ambientMode)
+    {
+        ExposureCacheSample cache{};
+        const bool valid = ReadExposure(owner, cache);
+        EndExposureCache(ambientExposure, cache, valid, GetTickCount64());
+    }
     issuedAt = now;
     phase = Phase::Recorded;
 }
@@ -409,7 +429,7 @@ bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory)
     hookEnabled = true;
     ambientAcceptRequests = true;
     PublishStatus(Status::Stopped); // Explicitly no ManyLights stream in this private research mode.
-    ch::Log("Ambient probe enabled, IDLE until explicit start request (2Hz, max120 samples/run). ManyLights paused. Event=Local\\CrimsonDesertTelemetry.AmbientProbe.%u", GetCurrentProcessId());
+    ch::Log("Ambient probe v2 enabled, IDLE until explicit start request (2Hz, max120 samples/run). Includes GPU-derived CPU exposure cache (source-frame age UNKNOWN), not paired GPU exposure. ManyLights paused. Event=Local\\CrimsonDesertTelemetry.AmbientProbe.%u", GetCurrentProcessId());
     return true;
 }
 
@@ -542,18 +562,19 @@ void PollCapture()
                 if (capturedAt && ambientMode)
                 {
                     ambientHeader.sequence = ambientSamples + 1;
-                    std::array<uint8_t, sizeof(AmbientRecordHeader) + SceneBytes + AmbientBytes> record{};
+                    std::array<uint8_t, sizeof(AmbientRecordHeader) + SceneBytes + AmbientBytes + sizeof(ExposureCacheContext)> record{};
                     memcpy(record.data(), &ambientHeader, sizeof(ambientHeader));
                     memcpy(record.data() + sizeof(ambientHeader), scene.data(), SceneBytes);
                     memcpy(record.data() + sizeof(ambientHeader) + SceneBytes, mapped, AmbientBytes);
+                    memcpy(record.data() + sizeof(ambientHeader) + SceneBytes + AmbientBytes, &ambientExposure, sizeof(ambientExposure));
                     DWORD written{};
                     saveOk = WriteFile(ambientFile, record.data(), static_cast<DWORD>(record.size()), &written, nullptr) && written == record.size();
                     if (saveOk)
                     {
                         ++ambientSamples;
                         if (ambientSamples == 1 || ambientSamples % 20 == 0)
-                            ch::Log("Ambient sample %u/120: frame=%u producerRva=0x%X source=0x%llX fence=%llu (NOT API).",
-                                ambientSamples, capturedFrame, ambientHeader.producerRva, capturedOutputResource, fenceValue);
+                            ch::Log("Ambient sample %u/120: frame=%u producerRva=0x%X source=0x%llX fence=%llu exposureCacheFlags=0x%X (cache GPU age unknown; NOT API).",
+                                ambientSamples, capturedFrame, ambientHeader.producerRva, capturedOutputResource, fenceValue, ambientExposure.flags);
                     }
                 }
                 else if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,

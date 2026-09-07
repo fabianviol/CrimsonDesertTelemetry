@@ -1,7 +1,8 @@
 # Ambient decoding checkpoint — 2026-09-07, Codex/Astra
 
-Private offline derivation, not a public ambient contract. No plugin, HTTP/WS,
-HUD, package or CrimsonHue consumer change. Existing raw captures stay intact.
+Private derivation, not a public ambient contract. The 2026-09-08 diagnostic
+extension below changes the private capture file only; no HTTP/WS, HUD or
+CrimsonHue consumer change. Existing raw captures stay intact.
 
 ## Evidence and exact assumed profile
 
@@ -160,3 +161,64 @@ state/suboffset must not be guessed. A short
 within-run doorway out/in/out control can then address locality; absence of a
 roof response would mean an additional local-visibility source is needed, not
 that the sky data is useless. No new broad GI branch or public schema yet.
+
+## 2026-09-08: engine exposure-cache provenance and private probe v2
+
+Bounded live PID34736 pointer check reused sky+10 → Renderer+690 → ExposureOwner.
+Renderer3D64CAA7000, owner3D72B96D900, outer3D6E1DD9700, inner3D6F10563C0,
+native resource12C8A5A70; inner+158 cached Map pointer remainsNULL.
+Evidence: rawpages/ambient-exposure-{owner,chain}-pid34736.*.
+
+The older CPU +D8 candidate is a **destination of an engine GPU readback**, not
+an upload source. In live native1435429F0, after its dispatch/flush sequence:
+
+- 1435450CC loads owner+C0; inner+AE must equal2, +AF bit3 must be clear.
+- 1435450E9 loads owner+D0 readback helper, passed with the C0 source to1437DD810.
+- 14354511E calls143031500 on that helper, then tests the returned pointer.
+- 14354512C and143545139 copy two32-byte vectors into owner+D8 and+F8.
+- 14354514B calls143031850 to finish the readback access.
+
+Raw evidence: exposure-readback-provenance-pid34736.*, exposure-transfer-code-pid34736.*;
+the supporting update/caller dump is exposure-update-code-pid34736.*.
+Disassemble from known instruction boundaries (e.g.1435450CC), not the dump's
+arbitrary starting address143545090. Helper143031500 selects ready entries;
+we have NOT measured their producing frame. Native A also attempts to bind the
+owner+C0 wrapper at143848EFF..143848FB3, but the inspected optimized ambient
+shader does not consume ExposureConstantBuffer. Do not invent a data dependency.
+
+`exposure_probe.h` follows this existing chain with sky/owner backreferences,
+validates the 4-byte element view (20..16384 elements) and inner mode2, and copies
+exactly64 bytes. It rechecks pointer identities; the ambient capture takes two
+such samples around command recording. It performs no COM Map/resource-state
+change or global graphics hook. Stable bytes are a CPU observation, not an
+engine lock or evidence of GPU-frame equivalence. Missing data remains visible.
+
+Private binary v2: original64-byte header (version2/recordBytes4128), unchanged
+2816-byte CPU scene +1024-byte fenced ambient, then224-byte CTEX appendix:
+magic/version/bytes/flags (16), begin/end tick (16), six pointers (48), before64,
+after64, stride/count/innerMode/reserved (16). Flags1/2=available before/after,
+4=same identity,8=same bytes,16=finite positive exposure0.x in stable bytes.
+Other lanes may contain packed NaN patterns (also seen in the preserved PIX
+ExposureConstantBuffer export); preserve bytes/uint32, don't force float JSON.
+Only a scalar with flag16 is surfaced as `exposure0x`; raw bytes always remain.
+`gpuFramePaired=false`, `sourceFrameAgeKnown=false` are explicit.
+
+Read-AmbientProbe supports v1/v2 with homogeneous bounded records and appendix
+validation. Decode-AmbientProbe carries v2 context through, with NO exposure
+normalization or ambient arithmetic change. Old v1 output fields stay unchanged.
+Tests:17/17 native, including55 synthetic cache checks and updated actual WARP
+copy/fence smoke (worker cannot resample a changed cache after recording;
+missing exposure still saves ambient). 35 additional parser/decoder controls;
+178 existing independent SH tests; original malformed-file controls pass.
+These are synthetic/offline results, not live probe-v2 acceptance.
+
+Private package `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ambient-probe.3-ModManagers.zip`.
+ZIP SHA256664E9913123DE5EC929C6D1BCA2DA52FA22974CB9C029F161DE3B335306EDC93;
+ASI SHA256710C06B8040C62039A5D3055A163C506A14BBBEDEE206D64042BC4220ABC0B4A.
+Package validation passes. User stopped for bed before deployment; shutdown
+not confirmed. No installation, INI change or new live capture performed.
+Not published; keep older immutable packages. Deploy only after game shutdown,
+retain Research/AmbientProbe=1 for diagnosis, verify v2 IDLE then use the existing
+Start-AmbientProbe command for one loaded-scene run. No automatic recording and
+no need to redo the three prior static scene captures. Inspect availability and
+cache/sky relationship before deciding whether exact GPU exposure is necessary.

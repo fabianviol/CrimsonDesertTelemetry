@@ -21,12 +21,16 @@ if (@($raw.samples | Where-Object producerRva -ne '0x3849BB7').Count -ne 0) {
 $decoded = @(
     foreach ($s in $raw.samples) {
         $d=ConvertFrom-AmbientShRows -Rows $s.rawFloat4Rows
-        [pscustomobject]@{
+        $entry=[pscustomobject]@{
             sequence=$s.sequence; frame=$s.frame; capturedTick=$s.capturedTick
             resource=$s.resource; camera=$s.camera
             sunDirection=$s.sunDirection; moonDirection=$s.moonDirection
             values=$d
         }
+        if ($s.PSObject.Properties['exposureCache']) {
+            $entry | Add-Member -NotePropertyName exposureCache -NotePropertyValue $s.exposureCache
+        }
+        $entry
     }
 )
 $report=[pscustomobject]@{

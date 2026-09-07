@@ -165,6 +165,20 @@ int main(int argc, char** argv)
         };
         std::array<uint8_t,0xA0> sky{};
         Put(sky,0x98,reinterpret_cast<uint64_t>(outer.data()));
+        std::array<uint8_t,0x698> renderer{};
+        std::array<uint8_t,0x118> exposure{};
+        std::array<uint8_t,0x38> exposureOuter{};
+        std::array<uint8_t,0x170> exposureInner{};
+        Put(sky,0x10,reinterpret_cast<uint64_t>(renderer.data()));
+        Put(renderer,0x668,reinterpret_cast<uint64_t>(sky.data()));
+        Put(renderer,0x690,reinterpret_cast<uint64_t>(exposure.data()));
+        Put(exposure,0x10,reinterpret_cast<uint64_t>(renderer.data()));
+        Put(exposure,0xC0,reinterpret_cast<uint64_t>(exposureOuter.data()));
+        Put(exposure,0xD0,reinterpret_cast<uint64_t>(counterOuter.data()));
+        Put(exposureOuter,0x30,reinterpret_cast<uint64_t>(exposureInner.data()));
+        Put(exposureInner,0x168,reinterpret_cast<uint64_t>(counter.Get()));
+        Put(exposureInner,0xC0,uint32_t{4}); Put(exposureInner,0xC4,uint32_t{32}); Put(exposureInner,0xAE,uint8_t{2});
+        Put(exposure,0xD8,0.08f); Put(exposure,0xF0,uint32_t{0xFFFefef5});
         const auto probe = [&](uint64_t path) {
             CaptureAmbient(reinterpret_cast<uint64_t>(sky.data()),reinterpret_cast<uint64_t>(command.data()),path);
         };
@@ -190,6 +204,7 @@ int main(int argc, char** argv)
         Check(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,"ambient prepare");
         probe(0);
         Check(std::strcmp(CapturePhaseForTest(),"recorded (not submitted)")==0,"ambient record");
+        Put(exposure,0xD8,9.0f); // Worker must not resample cache AFTER GPU completion.
         Hr(list->Close(),"ambient close");
         ID3D12CommandList* others[]{unrelated.Get()}; queue->ExecuteCommandLists(1,others); PollCapture();
         Check(AmbientSamplesForTest()==0 && std::filesystem::file_size(output)==0,"unrelated list saved ambient");
@@ -209,13 +224,14 @@ int main(int argc, char** argv)
         Hr(allocator->Reset(),"ambient reset allocator"); Hr(list->Reset(allocator.Get(),nullptr),"ambient reset list");
         probe(1); Check(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,"duplicate frame captured");
         Put(constants,0x20,uint32_t{101}); Put(inner,0x168,reinterpret_cast<uint64_t>(source2.Get()));
+        Put(renderer,0x690,uint64_t{0}); // Ambient survives an unavailable exposure cache.
         probe(1); Hr(list->Close(),"ambient second close"); queue->ExecuteCommandLists(1,lists); waitSample(2);
         Check(std::strcmp(CapturePhaseForTest(),"stopped")==0,"ambient limit did not stop capture");
         for(int n=0;n<10;++n) { probe(0); PollCapture(); }
         Check(fileCount()==1 && AmbientSamplesForTest()==2,"busy request was queued or completed run restarted itself");
         Check(bridge->header.sampleSequence==0,"ambient bytes leaked into light bridge");
         std::ifstream file(output,std::ios::binary);
-        constexpr size_t recordBytes=sizeof(AmbientRecordHeader)+SceneBytes+AmbientBytes;
+        constexpr size_t recordBytes=sizeof(AmbientRecordHeader)+SceneBytes+AmbientBytes+sizeof(ExposureCacheContext);
         Check(std::filesystem::file_size(output)==recordBytes*2,"ambient file size");
         for(uint32_t n=0;n<2;++n)
         {
@@ -223,12 +239,17 @@ int main(int argc, char** argv)
             file.read(reinterpret_cast<char*>(&header),sizeof(header));
             file.read(reinterpret_cast<char*>(recordedScene.data()),recordedScene.size());
             file.read(reinterpret_cast<char*>(recordedAmbient.data()),recordedAmbient.size());
-            Check(file.good() && header.magic==0x41445443 && header.recordBytes==recordBytes && header.flags==7 &&
+            ExposureCacheContext cache{}; file.read(reinterpret_cast<char*>(&cache),sizeof(cache));
+            Check(file.good() && header.magic==0x41445443 && header.version==2 && header.recordBytes==recordBytes && header.flags==7 &&
                 header.sequence==n+1 && header.frame==100+n && header.producerRva==AmbientHookRvas[n] &&
                 header.resource==reinterpret_cast<uint64_t>(n ? source2.Get() : source.Get()) &&
                 header.sky==reinterpret_cast<uint64_t>(sky.data()) && header.outer==reinterpret_cast<uint64_t>(outer.data()),"ambient provenance");
             uint32_t sceneFrame{}; memcpy(&sceneFrame,recordedScene.data()+0x20,4);
             Check(sceneFrame==header.frame && memcmp(recordedAmbient.data(),light.data(),sizeof(light))==0,"ambient bytes/paired scene");
+            float cacheValue{}; memcpy(&cacheValue,cache.before.data(),4);
+            Check(cache.magic==0x58455443 && cache.bytes==224 && cache.flags==(n ? 0u : 31u) &&
+                cache.beginTick>=header.capturedTick && cache.endTick>=cache.beginTick,"exposure appendix controls");
+            Check(n ? cache.owner==0 : (cacheValue==0.08f && cache.before==cache.after),"cache not frozen with ambient recording / missing cache stale reuse");
         }
         file.close();
         // Second measurement, same device and process. Fence values must not

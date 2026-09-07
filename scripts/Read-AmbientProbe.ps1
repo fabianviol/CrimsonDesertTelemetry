@@ -10,11 +10,17 @@ param(
     [switch]$PassThru
 )
 $ErrorActionPreference = 'Stop'
-$recordBytes = 3904
+$recordBytes = 0
 $inputPath = (Resolve-Path -LiteralPath $Path).Path
 $stream = [IO.File]::Open($inputPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
 try {
     $length = $stream.Length
+    if ($length -lt 64 -or $length -gt 120 * 4128) { throw "Empty, incomplete or oversized probe file ($length bytes)." }
+    $prefix = [byte[]]::new(12)
+    $stream.ReadExactly($prefix)
+    $version = [BitConverter]::ToUInt32($prefix, 4)
+    $recordBytes = switch ($version) { 1 {3904} 2 {4128} default {throw "Unknown probe version $version."} }
+    $stream.Position = 0
     if ($length -eq 0 -or $length -gt 120 * $recordBytes -or $length % $recordBytes -ne 0) {
         throw "Empty, incomplete or oversized probe file ($length bytes). This is not evidence of missing ambient light; wait for a complete sample."
     }
@@ -33,7 +39,7 @@ for ($offset = 0; $offset -lt $bytes.Length; $offset += $recordBytes) {
     $tick = [BitConverter]::ToUInt64($bytes, $offset + 32)
     if ($offset -eq 0) { $sessionPid = $processId }
     if ([BitConverter]::ToUInt32($bytes, $offset) -ne 0x41445443 -or
-        [BitConverter]::ToUInt32($bytes, $offset + 4) -ne 1 -or
+        [BitConverter]::ToUInt32($bytes, $offset + 4) -ne $version -or
         [BitConverter]::ToUInt32($bytes, $offset + 8) -ne $recordBytes -or
         [BitConverter]::ToUInt32($bytes, $offset + 24) -ne 7 -or
         $processId -eq 0 -or $processId -ne $sessionPid -or
@@ -57,7 +63,7 @@ for ($offset = 0; $offset -lt $bytes.Length; $offset += $recordBytes) {
         }
         [pscustomobject]@{row=$row; values=@($values)}
     }
-    $samples.Add([pscustomobject]@{
+    $sample = [pscustomobject]@{
         sequence=$sequence; frame=$frame; producerRva=('0x{0:X}' -f $producer); capturedTick=$tick
         resource=('0x{0:X}' -f [BitConverter]::ToUInt64($bytes,$offset+40))
         outer=('0x{0:X}' -f [BitConverter]::ToUInt64($bytes,$offset+48))
@@ -66,11 +72,64 @@ for ($offset = 0; $offset -lt $bytes.Length; $offset += $recordBytes) {
         sunDirection=@(0x2A0,0x2A4,0x2A8 | ForEach-Object { [BitConverter]::ToSingle($bytes,$sceneOffset+$_) })
         moonDirection=@(0x2B0,0x2B4,0x2B8 | ForEach-Object { [BitConverter]::ToSingle($bytes,$sceneOffset+$_) })
         rawFloat4Rows=@($rows)
-    })
+    }
+    if ($version -eq 2) {
+        $e = $offset + 3904
+        $flags = [BitConverter]::ToUInt32($bytes, $e + 12)
+        $begin = [BitConverter]::ToUInt64($bytes, $e + 16)
+        $end = [BitConverter]::ToUInt64($bytes, $e + 24)
+        if ([BitConverter]::ToUInt32($bytes,$e) -ne 0x58455443 -or
+            [BitConverter]::ToUInt32($bytes,$e+4) -ne 1 -or
+            [BitConverter]::ToUInt32($bytes,$e+8) -ne 224 -or
+            [BitConverter]::ToUInt32($bytes,$e+220) -ne 0 -or
+            $flags -gt 31 -or $begin -lt $tick -or $end -lt $begin -or
+            (($flags -band 4) -and ($flags -band 3) -ne 3) -or
+            (($flags -band 8) -and ($flags -band 7) -ne 7) -or
+            (($flags -band 16) -and ($flags -band 15) -ne 15)) { throw "Invalid exposure appendix at sample $sequence." }
+        $before = [byte[]]$bytes[($e+80)..($e+143)]
+        $after = [byte[]]$bytes[($e+144)..($e+207)]
+        $beforeHex = [Convert]::ToHexString($before)
+        $afterHex = [Convert]::ToHexString($after)
+        $value = [BitConverter]::ToSingle($before,0)
+        if ((($flags -band 8) -and $beforeHex -ne $afterHex) -or
+            (($flags -band 16) -and (-not [float]::IsFinite($value) -or $value -le 0))) {
+            throw "Exposure stability/scalar flags contradict bytes at sample $sequence."
+        }
+        $names = @('renderer','owner','outer','inner','resource','readbackOwner')
+        $provenance = [ordered]@{}
+        for ($i=0; $i -lt $names.Count; $i++) {
+            $p = [BitConverter]::ToUInt64($bytes,$e+32+$i*8)
+            if (($flags -band 1) -and ($p -lt 0x10000 -or $p -gt 0x00007FFFFFFF0000)) { throw "Invalid exposure provenance at sample $sequence." }
+            if (-not ($flags -band 1) -and $p -ne 0) { throw "Unexpected unavailable exposure provenance at sample $sequence." }
+            $provenance[$names[$i]] = if ($p) {'0x{0:X}' -f $p} else {$null}
+        }
+        $stride = [BitConverter]::ToUInt32($bytes,$e+208)
+        $count = [BitConverter]::ToUInt32($bytes,$e+212)
+        $mode = [BitConverter]::ToUInt32($bytes,$e+216)
+        if (($flags -band 1) -and ($stride -ne 4 -or $count -lt 20 -or $count -gt 16384 -or $mode -ne 2)) {
+            throw "Invalid exposure source layout at sample $sequence."
+        }
+        if ((-not ($flags -band 1) -and (($before | Where-Object {$_ -ne 0}).Count -or $stride -or $count -or $mode)) -or
+            (-not ($flags -band 2) -and ($after | Where-Object {$_ -ne 0}).Count)) { throw "Invalid unavailable exposure payload at sample $sequence." }
+        $exposure = [ordered]@{
+            source='engine-gpu-readback-cpu-cache'; gpuFramePaired=$false; sourceFrameAgeKnown=$false
+            flags=$flags; beforeAvailable=[bool]($flags -band 1); afterAvailable=[bool]($flags -band 2)
+            sameIdentity=[bool]($flags -band 4); unchangedDuringRecording=[bool]($flags -band 8)
+            usableScalar=[bool]($flags -band 16); beginTick=$begin; endTick=$end
+            provenance=$provenance; wrapperStride=$stride; wrapperCount=$count; innerMode=$mode
+            exposure0x=if ($flags -band 16) {$value} else {$null}
+            rawBeforeHex=$beforeHex; rawAfterHex=$afterHex
+            rawBeforeUInt32=@(0..15 | ForEach-Object {[BitConverter]::ToUInt32($before,$_ * 4)})
+            rawAfterUInt32=@(0..15 | ForEach-Object {[BitConverter]::ToUInt32($after,$_ * 4)})
+            caveat='64-byte GPU-derived engine cache, sampled before/after ambient command recording. Stable bytes do not prove the same GPU frame or eliminate ABA/torn-read risk. Packed lanes may be NaN as floats. No exposure correction applied.'
+        }
+        $sample | Add-Member -NotePropertyName exposureCache -NotePropertyValue ([pscustomobject]$exposure)
+    }
+    $samples.Add($sample)
     $previousFrame=$frame; $previousTick=$tick
 }
 $report = [ordered]@{
-    format='private-ambient-probe-v1'; source=$inputPath
+    format="private-ambient-probe-v$version"; source=$inputPath
     capturedPrefixSha256=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
     bytesRead=$bytes.Length; processId=$sessionPid; sampleCount=$samples.Count
     caveat='GPU-fenced producer output with CPU scene sampled around recording. SH ordering/normalization, exposure and local indoor semantics are not validated; NOT API RGB.'

@@ -102,6 +102,11 @@ target_compile_options(CrimsonDesertTelemetryBootstrapSmoke PRIVATE /W4 /WX /per
 target_link_libraries(CrimsonDesertTelemetryBootstrapSmoke PRIVATE ws2_32)
 
 enable_testing()
+add_executable(CrimsonDesertTelemetryExposureProbeTests tests/exposure_probe_tests.cpp)
+target_compile_features(CrimsonDesertTelemetryExposureProbeTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetryExposureProbeTests PRIVATE src)
+target_compile_options(CrimsonDesertTelemetryExposureProbeTests PRIVATE /W4 /WX /permissive-)
+add_test(NAME exposure-cache-probe COMMAND CrimsonDesertTelemetryExposureProbeTests)
 add_executable(CrimsonDesertTelemetryBuildGuardTests tests/build_guard_tests.cpp src/build_guard.cpp)
 target_compile_features(CrimsonDesertTelemetryBuildGuardTests PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetryBuildGuardTests PRIVATE src)

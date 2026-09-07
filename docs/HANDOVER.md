@@ -1,4 +1,42 @@
-# Current checkpoint — ambient shader family verified, 2026-09-07, Codex/Astra
+# Current checkpoint — exposure-cache appendix ready for live test, 2026-09-08, Codex/Astra
+
+**Private diagnostic v2.0.1-ambient-probe.3 built; not installed or game-tested.**
+The last checked game was PID34736 with the previous local-lights.1 ASI and
+AmbientProbe=1. **User stopped for bed: no installation or further experiment.**
+Shutdown is NOT confirmed. Tomorrow recheck process/config; do not replace a
+loaded ASI. No public ambient endpoint or exposure correction added.
+ZIP SHA256664E9913123DE5EC929C6D1BCA2DA52FA22974CB9C029F161DE3B335306EDC93;
+ASI SHA256710C06B8040C62039A5D3055A163C506A14BBBEDEE206D64042BC4220ABC0B4A.
+Package validator/payload regression checks pass; older packages untouched.
+
+**Important provenance correction:** ExposureOwner+D8 is NOT an upload source.
+Native1435450CC passes owner+C0 to1437DD810 with the owner's readback helper+D0;
+14354511E obtains completed readback data via143031500. Two 32-byte stores at
+14354512C/139 copy that data to owner+D8/F8. Source-frame age is unknown.
+The new diagnostic therefore captures this **GPU-derived CPU cache**, before
+and after recording ambient, not a same-frame GPU ExposureConstantBuffer.
+Same bytes/chain do not prove identical GPU age or eliminate ABA/torn-read risk.
+
+Binary probe v2 appends224 bytes to each original3904-byte sample (total4128):
+bounded64-byte cache before/after, known pointer chain, layout, times, validity.
+Missing cache does not discard valid ambient; changed/unusable cache stays raw.
+Packed NaN lanes preserved as bytes/uint32, not rejected as malformed RGB.
+No new hook, engine Map call, exposure resource barrier, API/config/default change.
+Decoder passes the appendix through WITHOUT dividing or changing sky values.
+Old v1 binaries/exports remain intact and compatible.
+
+Tests: native17/17 including WARP/fence/run-isolation, 55 cache unit checks,
+35 exposure reader/decoder checks, original178 SH checks and malformed reader
+controls pass. Package/evidence details: docs/AMBIENT_DECODE.md.
+**One next step:** after DMM deployment retain Research/AmbientProbe=1, restart
+and verify the actual ASI hash + v2 IDLE log. User need not freeze now. Start ONE
+explicit bounded run only when loaded; inspect cache flags/values and raw sky
+together. A valid stable cache is still not GPU-frame-paired exposure acceptance.
+If exact GPU pairing remains necessary, establish CBV state/suboffset first;
+never borrow the ambient UAV barrier. Normal/smoothed lights remain paused in
+AmbientProbe mode; restore0 and restart when returning to normal use.
+
+## Previous result — shader-family ambiguity resolved
 
 **Latest bounded follow-up:** native A explicitly selects the named
 `PrecomputeAmbient` technique pass before its captured dispatch. All SIX entries
@@ -24,10 +62,9 @@ assumption. Each capture directory has a new ambient-derived-candidate.json;
 original binary/parser exports unchanged. Native A is known, live PSO shader
 hash still NOT captured. No API/plugin/config/package/consumer changes.
 
-**One next step:** prepare paired ambient/exposure diagnostics, reusing the
-existing ExposureOwner route and four-float4 CPU candidate documented below.
-Establish its provenance/timing before calling it the sampled GPU exposure;
-do not assume UAV state for a CBV copy or divide every local light by one scalar.
+**Follow-up:** the cache provenance/diagnostic extension is now at the top.
+Exact GPU timing remains unmeasured; do not assume UAV state for a CBV copy or
+divide every local light by one scalar.
 Keep raw sky values and explicit relative units. Existing consumer exports read row7/56, not
 the SH evaluation; don't claim otherwise. Local roof occlusion is unresolved;
 if another live control is needed, use a quick out/in/out in ONE capture rather

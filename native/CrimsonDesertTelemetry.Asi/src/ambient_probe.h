@@ -1,15 +1,17 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include "exposure_probe.h"
 
 namespace cdt::render
 {
 // Private research file, NOT a public telemetry schema. Followed by the paired
-// 2816-byte SceneConstantBuffer and the 1024-byte ambient output, little endian.
+// 2816-byte SceneConstantBuffer, 1024-byte ambient output and (v2 only) the
+// ExposureCacheContext appendix. Original v1 files remain valid, unchanged.
 constexpr uint32_t AmbientBytes = 1024;
 struct AmbientRecordHeader
 {
-    uint32_t magic = 0x41445443, version = 1, recordBytes = 64 + 2816 + AmbientBytes, pid = 0;
+    uint32_t magic = 0x41445443, version = 2, recordBytes = 64 + 2816 + AmbientBytes + sizeof(ExposureCacheContext), pid = 0;
     uint32_t frame = 0, producerRva = 0, flags = 0, sequence = 0;
     uint64_t capturedTick = 0, resource = 0, outer = 0, sky = 0;
 };
