@@ -1,4 +1,13 @@
-# Current checkpoint — offline ambient color decoder verified, 2026-09-07, Codex/Astra
+# Current checkpoint — ambient shader family verified, 2026-09-07, Codex/Astra
+
+**Latest bounded follow-up:** native A explicitly selects the named
+`PrecomputeAmbient` technique pass before its captured dispatch. All SIX entries
+for csPrecomputeAmbient in the existing shader index were extracted and compared:
+their executable function bodies are identical (hash/evidence in
+docs/AMBIENT_DECODE.md). Variant choice within this current-build family is no
+longer a decoding blocker; do NOT build another shader hook merely to choose
+between them. A bound-PSO hash was not captured; historical decoder reports keep
+runtimeShaderIdentityVerified=false. No ASI/config/API change or new game capture.
 
 **New result:** exact packing and sample normalization derived from the existing
 csPrecomputeAmbient export. 9 signed coefficients per working RGB channel,
@@ -15,8 +24,11 @@ assumption. Each capture directory has a new ambient-derived-candidate.json;
 original binary/parser exports unchanged. Native A is known, live PSO shader
 hash still NOT captured. No API/plugin/config/package/consumer changes.
 
-**Next:** pin the live shader profile and establish color/exposure conventions
-before publishing derived ambient. Existing consumer exports read row7/56, not
+**One next step:** prepare paired ambient/exposure diagnostics, reusing the
+existing ExposureOwner route and four-float4 CPU candidate documented below.
+Establish its provenance/timing before calling it the sampled GPU exposure;
+do not assume UAV state for a CBV copy or divide every local light by one scalar.
+Keep raw sky values and explicit relative units. Existing consumer exports read row7/56, not
 the SH evaluation; don't claim otherwise. Local roof occlusion is unresolved;
 if another live control is needed, use a quick out/in/out in ONE capture rather
 than separated stand runs. Do not rebuild the decoder or redo the earlier heap/GI

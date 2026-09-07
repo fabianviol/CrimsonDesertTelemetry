@@ -18,6 +18,46 @@ capture the PSO shader hash. Consequently `Decode-AmbientProbe.ps1` requires
 `runtimeShaderIdentityVerified=false`. Matching output and native provenance
 support this profile but do not silently upgrade it to confirmed live identity.
 
+### Follow-up: named native pass and all six archived variants
+
+Native A selects the pass by name, not just a similarly named buffer:
+at143848AB6 it references145BDB340 (`PrecomputeAmbient`), then at143848AE6
+calls143830170 on sky+9D48. That lookup returns the selected pass payload;
+143848AF0 loads its first pointer, supplied to command virtual+200 at143848B04.
+The same function dispatches at143849BB1 immediately before the existing probe.
+The existing dump `rawpages/ambient-native-routing-pid30016-b` preserves A;
+new `rawpages/ambient-profile-route-pid34736` preserves the name/lookup code.
+
+Bounded read-only PID34736 check: sky3D6E1DC8000 → technique3D66B8B54C0;
+name key at146F64B0C=970E. Lookup key(0,0,970E) resolves node3D66E7BFC20,
+payload3D66FB2BA90, program3D72AFB4800. Evidence under
+`artifacts/light-research/rawpages/ambient-profile-{technique,pass-key,selected-pass,selected-objects,shader-record,variant-nodes}-pid34736`.
+Addresses are session evidence, NOT future discovery anchors. Adjacent shader-name
+strings support the family association but are not proof of bound bytecode identity.
+
+Existing `crimsonforge-shader-index-20260905.json` contains exactly six paths
+`shadercache__/c6f4169c_0b1104a5_5_6acf206f_3_<A>_<B>.padxil`:
+A={0e46d723,deba1dcd}, B={56d1e36e,7bc8d106,c8810edf}.
+Reused Read-ArchiveLightAsset.py/Inspect-ArchiveShader.py and SDK dxc to extract
+all six successfully. Artifacts beside the reference export:
+`ambient-profile-deba-56d1e36e.*` and
+`ambient-profile-{0e46d723,deba1dcd}-{7bc8d106,c8810edf}.*`.
+
+**All six have identical executable csPrecomputeAmbient function text.**
+Reproduce with Python text-mode LF normalization and regex
+`(?ms)^define void @csPrecomputeAmbient\(\) \{\n.*?^\}` (exactly one match/file),
+then SHA256 of the UTF-8 match:
+`15C3C3D59DD02CE753048C3EF843A7E7B7E3AE390F9AED5AAB50A0C41BE5F941`.
+The four 56d1e36e/c8810edf DXBC files match reference E17BB8A5…;
+the two 7bc8d106 files have DXBC SHA256
+`8A85EFA5F50F925703825A984109B52FC1552F0EF8441DF22C1941589FAC998E`.
+Their differences are metadata/type descriptions, not the function calculation.
+
+This removes variant selection within the indexed current-build family as a
+normalization blocker. It does NOT measure a bound PSO hash or cover future
+shader updates; keep existing reports/explicit assumption unchanged. A separate
+PSO hook is not needed merely to choose between these six identical calculations.
+
 ## Packing and normalization, from producer instructions
 
 256 threads (LL19); direction at LL399..439 is
@@ -112,7 +152,11 @@ time/weather and no measured threshold crossing remain confounds.
 The existing consumer exports actually read row7 and/or56, not SH rows0..6.
 Do not claim a renderer SH evaluation was verified from declarations alone.
 Keep the new derived quantities as **upper-sky candidate diagnostics** until
-the live profile is pinned and color/exposure semantics are defined. A short
+color/exposure semantics are defined. The family audit above resolves the
+current variant-calculation ambiguity without claiming bound-PSO identity.
+Next reuse the documented exposure route for paired ambient/exposure diagnostics;
+the CPU four-float4 candidate still needs upload/timing provenance, and GPU CBV
+state/suboffset must not be guessed. A short
 within-run doorway out/in/out control can then address locality; absence of a
 roof response would mean an additional local-visibility source is needed, not
 that the sky data is useless. No new broad GI branch or public schema yet.
