@@ -23,5 +23,7 @@ constexpr std::array<uint8_t, 15> AmbientSignatureB{
 bool CheckAmbientPreflight(uint64_t moduleBase);
 // Mutually exclusive with regular ManyLights. Reuses the tested copy/fence
 // machinery; never publishes ambient bytes as lights. Opt-in, bounded, no API.
+// Starts IDLE. A process-specific named event explicitly starts each bounded run;
+// no loading/menu heuristic. Only cleanly completed runs can be restarted.
 bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory);
 }

@@ -47,6 +47,10 @@ ExecuteFn executeOriginal{};
 void* executeTarget{};
 bool ambientMode{};
 HANDLE ambientFile = INVALID_HANDLE_VALUE;
+HANDLE ambientRequestEvent{};
+std::filesystem::path ambientDirectory;
+uint32_t ambientRun{};
+bool ambientAcceptRequests{};
 AmbientRecordHeader ambientHeader{};
 std::array<std::atomic<uint64_t>, 2> ambientHits{};
 uint64_t ambientReportAt{};
@@ -58,6 +62,45 @@ size_t CopyBytes() { return ambientMode ? AmbientBytes : LightBytes + CounterByt
 void CloseAmbientFile()
 {
     if (ambientFile != INVALID_HANDLE_VALUE) { CloseHandle(ambientFile); ambientFile = INVALID_HANDLE_VALUE; }
+}
+void CloseAmbientControl()
+{
+    ambientAcceptRequests = false;
+    if (ambientRequestEvent) { CloseHandle(ambientRequestEvent); ambientRequestEvent = nullptr; }
+}
+bool InitializeAmbientControl(const wchar_t* directory)
+{
+    ambientDirectory = directory;
+    const auto name = L"Local\\CrimsonDesertTelemetry.AmbientProbe." + std::to_wstring(GetCurrentProcessId());
+    ambientRequestEvent = CreateEventW(nullptr, FALSE, FALSE, name.c_str());
+    if (!ambientRequestEvent) return false;
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    { CloseHandle(ambientRequestEvent); ambientRequestEvent = nullptr; return false; }
+    return true;
+}
+// Worker-only, under the capture lock. A request is a one-bit start signal,
+// never an arbitrary command/path. Busy requests are discarded, not queued.
+void PollAmbientRequest()
+{
+    if (!ambientRequestEvent || WaitForSingleObject(ambientRequestEvent, 0) != WAIT_OBJECT_0) return;
+    if (!ambientAcceptRequests || phase != Phase::Stopped || error || pendingSource || pendingList)
+    {
+        ch::Log("Ambient start request ignored: busy, stopped externally, or faulted; no queued restart.");
+        return;
+    }
+    const auto path = ambientDirectory / (L"ambient-probe-" + std::to_wstring(GetCurrentProcessId()) +
+        L"-" + std::to_wstring(GetTickCount64()) + L"-" + std::to_wstring(++ambientRun) + L".bin");
+    ambientFile = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (ambientFile == INVALID_HANDLE_VALUE)
+    {
+        error = GetLastError(); phase = Phase::Failed;
+        return;
+    }
+    ambientSamples = 0; hasFrame = false; capturedAt = 0; lastAttempt = 0;
+    // Completed runs reuse the same device/readback/fence and monotonically
+    // increasing fence values. Never rearm after a failed or in-flight copy.
+    phase = readback && fence && executeEnabled ? Phase::Ready : Phase::Discover;
+    ch::Log("Ambient probe started by explicit request: max%u samples, output=%s", ambientLimit, path.string().c_str());
 }
 
 template<class T> bool Read(uint64_t address, T& result)
@@ -289,7 +332,7 @@ void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path)
     __try
     {
         uint64_t outer{};
-        if (Read(sky + 0x98, outer) && outer)
+        if ((phase == Phase::Discover || phase == Phase::Ready) && Read(sky + 0x98, outer) && outer)
         {
             const auto previous = phase;
             Record(outer, command, 0, sky);
@@ -346,10 +389,7 @@ bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory)
     if (!CheckAmbientPreflight(moduleBase) || phase != Phase::Stopped || hookEnabled || executeEnabled) return false;
     const auto init = MH_Initialize();
     if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) return false;
-    const auto path = std::filesystem::path(outputDirectory) /
-        (L"ambient-probe-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".bin");
-    ambientFile = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (ambientFile == INVALID_HANDLE_VALUE) return false;
+    if (!InitializeAmbientControl(outputDirectory)) return false;
     gameBase = moduleBase; ambientMode = true; intervalMs = 500;
     hookAddress = gameBase + AmbientHookRvas[0];
     void* targets[]{reinterpret_cast<void*>(hookAddress), reinterpret_cast<void*>(gameBase + AmbientHookRvas[1])};
@@ -358,17 +398,18 @@ bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory)
     for (unsigned i = 0; i < 2; ++i)
     {
         if (MH_CreateHook(targets[i], thunks[i], trampolines[i]) != MH_OK)
-        { CloseAmbientFile(); return false; }
+        { CloseAmbientControl(); return false; }
     }
-    phase = Phase::Discover;
+    phase = Phase::Stopped; // Loading/menu frames must not consume the experiment.
     if (MH_EnableHook(targets[0]) != MH_OK || MH_EnableHook(targets[1]) != MH_OK)
     {
         MH_DisableHook(targets[0]); MH_DisableHook(targets[1]);
-        phase = Phase::Stopped; CloseAmbientFile(); return false;
+        phase = Phase::Stopped; CloseAmbientControl(); return false;
     }
     hookEnabled = true;
+    ambientAcceptRequests = true;
     PublishStatus(Status::Stopped); // Explicitly no ManyLights stream in this private research mode.
-    ch::Log("Ambient probe enabled (2Hz, max120 samples). ManyLights paused; output=%s", path.string().c_str());
+    ch::Log("Ambient probe enabled, IDLE until explicit start request (2Hz, max120 samples/run). ManyLights paused. Event=Local\\CrimsonDesertTelemetry.AmbientProbe.%u", GetCurrentProcessId());
     return true;
 }
 
@@ -476,6 +517,7 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
 void PollCapture()
 {
     AcquireSRWLockExclusive(&lock);
+    if (ambientMode) PollAmbientRequest();
     if (phase == Phase::Found)
     {
         phase = Phase::Preparing;
@@ -527,7 +569,7 @@ void PollCapture()
                 else if (ambientMode && ambientSamples >= ambientLimit)
                 {
                     phase = Phase::Stopped; CloseAmbientFile();
-                    ch::Log("Ambient probe complete: 120 fence-completed samples saved. No further copies; restart with Research/AmbientProbe=0 to restore ManyLights.");
+                    ch::Log("Ambient probe complete: %u fence-completed samples saved. IDLE until another explicit start; restart with Research/AmbientProbe=0 to restore ManyLights.", ambientSamples);
                 }
             }
         }
@@ -540,6 +582,7 @@ void PollCapture()
         PublishStatus(Status::Fault, error, ExactBuild);
         ch::Log("%s disabled after capture failure 0x%08X; pending resources retained safely until process exit.", ambientMode ? "Ambient probe" : "ManyLights", error);
         CloseAmbientFile();
+        ambientAcceptRequests = false;
         phase = Phase::Stopped;
     }
     if (ambientMode && phase != Phase::Stopped && GetTickCount64() - ambientReportAt > 10000)
@@ -566,6 +609,7 @@ void StopCapture()
     if (executeEnabled) MH_DisableHook(executeTarget);
     AcquireSRWLockExclusive(&lock);
     phase = Phase::Stopped;
+    CloseAmbientControl();
     CloseAmbientFile();
     ReleaseSRWLockExclusive(&lock);
     PublishStatus(Status::Stopped);
@@ -594,13 +638,14 @@ void InitializeCaptureForTest(uint64_t moduleBase)
     if (result != MH_OK && result != MH_ERROR_ALREADY_INITIALIZED) { phase = Phase::Failed; return; }
     phase = Phase::Discover;
 }
-bool InitializeAmbientForTest(uint64_t moduleBase, const wchar_t* filePath)
+bool InitializeAmbientForTest(uint64_t moduleBase, const wchar_t* directory)
 {
     InitializeCaptureForTest(moduleBase);
     ambientMode = true;
     ambientLimit = 2;
-    ambientFile = CreateFileW(filePath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    return ambientFile != INVALID_HANDLE_VALUE;
+    phase = Phase::Stopped;
+    ambientAcceptRequests = InitializeAmbientControl(directory);
+    return ambientAcceptRequests;
 }
 uint32_t AmbientSamplesForTest() { return ambientSamples; }
 

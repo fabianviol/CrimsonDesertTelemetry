@@ -18,7 +18,7 @@ namespace cdt::render
 void InitializeCaptureForTest(uint64_t base);
 const char* CapturePhaseForTest();
 void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner);
-bool InitializeAmbientForTest(uint64_t base, const wchar_t* filePath);
+bool InitializeAmbientForTest(uint64_t base, const wchar_t* directory);
 uint32_t AmbientSamplesForTest();
 void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path);
 }
@@ -146,13 +146,37 @@ int main(int argc, char** argv)
     Check(bridge!=nullptr,"read bridge");
     if (ambientTest)
     {
-        const auto output = std::filesystem::absolute(L"ambient-smoke-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".bin");
-        Check(InitializeAmbientForTest(reinterpret_cast<uint64_t>(fakeBase), output.c_str()), "fresh ambient test output");
+        const auto directory = std::filesystem::absolute(L"ambient-smoke-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        Check(std::filesystem::create_directory(directory), "fresh ambient test directory");
+        Check(InitializeAmbientForTest(reinterpret_cast<uint64_t>(fakeBase), directory.c_str()), "ambient control initialization");
+        const auto eventName = L"Local\\CrimsonDesertTelemetry.AmbientProbe." + std::to_wstring(GetCurrentProcessId());
+        HANDLE request = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName.c_str());
+        Check(request != nullptr, "open actual named start event");
+        const auto start = [&] { Check(SetEvent(request) != FALSE, "signal ambient start"); PollCapture(); };
+        const auto fileCount = [&] {
+            size_t count = 0; for (const auto& entry : std::filesystem::directory_iterator(directory)) if (entry.is_regular_file()) ++count;
+            return count;
+        };
+        const auto runFile = [&](unsigned run) {
+            const auto suffix = L"-" + std::to_wstring(run) + L".bin";
+            for (const auto& entry : std::filesystem::directory_iterator(directory))
+                if (entry.path().filename().wstring().ends_with(suffix)) return entry.path();
+            Check(false, "missing ambient run file"); return std::filesystem::path{};
+        };
         std::array<uint8_t,0xA0> sky{};
         Put(sky,0x98,reinterpret_cast<uint64_t>(outer.data()));
         const auto probe = [&](uint64_t path) {
             CaptureAmbient(reinterpret_cast<uint64_t>(sky.data()),reinterpret_cast<uint64_t>(command.data()),path);
         };
+        // Realistic valid renderer activity during loading must consume no
+        // budget, perform no discovery/copy and not even create an output file.
+        Put(inner,0xC0,uint32_t{16}); Put(inner,0xC4,uint32_t{64});
+        for (int n=0;n<50;++n) { probe(n%2); PollCapture(); }
+        Check(fileCount()==0 && std::strcmp(CapturePhaseForTest(),"stopped")==0,"capture started without explicit request");
+        start();
+        Check(fileCount()==1,"explicit start did not create exactly one output");
+        const auto output = runFile(1);
+        Put(inner,0xC0,RecordStride); Put(inner,0xC4,RecordCount);
         // Wrong ManyLights layout is not accepted as ambient; short/no-UAV
         // resources and unknown producer indices cannot advance discovery.
         probe(0); PollCapture();
@@ -172,6 +196,7 @@ int main(int argc, char** argv)
         ComPtr<ID3D12Fence> gate; Hr(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"ambient gate");
         Hr(queue->Wait(gate.Get(),1),"ambient wait");
         ID3D12CommandList* lists[]{list.Get()}; queue->ExecuteCommandLists(1,lists);
+        start(); // Busy request is discarded, never a deferred run or reset.
         for(int n=0;n<20;++n) { PollCapture(); Sleep(5); }
         Check(AmbientSamplesForTest()==0 && std::filesystem::file_size(output)==0,"ambient saved before fence");
         Hr(gate->Signal(1),"ambient release");
@@ -186,6 +211,8 @@ int main(int argc, char** argv)
         Put(constants,0x20,uint32_t{101}); Put(inner,0x168,reinterpret_cast<uint64_t>(source2.Get()));
         probe(1); Hr(list->Close(),"ambient second close"); queue->ExecuteCommandLists(1,lists); waitSample(2);
         Check(std::strcmp(CapturePhaseForTest(),"stopped")==0,"ambient limit did not stop capture");
+        for(int n=0;n<10;++n) { probe(0); PollCapture(); }
+        Check(fileCount()==1 && AmbientSamplesForTest()==2,"busy request was queued or completed run restarted itself");
         Check(bridge->header.sampleSequence==0,"ambient bytes leaked into light bridge");
         std::ifstream file(output,std::ios::binary);
         constexpr size_t recordBytes=sizeof(AmbientRecordHeader)+SceneBytes+AmbientBytes;
@@ -203,8 +230,37 @@ int main(int argc, char** argv)
             uint32_t sceneFrame{}; memcpy(&sceneFrame,recordedScene.data()+0x20,4);
             Check(sceneFrame==header.frame && memcmp(recordedAmbient.data(),light.data(),sizeof(light))==0,"ambient bytes/paired scene");
         }
-        StopCapture(); UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
-        std::cout<<"Ambient WARP: bounded resources, both producers, unrelated submission ignored, blocked GPU withheld, exact bytes/provenance, duplicate frame refused, cap reached, no API leak.\n";
+        file.close();
+        // Second measurement, same device and process. Fence values must not
+        // reset (an old completed fence would otherwise accept unfinished GPU work).
+        start();
+        const auto secondOutput=runFile(2);
+        Check(fileCount()==2 && AmbientSamplesForTest()==0,"new run did not reset only its sample budget");
+        Hr(allocator->Reset(),"ambient second run allocator"); Hr(list->Reset(allocator.Get(),nullptr),"ambient second run list");
+        Put(constants,0x20,uint32_t{102}); probe(0); Hr(list->Close(),"ambient second run close");
+        Hr(queue->Wait(gate.Get(),2),"ambient second run GPU gate"); queue->ExecuteCommandLists(1,lists);
+        for(int n=0;n<20;++n) { PollCapture(); Sleep(5); }
+        Check(AmbientSamplesForTest()==0 && std::filesystem::file_size(secondOutput)==0,"second run reused old completed fence");
+        Hr(gate->Signal(2),"ambient second run release"); waitSample(1);
+        Hr(allocator->Reset(),"ambient second run final allocator"); Hr(list->Reset(allocator.Get(),nullptr),"ambient second run final list");
+        Put(constants,0x20,uint32_t{103}); probe(1); Hr(list->Close(),"ambient second run final close");
+        queue->ExecuteCommandLists(1,lists); waitSample(2);
+        Check(std::filesystem::file_size(secondOutput)==recordBytes*2 && std::filesystem::file_size(output)==recordBytes*2,"run isolation/file preservation");
+        std::ifstream secondFile(secondOutput,std::ios::binary); AmbientRecordHeader secondHeader{};
+        secondFile.read(reinterpret_cast<char*>(&secondHeader),sizeof(secondHeader)); secondFile.close();
+        Check(secondHeader.sequence==1 && secondHeader.frame==102 && bridge->header.sampleSequence==0,"second run provenance/API isolation");
+        // A source/list environment failure must permanently refuse rearming.
+        start();
+        ComPtr<ID3D12CommandAllocator> badAllocator; ComPtr<ID3D12GraphicsCommandList> badList;
+        Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,IID_PPV_ARGS(&badAllocator)),"ambient incompatible allocator");
+        Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_COMPUTE,badAllocator.Get(),nullptr,IID_PPV_ARGS(&badList)),"ambient incompatible list");
+        Put(holder,8,reinterpret_cast<uint64_t>(badList.Get())); Put(constants,0x20,uint32_t{104}); probe(0); PollCapture();
+        Check(CaptureFailureCode()==ERROR_INVALID_HANDLE,"ambient changed queue not rejected");
+        start();
+        Check(fileCount()==3 && std::strcmp(CapturePhaseForTest(),"stopped")==0,"faulted ambient run was rearmed");
+        StopCapture(); start(); Check(fileCount()==3,"explicit stop rearmed"); CloseHandle(request);
+        UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
+        std::cout<<"Ambient WARP: explicit named-event start, idle ignores loading, repeated bounded runs preserve fence ordering/files, busy requests discarded, fault/stop prevent restart; resource guards, both producers, exact bytes/provenance and no API leak.\n";
         return 0;
     }
     InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase));

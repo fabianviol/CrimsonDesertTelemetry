@@ -1,4 +1,47 @@
-# Current checkpoint — ambient probe ready for DMM installation, 2026-09-07, Codex/Astra
+# Current checkpoint — ambient readback works; explicit-start probe.2 ready, 2026-09-07, Codex/Astra
+
+Probe.1 ran in PID34848 with the expected ASI hash. **120 real GPU-fenced
+samples, one DEFAULT resource, path A active; no faults.** However the automatic
+60s window completed during loading/menu, before the camp was loaded. CPU scene
+cameras remained near zero/(0,1000,0), unlike the later progressing live API camp
+control. This validates the instrument/producer, NOT outdoor ambient semantics.
+Raw capture/log/config/parser export preserved in
+`artifacts/light-research/ambient-live-20260907-pid34848/`; full evidence in
+`research/light-source-tests/GPU_LIGHT_LAYOUTS_25116796.md`, final subsection.
+User was told the early start was our diagnostic-control mistake, not an absent
+ambient source. Game is now absent (read-only process check); no ASI replaced.
+
+Private probe.2 fixes control, not the measured path. Starts IDLE even with valid
+loading/menu frames. The assistant explicitly starts each run after verifying a
+fresh playing API snapshot using `scripts/Start-AmbientProbe.ps1 -ProcessId PID`.
+This signals `Local\CrimsonDesertTelemetry.AmbientProbe.PID`; no Explorer/console
+enablement, remote memory writes or public API changes. Verify log acceptance
+and NEW `ambient-probe-PID-TICK-RUN.bin`, then use `Read-AmbientProbe.ps1`.
+Each run: 2Hz/120 valid samples; returns idle. Repeated runs work in the same
+process and keep increasing fence values. Busy requests are discarded, faults
+and external stop permanently refuse restart. Each file is CREATE_NEW.
+
+Private DMM ZIP (configuration included, not published or installed yet):
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ambient-probe.2-ModManagers.zip`
+SHA256 `E1463B646CE417182B7B8A03970B94A12811F79BABB9E3350E2CD89E5A8D7812`;
+ASI SHA256 `9EFC5A2EE11738BADFF0FEF5434093E753884D6F9E4C3CE46B844318B02789E0`.
+Native Release build and 16/16 CTests pass, including actual named-event control,
+idle suppression, two GPU-gated runs (no old-fence reuse), file isolation,
+busy/fault/stop negative controls. Parser fixture/15 negatives and package
+validator pass. Public2.0.0 hash unchanged. These new control tests are synthetic.
+ManyLights/rendered-light API and markers remain paused in this private mode;
+player/camera/authored path remains. Restore AmbientProbe=0 plus restart afterwards.
+
+Sun/moon directions are included in every scene record. Direct sun/moon color
+and intensity are NOT separately validated. Ambient packing/normalization,
+exposure and player-local interior/shadow semantics remain open; no public schema.
+
+**Next:** user installs probe.2 through DMM and loads outdoors; on "ready", verify
+PID/hash/fresh API, signal ONE start, inspect first complete samples while still
+outside, and only then request an indoor comparison using a second bounded run.
+Do not consume another loading sequence or branch into broad GI research.
+
+## Previous checkpoint — ambient probe ready for DMM installation
 
 User authorized continuing ambient validation and has now confirmed the game
 is closed; process absence independently verified. PID30016 pointers below are
