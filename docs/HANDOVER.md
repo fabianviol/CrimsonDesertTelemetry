@@ -1,4 +1,29 @@
-# Current checkpoint — three valid ambient captures; locality unresolved, 2026-09-07, Codex/Astra
+# Current checkpoint — offline ambient color decoder verified, 2026-09-07, Codex/Astra
+
+**New result:** exact packing and sample normalization derived from the existing
+csPrecomputeAmbient export. 9 signed coefficients per working RGB channel,
+256 upper-hemisphere samples, shared sum/128. Mean sky RGB=C0/(2*.282095);
+upward irradiance/pi quadrature=-C1/.488603. Same fixed color matrix as older
+ManyLights research; decoder preserves working RGB and an inverse-matrix result.
+Estimated Rec.709 luminance is labeled as an input-primaries assumption, not lux.
+Detailed derivation, source hashes/lines, limitations: **docs/AMBIENT_DECODE.md**.
+
+Private scripts/AmbientSh.psm1 +Decode-AmbientProbe.ps1 added; reader gains an
+optional PassThru with unchanged default output. 178 synthetic/offline checks
+pass; all360 preserved gameplay samples decoded under an EXPLICIT profile
+assumption. Each capture directory has a new ambient-derived-candidate.json;
+original binary/parser exports unchanged. Native A is known, live PSO shader
+hash still NOT captured. No API/plugin/config/package/consumer changes.
+
+**Next:** pin the live shader profile and establish color/exposure conventions
+before publishing derived ambient. Existing consumer exports read row7/56, not
+the SH evaluation; don't claim otherwise. Local roof occlusion is unresolved;
+if another live control is needed, use a quick out/in/out in ONE capture rather
+than separated stand runs. Do not rebuild the decoder or redo the earlier heap/GI
+search. AmbientProbe=1 still pauses normal/derived local lights until restored0
+and restarted. User need not stay at their last pose.
+
+## Three gameplay captures — reference
 
 **Latest: return-outdoors run3 complete.** User reports outside the home at about
 01:45 in-game, moonlight. Same PID34736/ASI/config. Explicit start23:09:15,
@@ -17,14 +42,8 @@ direction changed23.1885deg. No doorway transition captured; not a controlled
 same-lighting A-B-A. Raw SH/scalar lanes change nonuniformly, not decoded RGB.
 Details and source packing notes in research/light-source-tests/GPU_LIGHT_LAYOUTS_25116796.md.
 
-**Next:** decode packing/normalization through the EXISTING precomputed-ambient
-producer and consumer exports, not another GI/heap search or more disconnected
-stand captures. Separate global sky color from local occlusion; neither a room
-status nor a player-local ambient API is established. If locality still needs
-a live control after decoding, capture a quick doorway out/in/out within ONE
-bounded run with scene/time context. Normal/derived local-light streams remain
-paused by AmbientProbe=1; restore0 and restart when diagnostics are finished.
-No plugin/API/config/package change or publication during these measurements.
+Offline decoding follows at the top checkpoint; global sky and local occlusion
+remain distinct. No plugin/API/config/package change during these measurements.
 
 ## Indoor run2 reference
 

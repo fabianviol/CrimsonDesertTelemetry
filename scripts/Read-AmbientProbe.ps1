@@ -6,7 +6,8 @@ records, invalid provenance and duplicate frames. Does not access game memory.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [string]$OutFile
+    [string]$OutFile,
+    [switch]$PassThru
 )
 $ErrorActionPreference = 'Stop'
 $recordBytes = 3904
@@ -80,6 +81,7 @@ if ($OutFile) {
     $output=[IO.File]::Open([IO.Path]::GetFullPath($OutFile),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write)
     try { $output.Write($json) } finally { $output.Dispose() }
 }
+if ($PassThru) { return [pscustomobject]$report }
 [pscustomobject]@{
     ProcessId=$sessionPid; Samples=$samples.Count; DistinctFrames=@($samples.frame | Sort-Object -Unique).Count
     Producers=@($samples.producerRva | Sort-Object -Unique); Resources=@($samples.resource | Sort-Object -Unique)
