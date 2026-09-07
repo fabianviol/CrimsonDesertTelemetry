@@ -1,4 +1,30 @@
-# Current checkpoint — valid outdoor ambient reference captured, 2026-09-07, Codex/Astra
+# Current checkpoint — outdoor and player-home ambient captures, 2026-09-07, Codex/Astra
+
+**Latest: indoor run2 complete; next step outside the player home.** User reports
+inside the player home, with windows. Same PID34736/ASI/config as below. Player
+(-10396.898,612.0811,-4414.3125), paired CPU camera near
+(-10396.708,615.220,-4411.6694). Explicit start23:04:11, complete23:05:10:
+120 valid fenced samples, frames38296..41870 over59.562s. Same A producer and
+resource0x137024E80, fences121..240 (no old fence reuse), B=0. API sequences
+38002->43596 and unchanged player position at the endpoint checks; no errors.
+
+Evidence `artifacts/light-research/ambient-live-20260907-pid34736-indoor/`:
+`ambient-probe-34736-10995062-2.bin`, parser JSON, native log, installed INI.
+Binary SHA2567674AE55340D713107FFFB1C085728991B5A8451B4386ECD2DDEF3B92332B277.
+Rows0..7 and56 vary; others unchanged within this run. Raw row6 XYZ
+(.0003239843,.0004012281,.00030329468)->(.0003145608,.00038555585,.00029848135),
+W stays1. Sun direction(-.017686604,-.33864108,.94074947)->
+(.081872046,-.33665884,.9380607). Both solar/lunar directions have changed
+substantially since the outdoor recording, so the lower raw coefficients do
+NOT prove indoor occlusion. No decoded ambient RGB or locality claim yet.
+
+**Next:** ask user to step clearly outdoors just outside the home, not under
+its roof. Verify pose and start run3 explicitly in this SAME process; compare
+with the nearby-in-time indoor run, accounting for continuing sky/time drift.
+Do not request a restart/ASI replacement. Probe is IDLE. A distant return to
+the old camp is unnecessary for this immediate indoor/outdoor control.
+
+## Outdoor reference in the same process
 
 User accepted local-light smoothing and moved to ambient. Restarted PID34736
 (22:51:48) loads the same local-lights.1 ASI, hashB80FEA8597F1399EECBBA982C396D7E0651E36E32387CB82A38E2A0764AA1400.
@@ -12,8 +38,8 @@ Assistant sent ONE `Start-AmbientProbe.ps1 -ProcessId 34736` after this check.
 64x16; copied1024byte prefix. Paired CPU camera(-10499.338,614.517,-4378.455)
 through(-10499.338,614.515,-4378.455); player remained
 (-10502.611,610.52826,-4373.8613). API sequences2483->11414, no errors.
-Capture started22:54:52 and completed22:55:53. Probe is now IDLE, safe for a
-second explicit run in this process; do not restart or replace the ASI.
+Capture started22:54:52 and completed22:55:53. Subsequent indoor run2 above
+reused this process without a restart or ASI replacement.
 
 Evidence: `artifacts/light-research/ambient-live-20260907-pid34736-outdoor/`
 contains `ambient-probe-34736-10436500-1.bin`, parsed `ambient-readback.json`,
@@ -25,9 +51,7 @@ W .15278931->.23067258. These are raw coefficients/scalars, NOT decoded RGB.
 Sun/moon directions also advance. The outdoor signal changes substantially
 without movement: **time/weather confounds a simple sequential indoor decrease**.
 
-**Next:** user moves to a clearly roofed/interior/cave location and reports
-arrival. Verify live pose; explicitly start a NEW bounded run and inspect it.
-Then return outdoors for an A-B-A style control against natural sky/time drift.
+Indoor comparison is recorded above; return-outdoors control remains pending.
 Do not claim player-local ambient based on global sky coefficients alone. SH
 packing/normalization, exposure, actual shader-variant identity and direct
 sun/moon color/intensity remain unvalidated; no ambient public API yet.
