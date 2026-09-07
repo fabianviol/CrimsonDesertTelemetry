@@ -1,4 +1,40 @@
-# Current checkpoint — smoothed local-light live stand test passed, 2026-09-07, Codex/Astra
+# Current checkpoint — valid outdoor ambient reference captured, 2026-09-07, Codex/Astra
+
+User accepted local-light smoothing and moved to ambient. Restarted PID34736
+(22:51:48) loads the same local-lights.1 ASI, hashB80FEA8597F1399EECBBA982C396D7E0651E36E32387CB82A38E2A0764AA1400.
+Installed INI Research/AmbientProbe=1; log confirmed IDLE before the explicit
+start. Player/camera API playing and progressing at the camp, not the menu.
+Assistant sent ONE `Start-AmbientProbe.ps1 -ProcessId 34736` after this check.
+
+**Outdoor run1 complete:** 120/120 parser-valid GPU-fenced records, frames
+8611..11402 over59.984s, native path A RVA3849BB7 only (B=0). Resource
+0x137024E80, native width65536, heap1/DEFAULT, queue2/COMPUTE. Logical view
+64x16; copied1024byte prefix. Paired CPU camera(-10499.338,614.517,-4378.455)
+through(-10499.338,614.515,-4378.455); player remained
+(-10502.611,610.52826,-4373.8613). API sequences2483->11414, no errors.
+Capture started22:54:52 and completed22:55:53. Probe is now IDLE, safe for a
+second explicit run in this process; do not restart or replace the ASI.
+
+Evidence: `artifacts/light-research/ambient-live-20260907-pid34736-outdoor/`
+contains `ambient-probe-34736-10436500-1.bin`, parsed `ambient-readback.json`,
+native log and INI. Binary SHA256
+`484B1DAE203BEAA2D40492A77B4D7188F2C57E8FC7CCE951E7189A189AEC8FBC`.
+Rows0..6 and56 change; all other rows unchanged over this run. Raw row6 XYZ
+changes(.008332003,.005748682,.001810758)->(.002566751,.001718922,.00048462633),
+W .15278931->.23067258. These are raw coefficients/scalars, NOT decoded RGB.
+Sun/moon directions also advance. The outdoor signal changes substantially
+without movement: **time/weather confounds a simple sequential indoor decrease**.
+
+**Next:** user moves to a clearly roofed/interior/cave location and reports
+arrival. Verify live pose; explicitly start a NEW bounded run and inspect it.
+Then return outdoors for an A-B-A style control against natural sky/time drift.
+Do not claim player-local ambient based on global sky coefficients alone. SH
+packing/normalization, exposure, actual shader-variant identity and direct
+sun/moon color/intensity remain unvalidated; no ambient public API yet.
+Normal/derived local-light streams intentionally remain paused in diagnostic
+mode. After experiments restore AmbientProbe=0 and restart; backup path below.
+
+## Previous checkpoint — smoothed local-light live stand test passed
 
 User additionally requested grouped/smoothed **local lights**, not ambient, for
 immediate CrimsonHue consumption. Implemented in telemetry, no CrimsonHue edits.
