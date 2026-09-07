@@ -1,5 +1,9 @@
 # API reference
 
+Development addition (not in public 2.0.0): a separate
+[grouped and smoothed local-light HTTP/WebSocket feed](SMOOTHED_LIGHTS.md).
+The raw contract documented below is unchanged; the derived feed is not ambient.
+
 Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
 contributions, separate authored light records, and independent player/camera
 poses through local **HTTP and WebSocket APIs** with JSON snapshot schemas

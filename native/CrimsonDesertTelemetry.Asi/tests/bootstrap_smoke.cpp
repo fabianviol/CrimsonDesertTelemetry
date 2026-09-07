@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -101,7 +102,13 @@ int wmain(const int argc, wchar_t** argv)
                 WSACleanup();
                 return 8;
             }
-            std::wcout << L"PASS ASI bootstrap started the host using .cfg metadata; health and schema respond.\n";
+            const auto smoothed = HttpGet(port, "/v1/lights/smoothed");
+            const auto requestedSmoothing = std::clamp(static_cast<int>(GetPrivateProfileIntW(
+                L"LightSmoothing", L"TimeConstantMilliseconds", 200, ini.c_str())), 0, 2000);
+            if (!smoothed.starts_with("HTTP/1.1 200") || smoothed.find("\"schemaVersion\":\"1.0\"") == std::string::npos ||
+                smoothed.find("\"timeConstantMilliseconds\":" + std::to_string(requestedSmoothing)) == std::string::npos)
+            { std::wcerr << L"Derived light endpoint/config forwarding failed.\n"; WSACleanup(); return 9; }
+            std::wcout << L"PASS ASI bootstrap started the host using .cfg metadata; raw health/schema and derived light settings respond.\n";
             WSACleanup();
             return 0;
         }

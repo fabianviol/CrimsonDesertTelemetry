@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <stdexcept>
@@ -256,6 +257,15 @@ DWORD RunBootstrap()
     const bool lightsEnabled = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, iniPath.c_str()) != 0;
     const int nearbyRadius = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"Lights", L"NearbyRadius", 100, iniPath.c_str())), 1, 100000);
+    const int smoothingMs = std::clamp(static_cast<int>(GetPrivateProfileIntW(
+        L"LightSmoothing", L"TimeConstantMilliseconds", 200, iniPath.c_str())), 0, 2000);
+    std::array<wchar_t, 64> groupRadiusText{};
+    GetPrivateProfileStringW(L"LightSmoothing", L"GroupRadius", L"0.15", groupRadiusText.data(),
+        static_cast<DWORD>(groupRadiusText.size()), iniPath.c_str());
+    wchar_t* groupEnd{};
+    double groupRadius = std::wcstod(groupRadiusText.data(), &groupEnd);
+    if (groupEnd == groupRadiusText.data() || *groupEnd || !std::isfinite(groupRadius) || groupRadius < .01 || groupRadius > 1)
+    { groupRadius = .15; Log(L"Invalid LightSmoothing/GroupRadius; using 0.15 game units (decimal point required)."); }
 
     if (enabled == 0)
     {
@@ -346,6 +356,8 @@ DWORD RunBootstrap()
         std::to_wstring(port) + L" " + std::to_wstring(sampleRate);
     if (lightsEnabled)
         commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
+    commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
+        L" --light-group-radius " + std::format(L"{}", groupRadius);
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
     mutableCommand.push_back(L'\0');
     PROCESS_INFORMATION process{};

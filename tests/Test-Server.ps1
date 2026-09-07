@@ -46,6 +46,23 @@ try {
     $schema = Invoke-RestMethod -Uri "http://127.0.0.1:$port/v1/schema"
     if ($schema.title -ne 'Crimson Desert Telemetry snapshot v1') { throw 'Schema endpoint mismatch.' }
 
+    $smoothed = Invoke-RestMethod -Uri "http://127.0.0.1:$port/v1/lights/smoothed"
+    if ($smoothed.schemaVersion -ne '1.0' -or $smoothed.status -ne 'unavailable' -or
+        $null -ne $smoothed.sources -or $smoothed.settings.timeConstantMilliseconds -ne 200) {
+        throw 'Server without --lights must expose unavailable derived data, not fabricate lights.'
+    }
+    $derivedSocket = [System.Net.WebSockets.ClientWebSocket]::new()
+    $derivedTimeout = [Threading.CancellationTokenSource]::new(5000)
+    try {
+        $null = $derivedSocket.ConnectAsync([Uri]"ws://127.0.0.1:$port/v1/lights/smoothed/stream",$derivedTimeout.Token).GetAwaiter().GetResult()
+        $derivedBuffer = [byte[]]::new(4096)
+        $derivedRead = $derivedSocket.ReceiveAsync([ArraySegment[byte]]::new($derivedBuffer),$derivedTimeout.Token).GetAwaiter().GetResult()
+        if (-not $derivedRead.EndOfMessage) { throw 'Unexpectedly large unavailable derived message' }
+        $derivedMessage = [Text.Encoding]::UTF8.GetString($derivedBuffer,0,$derivedRead.Count) | ConvertFrom-Json
+        if ($derivedMessage.status -ne 'unavailable' -or $derivedMessage.schemaVersion -ne '1.0') { throw 'Derived WebSocket payload mismatch' }
+        $null = $derivedSocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,'test complete',$derivedTimeout.Token).GetAwaiter().GetResult()
+    } finally { $derivedSocket.Dispose(); $derivedTimeout.Dispose() }
+
     if (-not $health.gameRunning -or $health.status -ne 'playing') {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
@@ -68,11 +85,12 @@ try {
         $socket.Dispose()
     }
 
+    foreach ($streamPath in @('/v1/stream','/v1/lights/smoothed/stream')) {
     $remoteSocket = [System.Net.WebSockets.ClientWebSocket]::new()
     try {
         $remoteSocket.Options.SetRequestHeader('Origin', 'https://example.com')
         try {
-            $null = $remoteSocket.ConnectAsync([Uri]"ws://127.0.0.1:$port/v1/stream",
+            $null = $remoteSocket.ConnectAsync([Uri]"ws://127.0.0.1:$port$streamPath",
                 [Threading.CancellationToken]::None).GetAwaiter().GetResult()
             throw 'Remote WebSocket browser origin was allowed.'
         } catch [System.Net.WebSockets.WebSocketException] {
@@ -80,6 +98,7 @@ try {
         }
     } finally {
         $remoteSocket.Dispose()
+    }
     }
 
     Start-Sleep -Milliseconds 100

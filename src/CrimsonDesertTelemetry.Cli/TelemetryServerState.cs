@@ -20,10 +20,13 @@ internal sealed record TelemetryHealth(
     string? Error,
     CompatibilityInfo? Compatibility = null);
 
-internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, int sampleRateHz, string schemaVersion)
+internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, int sampleRateHz, string schemaVersion,
+    LightSmoothingOptions? smoothingOptions = null)
 {
     private readonly object _gate = new();
-    private readonly ConcurrentDictionary<Guid, Channel<byte[]>> _subscribers = new();
+    private readonly ConcurrentDictionary<Guid, (Channel<byte[]> Channel, bool Smoothed)> _subscribers = new();
+    private readonly SmoothedLightProcessor _smoother = new(smoothingOptions);
+    private SmoothedLightsSnapshot? _smoothed;
     private TelemetrySnapshot? _latest;
     private byte[]? _latestBytes;
     private TelemetryHealth _health = new(schemaVersion, "waiting-for-game", false, null, null,
@@ -38,6 +41,26 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
     {
         get { lock (_gate) return _latestBytes; }
     }
+
+    public SmoothedLightsSnapshot LatestSmoothed
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                if (_smoothed?.CapturedAt is { } captured)
+                {
+                    var age = (now - captured).TotalMilliseconds;
+                    if (age is < 0 or > RenderLightReader.MaximumAgeMilliseconds)
+                        _smoothed = _smoother.Unavailable("source-stale", now);
+                    else _smoothed = _smoothed with { AgeMilliseconds = Math.Max(_smoothed.AgeMilliseconds ?? 0, (long)age) };
+                }
+                return _smoothed ??= _smoother.Unavailable("waiting-for-game", now);
+            }
+        }
+    }
+    public byte[] LatestSmoothedBytes => JsonSerializer.SerializeToUtf8Bytes(LatestSmoothed, jsonOptions);
 
     public TelemetryHealth Health
     {
@@ -63,6 +86,11 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
                 Error = error,
                 Compatibility = !gameRunning || supportedBuild == false ? null : _health.Compatibility
             };
+            if (status != "playing")
+            {
+                _smoothed = _smoother.Unavailable(status, DateTimeOffset.UtcNow);
+                Send(JsonSerializer.SerializeToUtf8Bytes(_smoothed, jsonOptions), true);
+            }
         }
     }
 
@@ -79,6 +107,9 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
         {
             _latest = snapshot;
             _latestBytes = bytes;
+            _smoothed = snapshot.Game.State == "playing"
+                ? _smoother.Process(snapshot.Lights?.Rendered, DateTimeOffset.UtcNow)
+                : _smoother.Unavailable(snapshot.Game.State, DateTimeOffset.UtcNow);
             _health = _health with
             {
                 Status = snapshot.Game.State,
@@ -91,11 +122,18 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
                 DiscoveryMilliseconds = discoveryMilliseconds,
                 Error = null
             };
+            Send(JsonSerializer.SerializeToUtf8Bytes(_smoothed, jsonOptions), true);
         }
-        foreach (var channel in _subscribers.Values) channel.Writer.TryWrite(bytes);
+        Send(bytes, false);
     }
 
-    public TelemetrySubscription Subscribe()
+    private void Send(byte[] bytes, bool smoothed)
+    {
+        foreach (var entry in _subscribers.Values)
+            if (entry.Smoothed == smoothed) entry.Channel.Writer.TryWrite(bytes);
+    }
+
+    public TelemetrySubscription Subscribe(bool smoothed = false)
     {
         var id = Guid.NewGuid();
         var channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1)
@@ -104,13 +142,13 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
-        if (!_subscribers.TryAdd(id, channel)) throw new InvalidOperationException("Could not add subscriber.");
+        if (!_subscribers.TryAdd(id, (channel, smoothed))) throw new InvalidOperationException("Could not add subscriber.");
         return new TelemetrySubscription(id, channel.Reader, this);
     }
 
     private void Unsubscribe(Guid id)
     {
-        if (_subscribers.TryRemove(id, out var channel)) channel.Writer.TryComplete();
+        if (_subscribers.TryRemove(id, out var entry)) entry.Channel.Writer.TryComplete();
     }
 
     internal sealed class TelemetrySubscription(

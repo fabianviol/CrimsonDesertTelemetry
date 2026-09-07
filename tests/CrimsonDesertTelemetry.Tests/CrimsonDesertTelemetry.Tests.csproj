@@ -4,6 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/CrimsonDesertTelemetry.Cli/TelemetryServerState.cs" Link="TelemetryServerState.cs" />
     <ProjectReference Include="../../src/CrimsonDesertTelemetry.Core/CrimsonDesertTelemetry.Core.csproj" />
   </ItemGroup>
 </Project>

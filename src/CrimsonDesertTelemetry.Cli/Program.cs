@@ -264,6 +264,8 @@ int TraceCameraCopies(string[] commandArgs)
 
 int Serve(string[] commandArgs)
 {
+    if (!TryParseSmoothingOptions(commandArgs, out commandArgs, out var smoothing, out var smoothingError))
+        return UsageError(smoothingError!);
     if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var lightError) ||
         positional.Length > 2 ||
         positional.Length >= 1 && !int.TryParse(positional[0], out _) ||
@@ -273,10 +275,10 @@ int Serve(string[] commandArgs)
     var rateHz = positional.Length >= 2 ? int.Parse(positional[1]) : 60;
     if (port is < 1024 or > 65535 || rateHz is < 1 or > 240)
         return UsageError("serve expects [port; 1024-65535] [rate-hz; 1-240].");
-    return RunServer(port, rateHz, lightOptions);
+    return RunServer(port, rateHz, lightOptions, smoothing);
 }
 
-int RunServer(int port, int rateHz, LightOptions lightOptions)
+int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOptions smoothing)
 {
     using var cancellation = new CancellationTokenSource();
     using var timerResolution = WindowsTimerResolution.RequestFor(rateHz);
@@ -289,7 +291,7 @@ int RunServer(int port, int rateHz, LightOptions lightOptions)
     try
     {
         var activeSchemaVersion = SchemaFor(lightOptions);
-        var state = new TelemetryServerState(jsonOptions, rateHz, activeSchemaVersion);
+        var state = new TelemetryServerState(jsonOptions, rateHz, activeSchemaVersion, smoothing);
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
@@ -309,7 +311,8 @@ int RunServer(int port, int rateHz, LightOptions lightOptions)
         {
             name = "Crimson Desert Telemetry",
             schemaVersion = activeSchemaVersion,
-            endpoints = new[] { "/v1/health", "/v1/snapshot", "/v1/schema", "/v1/stream" }
+            endpoints = new[] { "/v1/health", "/v1/snapshot", "/v1/schema", "/v1/stream",
+                "/v1/lights/smoothed", "/v1/lights/smoothed/stream" }
         }, jsonOptions));
         app.MapGet("/v1/health", () => Results.Json(state.Health, jsonOptions));
         app.MapGet("/v1/snapshot", () => state.Latest is { } snapshot
@@ -317,6 +320,8 @@ int RunServer(int port, int rateHz, LightOptions lightOptions)
             : Results.Json(state.Health, jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable));
         app.MapGet("/v1/schema", () => Results.Bytes(LoadEmbeddedSchema(), "application/schema+json"));
         app.Map("/v1/stream", context => StreamWebSocket(context, state, cancellation.Token));
+        app.MapGet("/v1/lights/smoothed", () => Results.Json(state.LatestSmoothed, jsonOptions));
+        app.Map("/v1/lights/smoothed/stream", context => StreamWebSocket(context, state, cancellation.Token, true));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
         var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, lightOptions, cancellation.Token),
@@ -343,7 +348,7 @@ int RunServer(int port, int rateHz, LightOptions lightOptions)
     }
 }
 
-async Task StreamWebSocket(HttpContext context, TelemetryServerState state, CancellationToken cancellationToken)
+async Task StreamWebSocket(HttpContext context, TelemetryServerState state, CancellationToken cancellationToken, bool smoothed = false)
 {
     var origin = context.Request.Headers.Origin.ToString();
     if (!string.IsNullOrEmpty(origin) && !IsAllowedBrowserOrigin(origin))
@@ -358,11 +363,11 @@ async Task StreamWebSocket(HttpContext context, TelemetryServerState state, Canc
         return;
     }
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    using var subscription = state.Subscribe();
+    using var subscription = state.Subscribe(smoothed);
     using var connectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     try
     {
-        var sendTask = SendSnapshots(socket, subscription, state.LatestBytes, connectionCancellation.Token);
+        var sendTask = SendSnapshots(socket, subscription, smoothed ? state.LatestSmoothedBytes : state.LatestBytes, connectionCancellation.Token);
         var receiveTask = WaitForWebSocketClose(socket, connectionCancellation.Token);
         await Task.WhenAny(sendTask, receiveTask);
         connectionCancellation.Cancel();
@@ -627,6 +632,7 @@ int Help()
     Console.WriteLine("  track [samples] [hz] [--lights] [--light-radius N]  Emit JSON Lines");
     Console.WriteLine("  trace-camera-copies <seconds> <hz> <file>   Record all copies for offline diagnosis");
     Console.WriteLine("  serve [port] [hz] [--lights] [--light-radius N]  Serve HTTP/WebSocket telemetry");
+    Console.WriteLine("    [--light-smoothing-ms 200] [--light-group-radius 0.15]  Separate derived local-light stream");
     Console.WriteLine("  version                  Show the program version");
     return 0;
 }
@@ -645,6 +651,24 @@ int UsageError(string message)
 }
 
 string SchemaFor(LightOptions options) => options.Enabled ? lightsSchemaVersion : baseSchemaVersion;
+
+bool TryParseSmoothingOptions(string[] arguments, out string[] remaining, out LightSmoothingOptions options, out string? error)
+{
+    var values = new List<string>();
+    var time = 200d; var radius = .15f;
+    error = null;
+    for (var index = 0; index < arguments.Length; index++)
+    {
+        var flag = arguments[index].ToLowerInvariant();
+        if (flag is not ("--light-smoothing-ms" or "--light-group-radius")) { values.Add(arguments[index]); continue; }
+        if (++index >= arguments.Length || !double.TryParse(arguments[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+        { error = $"{flag} expects a finite number in invariant format."; break; }
+        if (flag == "--light-smoothing-ms") time = number; else radius = (float)number;
+    }
+    options = new(time, radius); remaining = values.ToArray();
+    try { options.Validate(); } catch (ArgumentOutOfRangeException exception) { error = exception.Message; }
+    return error is null;
+}
 
 bool TryParseLightOptions(string[] arguments, out string[] positional, out LightOptions options,
     out string? error)

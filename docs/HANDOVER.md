@@ -1,4 +1,46 @@
-# Current checkpoint — ambient readback works; explicit-start probe.2 ready, 2026-09-07, Codex/Astra
+# Current checkpoint — separate smoothed local-light feed ready for Hue test, 2026-09-07, Codex/Astra
+
+User additionally requested grouped/smoothed **local lights**, not ambient, for
+immediate CrimsonHue consumption. Implemented in telemetry, no CrimsonHue edits.
+Raw `/v1/snapshot`, `/v1/stream`, schemas1.1/1.4 and HUD data remain unchanged.
+New HTTP `/v1/lights/smoothed` + WS `/v1/lights/smoothed/stream`, separate envelope
+schema1.0. Contract/consumer warnings/config: **`docs/SMOOTHED_LIGHTS.md`**.
+
+Current filtered ManyLights only (do not double count authored list). Conservative
+0.15gu proximity groups, sum linear HDR RGB, 200ms time-based EMA once per NEW
+GPU capture. Single lights smoothed too. Spatial session-local tracking ignores
+sample indices; it is approximate, NOT physical identity. No transitive groups.
+Current centroids and raw directional contributions preserved; no invented
+aggregate spotlight cone. Missing groups removed immediately, stale/fault/loading
+clears all output and tracking. Consumer must watchdog capturedAt/sequence, not
+publishedAt, and use colorLinear once, not add contributions/raw stream again.
+INI `[LightSmoothing] TimeConstantMilliseconds=200, GroupRadius=0.15`; CLI flags
+also available. No ambient schema or physical lamp output added.
+
+Private **normal-light** DMM package ready, not installed/published:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-local-lights.1-ModManagers.zip`
+SHA256 `97D1480A3DBFAA14F484879C813D79D3B00639A68BD87E927E110CCF41A7005B`;
+ASI SHA256 `B80FEA8597F1399EECBBA982C396D7E0651E36E32387CB82A38E2A0764AA1400`.
+Normal ManyLights enabled, AmbientProbe absent/off. Use this package for Hue,
+NOT ambient-probe.2 (that ZIP still has the old managed host and pauses lights).
+This new ASI includes the explicit-start ambient instrument too; later enable
+Research/AmbientProbe=1 and restart if needed, instead of downgrading the host.
+
+Evidence: managed build/tests pass incl. grouping/HDR sum, singleton/group EMA,
+sample permutation/rate independence, disappearance/staleness/invalid controls,
+32768 dense records and 4096 tracked groups, unchanged raw serialization and
+separate subscriptions/health faults. Real loopback HTTP/WS smoke passes; native
+16/16 CTests pass. Package validator passes. Packaged ASI bootstrap on a copied
+fixture at port27316 successfully forwards nondefault333ms config. These are
+synthetic/offline checks; **live-game/Hue acceptance remains pending**.
+Original public2.0.0 and both ambient ZIPs remain immutable. No game files changed.
+
+**Next:** user installs local-lights.1 via DMM (only one telemetry package active),
+loads near lights; check progressing raw and smoothed feeds together before Hue
+integration. Ambient remains open: first proper outdoor capture still missing;
+previous readback was loading/menu only. See checkpoint below to resume it.
+
+## Previous checkpoint — ambient readback works; explicit-start probe.2 ready
 
 Probe.1 ran in PID34848 with the expected ASI hash. **120 real GPU-fenced
 samples, one DEFAULT resource, path A active; no faults.** However the automatic
