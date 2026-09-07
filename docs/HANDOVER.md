@@ -1,6 +1,34 @@
-# Current checkpoint — outdoor and player-home ambient captures, 2026-09-07, Codex/Astra
+# Current checkpoint — three valid ambient captures; locality unresolved, 2026-09-07, Codex/Astra
 
-**Latest: indoor run2 complete; next step outside the player home.** User reports
+**Latest: return-outdoors run3 complete.** User reports outside the home at about
+01:45 in-game, moonlight. Same PID34736/ASI/config. Explicit start23:09:15,
+complete23:10:15: 120 valid fenced samples, frames56372..59645 over59.843s,
+A RVA3849BB7 only, resource0x137024E80, fences241..360. API sequences55771->62632,
+no errors; player(-10404.208,611.77277,-4424.308) unchanged at endpoint reads.
+Paired CPU camera near(-10405.824,614.823,-4419.3525). Probe returned IDLE.
+User released from standing; do not assume they remain here in the next turn.
+
+Evidence `artifacts/light-research/ambient-live-20260907-pid34736-outdoor-return/`:
+`ambient-probe-34736-11299500-3.bin`, parser JSON, native log and INI.
+Binary SHA256F65F00872BDDAA6F901AA4A272C6F3F8A13EEC9CA28263546CD41AD171486344.
+All three gameplay runs passed (360 samples). **No local indoor/outdoor
+acceptance:** run2 end to run3 start has an uncaptured244.860s gap, and the moon
+direction changed23.1885deg. No doorway transition captured; not a controlled
+same-lighting A-B-A. Raw SH/scalar lanes change nonuniformly, not decoded RGB.
+Details and source packing notes in research/light-source-tests/GPU_LIGHT_LAYOUTS_25116796.md.
+
+**Next:** decode packing/normalization through the EXISTING precomputed-ambient
+producer and consumer exports, not another GI/heap search or more disconnected
+stand captures. Separate global sky color from local occlusion; neither a room
+status nor a player-local ambient API is established. If locality still needs
+a live control after decoding, capture a quick doorway out/in/out within ONE
+bounded run with scene/time context. Normal/derived local-light streams remain
+paused by AmbientProbe=1; restore0 and restart when diagnostics are finished.
+No plugin/API/config/package change or publication during these measurements.
+
+## Indoor run2 reference
+
+User reports
 inside the player home, with windows. Same PID34736/ASI/config as below. Player
 (-10396.898,612.0811,-4414.3125), paired CPU camera near
 (-10396.708,615.220,-4411.6694). Explicit start23:04:11, complete23:05:10:
@@ -18,11 +46,8 @@ W stays1. Sun direction(-.017686604,-.33864108,.94074947)->
 substantially since the outdoor recording, so the lower raw coefficients do
 NOT prove indoor occlusion. No decoded ambient RGB or locality claim yet.
 
-**Next:** ask user to step clearly outdoors just outside the home, not under
-its roof. Verify pose and start run3 explicitly in this SAME process; compare
-with the nearby-in-time indoor run, accounting for continuing sky/time drift.
-Do not request a restart/ASI replacement. Probe is IDLE. A distant return to
-the old camp is unnecessary for this immediate indoor/outdoor control.
+Return-outdoors run3 above completed in the same process; time drift remains
+a confound, despite the short spatial distance outside the home.
 
 ## Outdoor reference in the same process
 
@@ -51,7 +76,7 @@ W .15278931->.23067258. These are raw coefficients/scalars, NOT decoded RGB.
 Sun/moon directions also advance. The outdoor signal changes substantially
 without movement: **time/weather confounds a simple sequential indoor decrease**.
 
-Indoor comparison is recorded above; return-outdoors control remains pending.
+Indoor and return-outdoors comparisons are recorded above.
 Do not claim player-local ambient based on global sky coefficients alone. SH
 packing/normalization, exposure, actual shader-variant identity and direct
 sun/moon color/intensity remain unvalidated; no ambient public API yet.
