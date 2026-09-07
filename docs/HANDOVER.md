@@ -60,12 +60,22 @@ raw.jsonl,smoothed.jsonl,before.json,after.json,validation.json. Reproduce with
 Original public2.0.0 and both ambient ZIPs remain immutable. No game files changed
 by the assistant; the user installed the preview through their workflow.
 
-**Next:** for one additional live negative control, ask user to switch off the
-nearby fire and compare raw/derived absence (do not infer canonical off from
-filtered absence alone). The stream is now ready for a first CrimsonHue consumer
-test; see docs/SMOOTHED_LIGHTS.md. Ambient remains open: first proper outdoor
-capture still missing. Enable Research/AmbientProbe=1 and restart only after
-the local-light test; it pauses the source needed by the smoothed feed.
+User accepted the remaining fire pulsation at200ms and explicitly chose to move
+on to ambient; **do not insist on another local-light off/on test**. It remains
+an unperformed additional control, not a blocker to this next experiment.
+
+**Next — ambient restart prepared:** current PID23572 still runs normal lights.
+Assistant backed up the installed INI to
+`artifacts/light-research/ambient-control-20260907/CrimsonDesertTelemetry.before-ambient-pid23572.ini`
+and added `[Research] AmbientProbe=1` to bin64/CrimsonDesertTelemetry.ini only.
+It takes effect on the NEXT process; no ASI/package changed or live trigger sent.
+User should restart the game and load outdoors. On "ready", verify new PID,
+installed B80FEA85... ASI, native log IDLE and progressing API player/camera;
+then use `scripts/Start-AmbientProbe.ps1 -ProcessId NEWPID` and inspect first
+complete GPU samples BEFORE asking for an interior comparison. Same ASI/ZIP
+supports this; no downgrade to an older diagnostic package. ManyLights and its
+smoothed stream intentionally pause in ambient mode. Afterwards restore
+AmbientProbe=0 and restart; preserve all other user configuration.
 
 ## Previous checkpoint — ambient readback works; explicit-start probe.2 ready
 
