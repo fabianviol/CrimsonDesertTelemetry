@@ -1,6 +1,7 @@
 #include "instruments.h"
 #include "build_guard.h"
 #include "render_capture.h"
+#include "ambient_probe.h"
 #include "render_bridge.h"
 #include "native_contract.generated.h"
 #include "overlay.h"
@@ -152,7 +153,10 @@ void RunImpl(HANDLE stopEvent)
     if (captureEnabled)
     {
         const unsigned rate = GetPrivateProfileIntW(L"Lights", L"ManyLightsSampleRateHz", 20, iniPath.c_str());
-        capturing = render::StartCapture(ch::g_game.moduleBase, rate);
+        const bool ambientProbe = GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) != 0;
+        capturing = ambientProbe
+            ? render::StartAmbientProbe(ch::g_game.moduleBase, std::filesystem::path(moduleDirectory).c_str())
+            : render::StartCapture(ch::g_game.moduleBase, rate);
         if (!capturing)
         {
             ch::Log("Automatic ManyLights instrumentation failed closed; authored telemetry remains independent.");

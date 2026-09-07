@@ -2,7 +2,11 @@
 EXTERN CdtObserveCapture:PROC
 PUBLIC CdtTestSite
 .code
+IFDEF CDT_AMBIENT_THUNK_TEST
+CdtCaptureAmbient PROC
+ELSE
 CdtCaptureFilter PROC
+ENDIF
     sub rsp,28h
     call CdtObserveCapture
     add rsp,28h
@@ -38,7 +42,11 @@ CdtCaptureFilter PROC
     pxor xmm14,xmm14
     pxor xmm15,xmm15
     ret
+IFDEF CDT_AMBIENT_THUNK_TEST
+CdtCaptureAmbient ENDP
+ELSE
 CdtCaptureFilter ENDP
+ENDIF
 CdtTestInvoke PROC
     push rbx
     push rbp
@@ -223,4 +231,3 @@ finish:
     ret
 CdtTestInvoke ENDP
 END
-

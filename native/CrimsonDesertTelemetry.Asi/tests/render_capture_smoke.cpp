@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "ambient_probe.h"
 #include "render_bridge.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -9,12 +10,17 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 
 namespace cdt::render
 {
 void InitializeCaptureForTest(uint64_t base);
 const char* CapturePhaseForTest();
 void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner);
+bool InitializeAmbientForTest(uint64_t base, const wchar_t* filePath);
+uint32_t AmbientSamplesForTest();
+void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path);
 }
 // The smoke executable links only memory/log support from imported research.
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t) { return false; } }
@@ -59,6 +65,7 @@ int main(int argc, char** argv)
 {
     using namespace cdt::render;
     const bool rejectCounterDevice=argc==2 && std::string(argv[1])=="--counter-device";
+    const bool ambientTest=argc==2 && std::string(argv[1])=="--ambient";
     ComPtr<IDXGIFactory4> factory; Hr(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory)),"factory");
     ComPtr<IDXGIAdapter> warp; Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)),"WARP");
     ComPtr<ID3D12Device> device; Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
@@ -72,7 +79,7 @@ int main(int argc, char** argv)
     Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,unrelatedAllocator.Get(),nullptr,IID_PPV_ARGS(&unrelated)),"other list");
     Hr(unrelated->Close(),"other close");
     D3D12_RESOURCE_DESC desc{};
-    desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER; desc.Width=LightBytes; desc.Height=1;
+    desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER; desc.Width=ambientTest ? AmbientBytes : LightBytes; desc.Height=1;
     desc.DepthOrArraySize=1; desc.MipLevels=1; desc.SampleDesc.Count=1;
     desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR; desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     D3D12_HEAP_PROPERTIES heap{}; heap.Type=D3D12_HEAP_TYPE_DEFAULT; heap.CreationNodeMask=heap.VisibleNodeMask=1;
@@ -100,8 +107,8 @@ int main(int argc, char** argv)
     memcpy(mapped,counterData.data(),CounterBytes);
     memcpy(static_cast<uint8_t*>(mapped)+CounterBytes,counterData2.data(),CounterBytes);
     counterUpload->Unmap(0,nullptr);
-    list->CopyBufferRegion(source.Get(),0,upload.Get(),0,LightBytes);
-    list->CopyBufferRegion(source2.Get(),0,upload.Get(),0,LightBytes);
+    list->CopyBufferRegion(source.Get(),0,upload.Get(),0,ambientTest ? AmbientBytes : LightBytes);
+    list->CopyBufferRegion(source2.Get(),0,upload.Get(),0,ambientTest ? AmbientBytes : LightBytes);
     list->CopyBufferRegion(counter.Get(),0,counterUpload.Get(),0,CounterBytes);
     list->CopyBufferRegion(counter2.Get(),0,counterUpload.Get(),CounterBytes,CounterBytes);
     D3D12_RESOURCE_BARRIER barrier{}; barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -137,6 +144,69 @@ int main(int argc, char** argv)
     HANDLE mapHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,mappingName.c_str());
     const auto* bridge=static_cast<const Mapping*>(MapViewOfFile(mapHandle,FILE_MAP_READ,0,0,MappingBytes));
     Check(bridge!=nullptr,"read bridge");
+    if (ambientTest)
+    {
+        const auto output = std::filesystem::absolute(L"ambient-smoke-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".bin");
+        Check(InitializeAmbientForTest(reinterpret_cast<uint64_t>(fakeBase), output.c_str()), "fresh ambient test output");
+        std::array<uint8_t,0xA0> sky{};
+        Put(sky,0x98,reinterpret_cast<uint64_t>(outer.data()));
+        const auto probe = [&](uint64_t path) {
+            CaptureAmbient(reinterpret_cast<uint64_t>(sky.data()),reinterpret_cast<uint64_t>(command.data()),path);
+        };
+        // Wrong ManyLights layout is not accepted as ambient; short/no-UAV
+        // resources and unknown producer indices cannot advance discovery.
+        probe(0); PollCapture();
+        Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"wrong stride/count accepted");
+        Put(inner,0xC0,uint32_t{16}); Put(inner,0xC4,uint32_t{64});
+        Put(inner,0x168,reinterpret_cast<uint64_t>(shortCounter.Get())); probe(0);
+        Put(inner,0x168,reinterpret_cast<uint64_t>(upload.Get())); probe(0);
+        Put(inner,0x168,reinterpret_cast<uint64_t>(source.Get())); probe(2);
+        Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"invalid ambient source/path accepted");
+        probe(0); PollCapture();
+        Check(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,"ambient prepare");
+        probe(0);
+        Check(std::strcmp(CapturePhaseForTest(),"recorded (not submitted)")==0,"ambient record");
+        Hr(list->Close(),"ambient close");
+        ID3D12CommandList* others[]{unrelated.Get()}; queue->ExecuteCommandLists(1,others); PollCapture();
+        Check(AmbientSamplesForTest()==0 && std::filesystem::file_size(output)==0,"unrelated list saved ambient");
+        ComPtr<ID3D12Fence> gate; Hr(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"ambient gate");
+        Hr(queue->Wait(gate.Get(),1),"ambient wait");
+        ID3D12CommandList* lists[]{list.Get()}; queue->ExecuteCommandLists(1,lists);
+        for(int n=0;n<20;++n) { PollCapture(); Sleep(5); }
+        Check(AmbientSamplesForTest()==0 && std::filesystem::file_size(output)==0,"ambient saved before fence");
+        Hr(gate->Signal(1),"ambient release");
+        const auto waitSample = [&](uint32_t expected) {
+            const auto deadline=GetTickCount64()+6000;
+            while(AmbientSamplesForTest()<expected && GetTickCount64()<deadline) { PollCapture(); Sleep(5); }
+            Check(AmbientSamplesForTest()==expected && CaptureFailureCode()==0,"ambient sample failed");
+        };
+        waitSample(1);
+        Hr(allocator->Reset(),"ambient reset allocator"); Hr(list->Reset(allocator.Get(),nullptr),"ambient reset list");
+        probe(1); Check(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,"duplicate frame captured");
+        Put(constants,0x20,uint32_t{101}); Put(inner,0x168,reinterpret_cast<uint64_t>(source2.Get()));
+        probe(1); Hr(list->Close(),"ambient second close"); queue->ExecuteCommandLists(1,lists); waitSample(2);
+        Check(std::strcmp(CapturePhaseForTest(),"stopped")==0,"ambient limit did not stop capture");
+        Check(bridge->header.sampleSequence==0,"ambient bytes leaked into light bridge");
+        std::ifstream file(output,std::ios::binary);
+        constexpr size_t recordBytes=sizeof(AmbientRecordHeader)+SceneBytes+AmbientBytes;
+        Check(std::filesystem::file_size(output)==recordBytes*2,"ambient file size");
+        for(uint32_t n=0;n<2;++n)
+        {
+            AmbientRecordHeader header{}; std::array<uint8_t,SceneBytes> recordedScene{}; std::array<uint8_t,AmbientBytes> recordedAmbient{};
+            file.read(reinterpret_cast<char*>(&header),sizeof(header));
+            file.read(reinterpret_cast<char*>(recordedScene.data()),recordedScene.size());
+            file.read(reinterpret_cast<char*>(recordedAmbient.data()),recordedAmbient.size());
+            Check(file.good() && header.magic==0x41445443 && header.recordBytes==recordBytes && header.flags==7 &&
+                header.sequence==n+1 && header.frame==100+n && header.producerRva==AmbientHookRvas[n] &&
+                header.resource==reinterpret_cast<uint64_t>(n ? source2.Get() : source.Get()) &&
+                header.sky==reinterpret_cast<uint64_t>(sky.data()) && header.outer==reinterpret_cast<uint64_t>(outer.data()),"ambient provenance");
+            uint32_t sceneFrame{}; memcpy(&sceneFrame,recordedScene.data()+0x20,4);
+            Check(sceneFrame==header.frame && memcmp(recordedAmbient.data(),light.data(),sizeof(light))==0,"ambient bytes/paired scene");
+        }
+        StopCapture(); UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
+        std::cout<<"Ambient WARP: bounded resources, both producers, unrelated submission ignored, blocked GPU withheld, exact bytes/provenance, duplicate frame refused, cap reached, no API leak.\n";
+        return 0;
+    }
     InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase));
     const auto capture=[&] {
         CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),

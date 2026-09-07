@@ -70,7 +70,7 @@ set(CDT_CONSOLE_SOURCES
 # relaxing warnings for newly integrated production code.
 set_source_files_properties(${CDT_CONSOLE_SOURCES} PROPERTIES COMPILE_OPTIONS "/WX-;/wd4996")
 add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
-    src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm ${CDT_CONSOLE_SOURCES})
+    src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm ${CDT_CONSOLE_SOURCES})
 target_compile_features(cdt_instruments PUBLIC cxx_std_20)
 target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
@@ -116,7 +116,7 @@ target_compile_definitions(CrimsonDesertTelemetryRenderBridgeTests PRIVATE UNICO
 target_compile_options(CrimsonDesertTelemetryRenderBridgeTests PRIVATE /W4 /WX /permissive-)
 add_test(NAME render-bridge COMMAND CrimsonDesertTelemetryRenderBridgeTests)
 add_executable(CrimsonDesertTelemetryRenderCaptureSmoke tests/render_capture_smoke.cpp
-    src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/console/mem.cpp src/console/util.cpp)
+    src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/ambient_thunk.asm src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE CDT_RENDER_CAPTURE_TEST
@@ -125,8 +125,10 @@ target_compile_options(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE "$<$<COM
 target_link_libraries(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE minhook d3d12 dxgi psapi user32)
 add_test(NAME render-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke)
 set_tests_properties(render-capture-d3d12 PROPERTIES TIMEOUT 20)
+add_test(NAME ambient-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --ambient)
+set_tests_properties(ambient-capture-d3d12 PROPERTIES TIMEOUT 20)
 add_executable(CrimsonDesertTelemetryRenderContractTests tests/render_contract_tests.cpp
-    src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/console/mem.cpp src/console/util.cpp)
+    src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/ambient_thunk.asm src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetryRenderContractTests PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetryRenderContractTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetryRenderContractTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -142,6 +144,14 @@ target_compile_options(CrimsonDesertTelemetryFilterThunkTests PRIVATE "$<$<COMPI
 target_link_libraries(CrimsonDesertTelemetryFilterThunkTests PRIVATE minhook)
 add_test(NAME render-filter-thunk COMMAND CrimsonDesertTelemetryFilterThunkTests)
 set_tests_properties(render-filter-thunk PROPERTIES TIMEOUT 15)
+add_executable(CrimsonDesertTelemetryAmbientThunkTests tests/ambient_thunk_tests.cpp
+    tests/thunk_fixture.asm src/ambient_thunk.asm)
+target_compile_features(CrimsonDesertTelemetryAmbientThunkTests PRIVATE cxx_std_20)
+target_compile_definitions(CrimsonDesertTelemetryAmbientThunkTests PRIVATE CDT_AMBIENT_THUNK_TEST UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetryAmbientThunkTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+target_link_libraries(CrimsonDesertTelemetryAmbientThunkTests PRIVATE minhook)
+add_test(NAME ambient-thunks COMMAND CrimsonDesertTelemetryAmbientThunkTests)
+set_tests_properties(ambient-thunks PROPERTIES TIMEOUT 15)
 add_executable(CrimsonDesertTelemetryOverlayTests tests/overlay_tests.cpp)
 target_link_libraries(CrimsonDesertTelemetryOverlayTests PRIVATE cdt_overlay)
 target_compile_options(CrimsonDesertTelemetryOverlayTests PRIVATE /W4 /WX /permissive-)

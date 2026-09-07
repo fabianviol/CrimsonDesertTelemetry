@@ -1,4 +1,62 @@
-# Current checkpoint — ambient stream feasibility, 2026-09-07, Codex/Astra
+# Current checkpoint — ambient probe ready for DMM installation, 2026-09-07, Codex/Astra
+
+User authorized continuing ambient validation and has now confirmed the game
+is closed; process absence independently verified. PID30016 pointers below are
+historical. **Private ZIP installation/restart has not happened yet.** No ambient
+GPU sample has been measured in the game yet; public2.0.0/API remain unchanged.
+
+Native route now resolved using existing bridge owner (no heap scan):
+filterOwner+10 -> Renderer+668 -> SkyOwner+98 -> outer+30 -> inner+168 resource.
+Live inner stride16/count64 confirms the1024-byte candidate. UAV producer and
+CBV consumer both use SkyOwner+98. Full addresses and evidence are in
+`research/light-source-tests/GPU_LIGHT_LAYOUTS_25116796.md`, final subsection.
+
+Private probe implemented in existing `render_capture.cpp`, not another DLL or
+public schema. `[Research] AmbientProbe=1` selects it **instead of ManyLights**;
+`[Lights] Enabled=1/ManyLights=1` stay set. Explorer/console remain disabled.
+Exact EXE guard plus executable-section/signature preflight; two post-dispatch
+hooks at RVA3849BB7(skyRDI/commandRBX) and384CBA3(skyRBP/commandRDI).
+Validates64x16 view and native UAV buffer bounds; copies1024bytes immediately,
+on that native list, then waits for the exact submission's queue fence.
+CPU SceneConstants sampled/rechecked around recording; not yet proof of the
+GPU-bound scene CBV. Captures source/outer/sky/path/frame identities at recording.
+No exposure capture/SH decoding/local-interior semantics/public ambient API yet.
+
+Bound:2Hz,120 accepted samples, then no more copies. Output alongside ASI:
+`ambient-probe-PID-TICK.bin` (CREATE_NEW, max468480bytes). Each3904byte record:
+64byte private header,2816byte scene,1024byte ambient. Read/validate with
+`scripts/Read-AmbientProbe.ps1 -Path <file> [-OutFile <new-json>]` (PS7.4+).
+Header/finite-row validation rejects incomplete data, not evidence of absence.
+Native log reports source width/heap/queue, each path's hit count and progress.
+The normal rendered-light API/markers are unavailable during this diagnostic;
+player/camera/authored light path remains. Restore AmbientProbe=0 and restart
+(or reinstall public2.0.0) afterwards. Public package defaults are unchanged.
+
+Verification: native Release build, **16/16 CTests PASS**; both actual hook
+signatures independently match the current disk EXE. Both thunks pass160000
+multithreaded calls preserving GPR/XMM/flags/stack. Real D3D12/WARP verifies
+both path IDs, bad stride/count/short/non-UAV rejection, unrelated submission,
+blocked GPU before fence, exact output/scene/provenance, duplicate-frame refusal,
+bounded stop and no ambient bytes published into the light bridge. Parser:
+positive GPU fixture +15 invalid inputs +JSON export/overwrite refusal pass.
+These are synthetic/native tests, NOT live ambient-light acceptance.
+
+Private DMM ZIP (not published, public release untouched):
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ambient-probe.1-ModManagers.zip`
+SHA256 `8A7E2378A44A68535689DF3159A53F6F233FC3CFB6E9EBAEB3C6B10ECAF638AD`.
+Expanded `artifacts/mod-manager/v2.0.1-ambient-probe.1/CrimsonDesertTelemetry`;
+ASI SHA256 `C5880F3F5BC06FA81C092F0A7FA95BD1C273463694DD04FB5885CA92527255E4`.
+Uses unchanged managed/runtime/license payload from the actual GitHub2.0.0 ZIP;
+only ASI/INI/private README differ. INI already enables the bounded probe.
+Package validator/self-test and ZIP-to-expanded-payload comparison PASS.
+Original2.0.0 ZIP SHA3212DD... remains unchanged.
+
+**Next:** user installs the private ZIP via DMM, loads into an
+outdoor scene, and inspect first complete ambient samples/log BEFORE requesting
+an indoor comparison. If no hit, use path counters, valid scene progression and
+phase diagnostics; do not call an empty file absent ambient. Do not publish.
+
+## Previous checkpoint — ambient stream feasibility
 
 User noticed CrimsonHue needs environmental light in addition to local lights;
 authorized a bounded investigation of existing sources. **Published 2.0.0 and

@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "ambient_probe.h"
 #include "render_bridge.h"
 #include "native_contract.generated.h"
 #include "console/common.h"
@@ -9,9 +10,14 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <filesystem>
+#include <string>
 
 extern "C" void CdtFilterThunk();
 extern "C" { void* CdtFilterTrampoline = nullptr; }
+extern "C" void CdtAmbientThunkA();
+extern "C" void CdtAmbientThunkB();
+extern "C" { void* CdtAmbientTrampolineA = nullptr; void* CdtAmbientTrampolineB = nullptr; }
 
 namespace cdt::render
 {
@@ -39,6 +45,20 @@ std::array<uint8_t, SceneBytes> scene{};
 using ExecuteFn = void(STDMETHODCALLTYPE*)(ID3D12CommandQueue*, UINT, ID3D12CommandList* const*);
 ExecuteFn executeOriginal{};
 void* executeTarget{};
+bool ambientMode{};
+HANDLE ambientFile = INVALID_HANDLE_VALUE;
+AmbientRecordHeader ambientHeader{};
+std::array<std::atomic<uint64_t>, 2> ambientHits{};
+uint64_t ambientReportAt{};
+uint32_t ambientSamples{};
+constexpr uint32_t AmbientSampleLimit = 120;
+uint32_t ambientLimit = AmbientSampleLimit;
+
+size_t CopyBytes() { return ambientMode ? AmbientBytes : LightBytes + CounterBytes; }
+void CloseAmbientFile()
+{
+    if (ambientFile != INVALID_HANDLE_VALUE) { CloseHandle(ambientFile); ambientFile = INVALID_HANDLE_VALUE; }
+}
 
 template<class T> bool Read(uint64_t address, T& result)
 {
@@ -77,6 +97,23 @@ bool ResolveCounter(uint64_t outer, ID3D12Resource*& counter)
     return desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && desc.Width >= CounterBytes &&
         (desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0;
 }
+bool ResolveAmbient(uint64_t outer, uint64_t command, ID3D12Resource*& source, ID3D12GraphicsCommandList*& list)
+{
+    uint64_t inner{}, resource{}, holder{}, nativeList{};
+    uint32_t stride{}, count{};
+    if (!Read(outer + contract::InnerOffset, inner) || !inner ||
+        !Read(inner + contract::StrideOffset, stride) || stride != 16 ||
+        !Read(inner + contract::CountOffset, count) || count != 64 ||
+        !Read(inner + contract::ResourceOffset, resource) || !resource ||
+        !Read(command + contract::CommandHolderOffset, holder) || !holder ||
+        !Read(holder + contract::NativeListOffset, nativeList) || !nativeList) return false;
+    source = reinterpret_cast<ID3D12Resource*>(resource);
+    list = reinterpret_cast<ID3D12GraphicsCommandList*>(nativeList);
+    const auto desc = source->GetDesc();
+    return desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && desc.Width >= AmbientBytes &&
+        desc.Width <= 65536 && (desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 &&
+        (list->GetType() == D3D12_COMMAND_LIST_TYPE_DIRECT || list->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE);
+}
 void Fail(uint32_t code)
 {
     error = code;
@@ -94,7 +131,11 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     ID3D12Resource* source{};
     ID3D12Resource* counter{};
     ID3D12GraphicsCommandList* list{};
-    if (!Resolve(outer, command, source, list) || !ResolveCounter(counterOuter, counter) || source == counter) return;
+    if (ambientMode)
+    {
+        if (!ResolveAmbient(outer, command, source, list)) return;
+    }
+    else if (!Resolve(outer, command, source, list) || !ResolveCounter(counterOuter, counter) || source == counter) return;
     if (phase == Phase::Discover)
     {
         source->AddRef();
@@ -107,9 +148,9 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     IUnknown* counterDevice{};
     IUnknown* listDevice{};
     const bool sameDevice = SUCCEEDED(source->GetDevice(IID_PPV_ARGS(&sourceDevice))) &&
-        SUCCEEDED(counter->GetDevice(IID_PPV_ARGS(&counterDevice))) &&
+        (ambientMode || SUCCEEDED(counter->GetDevice(IID_PPV_ARGS(&counterDevice)))) &&
         SUCCEEDED(list->GetDevice(IID_PPV_ARGS(&listDevice))) &&
-        sourceDevice == preparedDeviceIdentity && counterDevice == preparedDeviceIdentity &&
+        sourceDevice == preparedDeviceIdentity && (ambientMode || counterDevice == preparedDeviceIdentity) &&
         listDevice == preparedDeviceIdentity && list->GetType() == queueType;
     if (sourceDevice) sourceDevice->Release();
     if (counterDevice) counterDevice->Release();
@@ -120,7 +161,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     memcpy(&capturedFrame, scene.data() + contract::FrameOffset, sizeof(capturedFrame));
     if (hasFrame && capturedFrame == lastFrame) return;
     source->AddRef();
-    counter->AddRef();
+    if (counter) counter->AddRef();
     list->AddRef();
     pendingSource = source;
     pendingCounter = counter;
@@ -133,7 +174,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     capturedOwner = owner;
     capturedBufferIndex = UINT32_MAX;
     uint32_t currentIndex{};
-    if (owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
+    if (!ambientMode && owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
     std::array<D3D12_RESOURCE_BARRIER, 2> barriers{};
     for (auto& barrier : barriers)
     {
@@ -144,17 +185,18 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     }
     barriers[0].Transition.pResource = source;
     barriers[1].Transition.pResource = counter;
-    list->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
-    list->CopyBufferRegion(readback, 0, source, 0, LightBytes);
+    const UINT barrierCount = ambientMode ? 1u : static_cast<UINT>(barriers.size());
+    list->ResourceBarrier(barrierCount, barriers.data());
+    list->CopyBufferRegion(readback, 0, source, 0, ambientMode ? AmbientBytes : LightBytes);
     // The counter is a GPU-written buffer, not a CPU count. Copy its bounded
     // prefix before subsequent engine passes reuse it, on the SAME list/fence.
-    list->CopyBufferRegion(readback, LightBytes, counter, 0, CounterBytes);
+    if (!ambientMode) list->CopyBufferRegion(readback, LightBytes, counter, 0, CounterBytes);
     for (auto& barrier : barriers)
     {
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     }
-    list->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
+    list->ResourceBarrier(barrierCount, barriers.data());
     // A camera update concurrent with recording invalidates this pair. Still
     // submit and fence the copy, but never publish the mismatched sample.
     if (!ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) capturedAt = 0;
@@ -198,7 +240,7 @@ bool Prepare()
     heap.Type = D3D12_HEAP_TYPE_READBACK;
     heap.CreationNodeMask = heap.VisibleNodeMask = 1;
     auto desc = discoverySource->GetDesc();
-    desc.Width = LightBytes + CounterBytes;
+    desc.Width = CopyBytes();
     desc.Flags = D3D12_RESOURCE_FLAG_NONE;
     hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
         D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
@@ -217,7 +259,15 @@ bool Prepare()
     probeQueue->Release();
     if (enable != MH_OK) { error = ERROR_INVALID_FUNCTION; return false; }
     executeEnabled = true;
-    ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", intervalMs ? 1000 / intervalMs : 0u);
+    if (ambientMode)
+    {
+        D3D12_HEAP_PROPERTIES props{}; D3D12_HEAP_FLAGS flags{};
+        const HRESULT heapHr = discoverySource->GetHeapProperties(&props, &flags);
+        ch::Log("Ambient probe prepared: source=0x%llX width=%llu heap=%u heapHr=0x%08X queue=%u; 1024-byte copy, submission fence, max120 samples; NOT API data.",
+            reinterpret_cast<uint64_t>(discoverySource), discoverySource->GetDesc().Width,
+            static_cast<unsigned>(props.Type), static_cast<unsigned>(heapHr), static_cast<unsigned>(queueType));
+    }
+    else ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", intervalMs ? 1000 / intervalMs : 0u);
     return true;
 }
 }
@@ -229,6 +279,97 @@ void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint
     __try { Record(outer, command, counterOuter, owner); }
     __except (EXCEPTION_EXECUTE_HANDLER) { Fail(GetExceptionCode()); }
     ReleaseSRWLockExclusive(&lock);
+}
+
+void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path)
+{
+    if (!ambientMode || path >= ambientHits.size()) return;
+    ++ambientHits[path];
+    if (!TryAcquireSRWLockExclusive(&lock)) return;
+    __try
+    {
+        uint64_t outer{};
+        if (Read(sky + 0x98, outer) && outer)
+        {
+            const auto previous = phase;
+            Record(outer, command, 0, sky);
+            if (previous == Phase::Ready && phase == Phase::Recorded)
+            {
+                ambientHeader.pid = GetCurrentProcessId();
+                ambientHeader.frame = capturedFrame;
+                ambientHeader.producerRva = AmbientHookRvas[path];
+                ambientHeader.flags = capturedAt ? 7u : 0u; // exact build, completed fence (at save), stable CPU scene
+                ambientHeader.capturedTick = capturedAt;
+                ambientHeader.resource = capturedOutputResource;
+                ambientHeader.outer = outer;
+                ambientHeader.sky = sky;
+            }
+        }
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) { Fail(GetExceptionCode()); }
+    ReleaseSRWLockExclusive(&lock);
+}
+
+bool CheckAmbientPreflight(uint64_t moduleBase)
+{
+    if (!CheckCapturePreflight(moduleBase)) return false;
+    IMAGE_DOS_HEADER dos{}; IMAGE_NT_HEADERS64 nt{};
+    if (!Read(moduleBase, dos) || !Read(moduleBase + static_cast<uint32_t>(dos.e_lfanew), nt)) return false;
+    const auto sectionBase = moduleBase + static_cast<uint32_t>(dos.e_lfanew) +
+        offsetof(IMAGE_NT_HEADERS64, OptionalHeader) + nt.FileHeader.SizeOfOptionalHeader;
+    std::array<uint8_t, 15> bytes{};
+    const auto match = [&](uint32_t rva, const auto& expected) {
+        bool executable = false;
+        for (uint16_t i = 0; i < nt.FileHeader.NumberOfSections; ++i)
+        {
+            IMAGE_SECTION_HEADER section{};
+            if (!Read(sectionBase + i * sizeof(section), section)) return false;
+            if ((section.Characteristics & IMAGE_SCN_MEM_EXECUTE) && rva >= section.VirtualAddress &&
+                uint64_t{rva} + expected.size() <= uint64_t{section.VirtualAddress} + section.Misc.VirtualSize)
+                executable = true;
+        }
+        if (!executable) return false;
+        return ch::mem::SafeRead(reinterpret_cast<void*>(moduleBase + rva), bytes.data(), expected.size()) &&
+            memcmp(bytes.data(), expected.data(), expected.size()) == 0;
+    };
+    if (!match(AmbientHookRvas[0], AmbientSignatureA) || !match(AmbientHookRvas[1], AmbientSignatureB)) return false;
+    // Verify dispatch immediately before both hooks and the source-field loads.
+    const std::array<uint8_t, 6> dispatch{0xFF,0x90,0x28,0x03,0x00,0x00};
+    const std::array<uint8_t, 7> sourceA{0x48,0x8B,0xAF,0x98,0x00,0x00,0x00};
+    const std::array<uint8_t, 7> sourceB{0x48,0x8B,0x9D,0x98,0x00,0x00,0x00};
+    return match(AmbientHookRvas[0] - 6, dispatch) && match(AmbientHookRvas[1] - 6, dispatch) &&
+        match(0x38498AF, sourceA) && match(0x384CADB, sourceB);
+}
+
+bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory)
+{
+    if (!CheckAmbientPreflight(moduleBase) || phase != Phase::Stopped || hookEnabled || executeEnabled) return false;
+    const auto init = MH_Initialize();
+    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) return false;
+    const auto path = std::filesystem::path(outputDirectory) /
+        (L"ambient-probe-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".bin");
+    ambientFile = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (ambientFile == INVALID_HANDLE_VALUE) return false;
+    gameBase = moduleBase; ambientMode = true; intervalMs = 500;
+    hookAddress = gameBase + AmbientHookRvas[0];
+    void* targets[]{reinterpret_cast<void*>(hookAddress), reinterpret_cast<void*>(gameBase + AmbientHookRvas[1])};
+    void* thunks[]{reinterpret_cast<void*>(CdtAmbientThunkA), reinterpret_cast<void*>(CdtAmbientThunkB)};
+    void** trampolines[]{&CdtAmbientTrampolineA, &CdtAmbientTrampolineB};
+    for (unsigned i = 0; i < 2; ++i)
+    {
+        if (MH_CreateHook(targets[i], thunks[i], trampolines[i]) != MH_OK)
+        { CloseAmbientFile(); return false; }
+    }
+    phase = Phase::Discover;
+    if (MH_EnableHook(targets[0]) != MH_OK || MH_EnableHook(targets[1]) != MH_OK)
+    {
+        MH_DisableHook(targets[0]); MH_DisableHook(targets[1]);
+        phase = Phase::Stopped; CloseAmbientFile(); return false;
+    }
+    hookEnabled = true;
+    PublishStatus(Status::Stopped); // Explicitly no ManyLights stream in this private research mode.
+    ch::Log("Ambient probe enabled (2Hz, max120 samples). ManyLights paused; output=%s", path.string().c_str());
+    return true;
 }
 
 PreflightResult CheckCapturePreflight(uint64_t moduleBase)
@@ -350,20 +491,44 @@ void PollCapture()
         else if (completed >= fenceValue)
         {
             void* mapped{};
-            D3D12_RANGE range{0, LightBytes + CounterBytes};
+            D3D12_RANGE range{0, CopyBytes()};
             const HRESULT hr = readback->Map(0, &range, &mapped);
             if (FAILED(hr) || !mapped) Fail(static_cast<uint32_t>(hr));
             else
             {
-                if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
+                bool saveOk = true;
+                if (capturedAt && ambientMode)
+                {
+                    ambientHeader.sequence = ambientSamples + 1;
+                    std::array<uint8_t, sizeof(AmbientRecordHeader) + SceneBytes + AmbientBytes> record{};
+                    memcpy(record.data(), &ambientHeader, sizeof(ambientHeader));
+                    memcpy(record.data() + sizeof(ambientHeader), scene.data(), SceneBytes);
+                    memcpy(record.data() + sizeof(ambientHeader) + SceneBytes, mapped, AmbientBytes);
+                    DWORD written{};
+                    saveOk = WriteFile(ambientFile, record.data(), static_cast<DWORD>(record.size()), &written, nullptr) && written == record.size();
+                    if (saveOk)
+                    {
+                        ++ambientSamples;
+                        if (ambientSamples == 1 || ambientSamples % 20 == 0)
+                            ch::Log("Ambient sample %u/120: frame=%u producerRva=0x%X source=0x%llX fence=%llu (NOT API).",
+                                ambientSamples, capturedFrame, ambientHeader.producerRva, capturedOutputResource, fenceValue);
+                    }
+                }
+                else if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
                     capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex);
                 const D3D12_RANGE noWrites{0,0};
                 readback->Unmap(0, &noWrites);
                 pendingSource->Release(); pendingSource = nullptr;
-                pendingCounter->Release(); pendingCounter = nullptr;
+                if (pendingCounter) pendingCounter->Release(); pendingCounter = nullptr;
                 pendingList->Release(); pendingList = nullptr;
                 lastFrame = capturedFrame; hasFrame = true;
                 phase = Phase::Ready;
+                if (!saveOk) Fail(ERROR_WRITE_FAULT);
+                else if (ambientMode && ambientSamples >= ambientLimit)
+                {
+                    phase = Phase::Stopped; CloseAmbientFile();
+                    ch::Log("Ambient probe complete: 120 fence-completed samples saved. No further copies; restart with Research/AmbientProbe=0 to restore ManyLights.");
+                }
             }
         }
     }
@@ -373,8 +538,15 @@ void PollCapture()
     {
         if (!error) error = ERROR_INVALID_DATA;
         PublishStatus(Status::Fault, error, ExactBuild);
-        ch::Log("ManyLights disabled after capture failure 0x%08X; pending resources retained safely until process exit.", error);
+        ch::Log("%s disabled after capture failure 0x%08X; pending resources retained safely until process exit.", ambientMode ? "Ambient probe" : "ManyLights", error);
+        CloseAmbientFile();
         phase = Phase::Stopped;
+    }
+    if (ambientMode && phase != Phase::Stopped && GetTickCount64() - ambientReportAt > 10000)
+    {
+        ambientReportAt = GetTickCount64();
+        ch::Log("Ambient probe progress: pathA=%llu pathB=%llu samples=%u phase=%u.",
+            ambientHits[0].load(), ambientHits[1].load(), ambientSamples, static_cast<unsigned>(phase));
     }
     ReleaseSRWLockExclusive(&lock);
 }
@@ -390,9 +562,11 @@ uint32_t CaptureFailureCode()
 void StopCapture()
 {
     if (hookEnabled) MH_DisableHook(reinterpret_cast<void*>(hookAddress));
+    if (hookEnabled && ambientMode) MH_DisableHook(reinterpret_cast<void*>(gameBase + AmbientHookRvas[1]));
     if (executeEnabled) MH_DisableHook(executeTarget);
     AcquireSRWLockExclusive(&lock);
     phase = Phase::Stopped;
+    CloseAmbientFile();
     ReleaseSRWLockExclusive(&lock);
     PublishStatus(Status::Stopped);
     // Hooks/trampolines and bounded resources live until process exit. The ASI
@@ -401,6 +575,9 @@ void StopCapture()
 }
 bool OwnsCodeAddress(uint64_t address)
 {
+    if (ambientMode) return hookEnabled &&
+        ((address >= gameBase + AmbientHookRvas[0] && address < gameBase + AmbientHookRvas[0] + AmbientSignatureA.size()) ||
+         (address >= gameBase + AmbientHookRvas[1] && address < gameBase + AmbientHookRvas[1] + AmbientSignatureB.size()));
     return hookEnabled && address >= hookAddress && address < hookAddress + contract::HookSignature.size();
 }
 #ifdef CDT_RENDER_CAPTURE_TEST
@@ -417,6 +594,15 @@ void InitializeCaptureForTest(uint64_t moduleBase)
     if (result != MH_OK && result != MH_ERROR_ALREADY_INITIALIZED) { phase = Phase::Failed; return; }
     phase = Phase::Discover;
 }
+bool InitializeAmbientForTest(uint64_t moduleBase, const wchar_t* filePath)
+{
+    InitializeCaptureForTest(moduleBase);
+    ambientMode = true;
+    ambientLimit = 2;
+    ambientFile = CreateFileW(filePath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    return ambientFile != INVALID_HANDLE_VALUE;
+}
+uint32_t AmbientSamplesForTest() { return ambientSamples; }
 
 const char* CapturePhaseForTest()
 {
@@ -442,3 +628,5 @@ const char* CapturePhaseForTest()
 
 extern "C" void CdtCaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
 { cdt::render::CaptureFilter(outer, command, counterOuter, owner); }
+extern "C" void CdtCaptureAmbient(uint64_t sky, uint64_t command, uint64_t path)
+{ cdt::render::CaptureAmbient(sky, command, path); }

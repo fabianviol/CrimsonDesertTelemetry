@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "ambient_probe.h"
 #include "native_contract.generated.h"
 #include <windows.h>
 #include <algorithm>
@@ -109,6 +110,8 @@ void CheckFileSignatures(const wchar_t* path)
     };
     verify(contract::HookRva, contract::HookSignature);
     for (const auto& context : contract::ContextSignatures) verify(context.rva, context.bytes);
+    verify(cdt::render::AmbientHookRvas[0], cdt::render::AmbientSignatureA);
+    verify(cdt::render::AmbientHookRvas[1], cdt::render::AmbientSignatureB);
     std::cout << "PASS generated hook and all caller contexts against current EXE file (no process access)\n";
 }
 }
@@ -144,6 +147,26 @@ int wmain(int argc, wchar_t** argv)
     image.Reject(PreflightFailure::ContextOutsideExecutableSection, 0); image.sections[0] = section;
     Check(static_cast<bool>(CheckCapturePreflight(image.Base())) && CdtFilterTrampoline == nullptr,
         "Read-only valid preflight unexpectedly installed a hook");
+    Check(!CheckAmbientPreflight(image.Base()),"missing ambient hook context accepted");
+    image.sections[0].VirtualAddress=0x3800000; image.sections[0].Misc.VirtualSize=0x500000;
+    for(unsigned n=0;n<2;++n)
+    {
+        image.Commit(AmbientHookRvas[n]-6,21);
+        const auto& sig=n ? AmbientSignatureB : AmbientSignatureA;
+        memcpy(image.data+AmbientHookRvas[n],sig.data(),sig.size());
+        const std::array<uint8_t,6> dispatch{0xFF,0x90,0x28,0x03,0x00,0x00};
+        memcpy(image.data+AmbientHookRvas[n]-6,dispatch.data(),dispatch.size());
+    }
+    image.Commit(0x38498AF,7); image.Commit(0x384CADB,7);
+    const std::array<uint8_t,7> sourceA{0x48,0x8B,0xAF,0x98,0,0,0}, sourceB{0x48,0x8B,0x9D,0x98,0,0,0};
+    memcpy(image.data+0x38498AF,sourceA.data(),7); memcpy(image.data+0x384CADB,sourceB.data(),7);
+    Check(CheckAmbientPreflight(image.Base()),"valid ambient preflight rejected");
+    for(auto rva : {AmbientHookRvas[0],AmbientHookRvas[1],AmbientHookRvas[0]-6,AmbientHookRvas[1]-6,0x38498AFu,0x384CADBu})
+    {
+        image.data[rva]^=1; Check(!CheckAmbientPreflight(image.Base()),"changed ambient context accepted"); image.data[rva]^=1;
+    }
+    image.sections[0]=section;
+    Check(!CheckAmbientPreflight(image.Base()),"ambient hooks outside executable section accepted");
     if (argc == 2) CheckFileSignatures(argv[1]);
     std::cout << "PASS production preflight and StartCapture rejection: missing/unreadable/malformed image, "
         "bounds, executable sections, hook bytes and each caller context; no hook installed\n";
