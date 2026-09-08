@@ -124,6 +124,12 @@ User confirmed ready. One30s read-only capture, PID22128/sky.1 unchanged,
 56279..57769; one cache-chain identity.291 candidates,6 changed caches and3
 changing bridges unavailable. Recorded camera pose; player was instructed to
 remain fixed but its pose was NOT independently recorded in this script.
+**User clarification after analysis:** this test was in the open, not near a
+door. There was no reported indoor/outdoor transition. Keep it distinct from
+the earlier PID4208 doorway recording. Its variation cannot be attributed to
+a doorway crossing on this evidence. v~0.4 is not a calibrated "40% visible sky"
+measurement; the remaining reference-position/texture interpretation matters
+even outdoors. Nearby occluders or weather are not established explanations.
 
 Camera direction rotated up to72.294 degrees from start; camera itself moved
 up to7.0333 game units from its starting position. End direction differs by

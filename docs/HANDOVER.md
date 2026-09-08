@@ -6,6 +6,12 @@ PID22128/sky.1 unchanged.300 attempts,297 progressing renderer frames56279..5776
 One cache-chain identity. Camera direction excursion72.294deg, camera position
 excursion7.0333gu; final direction13.4404deg from start, not exact pose A-B-A.
 Player instructed stationary but player pose not independently captured.
+User subsequently clarified: standing IN THE OPEN, not at a door. This recording
+is an outdoor camera control, with no reported interior transition. References
+to the positive doorway test mean the SEPARATE earlier PID4208 recording only.
+Do not explain this run's variation as crossing a doorway/roof boundary. Nor
+interpret v~0.4 as a calibrated percentage of visible sky; normalization and
+reference-position semantics still need the direct check below.
 
 Histogram L2.92115..4.55835, exposure.0142187...0190443, candidate v.355885...482627.
 Important: v changes even while camera X/Z/direction are constant (0..5s and
