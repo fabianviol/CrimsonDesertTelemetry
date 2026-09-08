@@ -1,4 +1,35 @@
-# Current checkpoint — GI reference is camera-linked; direct sample still open, 2026-09-08, Codex/Astra
+# Current checkpoint — passive spatial binding probe ready for DMM, 2026-09-08, Codex/Astra
+
+User said continue. Found texture creation, DirectX resource description path,
+static sampler and ENHANCED barrier path. Do NOT reuse the legacy UAV-buffer
+barriers for this texture. Detailed evidence and instrument contract in
+docs/LOCAL_ILLUMINATION_RESEARCH.md, "Direct readback preflight" section.
+
+Built PRIVATE **2.0.1-spatial-probe.1**, NOT installed/live-tested/published.
+ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-probe.1-ModManagers.zip
+SHA256 F085947BAB4D1BDFDB14B6D7295DE8E3458BC5E02104B5C1D87EB63A2D141E33.
+Package validation/payload equality PASS;21/21 CTests, including32 new WARP/
+synthetic observer checks and80000 parallel ABI calls;14 Python diagnostics
+tests unchanged/pass. These are host tests, not game evidence.
+
+The probe is PASSIVE: GetDesc, actual caller's GI constants, sampler and exact
+texture barriers observed during AdaptExposure Dispatch. NO new GPU command,
+copy, inferred current-state claim or public stream. Existing raw/smoothed/sky
+continue. This is preparation for direct readback, NOT completed readback.
+Default Research/SpatialProbe=0. For test set1, keep AmbientProbe=0 and existing
+Lights/ManyLights+Ambient enabled. Console/Explorer not required. Starts IDLE;
+scripts/Start-SpatialProbe.ps1 -ProcessId ACTUAL_PID requests20 samples at2Hz,
+30s hard timeout. JSON spatial-binding-PID-TICK-RUN.json beside ASI. Empty trace
+does NOT prove no resource transition; record scope is one Dispatch invocation.
+
+**Next step:** user closes game and installs this whole ZIP via DMM, enables
+SpatialProbe=1, loads game. Then one bounded passive capture while stationary
+anywhere (no doorway/walking needed), verify progressing frame/control and actual
+texture barriers. Only after that implement safe copy + paired CB/inverse check.
+Last observed game remains PID22128/sky.1; no files changed in game installation.
+Individual source occlusion still separate; existing feeds remain unchanged.
+
+## Previous checkpoint — GI reference is camera-linked, 2026-09-08
 
 Followed existing exposure/filter chain, found exact GI constant producer
 143C533A0: uploads768 bytes inline filterOwner+20; `_clipmapUVRelativeOffset`

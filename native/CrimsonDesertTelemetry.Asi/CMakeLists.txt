@@ -70,12 +70,14 @@ set(CDT_CONSOLE_SOURCES
 # relaxing warnings for newly integrated production code.
 set_source_files_properties(${CDT_CONSOLE_SOURCES} PROPERTIES COMPILE_OPTIONS "/WX-;/wd4996")
 add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
-    src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm ${CDT_CONSOLE_SOURCES})
+    src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm
+    src/spatial_probe.cpp src/spatial_thunk.asm ${CDT_CONSOLE_SOURCES})
 target_compile_features(cdt_instruments PUBLIC cxx_std_20)
 target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
 target_include_directories(cdt_instruments PUBLIC src)
 target_link_libraries(cdt_instruments PUBLIC minhook d3d12 dxgi bcrypt psapi user32)
+target_link_libraries(cdt_instruments PRIVATE nlohmann_json::nlohmann_json)
 
 add_library(CrimsonDesertTelemetryAsi SHARED src/bootstrap.cpp)
 target_compile_features(CrimsonDesertTelemetryAsi PRIVATE cxx_std_20)
@@ -102,6 +104,20 @@ target_compile_options(CrimsonDesertTelemetryBootstrapSmoke PRIVATE /W4 /WX /per
 target_link_libraries(CrimsonDesertTelemetryBootstrapSmoke PRIVATE ws2_32)
 
 enable_testing()
+add_executable(CrimsonDesertTelemetrySpatialProbeTests tests/spatial_probe_tests.cpp tests/spatial_barrier_abi.cpp
+    src/spatial_thunk.asm src/console/mem.cpp src/console/util.cpp)
+target_compile_features(CrimsonDesertTelemetrySpatialProbeTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetrySpatialProbeTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetrySpatialProbeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetrySpatialProbeTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+target_link_libraries(CrimsonDesertTelemetrySpatialProbeTests PRIVATE minhook nlohmann_json::nlohmann_json d3d12 dxgi psapi user32)
+add_test(NAME spatial-passive-probe COMMAND CrimsonDesertTelemetrySpatialProbeTests)
+set_tests_properties(spatial-passive-probe PROPERTIES TIMEOUT 20)
+add_executable(CrimsonDesertTelemetrySpatialThunkTests tests/spatial_thunk_tests.cpp tests/spatial_thunk_fixture.asm src/spatial_thunk.asm)
+target_compile_features(CrimsonDesertTelemetrySpatialThunkTests PRIVATE cxx_std_20)
+target_compile_options(CrimsonDesertTelemetrySpatialThunkTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
+add_test(NAME spatial-dispatch-abi COMMAND CrimsonDesertTelemetrySpatialThunkTests)
+set_tests_properties(spatial-dispatch-abi PROPERTIES TIMEOUT 20)
 add_executable(CrimsonDesertTelemetryExposureProbeTests tests/exposure_probe_tests.cpp)
 target_compile_features(CrimsonDesertTelemetryExposureProbeTests PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetryExposureProbeTests PRIVATE src)

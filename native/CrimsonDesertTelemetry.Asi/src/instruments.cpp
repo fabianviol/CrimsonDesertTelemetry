@@ -4,6 +4,7 @@
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "sky_bridge.h"
+#include "spatial_probe.h"
 #include "native_contract.generated.h"
 #include "overlay.h"
 #include "console/common.h"
@@ -182,8 +183,16 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
+    const bool spatialProbe = captureEnabled &&
+        GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0;
+    const bool spatialStarted = spatialProbe && spatial::Start(ch::g_game.moduleBase,
+        std::filesystem::path(moduleDirectory).c_str());
+    if(spatialProbe && !spatialStarted)
+        ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;
     while (WaitForSingleObject(stopEvent, 5) == WAIT_TIMEOUT)
+    {
+        if(spatialStarted) spatial::Poll();
         if (capturing)
         {
             render::PollCapture();
@@ -196,6 +205,8 @@ void RunImpl(HANDLE stopEvent)
                     ". Check the native log for device, queue or readback failure, then restart. Old samples are not current light data.");
             }
         }
+    }
+    if(spatialStarted) spatial::Stop();
     if (capturing) render::StopCapture();
     else render::PublishStatus(render::Status::Stopped);
     // No blocking cleanup under loader lock. Stop() is on this worker.
@@ -215,5 +226,5 @@ void Run(HANDLE stopEvent)
             "Native telemetry could not continue. Check the native log and restart the game; stale samples must not be treated as current lights.");
     }
 }
-bool OwnsCodeAddress(uint64_t address) { return render::OwnsCodeAddress(address); }
+bool OwnsCodeAddress(uint64_t address) { return render::OwnsCodeAddress(address) || spatial::OwnsCodeAddress(address); }
 }

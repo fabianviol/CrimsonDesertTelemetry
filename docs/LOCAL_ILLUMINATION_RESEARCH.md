@@ -199,6 +199,90 @@ with measured cache age; only then assess its outdoor fluctuations. No more
 generic walking tests yet. Raw/smoothed/sky APIs and ASI unchanged; source
 occlusion remains independently required via the depth route below.
 
+## Direct readback preflight and passive instrument — 2026-09-08,21:46
+
+Native texture initialization is in143C4F170:143C4FEC9 selects filterOwner+4B8,
+143C4FF1D constructs its descriptor (internal format0x0F),143C4FF7C calls texture
+creation1437F0280,143C4FF94 stores the outer pointer. Internal format0x0F is NOT
+itself a verified DXGI SRV format. Preserve this distinction.
+
+Resolved the SAME live resource0x139A2FF40 in PID22128. Its vtable GetDesc
+(slot10) points to D3D12Core.dll0x7FFE744800A0. Read-only inspection of that
+implementation and its instance fields predicts the actual resource descriptor:
+Texture3D,64x32x264,1 mip,DXGI_FORMAT_R8_TYPELESS(60),flags4/UAV,64KiB alignment.
+No COM call was made in the game during this inspection. The new instrument
+queries GetDesc in-process and checks it, rather than adopting undocumented
+D3D12Core offsets as a product dependency. **Typed SRV format still needs check**;
+do not silently decode typeless bytes as R8_UNORM yet.
+
+Sampler name g_staticVoxelSampler is registered at14380988E/1438098A9 via
+1437F15F0 for slot12; device vtable+178 ->143D0ECB0 builds52-byte static sampler
+descriptors at device+970, count+978. Live slot12 (array0x5CB04175100) reports:
+filter0x14=MIN_MAG_LINEAR_MIP_POINT, AddressU/V/W=1/WRAP, bias0, anisotropy1,
+comparison8/ALWAYS, MinLOD0, MaxLOD FLT_MAX, register12, space4, visibilityALL.
+That is linear interpolation within the 3D mip, point mip selection; our shader
+uses LOD0. This resolves the stored sampler description, not a live root-signature
+hash. The previous CPU decoder deliberately leaves X/Y unwrapped; it has not yet
+sampled a texture. Keep raw coordinates for the eventual sampler comparison.
+
+**Critical state finding:** device+43=1 in this process selects the enhanced
+barrier branch in1437DD140. Engine command vtable145BD0BC8 has Dispatch+328=
+1437B4360, SRV texture bind+450=1437DAD80, state request+588=1437DD140.
+Dispatch applies queued bindings/barriers before native Dispatch. Static engine
+state enums are NOT D3D12 enhanced-layout enums; do not substitute their numbers.
+The original buffer-copy implementation's UAV legacy transition is not a safe
+template for this shader-read texture. Microsoft documents the required copy
+state in [CopyTextureRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion)
+and [resource barriers](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12).
+
+Implemented private `spatial_probe.cpp/.h` + `spatial_thunk.asm`:
+
+- Hooks normal Dispatch function ENTRY1437B4360 after exact-byte check and the
+  existing exact-EXE gate. Only caller return1435450A4 with dimensions2,1,1 is
+  observed. ABI thunk passes the caller's actual R13/filterOwner and return
+  address, preserves normal ABI/stack and original RAX return.
+- Explicit named event starts20 samples, at most2Hz,30s deadline. Default OFF;
+  when enabled it starts IDLE. No startup/loading recording or movement request.
+- Validates owner/renderer and texture wrapper backlinks,64x32x264 CPU shape,
+  actual resource GetDesc and sampler register/space. Captures inline GI block
+  before/after, selected-bank CB resource, scene bytes, raw exposure cache and
+  raw SRV-view metadata. CPU copies/cache are NOT paired GPU reads.
+- After discovering the actual list7 Barrier function, worker installs a passive
+  detour (slot80 checked using SDK offsetof). Thread-local scope ONLY the actual
+  exposure Dispatch, same native list7 and exact target resource. Captures up to8
+  matching enhanced texture barriers, with actual Sync/Access/Layout/subresources;
+  bounded group/entry processing, overflow explicit. Every engine call is forwarded
+  unchanged. No GPU copy/barrier/dispatch is added by the observer.
+- No observed barrier is UNKNOWN, not evidence of a read/copy state; transitions
+  outside the invocation are not covered. This instrument intentionally does NOT
+  arm a copy based on incomplete observations. ManyLights/sky code and APIs remain
+  independent. It never claims source visibility or a calibrated sky percentage.
+- MinHook patch operations run outside the capture lock; trampolines remain in
+  the pinned module through shutdown. JSON writing is on worker, never render
+  thread. Output uses CREATE_NEW; old evidence is untouched.
+
+Host verification:21/21 native CTests; new observer32 controls use synthetic
+wrappers plus real WARP resource/list7/MinHook Barrier interception. Separate ABI
+fixture80000 parallel calls verifies argument/owner/caller/R13/stack extraction.
+These tests do NOT demonstrate live producer frequency, complete barrier coverage
+or actual GPU texels.14 existing Python tests continue passing.
+
+Private package2.0.1-spatial-probe.1 validated and payload-matched; SHA256
+F085947BAB4D1BDFDB14B6D7295DE8E3458BC5E02104B5C1D87EB63A2D141E33.
+Install only after shutdown via DMM. Set Research/SpatialProbe=1, AmbientProbe=0;
+leave existing Lights/ManyLights and Ambient enabled. After loading, agent calls
+`scripts/Start-SpatialProbe.ps1 -ProcessId ACTUAL_PID`. Check new
+`spatial-binding-PID-TICK-RUN.json` and progressing control. Not installed or
+game-tested in this turn, no publish/push. The inherited ZIP README still
+describes the public release; the private switch is explained here and in INI.
+
+Evidence under artifacts/light-research/rawpages (binary+meta):
+`local-sky-d3d12-resource-pid22128`, `local-sky-texture-create-pid22128`,
+`local-sky-sampler-state-pid22128`, `local-sky-sampler-producer-pid22128`.
+All fully read, matching live PID/executable/scene control. Keep alongside prior
+exposure/native GI evidence. Next step is the passive game capture, then a
+legal direct copy with paired GI constants; no new generic camera/doorway test.
+
 ## Previous control and separate source occlusion
 
 ### View-control recording completed at20:57 — 2026-09-08
