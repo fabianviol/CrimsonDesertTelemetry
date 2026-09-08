@@ -1,4 +1,31 @@
-# Current checkpoint — local sky-visibility diagnostic found, 2026-09-08, Codex/Astra
+# Current checkpoint — view-control recorded; candidate remains diagnostic, 2026-09-08, Codex/Astra
+
+User said ready; ONE30s read-only exposure context recording20:57:18..48 CEST,
+PID22128/sky.1 unchanged.300 attempts,297 progressing renderer frames56279..57769,
+291 candidates;6 changing cache/3 changing bridge probes safely unavailable.
+One cache-chain identity. Camera direction excursion72.294deg, camera position
+excursion7.0333gu; final direction13.4404deg from start, not exact pose A-B-A.
+Player instructed stationary but player pose not independently captured.
+
+Histogram L2.92115..4.55835, exposure.0142187...0190443, candidate v.355885...482627.
+Important: v changes even while camera X/Z/direction are constant (0..5s and
+15..30s; only small Y bob). Direction-only explanation insufficient. Do not call
+this a fixed indoor/roof Boolean, a failed decoder, or invalidate the earlier
+doorway result. Actual GI reference origin, texture dynamics/coverage and CPU
+cache GPU age/coherence are still open. NO new public stream/API/ASI/config.
+
+Evidence artifacts/light-research/local-illumination-view-control-20260908-pid22128
+.json/-derived.json/-analysis.json, rawSHA2A5F0782…; exact numbers and limitations
+in docs/LOCAL_ILLUMINATION_RESEARCH.md. User released after recording.
+
+**One next bounded research step:** follow the already identified AdaptExposure
+Voxel GI constants producer (_wrappedViewPos / _clipmapUVRelativeOffset) and
+prepare one direct texture-sample/inverse comparison at the same reference point.
+No generic camera/doorway repeats before that instrumentation. Separate source
+occlusion depth resource t15,space36 remains required, not replaced by sky/exposure.
+No plugin switch needed for this completed run; further GPU instrument may need one.
+
+## Previous checkpoint — local sky-visibility diagnostic found
 
 User authorized research/implementation of local environmental illumination AND
 a separately source-visibility-filtered stream while preserving current feeds.

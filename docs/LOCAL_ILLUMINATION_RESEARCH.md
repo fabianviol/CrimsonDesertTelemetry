@@ -117,6 +117,46 @@ data and missing progressing live control. Synthetic tests != game validation.
 
 ## Source occlusion: concrete next resource, NOT implemented yet
 
+### View-control recording completed at20:57 — 2026-09-08
+
+User confirmed ready. One30s read-only capture, PID22128/sky.1 unchanged,
+20:57:18.660..20:57:48.565 CEST, 300 attempts/29.957s.297 distinct render frames
+56279..57769; one cache-chain identity.291 candidates,6 changed caches and3
+changing bridges unavailable. Recorded camera pose; player was instructed to
+remain fixed but its pose was NOT independently recorded in this script.
+
+Camera direction rotated up to72.294 degrees from start; camera itself moved
+up to7.0333 game units from its starting position. End direction differs by
+13.4404 degrees from start, so this is NOT an exact camera-pose A-B-A return.
+Histogram L2.92115..4.55835; exposure.0142187...0190443;
+inferred v.355885...482627. Crucially v changes during stationary camera windows:
+
+| Window | Camera evidence | Candidate v |
+| --- | --- | --- |
+| 0..5s | X/Z and direction constant; Y range.00137gu | .356251...424018 |
+| 15..30s | X/Z and direction constant; Y range.0138gu | .369481...468300 |
+
+Consequently a pure change-of-look-direction explanation is insufficient, and
+this inverse is not established as a constant geometric indoor/outdoor scalar.
+Dynamics alone do not prove decoder failure: voxel/temporal/environment state,
+reference-origin interpretation and cache coherence/age remain unmeasured.
+Do not discard the preceding doorway result or pretend this control resolves
+the reference origin. No fixed-time/weather or direct-texture comparison here.
+
+**Next bounded validation:** inspect the producer of the Voxel GI constants used
+by AdaptExposureCS (`_wrappedViewPos` and `_clipmapUVRelativeOffset`) and compare
+one direct sky-visibility texture sample with the inverse at the same reference
+position. Reuse this concrete binding, not a broad GI search. No additional
+generic camera/doorway run until this question is instrumented. Source occlusion
+remains its separate required depth-resource route below.
+
+Evidence artifacts/light-research/local-illumination-view-control-20260908-pid22128
+`.json`, `-derived.json`, `-analysis.json`. Raw SHA256
+`2A5F0782238850E54C5C5510DCEF60AFF2564EA6986AA91A1589E19316268A4B`.
+No plugin/config/API edits, no install/publish/push; user released after recording.
+
+### Separate depth-resource route
+
 Existing `filtered-count-exact-20260906-2113-29588660.ll` is ProcessManyLightsCS.
 It actually samples **g_hiZMap t15,space36** five times (lines1020..1032), at a
 chosen mip, combines depths and uses the result in a light-selection branch.
