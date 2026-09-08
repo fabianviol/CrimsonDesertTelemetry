@@ -304,3 +304,37 @@ dwell, different camera framing and evolving sky prevent clean ABA acceptance.
 No claim that all ambient sources lack locality. If a clean control is required,
 one direct doorway crossing without menu and >=10s return dwell is the next test;
 no new ASI, shader search or automatic recording needed.
+
+## 2026-09-08 doorway control run3: global sky versus exposure response
+
+User authorized repeat without menu. Same PID4208/probe.3, explicit start
+19:50:34, capturedTick1163515..1223203 (59.688s),120 samples, frames54621..58051,
+A3849BB7/resource12A923050, fences241..360, cache flags31 throughout. IDLE after
+completion. No menu reported. API player positions outside(-10404.311,611.77277,
+-4421.577), inside(-10399.192,612.0811,-4416.472), returned farther outside at
+(-10404.022,611.7726,-4431.6094). Continuous probe camera follows the crossings;
+partial API trace has gaps between the three stationary sections.
+
+| Stationary window from first sample | Samples | Mean sky L estimate | Mean cache exposure0.x |
+| --- | --- | --- | --- |
+| Initial outside0..24s | 48 | .00171914901 | 76.501225 |
+| Inside30..40s | 20 | .00165853124 | 12994.05125 |
+| Return outside52..60s | 16 | .00154334729 | 126.726549 |
+
+Interior sky range.00160166848...00176568310 overlaps initial exterior range
+.00160431315...00186069846. Cache instead rises near13020.825 inside and falls
+outside. Sky first→last .00186069846→.00152406962 (-18.0915%); variability is
+already present in the stationary initial exterior. Weather/time not frozen and
+final player/camera framing differs: do not fit a roof factor from window means.
+No large interior suppression corresponding to cache response. This source is
+consistent with global sky, not sufficient as player-local ambient on its own.
+This is evidence about this source/test, not all engine ambient systems or every
+room. Cache response/plateau is not a validated light sensor or normalization.
+No exposure arithmetic applied, no public API or ASI change.
+
+Evidence `artifacts/light-research/ambient-live-20260908-pid4208-doorway-control/`:
+ambient-probe-4208-1163500-3.bin (495360 bytes), parser/derived JSON, native log,
+INI, transition-trace.json. Binary SHA256
+B2FB28F90308807B96443BF0C39B9063640C05A1E7EAE75620ED573576F2B315.
+Next: preserve global-sky versus player-local semantics in feed design. This
+measurement question does not warrant another doorway run or broad rediscovery.

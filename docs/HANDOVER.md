@@ -1,4 +1,29 @@
-# Current checkpoint — doorway capture saved, build-menu confound, 2026-09-08, Codex/Astra
+# Current checkpoint — doorway control supports global sky, 2026-09-08, Codex/Astra
+
+ONE user-authorized repeat, PID4208/probe.3,19:50:34..19:51:34,120/120 v2
+samples,59.688s, frames54621..58051, A3849BB7/resource12A923050, fences241..360,
+all cache flags31. No menu requested or reported in this run. Camera/API show
+outside → inside → outside. Returned IDLE; user released. No automatic captures.
+
+Stable windows: outside0..24s (48 samples), inside30..40s (20), return52..60s (16).
+Mean sky luminance estimates .00171915 / .00165853 / .00154335; mean exposure
+cache76.5012 /12994.0513 /126.7265. Cache responds strongly/reversibly (indoor
+plateau ~13020.825), while sky has no corresponding large interior suppression.
+Sky first→last -18.09%, with variation already outdoors: time/weather/framing
+not fixed; not a calibrated local roof factor. Return player is farther outside.
+This supports global-sky scope for THIS decoded source, not player-local ambient.
+Do not divide sky by cache or claim cache plateau is validated physical exposure.
+
+Evidence: artifacts/light-research/ambient-live-20260908-pid4208-doorway-control/,
+ambient-probe-4208-1163500-3.bin (495360 bytes), raw/derived JSON, log, INI,
+partial timestamped transition-trace.json. Binary SHA256
+B2FB28F90308807B96443BF0C39B9063640C05A1E7EAE75620ED573576F2B315.
+No plugin/config/API changes. **One next step:** distinguish the useful global-sky
+feed from unavailable local indoor/outdoor illumination in the API design; retain
+relative/raw units and exposure-age limitations. Do not repeat this doorway test
+or restart shader/heap searches without a new, concrete question.
+
+## Previous checkpoint — doorway capture saved, build-menu confound
 
 PID4208 / probe.3 unchanged. User explicitly authorized ONE new run at19:46:51;
 completed19:47:52, 120/120 valid v2 records, frames42025..45490,59.719s,
