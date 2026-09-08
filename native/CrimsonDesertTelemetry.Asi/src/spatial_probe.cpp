@@ -1,4 +1,6 @@
 #include "spatial_probe.h"
+#include "spatial_trace.h"
+#include "submission_observer.h"
 #include "console/mem.h"
 #include "console/common.h"
 #include "native_contract.generated.h"
@@ -23,8 +25,16 @@ constexpr unsigned Limit=20, BarrierLimit=8;
 // Preserve RAX even though the inspected exposure caller ignores it.
 using DispatchFn=uint64_t(*)(uint64_t, uint32_t, uint32_t, uint32_t);
 using BarrierFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList7*, UINT, const D3D12_BARRIER_GROUP*);
+using ResetFn=HRESULT(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,ID3D12CommandAllocator*,ID3D12PipelineState*);
+using CloseFn=HRESULT(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*);
 DispatchFn originalDispatch{};
 BarrierFn originalBarrier{};
+ResetFn originalReset{};
+CloseFn originalClose{};
+void* resetTarget{};
+void* closeTarget{};
+SpatialTrace trace;
+ID3D12Resource* traceResource{};
 void* dispatchTarget{};
 void* barrierTarget{};
 uint64_t base{}, started{}, lastAttempt{};
@@ -49,8 +59,11 @@ struct Observation
     std::array<uint8_t,64> exposure{};
     std::array<uint8_t,80> viewEntry{};
     std::array<uint8_t,64> viewDescriptor{};
+    std::array<uint8_t,48> textureDescriptor{};
     std::array<D3D12_TEXTURE_BARRIER,BarrierLimit> barriers{};
     void* barrierFunction{};
+    void* resetFunction{};
+    void* closeFunction{};
 };
 Observation pending;
 thread_local Observation* active{};
@@ -67,6 +80,7 @@ std::string Hex(const uint8_t* data,size_t size)
 }
 void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
 {
+    trace.Barrier(list,groups,data); // Entire requested interval, every observed list/thread.
     // Thread-local scope is ONLY the actual AdaptExposure Dispatch invocation.
     // Other engine passes do not acquire a lock or inspect their barrier arrays.
     auto* o=active;
@@ -89,6 +103,26 @@ void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,
     }
     originalBarrier(list,groups,data); // Never modify or suppress an engine call.
 }
+HRESULT STDMETHODCALLTYPE ResetHook(ID3D12GraphicsCommandList* list,ID3D12CommandAllocator* allocator,ID3D12PipelineState* state)
+{
+    const auto address=reinterpret_cast<uint64_t>(list);
+    trace.Lifecycle(address,TraceKind::ResetBegin);
+    const auto hr=originalReset(list,allocator,state);
+    trace.Lifecycle(address,TraceKind::ResetEnd,hr);
+    return hr;
+}
+HRESULT STDMETHODCALLTYPE CloseHook(ID3D12GraphicsCommandList* list)
+{
+    const auto address=reinterpret_cast<uint64_t>(list);
+    trace.Lifecycle(address,TraceKind::CloseBegin);
+    const auto hr=originalClose(list);
+    trace.Lifecycle(address,TraceKind::CloseEnd,hr);
+    return hr;
+}
+void Submission(ID3D12CommandQueue* queue,UINT listCount,ID3D12CommandList* const* lists,bool after)
+{
+    trace.Submit(queue,listCount,lists,after);
+}
 bool Resolve(Observation& o)
 {
     uint64_t renderer{}, back{}, outer{}, storage{}, holder{}, sceneOwner{}, sceneData{}, device{}, samplerArray{}, exposureOwner{};
@@ -106,6 +140,7 @@ bool Resolve(Observation& o)
         !Read(o.owner+8,sceneOwner)||!Read(sceneOwner+0x428,sceneData)||!Read(sceneData,o.scene)||
         !Read(o.owner+0x20,o.gi)||!Read(o.owner+0x705,bank)) return false;
     o.bank=bank; o.enhanced=enhanced!=0;
+    Read(storage+0xB0,o.textureDescriptor);
     uint64_t cbWrapper{},cbOuter{},cbStorage{},viewTable{},viewObject{};
     uint32_t viewCount{};
     if(!Read(o.owner+(bank?0x568:0x560),cbWrapper)||!Read(cbWrapper+0x18,cbOuter)||
@@ -131,23 +166,25 @@ bool Resolve(Observation& o)
     o.nativeList7=reinterpret_cast<uint64_t>(list7);
     // SDK C-interface offsetof is independently checked by the host test.
     o.barrierFunction=(*reinterpret_cast<void***>(list7))[80];
+    o.closeFunction=(*reinterpret_cast<void***>(list7))[9];
+    o.resetFunction=(*reinterpret_cast<void***>(list7))[10];
     list7->Release();
     return o.barrierFunction!=nullptr;
 }
-nlohmann::json Json(const Observation& o)
+nlohmann::json BarrierJson(const D3D12_TEXTURE_BARRIER& b)
 {
-    nlohmann::json barriers=nlohmann::json::array();
-    for(unsigned i=0;i<o.barrierCount;++i)
-    {
-        const auto& b=o.barriers[i];
-        barriers.push_back({{"syncBefore",b.SyncBefore},{"syncAfter",b.SyncAfter},
+    return {{"syncBefore",b.SyncBefore},{"syncAfter",b.SyncAfter},
             {"accessBefore",b.AccessBefore},{"accessAfter",b.AccessAfter},
             {"layoutBefore",b.LayoutBefore},{"layoutAfter",b.LayoutAfter},
             {"flags",b.Flags},{"subresources",{{"indexOrFirstMip",b.Subresources.IndexOrFirstMipLevel},
             {"numMips",b.Subresources.NumMipLevels},{"firstArray",b.Subresources.FirstArraySlice},
             {"numArrays",b.Subresources.NumArraySlices},{"firstPlane",b.Subresources.FirstPlane},
-            {"numPlanes",b.Subresources.NumPlanes}}}});
-    }
+            {"numPlanes",b.Subresources.NumPlanes}}}};
+}
+nlohmann::json Json(const Observation& o)
+{
+    nlohmann::json barriers=nlohmann::json::array();
+    for(unsigned i=0;i<o.barrierCount;++i)barriers.push_back(BarrierJson(o.barriers[i]));
     return {{"capturedTick",o.tick},{"frame",o.frame},{"error",o.error},{"owner",o.owner},
         {"command",o.command},{"resource",o.resource},{"nativeList",o.nativeList},{"nativeList7",o.nativeList7},
         {"enhancedBarriers",o.enhanced},{"bankFlag",o.bank},{"giGpuResource",o.giGpuResource},{"giCopiesMatch",o.giStable},
@@ -160,16 +197,52 @@ nlohmann::json Json(const Observation& o)
         {"sceneHex",Hex(o.scene.data(),o.scene.size())},{"exposureCacheHex",Hex(o.exposure.data(),o.exposure.size())},
         {"srvViewEntryRawHex",Hex(o.viewEntry.data(),o.viewEntry.size())},
         {"srvViewObjectRawHex",Hex(o.viewDescriptor.data(),o.viewDescriptor.size())},
+        {"textureDescriptorRawHex",Hex(o.textureDescriptor.data(),o.textureDescriptor.size())},
         {"observedTextureBarriers",barriers},{"barrierTraceOverflow",o.barrierOverflow}};
+}
+nlohmann::json TraceJson()
+{
+    // Stop accepting events before taking a stable worker-side snapshot.
+    trace.target=0;
+    AcquireSRWLockExclusive(&trace.mutex);
+    nlohmann::json events=nlohmann::json::array();
+    constexpr const char* names[]={"barrier","reset-begin","reset-end","close-begin","close-end",
+        "execute-begin","execute-end","exposure-begin","exposure-end"};
+    for(size_t i=0;i<trace.eventCount;++i)
+    {
+        const auto& e=trace.events[i];
+        nlohmann::json row={{"order",e.order},{"tick",e.tick},{"thread",e.thread},
+            {"list",e.list},{"queue",e.queue},{"resetGeneration",e.generation},
+            {"resetGenerationKnown",e.generationKnown},{"kind",names[static_cast<unsigned>(e.kind)]},
+            {"hresult",static_cast<uint32_t>(e.result)}};
+        if(e.kind==TraceKind::Barrier)
+        {
+            row["barrier"]=BarrierJson(e.barrier);
+        }
+        events.push_back(std::move(row));
+    }
+    nlohmann::json result={{"targetResource",reinterpret_cast<uint64_t>(traceResource)},
+        {"startedTick",trace.startedTick},{"endedTick",GetTickCount64()},
+        {"hooks",{{"barrier",reinterpret_cast<uint64_t>(barrierTarget)},
+            {"reset",reinterpret_cast<uint64_t>(resetTarget)},{"close",reinterpret_cast<uint64_t>(closeTarget)}}},
+        {"barrierCalls",trace.barrierCalls},{"textureEntries",trace.textureEntries},
+        {"targetBarriers",trace.targetBarriers},{"resetCalls",trace.resetCalls},
+        {"closeCalls",trace.closeCalls},{"executeCalls",trace.executeCalls},
+        {"droppedCallbacks",trace.lost.load()},{"overflow",trace.overflow},{"events",events},
+        {"gpuCompletionKnown",false},{"currentLayoutKnown",false},
+        {"scope","CPU calls through discovered Barrier/Reset/Close implementations and existing queue detour; not complete device coverage or GPU ordering. Reset generation is NOT object-lifetime identity. No fence/copy added."}};
+    ReleaseSRWLockExclusive(&trace.mutex);
+    return result;
 }
 void Save(const char* reason)
 {
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format","private-spatial-binding-v1"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format","private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
         {"reason",reason},{"complete",!incomplete&&count==Limit},{"controlProgressed",progressing},
-        {"gpuCopyIssued",false},{"caveat","Passive instrumented run, not untouched baseline. Barrier trace is limited to this Dispatch's CPU invocation; absence is NOT a known resource state. CPU constants/cache are NOT GPU-frame paired."},
-        {"samples",samples}};
+        {"gpuCopyIssued",false},{"caveat","Passive instrumented run, not untouched baseline. Per-sample barriers cover only Dispatch; intervalTrace covers discovered implementations across the requested interval, with explicit losses/unknown generations. Neither proves GPU completion/current layout. CPU constants/cache are NOT GPU-frame paired."},
+        {"samples",samples},{"intervalTrace",TraceJson()}};
+    if(traceResource){traceResource->Release();traceResource=nullptr;}
     const auto file=outputDirectory/(L"spatial-binding-"+std::to_wstring(GetCurrentProcessId())+L"-"+
         std::to_wstring(started)+L"-"+std::to_wstring(++run)+L".json");
     HANDLE h=CreateFileW(file.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
@@ -201,7 +274,8 @@ bool Start(uint64_t moduleBase,const wchar_t* directory)
         MH_EnableHook(dispatchTarget)!=MH_OK)
     {CloseHandle(requestEvent);requestEvent=nullptr;return false;}
     enabled=true;
-    ch::Log("Spatial binding probe IDLE: passive GetDesc/CB/sampler/enhanced-barrier observation only; explicit event starts20 samples, no GPU copy.");
+    render::submissionObserver=Submission;
+    ch::Log("Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }
 void Poll()
@@ -209,12 +283,15 @@ void Poll()
     if(!enabled) return;
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
-    {samples=nlohmann::json::array();count=0;incomplete=false;started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
+    {samples=nlohmann::json::array();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
     void* install{};
+    void* installReset{};
+    void* installClose{};
     if(phase==Phase::Pending)
     {
         samples.push_back(Json(pending));++count;
-        if(!barrierInstalled&&!pending.error) install=pending.barrierFunction;
+        if(!barrierInstalled&&!pending.error)
+        {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;}
         phase=Phase::Ready;
         if(count==Limit) Save("sample-limit");
     }
@@ -223,9 +300,18 @@ void Poll()
     // MinHook suspends threads: never hold our capture lock during patching.
     if(install)
     {
-        const bool ok=MH_CreateHook(install,BarrierHook,reinterpret_cast<void**>(&originalBarrier))==MH_OK&&MH_EnableHook(install)==MH_OK;
+        // All three implementations come from the SAME live command list.
+        // Queue observations reuse the existing capture hook instead of patching it twice.
+        const auto reset=installReset,close=installClose;
+        const bool madeBarrier=MH_CreateHook(install,BarrierHook,reinterpret_cast<void**>(&originalBarrier))==MH_OK;
+        const bool madeReset=madeBarrier&&MH_CreateHook(reset,ResetHook,reinterpret_cast<void**>(&originalReset))==MH_OK;
+        const bool madeClose=madeReset&&MH_CreateHook(close,CloseHook,reinterpret_cast<void**>(&originalClose))==MH_OK;
+        const bool ok=madeClose&&MH_EnableHook(install)==MH_OK&&MH_EnableHook(reset)==MH_OK&&MH_EnableHook(close)==MH_OK;
+        // Never disable somebody else's detour after MH_ERROR_ALREADY_CREATED.
+        if(!ok){if(madeBarrier)MH_DisableHook(install);if(madeReset)MH_DisableHook(reset);if(madeClose)MH_DisableHook(close);}
         AcquireSRWLockExclusive(&lock);
-        if(ok){barrierTarget=install;barrierInstalled=true;}
+        if(ok){barrierTarget=install;resetTarget=reset;closeTarget=close;barrierInstalled=true;
+            if(observing&&traceResource)trace.Begin(reinterpret_cast<uint64_t>(traceResource));}
         else {incomplete=true;Save("barrier-hook-failed");}
         ReleaseSRWLockExclusive(&lock);
     }
@@ -233,8 +319,11 @@ void Poll()
 void Stop()
 {
     enabled=false;observing=false;
+    trace.target=0;render::submissionObserver=nullptr;
     if(dispatchTarget&&originalDispatch) MH_DisableHook(dispatchTarget);
     if(barrierTarget&&originalBarrier) MH_DisableHook(barrierTarget);
+    if(resetTarget&&originalReset) MH_DisableHook(resetTarget);
+    if(closeTarget&&originalClose) MH_DisableHook(closeTarget);
     AcquireSRWLockExclusive(&lock);
     if(phase!=Phase::Idle){incomplete=true;Save("stopped");}
     if(requestEvent){CloseHandle(requestEvent);requestEvent=nullptr;}
@@ -253,11 +342,22 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     {ReleaseSRWLockExclusive(&lock);return originalDispatch(command,x,y,z);}
     lastAttempt=GetTickCount64();
     Observation o{};o.tick=lastAttempt;o.owner=owner;o.command=command;
-    const bool valid=Resolve(o);
+    bool valid=Resolve(o);
     if(!valid)o.error=ERROR_INVALID_DATA;
+    if(valid&&traceResource&&o.resource!=reinterpret_cast<uint64_t>(traceResource))
+    {valid=false;o.error=ERROR_REVISION_MISMATCH;incomplete=true;trace.target=0;}
+    if(valid&&barrierInstalled&&(o.barrierFunction!=barrierTarget||o.resetFunction!=resetTarget||o.closeFunction!=closeTarget))
+    {valid=false;o.error=ERROR_INVALID_FUNCTION;incomplete=true;trace.target=0;}
+    if(valid&&!traceResource)
+    {
+        traceResource=reinterpret_cast<ID3D12Resource*>(o.resource);traceResource->AddRef();
+        if(barrierInstalled)trace.Begin(o.resource);
+    }
     auto* previous=active;
     if(valid&&barrierInstalled)active=&o;
+    if(valid)trace.Lifecycle(o.nativeList7,TraceKind::ExposureBegin);
     const auto result=originalDispatch(command,x,y,z);
+    if(valid)trace.Lifecycle(o.nativeList7,TraceKind::ExposureEnd);
     active=previous;
     if(valid){o.giStable=Read(owner+0x20,o.giAfter)&&o.gi==o.giAfter;}
     pending=o;phase=Phase::Pending;

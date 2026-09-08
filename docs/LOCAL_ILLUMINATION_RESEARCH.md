@@ -345,6 +345,76 @@ copy/fence boundary for paired direct texels, GI constants and exposure comparis
 No more generic walking tests to solve an instrumentation gap. This measurement
 does not yet provide stall ambient intensity, sunlight shadowing or lamp occlusion.
 
+## Typed view and interval trace — 2026-09-08,22:16
+
+Followed the SAME texture's native SRV builder; no new heap scan or alternate GI
+route. In PID23516 storage0x46367DD4C40 has vtable145C444B0; view0 object
+0x4636A75DF80 has vtable145BCC460. The exposure binding at143545087 explicitly
+passes view index0 (xor r9d,r9d at14354507B).
+
+**Typed format provenance:**143D7AB90 constructs the texture SRV. It passes
+storage+B0 and the selected view settings to143D78BF0 at143D7AF05, then submits
+the40-byte result to native device CreateShaderResourceView at143D7AF3E
+(vtable+90), using resource storage+100 and descriptor CPU handle viewObject+40.
+143D78BF0 selects a format table from143D78650. Internal format15 branches at
+143D7881D: resource format60/R8_TYPELESS, linear view format61/R8_UNORM.
+The actual live view0 settings have override15, plane0, no sRGB preference;
+the storage descriptor also has format15. Thus the native builder selects
+**R8_UNORM61**, not UINT/SNORM or typeless for shader reads. Texture flags/depth
+select SRV dimension8/Texture3D and component mapping0x1688. This is native-code
+provenance with matching live settings, NOT a captured CreateSRV call or sampled
+texels. Future spatial v2 snapshots include the48-byte storage descriptor too.
+
+**Actual enhanced barrier emission:** command virtual+1B0 ->1437D97C0,
+enhanced path virtual+1C0 ->1437B2AF0 ->1437B2B00. The latter converts engine
+Sync/Access/Layout through143D02460/143D02560/143D02660, builds native texture
+barriers from command+6B0/count+6B8 and outer+30/storage+100. At1437B3057 it
+calls nativeList vtable+280, the verified Barrier slot80. It then clears counts
+at+698/+6A8/+6B8. This proves the static emission path, NOT that this target
+transition occurs inside our old Dispatch window. No guessed engine-enum cast.
+Native barrier fields follow the [SDK texture-barrier contract](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_texture_barrier).
+
+Evidence: artifacts/light-research/rawpages/spatial-srv-barrier-provenance-pid23516
+(.bin/.meta.json), six fully read8192-byte ranges, live telemetry control present.
+Binary SHA256498FC6753794AF4281DA66F04BAD07B0E2F7E0492880FC7F1E9A5B9ED1E8F81B.
+Heap addresses are evidence only; new runs still resolve via the exposure owner.
+
+**Private instrument v2:** existing exact-build/signature-gated Dispatch observer
+now starts an interval trace after discovering the actual Barrier, Reset and
+Close implementations from that live list. Original COM arguments/HRESULTs are
+forwarded. Target texture gets AddRef while alive in the consuming call and is
+released after trace shutdown. Resource/implementation changes mark incomplete.
+The trace has global Barrier-call and texture-entry counts, exact-resource
+barriers across lists/threads, Reset/Close begin/end with HRESULT, exposure
+begin/end and Execute begin/end. Queue observation reuses the existing render
+capture hook through an optional atomic callback; no duplicate Execute detour.
+
+Fixed8192 events,512 list identities; callback try-locks never wait. Drops,
+oversized inputs and capacity overflow are explicit. Unknown initial generation
+stays unknown until an observed successful Reset begin/end. Reset generations
+are NOT allocation identities. Event order is CPU interception order; submissions
+on different queues or lists do not acquire a proven GPU order from that number.
+No Signal/fence, new GPU command or GPU completion/state assertion is added.
+Coverage is only the discovered implementations; zero counts/lossy trace must
+not become an absence claim. First and last partially observed list generations
+need special care before a future copy transaction is designed.
+
+Host controls cover out-of-Dispatch/other-list target hits, foreign resources,
+missing/failed Reset, failed Close records, submission identity, contention,
+3200 calls across8 threads (accepted+dropped must balance),8192-event/512-list
+overflow, disabled trace and real WARP/MinHook Barrier/Reset/Close interception.
+The existing WARP light/ambient/shared-sky tests also verify the actual shared
+queue observer receives balanced callbacks without changing copied payloads.
+21 native CTests and14 Python tests; host tests are not live evidence for v2.
+
+Package2.0.1-spatial-probe.2 created immutably, package validation/payload equality
+passed. ZIP SHA2567A26996CE09E26A888C092C2BEBC27AC167124C9EA11E1CAFED9641A05540E00.
+Default SpatialProbe=0. User must close game, install whole ZIP via DMM, set
+SpatialProbe=1/AmbientProbe=0, load, then request one run. No new generic movement
+test. Current installed ASI/spatial-probe.1 unchanged. Actual safe copy boundary,
+GPU pairing/direct texture validation and independent source visibility remain
+open; raw/smoothed/global-sky streams and their APIs are unchanged.
+
 ## Previous control and separate source occlusion
 
 ### View-control recording completed at20:57 — 2026-09-08

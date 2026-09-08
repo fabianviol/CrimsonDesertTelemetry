@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "submission_observer.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "sky_bridge.h"
@@ -288,7 +289,10 @@ void STDMETHODCALLTYPE ExecuteHook(ID3D12CommandQueue* queue, UINT count, ID3D12
             if (lists[i] == pendingList) { target = true; phase = Phase::Submitting; break; }
     }
     ReleaseSRWLockExclusive(&lock);
+    const auto observer = submissionObserver.load(std::memory_order_relaxed);
+    if (observer) observer(queue, count, lists, false);
     executeOriginal(queue, count, lists);
+    if (observer) observer(queue, count, lists, true);
     if (!target) return;
     // Queue::Signal is ordered AFTER the exact submission containing our copy.
     // A delay, ID3D12Fence::Signal (CPU-side), or a different queue is not proof.

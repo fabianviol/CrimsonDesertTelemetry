@@ -4,6 +4,8 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <iostream>
+#include <thread>
+#include <vector>
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t){return false;} }
 using namespace cdt::spatial;
 using Microsoft::WRL::ComPtr;
@@ -88,6 +90,66 @@ int main()
     Check(o.barrierCount==1&&o.barriers[0].LayoutAfter==D3D12_BARRIER_LAYOUT_SHADER_RESOURCE);
     Check(MH_DisableHook(o.barrierFunction)==MH_OK);
     Check(MH_RemoveHook(o.barrierFunction)==MH_OK);
+    // Interval controls: include out-of-Dispatch, other-list and worker-thread
+    // target transitions; count interception even when the target is absent.
+    trace.Begin(o.resource);
+    const auto otherList=reinterpret_cast<ID3D12GraphicsCommandList7*>(0x12340000);
+    active=nullptr;originalBarrier=StubBarrier;
+    BarrierHook(otherList,1,&group);
+    Check(trace.barrierCalls==1&&trace.targetBarriers==1&&trace.eventCount==1);
+    Check(!trace.events[0].generationKnown);
+    barrier.pResource=nullptr;BarrierHook(list7,1,&group);Check(trace.barrierCalls==2&&trace.targetBarriers==1);
+    barrier.pResource=resource.Get();
+    const auto address=reinterpret_cast<uint64_t>(otherList);
+    trace.Lifecycle(address,TraceKind::ResetEnd,S_OK); // Missing begin must remain unknown.
+    Check(!trace.events[trace.eventCount-1].generationKnown);
+    trace.Lifecycle(address,TraceKind::ResetBegin);
+    trace.Lifecycle(address,TraceKind::ResetEnd,S_OK);
+    Check(trace.events[trace.eventCount-1].generationKnown);
+    const auto generation=trace.events[trace.eventCount-1].generation;
+    trace.Lifecycle(address,TraceKind::CloseBegin);
+    trace.Lifecycle(address,TraceKind::CloseEnd,E_FAIL);
+    Check(trace.events[trace.eventCount-1].result==E_FAIL);
+    ID3D12CommandList* submitted[]={reinterpret_cast<ID3D12CommandList*>(otherList)};
+    const auto queue=reinterpret_cast<ID3D12CommandQueue*>(0x12350000);
+    trace.Submit(queue,1,submitted,false);trace.Submit(queue,1,submitted,true);
+    Check(trace.executeCalls==1&&trace.events[trace.eventCount-1].queue==reinterpret_cast<uint64_t>(queue));
+    Check(trace.events[trace.eventCount-1].generation==generation);
+    trace.Lifecycle(address,TraceKind::ResetBegin);trace.Lifecycle(address,TraceKind::ResetEnd,E_FAIL);
+    Check(!trace.events[trace.eventCount-1].generationKnown);
+    // Contention is counted, not blocked or hidden.
+    AcquireSRWLockExclusive(&trace.mutex);
+    std::thread blocked([&]{trace.Barrier(otherList,1,&group);});blocked.join();
+    ReleaseSRWLockExclusive(&trace.mutex);Check(trace.lost==1);
+    trace.Begin(o.resource);
+    std::vector<std::thread> workers;
+    constexpr unsigned Calls=8*400;
+    for(unsigned i=0;i<8;++i)workers.emplace_back([&]{for(unsigned j=0;j<400;++j)trace.Barrier(otherList,1,&group);});
+    for(auto& worker:workers)worker.join();
+    Check(trace.barrierCalls+trace.lost==Calls&&trace.targetBarriers==trace.barrierCalls);
+    Check(trace.eventCount==trace.targetBarriers&&!trace.overflow);
+    for(size_t i=0;i<trace.eventCount;++i)Check(trace.events[i].order==i+1);
+    trace.Begin(o.resource);
+    for(size_t i=0;i<SpatialTrace::EventLimit+1;++i)trace.Barrier(otherList,1,&group);
+    Check(trace.overflow&&trace.eventCount==SpatialTrace::EventLimit);
+    auto report=TraceJson();Check(report["currentLayoutKnown"]==false&&report["gpuCompletionKnown"]==false);
+    Check(report["overflow"]==true&&report["events"].size()==SpatialTrace::EventLimit);
+    const auto stoppedCount=trace.barrierCalls;trace.Barrier(otherList,1,&group);Check(trace.barrierCalls==stoppedCount);
+    trace.Begin(o.resource);
+    for(size_t i=0;i<SpatialTrace::ListLimit+1;++i)trace.Lifecycle(0x10000+i,TraceKind::ResetBegin);
+    Check(trace.overflow&&trace.listCount==SpatialTrace::ListLimit);
+    // Real COM lifecycle interception must preserve HRESULT and arguments.
+    trace.Begin(o.resource);trace.Lifecycle(o.nativeList7,TraceKind::ExposureBegin);
+    Check(MH_CreateHook(o.closeFunction,CloseHook,reinterpret_cast<void**>(&originalClose))==MH_OK);
+    Check(MH_CreateHook(o.resetFunction,ResetHook,reinterpret_cast<void**>(&originalReset))==MH_OK);
+    Check(MH_EnableHook(o.closeFunction)==MH_OK);Check(MH_EnableHook(o.resetFunction)==MH_OK);
+    Hr(list->Close());Hr(list->Reset(allocator.Get(),nullptr));
+    Check(trace.closeCalls==1&&trace.resetCalls==1&&trace.events[trace.eventCount-1].generationKnown);
+    Check(trace.events[trace.eventCount-1].result==S_OK);
+    Check(MH_DisableHook(o.closeFunction)==MH_OK);Check(MH_DisableHook(o.resetFunction)==MH_OK);
+    Check(MH_RemoveHook(o.closeFunction)==MH_OK);Check(MH_RemoveHook(o.resetFunction)==MH_OK);
+    trace.target=0;
+    if(traceResource){traceResource->Release();traceResource=nullptr;}
     enabled=false;observing=false;
     Hr(list->Close());
     std::cout<<"PASS "<<checks<<" passive spatial observer controls; no GPU copies or game evidence.\n";

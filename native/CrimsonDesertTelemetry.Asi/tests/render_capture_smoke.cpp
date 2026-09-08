@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "submission_observer.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "sky_bridge.h"
@@ -32,6 +33,18 @@ namespace
 using Microsoft::WRL::ComPtr;
 void Check(bool value, const char* message) { if (!value) { std::cerr << message << '\n'; ExitProcess(1); } }
 void Hr(HRESULT value, const char* message) { if (FAILED(value)) { std::cerr << std::hex << value << ' '; Check(false,message); } }
+std::atomic<unsigned> observedBegins{},observedEnds{},invalidSubmissions{};
+void ObserveSubmission(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const* lists,bool after)
+{
+    if(!queue||!count||!lists)++invalidSubmissions;
+    if(after)++observedEnds;else ++observedBegins;
+}
+void CheckSubmissions()
+{
+    Check(observedBegins>0&&observedBegins==observedEnds&&invalidSubmissions==0,
+        "passive submission observer missing/unbalanced or arguments changed");
+    cdt::render::submissionObserver=nullptr;
+}
 template<class T, size_t N> void Put(std::array<uint8_t,N>& data, size_t offset, T value)
 { memcpy(data.data()+offset,&value,sizeof(value)); }
 
@@ -66,6 +79,7 @@ void WaitForSample(const cdt::render::Mapping* bridge, ID3D12Device* device,
 int main(int argc, char** argv)
 {
     using namespace cdt::render;
+    submissionObserver=ObserveSubmission;
     const bool rejectCounterDevice=argc==2 && std::string(argv[1])=="--counter-device";
     const bool ambientTest=argc==2 && std::string(argv[1])=="--ambient";
     const bool mixedTest=argc==2 && (std::string(argv[1])=="--sky-shared" || std::string(argv[1])=="--sky-first");
@@ -214,7 +228,7 @@ int main(int argc, char** argv)
                 memcmp(bridge->lights,light.data(),sizeof(light))==0 && memcmp(bridge->counters,counterData.data(),CounterBytes)==0,"lights polluted by sky");
             if(compute && n<3) { Hr(ca->Reset(),"mixed compute reset allocator"); Hr(cl->Reset(ca.Get(),nullptr),"mixed compute reset list"); }
         }
-        StopCapture();
+        CheckSubmissions();StopCapture();
         Check(bridge->header.state==Status::Stopped && skyMap->header.state==Status::Stopped,"mixed stop retained active data");
         std::cout<<"Shared sky/ManyLights pipeline: either discovery order, direct/compute submission, blocked GPU, no cross-feed overwrite, recurring publication and stop passed.\n";
         return 0;
@@ -354,7 +368,7 @@ int main(int argc, char** argv)
         Check(CaptureFailureCode()==ERROR_INVALID_HANDLE,"ambient changed queue not rejected");
         start();
         Check(fileCount()==3 && std::strcmp(CapturePhaseForTest(),"stopped")==0,"faulted ambient run was rearmed");
-        StopCapture(); start(); Check(fileCount()==3,"explicit stop rearmed"); CloseHandle(request);
+        CheckSubmissions();StopCapture(); start(); Check(fileCount()==3,"explicit stop rearmed"); CloseHandle(request);
         UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
         std::cout<<"Ambient WARP: explicit named-event start, idle ignores loading, repeated bounded runs preserve fence ordering/files, busy requests discarded, fault/stop prevent restart; resource guards, both producers, exact bytes/provenance and no API leak.\n";
         return 0;
@@ -450,7 +464,7 @@ int main(int argc, char** argv)
     PollCapture();
     CheckCapture(bridge->header.state==Status::Fault && bridge->header.error==ERROR_INVALID_HANDLE && bridge->header.sampleSequence==2,
         bridge,device.Get(),"changed queue type/counter device not refused before copy");
-    StopCapture(); Check(bridge->header.state==Status::Stopped,"stop retained active result");
+    CheckSubmissions();StopCapture(); Check(bridge->header.state==Status::Stopped,"stop retained active result");
     UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
     std::cout<<"Real D3D12/WARP: invalid counters refused; unrelated submission ignored; blocked GPU withheld; exact fence published paired scene/lights/256 counter bytes; alternating resource identities frozen at capture; "
         <<(rejectCounterDevice ? "counter-device" : "queue-type")<<" rejection and stop passed.\n";

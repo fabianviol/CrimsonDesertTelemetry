@@ -1,4 +1,38 @@
-# Current checkpoint — passive probe valid in roofed stall, 2026-09-08, Codex/Astra
+# Current checkpoint — spatial-probe.2 ready, 2026-09-08, Codex/Astra
+
+Resolved typed SRV from actual live view settings + its native descriptor builder:
+R8_UNORM61, Texture3D view8, default component mapping1688. NOT guessed from the
+typeless resource. Full provenance in docs/LOCAL_ILLUMINATION_RESEARCH.md,
+"Typed view and interval trace". Actual Barrier call1437B3057 confirmed; its
+input resource uses storage+100. Prior zero trace is still a coverage question,
+not absence evidence. No new stationary/movement capture this turn.
+
+Built PRIVATE **2.0.1-spatial-probe.2**, not installed/live-tested/published.
+ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-probe.2-ModManagers.zip
+SHA2567A26996CE09E26A888C092C2BEBC27AC167124C9EA11E1CAFED9641A05540E00.
+Packaged ASI SHA256C0CD941A340FC109FE681F530BBD0EA0FBF14BEC17D34720F1F5944639D191B4.
+Same SpatialProbe=1/AmbientProbe=0 test config; preserve Lights/ManyLights/Ambient.
+Starts IDLE; same Start-SpatialProbe.ps1 named event,20 samples/2Hz/30s deadline.
+JSON now private-spatial-binding-v2: old per-sample trace PLUS intervalTrace.
+Whole-window target barriers, global interception controls, Reset/Close and
+existing queue submission callback, thread/list/reset-generation/order fields.
+Fixed8192 events/512 lists; try-lock loss and overflow explicit. No GPU copy,
+new barrier, new fence or public stream. Never infer GPU completion/current
+layout from CPU order alone. Target texture pinned for the run to prevent reuse.
+
+**Next step:** game shutdown, install entire new ZIP via DMM, enable research
+settings, load anywhere. Verify ASI/package identity then ONE bounded capture.
+Check intervalTrace.barrierCalls/targetBarriers, droppedCallbacks/overflow,
+list generations and Execute events against exposure samples. A missing trace
+is not a source value. Only then prepare direct paired texture/CB readback.
+Individual light occlusion remains a separate hiZ task; existing feeds unchanged.
+
+At handoff game still PID23516/spatial-probe.1, health playing/error=null,
+sequence85492. Installed ASI unchanged; no file/config installation performed.
+21/21 native CTests and14/14 Python tests passed; package validation and payload
+equality passed. These do not replace the pending live v2 capture.
+
+## Previous checkpoint — passive probe valid in roofed stall, 2026-09-08
 
 First live test of PRIVATE2.0.1-spatial-probe.1, PID23516 (started21:51:08).
 User stood among four fire lamps in a PARTLY OPEN ROOFED STALL: two closed

@@ -1,4 +1,5 @@
 # Private passive observer. Starts20 samples at up to2Hz; no GPU copy or API mutation.
+# spatial-probe.2 adds an interval Barrier/Reset/Close/submission trace, not GPU completion.
 #requires -Version 7.4
 [CmdletBinding()]
 param([Parameter(Mandatory)][ValidateRange(1,2147483647)][int]$ProcessId)
