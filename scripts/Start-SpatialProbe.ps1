@@ -1,5 +1,6 @@
-# Private passive observer. Starts20 samples at up to2Hz; no GPU copy or API mutation.
-# spatial-probe.2 adds an interval Barrier/Reset/Close/submission trace, not GPU completion.
+# Private observer:20 CPU controls at up to2Hz. With SpatialReadback=0 it is passive.
+# SpatialReadback=1 separately opts into ONE fenced texture copy per process.
+# Neither mode changes the API or establishes GPU-paired GI/exposure constants.
 #requires -Version 7.4
 [CmdletBinding()]
 param([Parameter(Mandatory)][ValidateRange(1,2147483647)][int]$ProcessId)

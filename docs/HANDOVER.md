@@ -1,4 +1,55 @@
-# Current checkpoint — exposure release barrier found live, 2026-09-08, Codex/Astra
+# Current checkpoint — direct texture readback package ready, 2026-09-08, Codex/Astra
+
+USER STOPPED FOR TODAY after package build. No further live run, switch or restart
+requested. PRIVATE **2.0.1-spatial-readback.1** built, NOT installed/live-tested/
+published. Game still PID32956/spatial-probe.2 at final check; installed ASI hash
+C0CD941A340FC109FE681F530BBD0EA0FBF14BEC17D34720F1F5944639D191B4 unchanged.
+
+ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.1-ModManagers.zip
+SHA256 B96869412578803A3AC0E5540B42AAB33D2A050D97C18757D8BF46C53D380269.
+Expanded v2.0.1-spatial-readback.1-20260908-225633-355-e988a563/CrimsonDesertTelemetry
+under artifacts/mod-manager; ASI SHA256
+686BFA08BF49F9AFD3F78936B9BCB7966445B0372AB2DECD955307A5852FE666.
+
+New **separate opt-in** Research/SpatialReadback=1 WITH SpatialProbe=1,
+AmbientProbe=0, Lights/ManyLights=1; keep existing Lights/Ambient settings.
+Both spatial options default0. SpatialReadback=0 preserves passive probe mode.
+Same Start-SpatialProbe.ps1 event;20 CPU controls/2Hz/30s window, but ONE GPU
+texture copy per process (including failure). Starts IDLE; no auto capture.
+
+Uses actual post-exposure release packet, pinned source/list, known successful
+Reset generation, same recording thread, stable CPU GI copies and <=250ms release
+delay. Exact tuple only: Sync128->0, Access128->0x80000000, Layout6->1, whole
+subresource, flags0. Inserts SRV->COPY_SOURCE/copy/restore, then forwards ALL
+original barrier groups unchanged. Records exact submitting queue + its fence;
+no Map until that fence completes. Worker allocation/Map only, one bounded
+~2.2MB readback; ambiguous issued work retains COM refs, no unsafe timeout free.
+No lossy global trace used as safety authority; disabled in direct mode.
+
+Output private-spatial-readback-v1 in spatial-binding-PID-TICK-RUN.json beside
+ASI: one packed64x32x264 volume + context + full release/submission/fence evidence.
+GI GPU resource descriptor/heap metadata added; NO GPU-CB/cache copy yet. Direct
+texture bytes are NOT proof of GPU-paired GI/scene/exposure cache or local lux.
+Decode-SpatialReadback.py reuses existing GI model and verified linear-WRAP
+sampler; labels sample a candidate from unpaired CPU reference. No API change.
+
+22/22 native CTests passed, including187 WARP/debug-layer checks: exact540672
+texels on DIRECT+COMPUTE, padded rows/depth, GPU gate/no early Map, exact packet
+preservation and fail-closed controls. Zero debug-layer warnings/errors.
+14 existing +7 new Python tests pass; package validation/payload equality pass.
+These are HOST controls, NOT evidence about the game texture or paired frame.
+
+**Tomorrow's ONE next step:** user closes game and installs whole new ZIP via DMM,
+enables above config, loads anywhere. Verify running ASI/config/health first;
+request one bounded stationary capture with Start-SpatialProbe.ps1. Check direct
+copy status, progressing CPU control and fence before decoding; preserve raw/log/
+INI under artifacts/light-research. If rejected, diagnose its explicit guard,
+not a zero-light conclusion. Then assess GI/cache GPU pairing from new resource
+metadata. Separate per-light hiZ visibility remains required, not lost or solved.
+Implementation/details in docs/LOCAL_ILLUMINATION_RESEARCH.md, "Direct texture
+readback implementation"; no changes in CrimsonHue or nested research repo.
+
+## Previous checkpoint — exposure release barrier found live, 2026-09-08
 
 ONE requested live run, PID32956, installed spatial-probe.2 ASI hash matched
 C0CD941A340FC109FE681F530BBD0EA0FBF14BEC17D34720F1F5944639D191B4.

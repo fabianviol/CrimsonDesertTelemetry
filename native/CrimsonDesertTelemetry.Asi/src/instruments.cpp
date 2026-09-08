@@ -185,8 +185,11 @@ void RunImpl(HANDLE stopEvent)
     else overlay::ClearLocalFault("native-capture");
     const bool spatialProbe = captureEnabled &&
         GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0;
-    const bool spatialStarted = spatialProbe && spatial::Start(ch::g_game.moduleBase,
-        std::filesystem::path(moduleDirectory).c_str());
+    const bool spatialReadback = GetPrivateProfileIntW(L"Research", L"SpatialReadback", 0, iniPath.c_str()) != 0;
+    const bool readbackAllowed = !spatialReadback || (capturing&&
+        GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) == 0);
+    const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
+        std::filesystem::path(moduleDirectory).c_str(),spatialReadback);
     if(spatialProbe && !spatialStarted)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;

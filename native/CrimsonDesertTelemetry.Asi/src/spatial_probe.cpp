@@ -1,5 +1,6 @@
 #include "spatial_probe.h"
 #include "spatial_trace.h"
+#include "spatial_readback.h"
 #include "submission_observer.h"
 #include "console/mem.h"
 #include "console/common.h"
@@ -46,12 +47,19 @@ SRWLOCK lock=SRWLOCK_INIT;
 enum class Phase { Idle, Ready, Pending, Failed };
 Phase phase=Phase::Idle;
 bool barrierInstalled{}, incomplete{};
+bool directReadback{};
+// Module is process-pinned; unresolved GPU work retains its bounded allocation.
+SpatialReadback* readback=new SpatialReadback;
 nlohmann::json samples;
 struct Observation
 {
     uint64_t tick{}, owner{}, command{}, resource{}, nativeList{}, nativeList7{}, giGpuResource{};
     uint32_t frame{}, bank{}, error{}, barrierCount{};
     bool giStable{}, barrierOverflow{}, enhanced{};
+    bool selectedForReadback{};
+    D3D12_RESOURCE_DESC giDesc{};
+    D3D12_HEAP_PROPERTIES giHeap{};
+    HRESULT giHeapResult=E_FAIL;
     D3D12_RESOURCE_DESC desc{};
     D3D12_STATIC_SAMPLER_DESC sampler{};
     std::array<uint8_t,768> gi{}, giAfter{};
@@ -66,6 +74,7 @@ struct Observation
     void* closeFunction{};
 };
 Observation pending;
+Observation copyObservation;
 thread_local Observation* active{};
 template<class T> bool Read(uint64_t address,T& value)
 {
@@ -80,6 +89,7 @@ std::string Hex(const uint8_t* data,size_t size)
 }
 void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
 {
+    if(directReadback)readback->Barrier(list,groups,data,originalBarrier);
     trace.Barrier(list,groups,data); // Entire requested interval, every observed list/thread.
     // Thread-local scope is ONLY the actual AdaptExposure Dispatch invocation.
     // Other engine passes do not acquire a lock or inspect their barrier arrays.
@@ -106,21 +116,26 @@ void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,
 HRESULT STDMETHODCALLTYPE ResetHook(ID3D12GraphicsCommandList* list,ID3D12CommandAllocator* allocator,ID3D12PipelineState* state)
 {
     const auto address=reinterpret_cast<uint64_t>(list);
+    if(directReadback)readback->Reset(list,false);
     trace.Lifecycle(address,TraceKind::ResetBegin);
     const auto hr=originalReset(list,allocator,state);
+    if(directReadback)readback->Reset(list,true,hr);
     trace.Lifecycle(address,TraceKind::ResetEnd,hr);
     return hr;
 }
 HRESULT STDMETHODCALLTYPE CloseHook(ID3D12GraphicsCommandList* list)
 {
     const auto address=reinterpret_cast<uint64_t>(list);
+    if(directReadback)readback->Close(list,false);
     trace.Lifecycle(address,TraceKind::CloseBegin);
     const auto hr=originalClose(list);
+    if(directReadback)readback->Close(list,true,hr);
     trace.Lifecycle(address,TraceKind::CloseEnd,hr);
     return hr;
 }
 void Submission(ID3D12CommandQueue* queue,UINT listCount,ID3D12CommandList* const* lists,bool after)
 {
+    if(directReadback)readback->Submit(queue,listCount,lists,after);
     trace.Submit(queue,listCount,lists,after);
 }
 bool Resolve(Observation& o)
@@ -145,6 +160,12 @@ bool Resolve(Observation& o)
     uint32_t viewCount{};
     if(!Read(o.owner+(bank?0x568:0x560),cbWrapper)||!Read(cbWrapper+0x18,cbOuter)||
         !Read(cbOuter+0x30,cbStorage)||!Read(cbStorage+0x168,o.giGpuResource)) return false;
+    if(directReadback&&o.giGpuResource)
+    {
+        auto* cb=reinterpret_cast<ID3D12Resource*>(o.giGpuResource);
+        o.giDesc=cb->GetDesc();D3D12_HEAP_FLAGS flags{};
+        o.giHeapResult=cb->GetHeapProperties(&o.giHeap,&flags);
+    }
     // Raw descriptor provenance only; no guessed SRV format interpretation.
     if(Read(storage+0xE8,viewTable)&&Read(storage+0xF0,viewCount)&&viewCount>0&&viewCount<=16)
     {
@@ -189,6 +210,10 @@ nlohmann::json Json(const Observation& o)
         {"command",o.command},{"resource",o.resource},{"nativeList",o.nativeList},{"nativeList7",o.nativeList7},
         {"enhancedBarriers",o.enhanced},{"bankFlag",o.bank},{"giGpuResource",o.giGpuResource},{"giCopiesMatch",o.giStable},
         {"gpuCopyIssued",false},{"gpuFramePaired",false},{"barrierHookInstalled",barrierInstalled},
+        {"selectedForTextureReadback",o.selectedForReadback},
+        {"giResourceMetadata",{{"dimension",o.giDesc.Dimension},{"width",o.giDesc.Width},
+            {"heapResult",static_cast<uint32_t>(o.giHeapResult)},{"heapType",o.giHeap.Type},
+            {"cpuPageProperty",o.giHeap.CPUPageProperty},{"memoryPool",o.giHeap.MemoryPoolPreference}}},
         {"resourceDescription",{{"dimension",o.desc.Dimension},{"width",o.desc.Width},
             {"height",o.desc.Height},{"depth",o.desc.DepthOrArraySize},{"mips",o.desc.MipLevels},
             {"format",o.desc.Format},{"flags",o.desc.Flags}}},
@@ -236,12 +261,31 @@ nlohmann::json TraceJson()
 }
 void Save(const char* reason)
 {
+    if(directReadback)readback->Cancel("capture-window-ended");
+    const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format","private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v1":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
-        {"reason",reason},{"complete",!incomplete&&count==Limit},{"controlProgressed",progressing},
-        {"gpuCopyIssued",false},{"caveat","Passive instrumented run, not untouched baseline. Per-sample barriers cover only Dispatch; intervalTrace covers discovered implementations across the requested interval, with explicit losses/unknown generations. Neither proves GPU completion/current layout. CPU constants/cache are NOT GPU-frame paired."},
-        {"samples",samples},{"intervalTrace",TraceJson()}};
+        {"reason",reason},{"complete",!incomplete&&count==Limit&&(!directReadback||copy.phase==CopyPhase::Complete)},
+        {"controlProgressed",progressing},{"gpuCopyIssued",directReadback&&copy.issued},
+        {"caveat",directReadback?
+            "One instrumented texture copy, not untouched baseline. Fence confirms this texture copy only. CPU GI/scene/cache context is NOT GPU-frame paired; exposure-cache age unknown. No local brightness or source visibility API.":
+            "Passive instrumented run, not untouched baseline. Per-sample barriers cover only Dispatch; intervalTrace covers discovered implementations across the requested interval, with explicit losses/unknown generations. Neither proves GPU completion/current layout. CPU constants/cache are NOT GPU-frame paired."},
+        {"samples",samples},{"intervalTrace",directReadback?nlohmann::json(nullptr):TraceJson()}};
+    if(directReadback)
+    {
+        const auto& f=copy.footprint;
+        report["textureReadback"]={{"status",copy.reason},{"hresult",static_cast<uint32_t>(copy.error)},
+            {"gpuCopyIssued",copy.issued},{"gpuCompleted",copy.gpuCompleted},{"giGpuFramePaired",false},
+            {"exposureGpuFramePaired",false},{"frame",copy.frame},{"resetGeneration",copy.generation},
+            {"queue",copy.queue},{"recordingThread",copy.recordingThread},{"submissionThread",copy.submissionThread},
+            {"releaseTick",copy.releaseTick},{"submitTick",copy.submitTick},{"completedTick",copy.completedTick},
+            {"fenceValue",copy.fenceValue},{"mapCalls",copy.mapCalls},{"releaseBarrier",BarrierJson(copy.release)},
+            {"allocationBytes",copy.allocationBytes},{"footprint",{{"offset",f.Offset},{"format",f.Footprint.Format},
+                {"width",f.Footprint.Width},{"height",f.Footprint.Height},{"depth",f.Footprint.Depth},{"rowPitch",f.Footprint.RowPitch}}},
+            {"packing","uint8 x-fastest, then y, then z; row padding removed; resource R8_TYPELESS"},
+            {"packedTextureHex",Hex(copy.packed.data(),copy.packed.size())},{"context",Json(copyObservation)}};
+    }
     if(traceResource){traceResource->Release();traceResource=nullptr;}
     const auto file=outputDirectory/(L"spatial-binding-"+std::to_wstring(GetCurrentProcessId())+L"-"+
         std::to_wstring(started)+L"-"+std::to_wstring(++run)+L".json");
@@ -257,12 +301,12 @@ void Save(const char* reason)
 }
 }
 
-bool Start(uint64_t moduleBase,const wchar_t* directory)
+bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
 {
     if(enabled) return false;
     std::array<uint8_t,Signature.size()> bytes{};
     if(!Read(moduleBase+DispatchRva,bytes)||bytes!=Signature) return false;
-    base=moduleBase;outputDirectory=directory;
+    base=moduleBase;outputDirectory=directory;directReadback=enableReadback;
     dispatchTarget=reinterpret_cast<void*>(base+DispatchRva);
     const auto name=L"Local\\CrimsonDesertTelemetry.SpatialProbe."+std::to_wstring(GetCurrentProcessId());
     requestEvent=CreateEventW(nullptr,FALSE,FALSE,name.c_str());
@@ -275,15 +319,22 @@ bool Start(uint64_t moduleBase,const wchar_t* directory)
     {CloseHandle(requestEvent);requestEvent=nullptr;return false;}
     enabled=true;
     render::submissionObserver=Submission;
-    ch::Log("Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
+    ch::Log(directReadback?
+        "Spatial readback v1 IDLE: explicit event starts20 CPU controls plus ONE guarded texture copy per process; no GPU-paired GI/cache or API change.":
+        "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }
 void Poll()
 {
     if(!enabled) return;
+    if(directReadback)readback->Poll();
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
-    {samples=nlohmann::json::array();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
+    {
+        if(!directReadback||readback->Begin())
+        {samples=nlohmann::json::array();copyObservation={};count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
+        else ch::Log("Spatial direct readback already requested in this process; restart required for another run.");
+    }
     void* install{};
     void* installReset{};
     void* installClose{};
@@ -311,7 +362,7 @@ void Poll()
         if(!ok){if(madeBarrier)MH_DisableHook(install);if(madeReset)MH_DisableHook(reset);if(madeClose)MH_DisableHook(close);}
         AcquireSRWLockExclusive(&lock);
         if(ok){barrierTarget=install;resetTarget=reset;closeTarget=close;barrierInstalled=true;
-            if(observing&&traceResource)trace.Begin(reinterpret_cast<uint64_t>(traceResource));}
+            if(!directReadback&&observing&&traceResource)trace.Begin(reinterpret_cast<uint64_t>(traceResource));}
         else {incomplete=true;Save("barrier-hook-failed");}
         ReleaseSRWLockExclusive(&lock);
     }
@@ -319,6 +370,7 @@ void Poll()
 void Stop()
 {
     enabled=false;observing=false;
+    if(directReadback)readback->Cancel("stopped");
     trace.target=0;render::submissionObserver=nullptr;
     if(dispatchTarget&&originalDispatch) MH_DisableHook(dispatchTarget);
     if(barrierTarget&&originalBarrier) MH_DisableHook(barrierTarget);
@@ -351,7 +403,19 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     if(valid&&!traceResource)
     {
         traceResource=reinterpret_cast<ID3D12Resource*>(o.resource);traceResource->AddRef();
-        if(barrierInstalled)trace.Begin(o.resource);
+        if(!directReadback&&barrierInstalled)trace.Begin(o.resource);
+    }
+    if(directReadback)
+    {
+        if(!valid)readback->Cancel("binding-validation-failed");
+        else if(!o.enhanced)readback->Cancel("enhanced-barriers-disabled");
+        else
+        {
+            auto* list=reinterpret_cast<ID3D12GraphicsCommandList7*>(o.nativeList7);
+            auto* source=reinterpret_cast<ID3D12Resource*>(o.resource);
+            readback->Discover(list,source);
+            if(barrierInstalled)o.selectedForReadback=readback->Arm(list,source,o.frame);
+        }
     }
     auto* previous=active;
     if(valid&&barrierInstalled)active=&o;
@@ -360,6 +424,7 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     if(valid)trace.Lifecycle(o.nativeList7,TraceKind::ExposureEnd);
     active=previous;
     if(valid){o.giStable=Read(owner+0x20,o.giAfter)&&o.gi==o.giAfter;}
+    if(o.selectedForReadback){readback->ExposureEnd(o.giStable);copyObservation=o;}
     pending=o;phase=Phase::Pending;
     ReleaseSRWLockExclusive(&lock);
     return result;

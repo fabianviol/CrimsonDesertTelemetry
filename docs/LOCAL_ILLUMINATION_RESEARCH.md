@@ -5,8 +5,81 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. Latest live result
-is in "First passive live capture" below; older sections preserve prior evidence.
+not a new public local-illumination or source-visibility API. Latest package is
+described immediately below; latest LIVE result is "Live interval result".
+Older sections preserve prior evidence, not current instructions.
+
+## Direct texture readback implementation — 2026-09-08, NOT game-tested
+
+PRIVATE2.0.1-spatial-readback.1, package/hash and restart instructions in HANDOVER.
+Separate Research/SpatialReadback=1 opt-in requires SpatialProbe=1, AmbientProbe=0
+and active normal capture. Passive mode remains unchanged. No API/schema change.
+User ended today's work after building; DO NOT claim installed or validated live.
+
+`spatial_readback.cpp/.h` owns a bounded single transaction independently of the
+lossy interval tracer. Discover pins the live texture/list inside its actual
+consumer call; worker prepares matching-device READBACK/fence/placed footprint.
+Require one-node device, enhanced barriers, DIRECT/COMPUTE list and exact texture
+shape/format. Do not allocate or Map on a recording thread. A successful observed
+Reset begin/end establishes a private generation; unknown/reset/closed list never
+arms. Capture20 CPU controls as before; select at most ONE exposure invocation.
+
+Before that invocation, arm its list/source/generation/frame/thread. After it,
+require the two inline GI copies to match. The NEXT matching target texture
+barrier on the SAME list/thread must arrive within250ms with the exact live
+release tuple, one target entry only, no flags, ALL subresources. A different
+target transition, release inside the dispatch, duplicate entry, overflow,
+intervening Reset or Close without release rejects the transaction.
+This uses the current native packet as evidence, never a lossy trace history.
+
+At that boundary record enhanced SHADER_RESOURCE->COPY_SOURCE, whole-volume
+CopyTextureRegion to a device-derived footprint, COPY_SOURCE->SHADER_RESOURCE,
+then forward the untouched original engine packet ONCE. The original final
+GENERIC_READ layout, all other groups/resources and release flags survive.
+The inserted barriers use COMPUTE/SRV -> COPY/COPY_SOURCE -> COMPUTE/SRV scopes.
+Enhanced access/layout compatibility reference:
+https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html
+
+Known successful Close required. Existing shared Execute hook invokes the private
+observer before/after its ORIGINAL call. Match one list occurrence, generation,
+actual queue's canonical device/type and submission thread. Signal OWN fence on
+that actual queue after Execute; only worker GetCompletedValue permits Map.
+Return from Execute is not completion. Post-submit list reset does not cancel
+already queued work. Failed/ambiguous issued work keeps process-lived COM refs;
+5s timeout never frees GPU destinations. One request per process also bounds
+failed allocations. Broad global tracing is disabled in this mode.
+
+JSON private-spatial-readback-v1 keeps20 CPU controls plus textureReadback with
+packed540672 bytes (X fastest, padding removed), footprint, chosen CPU context,
+release packet, reset generation, queue/thread/fence/ticks and errors. No paired
+GI GPU-CB or exposure-output readback added yet. `giResourceMetadata` records the
+selected CB's GetDesc/GetHeapProperties to guide that next step without guessing
+its state or offset. Exposure-cache bytes are still ONE CPU read of unknown age.
+The copy changes command recording; it is NOT an untouched baseline.
+
+Offline `Decode-SpatialReadback.py` validates build, completion, progressing
+control, sample context and sampler. Reuses `Decode-ExposureContext.py`'s CPU GI
+reference calculation and uses eight R8_UNORM neighbors, normalized texel-center
+coordinates, WRAP XYZ, linear spatial filtering at LOD0. Derives candidate
+saturate(1-sample) or an explicit fallback-one branch. Always labels GI and cache
+GPU pairing FALSE; not ambient RGB/lux, sun shadow or per-source visibility.
+The byte histogram/raw texture remain useful even when the CPU reference fails.
+
+Host validation:22/22 CTests,187 direct WARP/debug-layer assertions, zero warnings
+or errors. Known nonconstant full volume copied byte-exact on DIRECT and COMPUTE,
+including last slice/padded rows; deliberately blocked GPU proves no early Map.
+Tests preserve a multi-group engine packet, validate one shot and reject wrong
+source/list, missing/failed Reset, unstable GI, foreign thread, duplicate/changed
+release, missing/failed Close and wrong queue type. Failed submissions never Map.
+These are synthetic command-list tests, not an actual game shader/frame proof.
+14 existing +7 new Python tests cover wrap seams/negative coordinates, centers,
+constant volume and mandatory no-pairing/fence/context guards. Package validated.
+
+Tomorrow: install through DMM only after game shutdown, enable config, one new
+event-triggered live run; preserve raw JSON/INI/log and verify progressing health.
+Then decode with `--assume-adapt-exposure-layout` to a NEW product artifacts file.
+Do not repeat the broad trace or begin a generic doorway test first. Paired GPU
+GI/cache and the independent per-light hiZ route remain separate pending work.
 
 ## New result: an existing spatial sky-visibility sample is recoverable
 
