@@ -1,4 +1,37 @@
-# Current checkpoint — exposure-cache appendix ready for live test, 2026-09-08, Codex/Astra
+# Current checkpoint — live ambient + exposure-cache capture passed, 2026-09-08, Codex/Astra
+
+**ambient-probe.3 is now installed and live-tested.** New PID4208 started19:33:03,
+ASI710C06B8… (full hash below), exact build25116796/EXE4D99C15C… verified.
+User set Research/AmbientProbe=1 and restarted; native log confirmed v2 IDLE.
+Normal ManyLights/smoothed feed is intentionally paused, not broken.
+
+ONE explicit run19:36:08..19:37:09 completed:120/120 valid v2 records,
+frames8368..11250 over60.093s, A3849BB7 only, ambient resource12A923050,
+DEFAULT width65536, COMPUTE queue, fences1..120. All120 cache flags31 (available,
+same identity/bytes, positive scalar);120 distinct cache payloads across the run.
+This accepts the instrument, NOT exact GPU frame pairing or exposure scaling.
+Engine-cache frame age remains unknown; no correction applied to ambient/local RGB.
+
+Evidence: artifacts/light-research/ambient-live-20260908-pid4208-exposure/,
+original ambient-probe-4208-297671-1.bin (495360 bytes), raw parser JSON,
+derived candidate JSON, native log and INI. Binary SHA256
+D71D3125BD1DD88799EDB8E3F3F4C290C68E5F1A543D2CECEFADC28497D706B0.
+Sky luminance estimate .0113772→.00418441 (-63.22%); cache exposure0.x
+27.07308→47.40596 (+75.10%). Product/ratio not constant; these observations
+alone do not establish an exposure correction. Details: docs/AMBIENT_DECODE.md.
+
+Camera X/Z constant during capture, Y range613.5317..613.5449; player endpoint
+(-10502.284,610.41223,-4374.5625). Small movement BEFORE first sample compared
+with preflight, not a failed recording. Sun/moon advanced; no controlled doorway
+crossing. User released from standing and may move now. Probe returned IDLE.
+**One next step:** arrange a short out/in/out crossing within ONE explicit run,
+with transition times/user cues, to test roof sensitivity alongside sky/exposure.
+No need to rebuild/reinstall or repeat shader/exposure-source searches first.
+Do not automatically start before user is at a suitable doorway. Still no public
+ambient API or player-local illumination claim. Restore AmbientProbe=0 and restart
+only when returning to normal local-light use, not silently during diagnostics.
+
+## Previous checkpoint — exposure-cache appendix ready for live test
 
 **Private diagnostic v2.0.1-ambient-probe.3 built; not installed or game-tested.**
 The last checked game was PID34736 with the previous local-lights.1 ASI and

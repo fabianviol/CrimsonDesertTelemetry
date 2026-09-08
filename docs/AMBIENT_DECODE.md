@@ -222,3 +222,51 @@ retain Research/AmbientProbe=1 for diagnosis, verify v2 IDLE then use the existi
 Start-AmbientProbe command for one loaded-scene run. No automatic recording and
 no need to redo the three prior static scene captures. Inspect availability and
 cache/sky relationship before deciding whether exact GPU exposure is necessary.
+
+## 2026-09-08 evening: first live v2 acceptance, PID4208
+
+User deployed the correct probe.3 ASI, then enabled Research/AmbientProbe=1 and
+restarted. PID4208 start19:33:03; hash710C06B8… verified with native v2 IDLE log,
+API playing and exact supported build. One named-event start19:36:08; complete
+19:37:09.120 valid records,495360 bytes, frames8368..11250 over60.093 seconds;
+native A3849BB7 only, resource12A923050 (DEFAULT width65536), COMPUTE queue2,
+fences1..120. No error; instrument returned IDLE. User released from standing.
+
+All120 exposure-cache appendices pass with flags31; all120 raw cache payloads
+are distinct across samples. The provenance chain remains constant:
+renderer40AE0AA7000 → owner40BBFFBBD00 → outer40B8C63F700 → inner40B8D6016C0,
+resource134467C50; readbackOwner40BA68347C0. Sampling spans round to0ms in
+GetTickCount64 resolution (not evidence of zero latency). Cache equality around
+recording does NOT establish the frame when its GPU values were produced.
+
+| Quantity, relative units | First | Last | Min..max |
+| --- | --- | --- | --- |
+| Cache exposure0.x | 27.07308 | 47.40596 | 26.97227..48.568703 |
+| Decoded sky luminance estimate | .0113772191 | .00418440568 | .00418440568...0113772191 |
+| Diagnostic sky estimate × cache | .30801636 | .19836577 | .19695901...30801636 |
+| Diagnostic sky estimate / cache | .000420241 | .0000882675 | .0000882675...000420241 |
+
+Inverse-matrix sky mean RGB (.01705195,.01046040,.00374931) →
+(.00591334,.00391269,.00178498). Sky estimate drops63.22%, cache rises75.10%.
+Product/ratio are exploratory arithmetic, NOT accepted exposure normalization;
+neither is constant and independent time/weather/scene response is not controlled.
+Ambient producer does not consume this exposure CBV; scaling of upstream sky
+inputs and comparison to mode-dependent local lights remain separate questions.
+
+Camera X=-10500.361 and Z=-4380.16 constant for all samples;
+Y613.5317..613.5449. Player during/end checks near
+(-10502.284,610.4123,-4374.5625). Preflight player(-10502.611,610.52826,-4373.8613)
+was before the first sample; a small intervening movement does not invalidate
+the recorded series. Sun(-.7358437,-.13437179,.66368544) →
+(-.7026619,-.15675306,.6940424); moon(.7277396,.103579774,-.6779871) →
+(.69492316,.12571448,-.7080097). No current in-game clock/weather/roof state was
+independently established; do not reuse yesterday's reported01:45 moonlight.
+
+Evidence `artifacts/light-research/ambient-live-20260908-pid4208-exposure/`:
+ambient-probe-4208-297671-1.bin, ambient-readback.json,
+ambient-derived-candidate.json, native log and installed INI. Binary SHA256
+D71D3125BD1DD88799EDB8E3F3F4C290C68E5F1A543D2CECEFADC28497D706B0.
+Decoder accepted all120 with existing explicit profile; no raw values rewritten.
+No code/config/package/API changes this run. Next short controlled out/in/out
+inside ONE recording; obtain transition cues before starting. This tests locality
+without conflating yesterday's separated captures or requiring a new ASI.
