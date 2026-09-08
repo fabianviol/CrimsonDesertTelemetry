@@ -270,3 +270,37 @@ Decoder accepted all120 with existing explicit profile; no raw values rewritten.
 No code/config/package/API changes this run. Next short controlled out/in/out
 inside ONE recording; obtain transition cues before starting. This tests locality
 without conflating yesterday's separated captures or requiring a new ASI.
+
+## 2026-09-08 doorway run2: valid recording, menu-confounded locality test
+
+PID4208/probe.3, explicit start19:46:51.665 local, first capturedTick940734,
+120 samples through1000453 (59.719s), frames42025..45490; A3849BB7 only,
+resource12A923050, fences121..240, all cache flags31. Returned IDLE.
+Evidence `artifacts/light-research/ambient-live-20260908-pid4208-doorway/`:
+original ambient-probe-4208-940718-2.bin (495360 bytes), parser/derived JSON,
+native log, INI, partial API transition-trace.json. Binary SHA256
+A57E397CD344BD170D5D73B6B34AE4D10EBB2DE782A73E7770DE8E8FA25208B2.
+
+User started outside, confirmed inside and returned outside, but subsequently
+reported intervening BUILD MENU. First outside camera stable for ~18s; indoor
+camera near(-10399.385,615.4488,-4414.736) about25..43s. Abrupt camera change
+to(-10406.094,622.3043,-4428.71) about45..50s is compatible with menu camera,
+not independently timestamped menu state. Final player returned outside at
+~56s; exterior camera still settling near capture end. Trace has no API samples
+between19:47:22 and19:47:37; continuous 2Hz probe camera remains available.
+Do not treat user cue delivery times as exact threshold crossings.
+
+Sky luminance estimate .00248175242336→.00240593462336 (-3.055%);
+range .00240282272231...00248175242336. Largest adjacent relative deltas
+-0.666142%/+0.801038%. Cache exposure0.x first8.323568, last31.114222,
+range6.8746786..13020.828, with indoor plateau13020.828 roughly25..43s.
+Large cache response/plateau is observed, not calibrated illuminance, proof of
+same-frame exposure, or proof that every value is a usable physical scalar.
+No multiplication/division or public schema change applied.
+
+Small sky variation despite major cache changes is consistent with global sky
+rather than roof-occluded player-local lighting. The build menu, short return
+dwell, different camera framing and evolving sky prevent clean ABA acceptance.
+No claim that all ambient sources lack locality. If a clean control is required,
+one direct doorway crossing without menu and >=10s return dwell is the next test;
+no new ASI, shader search or automatic recording needed.

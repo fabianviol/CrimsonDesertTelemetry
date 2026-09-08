@@ -1,4 +1,33 @@
-# Current checkpoint — live ambient + exposure-cache capture passed, 2026-09-08, Codex/Astra
+# Current checkpoint — doorway capture saved, build-menu confound, 2026-09-08, Codex/Astra
+
+PID4208 / probe.3 unchanged. User explicitly authorized ONE new run at19:46:51;
+completed19:47:52, 120/120 valid v2 records, frames42025..45490,59.719s,
+native A3849BB7/resource12A923050, fences121..240, cache flags31 throughout.
+Probe is IDLE; user released from standing. No further recording authorized yet.
+
+Outside preflight player(-10404.18,611.77246,-4422.0044). User confirmed inside;
+API shows indoor stand near(-10399.578,612.0811,-4416.6196). Then return outside
+near(-10403.945,611.77277,-4423.5625). User subsequently disclosed intervening
+BUILD MENU. Camera jumps toY622.3043 about45..50s, compatible with that report;
+exact menu boundaries unknown, final exterior dwell only a few seconds.
+Technically valid capture, NOT a clean locality ABA or exposure calibration.
+
+Sky luminance estimate .00248175242→.00240593462 (-3.055%); largest adjacent
+changes -0.666%/+0.801%. No large roof-related brightness change established.
+Exposure cache6.87468..13020.828, indoor plateau13020.828, last31.11422:
+large response/saturation candidate, not accepted physical brightness or a safe
+normalizer. No exposure division applied. Supports the global-sky interpretation,
+but does not prove absence of all local occlusion. Still no public ambient API.
+
+Evidence: artifacts/light-research/ambient-live-20260908-pid4208-doorway/,
+ambient-probe-4208-940718-2.bin (495360 bytes), parser/decoder JSON, installed INI,
+native log, partial timestamped API transition-trace.json (with gaps/caveats).
+Binary SHA256 A57E397CD344BD170D5D73B6B34AE4D10EBB2DE782A73E7770DE8E8FA25208B2.
+No source/config/package changes. **One next step:** only if locality acceptance
+is still needed, repeat once without build menu, direct doorway return early
+enough for >=10s exterior dwell. Ask user readiness; do not auto-start or rebuild.
+
+## Previous checkpoint — live ambient + exposure-cache capture passed
 
 **ambient-probe.3 is now installed and live-tested.** New PID4208 started19:33:03,
 ASI710C06B8… (full hash below), exact build25116796/EXE4D99C15C… verified.
