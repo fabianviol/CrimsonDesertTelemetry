@@ -415,6 +415,67 @@ test. Current installed ASI/spatial-probe.1 unchanged. Actual safe copy boundary
 GPU pairing/direct texture validation and independent source visibility remain
 open; raw/smoothed/global-sky streams and their APIs are unchanged.
 
+## Live interval result — 2026-09-08, PID32956
+
+Verified newly installed spatial-probe.2 ASI hash and SpatialProbe=1/AmbientProbe=0,
+native IDLE log and supported playing health. ONE event-requested capture:
+20/20 samples error0, matching GI CPU copies, frames7186..7679. Actual resource
+descriptor/sampler/view settings remain consistent with the prior findings;
+reference position(-10537.131836,613.093445,-4415.895508), clipmap1 in first
+CPU-model observation. Same camp region, not an instructed indoor/outdoor test.
+Existing telemetry continued (sequence2790 before,5248 after,error=null).
+
+**The bounded interval trace overflowed; preserve its negative quality result.**
+During9.375s it counted376447 Barrier calls,1197253 texture entries and7673
+matching target barriers,7272 Reset,7266 Close,5829 Execute calls.1136 callbacks
+were dropped by try-lock contention.8192 events filled after2.734s; only2258
+target barriers are stored, across16 lists.26 of those have unknown reset
+generation. Two submitting queues are represented. Top-level complete=true is
+the20-sample limit, NOT a lossless trace. Do not promote a partial trace into
+safe current-state inference or CPU order into inter-queue GPU order.
+
+All stored target barriers cover ALL subresources (indexFFFFFFFF,numMips0),flags0:
+
+| Stored count | Sync before/after | Access before/after | Layout before/after |
+| --- | --- | --- | --- |
+| 703 | 1 / 128 | 0 / 128 | GENERIC_READ1 / SHADER_RESOURCE6 |
+| 282 | 1 / 128 | 0 / 16 | GENERIC_READ1 / UNORDERED_ACCESS3 |
+| 282 | 128 / 128 | 16 / 128 | UNORDERED_ACCESS3 / SHADER_RESOURCE6 |
+| 991 | 128 / 0 | 128 / 0x80000000 | SHADER_RESOURCE6 / GENERIC_READ1 |
+
+0x80000000 is NO_ACCESS (JSON serializes the enum as signed -2147483648), NOT
+a corrupt negative access flag. These are actual native API values, not engine
+state enums. Keep unsigned bit patterns when decoding.
+
+**All five stored exposure contexts show the same useful sequence**, on
+list0xC91C86F0, known reset generations7/20/33/46/59:
+GENERIC_READ->UAV->SHADER_RESOURCE, exposure-begin/end, SHADER_RESOURCE->GENERIC_READ,
+Close S_OK, Execute on queue0x135F1E820. First example event orders772/776,
+777/778,779,780/781,782/783. Later exposure-begin orders2286,3794,5303,6805.
+Thus the observed transitions occur BEFORE/AFTER, not inside, Dispatch; the old
+per-Dispatch zero is consistent with these positive out-of-scope events. The
+global losses still preclude certifying an exhaustive per-list history from v2.
+
+Next candidate is not another large tracing run: intercept the actual release
+barrier associated with a just-observed exposure invocation. Its incoming
+LayoutBefore/AccessBefore/SyncBefore provide a live contract to validate before
+planning a bounded copy/restore/forward transaction. Preserve all other group
+entries and the engine's final state; abort on mismatched resource/list/generation,
+unexpected transitions, multiple conflicting target entries or missing context.
+Use WARP validation and the actual submitting queue/fence, never a timer or an
+arbitrary queue. The [native barrier contract](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_texture_barrier)
+and [CopyTextureRegion requirements](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion)
+still apply; this paragraph is a design direction, NOT an implemented safe copy.
+Paired GPU GI constants/exposure output remain separate from the current CPU
+snapshots. No directly sampled sky value, player irradiance or light occlusion yet.
+
+Raw JSON/log/INI copied unchanged into
+artifacts/light-research/spatial-live-20260908-pid32956-stall/.
+Raw spatial-binding-32956-10539062-1.json SHA256
+181CFBFB5A7F1559BEA340E618D3720468CCAEBD6B8D57BF0A5CFE2197D501AF.
+User released once recording finished. No second run, ASI/config/package/source
+change or additional GPU command in this turn. Existing feeds remain unchanged.
+
 ## Previous control and separate source occlusion
 
 ### View-control recording completed at20:57 — 2026-09-08

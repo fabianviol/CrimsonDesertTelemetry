@@ -1,4 +1,41 @@
-# Current checkpoint — spatial-probe.2 ready, 2026-09-08, Codex/Astra
+# Current checkpoint — exposure release barrier found live, 2026-09-08, Codex/Astra
+
+ONE requested live run, PID32956, installed spatial-probe.2 ASI hash matched
+C0CD941A340FC109FE681F530BBD0EA0FBF14BEC17D34720F1F5944639D191B4.
+SpatialProbe=1/AmbientProbe=0.20/20 valid stable CPU observations, progressing
+frames7186..7679. Health playing/error=null, sequence5248 after capture.
+Reference(-10537.132,613.093,-4415.896), same camp area; no doorway test.
+User released from standing still immediately after recording. No second run.
+
+GLOBAL trace is LOSSY:376447 Barrier calls,7673 target barriers counted,
+1136 dropped callbacks,8192-event capacity reached after2.734s (9.375s window).
+Only2258 target barrier events stored; never confuse counted and stored totals.
+sample complete=true describes20 attempts, NOT complete interval coverage.
+
+Positive result: all FIVE stored exposure begin/end pairs have the same list/
+known-reset-generation pattern: GENERIC_READ1 -> UAV3 -> SHADER_RESOURCE6 ->
+exposure begin/end -> GENERIC_READ1 -> Close/Execute. Reset generations
+7/20/33/46/59 on list0xC91C86F0; all submitted on queue0x135F1E820.
+Transitions are outside Dispatch, explaining its zero local trace. Losses mean
+these subsequences are observed evidence, not certified complete GPU history.
+Release barrier: Sync128->0, Access128->0x80000000/NO_ACCESS, Layout6->1,
+Flags0, all subresources. Detailed raw evidence/limits in LOCAL_ILLUMINATION_RESEARCH.
+
+**Next bounded implementation:** use the ACTUAL post-exposure release barrier
+as candidate copy boundary: match current exposure context, same pinned resource,
+list/reset generation and full barrier tuple; reject unknowns/conflicts. Evaluate
+copy-before-release + restore/forward semantics in WARP before touching the game.
+Do NOT infer current state from this lossy log or merely enlarge/repeat the broad
+trace. Reuse actual submitting-queue/fence machinery. GI GPU-CB pairing and
+exposure-output age still require handling; CPU cache is not a paired GPU read.
+No local-ambient or visibility API yet; independent hiZ source-occlusion remains.
+
+Evidence artifacts/light-research/spatial-live-20260908-pid32956-stall/
+spatial-binding-32956-10539062-1.json (+INI/native log), SHA256
+181CFBFB5A7F1559BEA340E618D3720468CCAEBD6B8D57BF0A5CFE2197D501AF.
+No source/ASI/config/package mutation, new GPU copy or API change this turn.
+
+## Previous checkpoint — spatial-probe.2 ready, 2026-09-08
 
 Resolved typed SRV from actual live view settings + its native descriptor builder:
 R8_UNORM61, Texture3D view8, default component mapping1688. NOT guessed from the
