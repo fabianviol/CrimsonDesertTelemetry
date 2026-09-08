@@ -1,4 +1,48 @@
-# Current checkpoint — combined sky/local-light live acceptance passed, 2026-09-08, Codex/Astra
+# Current checkpoint — local sky-visibility diagnostic found, 2026-09-08, Codex/Astra
+
+User authorized research/implementation of local environmental illumination AND
+a separately source-visibility-filtered stream while preserving current feeds.
+**First concrete result:** AdaptExposureCS itself samples the spatial sky-visibility
+texture and writes intermediate EV+20 and clamped histogram L+32/+60 into the
+ALREADY captured 64-byte CPU cache. All3 indexed shader variants have identical
+function bodies. The inverse recovers a sky-visibility CANDIDATE, not lux, player
+irradiance, source-to-camera occlusion, or proof of valid clipmap coverage.
+
+Replayed existing no-menu doorway control (120/120 stable appendices): mean v
+outside0.402995 / inside0.0000122074 / return0.418049. Inside histogram L is at
+1e-6 shader floor. No new roof/walking experiment or GPU hook needed for this.
+Full derivation, archive paths/hashes and limitations:
+**docs/LOCAL_ILLUMINATION_RESEARCH.md**. Do not rediscover exposure/GI/sky.
+
+Implemented PRIVATE scripts Capture-ExposureContext.ps1 (bounded read-only,
+exact EXE + existing Render mapping self-location + chain/bytes/control guards),
+Decode-ExposureContext.py (explicit shader assumption, rejects invalid instead
+of zero), synthetic tests including3004 independent FP32 forward/inverse cases.
+Initial live smoke: PID22128, sky.1 unchanged,20:48:48 CEST,20 attempts/1.948s,
+19 renderer frames;18 candidates v0.430869..0.431113, one changing cache and one
+changing bridge unavailable. No new API/schema/ASI/config, no package/publish/push.
+Evidence artifacts/light-research/local-illumination-live-20260908-pid22128-check*.json;
+derived old run local-illumination-doorway-control-20260908-derived.json.
+Final guarded-recorder check20:52:54:30 attempts/2.931s,30 frames,29 candidates
+v0.406743891..0.406744957;1 changing cache unavailable. Separate final-check*.json.
+9 synthetic tests pass; existing-output/wrong-process guards pass. Not a controlled
+movement comparison. Actual GI reference origin still needs validation; neither
+player nor camera world position is promised by the inverse.
+
+Occlusion track: existing ProcessManyLightsCS actually reads g_hiZMap t15,space36
+(five depth samples at selected mip); this tests an extended region and is NOT
+an existing source-center-visibility flag. Concrete depth-resource capture route
+and required provenance/wall-control are documented. **No occlusion stream yet**;
+raw/smoothed/global sky are untouched. Local irradiance/direct sun shadow also open.
+
+**One next live control:** with unchanged plugin, record fixed-player/changed-view
+exposure context to separate reference-origin sky-visibility from scene luminance.
+Capture camera POSITION as well as direction (orbiting moves the camera). Then
+promote only validated semantics; raw texture coverage/GPU age remain unknown.
+Do not repeat generic doorway/global-sky tests. Source-depth probe follows as its
+own required implementation, not abandoned in favor of exposure.
+
+## Previous checkpoint — combined sky/local-light live acceptance passed
 
 User installed private2.0.1-sky.1 and loaded. PID22128 started20:16:12, supported
 EXE4D99C15C…; installed ASI A6B77099E26448260B922D6E9301CDCDD631A2039546D91381E93387811E5E55.

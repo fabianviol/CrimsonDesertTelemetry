@@ -10,6 +10,9 @@ raw/smoothed local lights, but is not roof-occluded player-local illumination.
 
 ## Planned requirement: source visibility and occlusion (not implemented)
 
+Research progress: [local sky-visibility/exposure diagnostics](LOCAL_ILLUMINATION_RESEARCH.md).
+This is not a new API, not complete local illumination and not per-source occlusion.
+
 User requirement2026-09-08: retain the current captured-source feeds without an
 additional visibility filter, AND provide a separately visibility-filtered stream.
 Current ManyLights filtering is not evidence that a source is unoccluded from the
