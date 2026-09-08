@@ -4,7 +4,8 @@
 param(
     [Parameter(Mandatory)][string]$OutputDirectory,
     [ValidateRange(2,30)][int]$Seconds=12,
-    [ValidateRange(1024,65535)][int]$Port=27311
+    [ValidateRange(1024,65535)][int]$Port=27311,
+    [switch]$IncludeAmbient
 )
 $ErrorActionPreference='Stop'
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Evidence directory already exists; choose a new run.' }
@@ -49,9 +50,18 @@ function Write-Evidence([string]$Name,$Data) {
     finally { $file.Dispose() }
 }
 $base="http://127.0.0.1:$Port"
+if ($IncludeAmbient) { Write-Evidence 'ambient-before.json' (Invoke-RestMethod "$base/v1/ambient") }
 Write-Evidence 'before.json' ([ordered]@{at=[DateTimeOffset]::Now; health=(Invoke-RestMethod "$base/v1/health"); snapshot=(Invoke-RestMethod "$base/v1/snapshot")})
 $raw=[LightStreamEvidence]::Capture("ws://127.0.0.1:$Port/v1/stream",(Join-Path $OutputDirectory 'raw.jsonl'),$Seconds)
 $smoothed=[LightStreamEvidence]::Capture("ws://127.0.0.1:$Port/v1/lights/smoothed/stream",(Join-Path $OutputDirectory 'smoothed.jsonl'),$Seconds)
-[Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($raw,$smoothed)).GetAwaiter().GetResult() | Out-Null
+$tasks=[Collections.Generic.List[Threading.Tasks.Task]]::new()
+$tasks.Add($raw); $tasks.Add($smoothed)
+if ($IncludeAmbient) {
+    $ambient=[LightStreamEvidence]::Capture("ws://127.0.0.1:$Port/v1/ambient/stream",(Join-Path $OutputDirectory 'ambient.jsonl'),$Seconds)
+    $tasks.Add($ambient)
+}
+[Threading.Tasks.Task]::WhenAll($tasks).GetAwaiter().GetResult() | Out-Null
+if ($IncludeAmbient) { Write-Evidence 'ambient-after.json' (Invoke-RestMethod "$base/v1/ambient") }
 Write-Evidence 'after.json' ([ordered]@{at=[DateTimeOffset]::Now; health=(Invoke-RestMethod "$base/v1/health"); snapshot=(Invoke-RestMethod "$base/v1/snapshot"); rawMessages=$raw.Result; smoothedMessages=$smoothed.Result})
 [pscustomobject]@{OutputDirectory=$OutputDirectory; RawMessages=$raw.Result; SmoothedMessages=$smoothed.Result; Seconds=$Seconds}
+if ($IncludeAmbient) { [pscustomobject]@{AmbientMessages=$ambient.Result} }

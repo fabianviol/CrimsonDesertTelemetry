@@ -1,4 +1,36 @@
-# Current checkpoint — combined local lights + global sky preview ready, 2026-09-08, Codex/Astra
+# Current checkpoint — combined sky/local-light live acceptance passed, 2026-09-08, Codex/Astra
+
+User installed private2.0.1-sky.1 and loaded. PID22128 started20:16:12, supported
+EXE4D99C15C…; installed ASI A6B77099E26448260B922D6E9301CDCDD631A2039546D91381E93387811E5E55.
+Loaded module is present; native log confirms global-sky hook +20Hz ManyLights.
+INI Lights/Enabled=1,ManyLights=1,Ambient/Enabled=1,Research/AmbientProbe=0.
+No ASI/config changes or game controls in this verification. No publish/push.
+
+ONE10s concurrent WebSocket recording at20:19:14..24:600 raw,601 smoothed,
+601 sky envelopes. Sky available throughout, captureSequence315..334 (20 distinct
+values/frames8382..8845), maxage532ms; all20 unique messages pass schema.
+Raw/smoothed158 matching captures2475..2632 (~16Hz observed,20Hz configured),
+maxage94ms,44 raw contributions at endpoints,37..38 grouped sources.
+One bridge-changing unavailable message in BOTH local feeds at snapshot5681,
+20:19:21.4076884; next message recovers. Safe rejection, not continuous stale or
+native fault; existing smoothing invalidation resets tracks (two IDs per stable
+test target across run). Do not claim zero dropouts or measured performance cost.
+Sky continued without interruption; raw schema1.4, gameplaying, authoredavailable.
+6926 member checks,17661 EMA lane checks,442 repeated-capture checks; no violations.
+Healthplaying/errornull; subscriptions cleaned back to1 existing client.
+
+Evidence artifacts/light-research/sky-stream-live-20260908-pid22128/:
+raw.jsonl,smoothed.jsonl,ambient.jsonl, before/after HTTP+ambient, validation.json,
+native log, INI. Script Capture-LightStreams gains opt-in IncludeAmbient; old
+default stays two streams. Sky luminance estimate .005143259→.004315493 in run,
+not local room illumination or exposure-normalized RGB. User standing unchanged.
+
+**One next step:** this combined-path measurement is complete. Use the documented
+global-sky envelope in CrimsonHue with explicit weighting/indoor policy, or
+address a separately requested release task. Do not repeat ambient discovery or
+doorway tests. This short live test does not prove long-session/no-dropout behavior.
+
+## Previous checkpoint — combined local lights + global sky preview ready
 
 Private **2.0.1-sky.1** built, NOT installed or live-tested. Current game still
 PID4208/probe.3; do not replace a loaded ASI. User has not confirmed shutdown.

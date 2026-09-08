@@ -90,3 +90,19 @@ Shader-only updates are not proven safe by EXE hashing. Six inspected current
 csPrecomputeAmbient variants share identical bodies; no bound PSO hash is checked
 at runtime. Source-only tests and private prior captures are not a game test of
 this new combined mode. See [measured derivation](AMBIENT_DECODE.md).
+
+### First combined-mode live check, 2026-09-08
+
+Private sky.1 installed on PID22128, exact supported build25116796. One10s
+concurrent capture:601 sky envelopes,20 distinct sky samples (about2Hz), all
+available, maxage532ms. Local lights progressed through158 matching raw/smoothed
+captures (about16Hz with20Hz configured), maxage94ms. One local bridge-changing
+message was rejected and recovered on the next message; this resets derived
+tracks under existing fail-closed behavior. Not a zero-dropout claim.
+
+All20 unique sky messages satisfy the schema. Local raw/group/EMA/repeated-capture
+invariants pass; no native capture fault. Player stayed stationary. Evidence in
+`artifacts/light-research/sky-stream-live-20260908-pid22128/`, including original
+three streams, HTTP snapshots, native log/INI and validation.json. Global-sky
+scope and color/exposure/occlusion limitations above remain unchanged. No GPU-vendor
+matrix, long-session endurance or actual Hue-output test is implied.
