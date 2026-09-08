@@ -4,7 +4,9 @@ Required additions to the neutral telemetry product: local environmental lightin
 under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
-This checkpoint implements **private diagnostics**, not a new public API or ASI.
+This work implements **private diagnostics**, including an opt-in diagnostic ASI,
+not a new public local-illumination or source-visibility API. Latest live result
+is in "First passive live capture" below; older sections preserve prior evidence.
 
 ## New result: an existing spatial sky-visibility sample is recoverable
 
@@ -282,6 +284,66 @@ Evidence under artifacts/light-research/rawpages (binary+meta):
 All fully read, matching live PID/executable/scene control. Keep alongside prior
 exposure/native GI evidence. Next step is the passive game capture, then a
 legal direct copy with paired GI constants; no new generic camera/doorway test.
+
+## First passive live capture — 2026-09-08, PID23516
+
+User installed private2.0.1-spatial-probe.1 through their mod workflow and reported
+standing among the four fire lamps in a partly open **roofed stall**: two closed
+walls, one fully open side, one doorway side. No indoor/outdoor transition was
+requested or inferred. This is NOT the earlier open-outdoor camera control.
+Installed ASI SHA256 matched the immutable expanded package:
+`A5F8F82C6F28E3A61C09BC3518DAF35D7CD5DEF04A509286186A7416A02C6167`.
+SpatialProbe=1, AmbientProbe=0; native log showed IDLE before the single request.
+
+One run via Start-SpatialProbe.ps1:20 observations over9594ms, all error=0,
+complete=true, controlProgressed=true, frames21107..21567. All20 GI before/after
+copies matched. Actual in-process GetDesc confirmed Texture3D64x32x264,1mip,
+R8_TYPELESS(60),flags4/UAV. One resource identity throughout, two command-list
+identities; nativeList7 equals nativeList in these observations. Enhanced flag
+true. The52-byte sampler description matches the previously resolved slot12:
+MIN_MAG_LINEAR_MIP_POINT, U/V/W WRAP, register12/space4.
+
+Reused decode_spatial on the matching CPU copies:20 candidate contexts, all
+clipmap1/texture-sample branch. Reference world position first
+(-10537.091797,612.622864,-4421.095703), last
+(-10537.091797,612.622620,-4421.095703); this is the camera-linked reference,
+not a player-position measurement. First unwrapped sampler coordinates
+(-164.642059,19.144464,.476910233). This is NOT a sampled texel or GPU-frame pair.
+The exposure cache in this format is only ONE raw copy: do not fabricate the
+double-copy/flags31 contract of decode_cache to make an inverse look validated.
+
+**Coverage limit:** first observation installed the passive Barrier detour;
+19 subsequent observations reported it installed. Zero matching target texture
+barriers, no overflow. The observation scope includes only one exposure Dispatch
+CPU invocation. No global Barrier-call count/control is present, so the result
+cannot distinguish transitions elsewhere from an interception/identity gap.
+It does NOT prove no barriers, a particular current layout, or copy safety.
+Do not issue a transition from a guessed SHADER_RESOURCE state. Static Dispatch
+bytes were rechecked from existing rawpages:1437B4388 calls1437E1930,
+1437B439B conditionally calls1437B5CD0,1437B43AB calls virtual+1B0 before the
+native Dispatch at1437B4468. Their presence alone does not establish where this
+resource's transition is actually emitted. Follow that coverage question rather
+than repeat stationary captures with the identical instrument.
+
+The captured raw SRV-view object starts with engine vtable0x145BCC460, not a
+DXGI format field. It must not be reinterpreted as a native SRV descriptor.
+Typed view format remains to be resolved through the actual descriptor producer.
+R8_TYPELESS resource format alone is insufficient to choose UNORM interpretation.
+
+Raw JSON, log and INI preserved unchanged under
+`artifacts/light-research/spatial-live-20260908-pid23516-stall/`.
+Raw `spatial-binding-23516-8839093-1.json` SHA256
+`D04CB79201035FA26D38CE27AD9B9F53028A6B9DF168CA57FD1F0BD7401E15D6`.
+After capture health remained playing/error=null, sequence22597. No new GPU
+command/copy, API modification, installed file change or second recording.
+User released from standing still once the capture finished.
+
+**Next step:** same texture, bounded passive coverage beyond the Dispatch window,
+with actual list/reset-generation/submission provenance and a control that proves
+the barrier path was intercepted; resolve the typed SRV. Only then select a safe
+copy/fence boundary for paired direct texels, GI constants and exposure comparison.
+No more generic walking tests to solve an instrumentation gap. This measurement
+does not yet provide stall ambient intensity, sunlight shadowing or lamp occlusion.
 
 ## Previous control and separate source occlusion
 

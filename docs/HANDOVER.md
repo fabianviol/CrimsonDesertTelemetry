@@ -1,4 +1,41 @@
-# Current checkpoint — passive spatial binding probe ready for DMM, 2026-09-08, Codex/Astra
+# Current checkpoint — passive probe valid in roofed stall, 2026-09-08, Codex/Astra
+
+First live test of PRIVATE2.0.1-spatial-probe.1, PID23516 (started21:51:08).
+User stood among four fire lamps in a PARTLY OPEN ROOFED STALL: two closed
+walls, one fully open side, one doorway side. NOT an open outdoor baseline or
+a doorway transition. One requested stationary capture; no light toggles asked.
+
+Installed ASI matches immutable expanded package SHA256
+A5F8F82C6F28E3A61C09BC3518DAF35D7CD5DEF04A509286186A7416A02C6167.
+Research/SpatialProbe=1, AmbientProbe=0.20/20 valid observations in9.594s,
+frames21107..21567;20 matching before/after GI copies. Actual GetDesc confirms
+Texture3D64x32x264,1mip,R8_TYPELESS60,UAV flag4. Sampler matches prior finding.
+CPU shader model selects clipmap1 in all20. This validates access/coordinates,
+NOT texture values, GPU pairing, local brightness or per-source visibility.
+
+Barrier hook installed for19/20 observations; ZERO matching barriers, no trace
+overflow. Two native command lists, one texture resource. The scope was only
+the exposure Dispatch invocation; neither a missing transition nor a safe copy
+state is established. Do not simply repeat this run or issue a guessed barrier.
+Raw view metadata is an engine object, NOT a D3D12_SHADER_RESOURCE_VIEW_DESC;
+the typed SRV format remains unknown. No new GPU commands were issued.
+
+Evidence preserved in artifacts/light-research/spatial-live-20260908-pid23516-stall/
+(raw JSON, native log, INI). Raw spatial-binding-23516-8839093-1.json SHA256
+D04CB79201035FA26D38CE27AD9B9F53028A6B9DF168CA57FD1F0BD7401E15D6.
+Existing health still playing/error=null, sequence22597 after capture.
+User released from standing still; no game files/config/API/package changed.
+
+**Next bounded step:** close the observer's coverage gap around this SAME
+identified texture: resolve its typed SRV and observe its actual enhanced-barrier
+submission outside the narrow Dispatch scope, retaining list/generation/order
+provenance. Current log has no global Barrier-call control, so zero target records
+cannot distinguish out-of-scope transitions from interception/identity gaps.
+No generic movement test. Only after a legal state/fence path is established,
+implement direct texel + paired GI-CB/exposure readback. Source occlusion remains
+separate via existing hiZ route; raw/smoothed lights and global sky stay unchanged.
+
+## Previous checkpoint — passive spatial binding probe ready for DMM, 2026-09-08
 
 User said continue. Found texture creation, DirectX resource description path,
 static sampler and ENHANCED barrier path. Do NOT reuse the legacy UAV-buffer
