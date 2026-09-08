@@ -312,7 +312,7 @@ int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOpt
             name = "Crimson Desert Telemetry",
             schemaVersion = activeSchemaVersion,
             endpoints = new[] { "/v1/health", "/v1/snapshot", "/v1/schema", "/v1/stream",
-                "/v1/lights/smoothed", "/v1/lights/smoothed/stream" }
+                "/v1/lights/smoothed", "/v1/lights/smoothed/stream", "/v1/ambient", "/v1/ambient/stream", "/v1/ambient/schema" }
         }, jsonOptions));
         app.MapGet("/v1/health", () => Results.Json(state.Health, jsonOptions));
         app.MapGet("/v1/snapshot", () => state.Latest is { } snapshot
@@ -321,6 +321,9 @@ int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOpt
         app.MapGet("/v1/schema", () => Results.Bytes(LoadEmbeddedSchema(), "application/schema+json"));
         app.Map("/v1/stream", context => StreamWebSocket(context, state, cancellation.Token));
         app.MapGet("/v1/lights/smoothed", () => Results.Json(state.LatestSmoothed, jsonOptions));
+        app.MapGet("/v1/ambient", () => Results.Json(state.LatestSky, jsonOptions));
+        app.MapGet("/v1/ambient/schema", () => Results.Bytes(LoadEmbeddedSchema("ambient-v1.schema.json"), "application/schema+json"));
+        app.Map("/v1/ambient/stream", context => StreamWebSocket(context, state, cancellation.Token, sky: true));
         app.Map("/v1/lights/smoothed/stream", context => StreamWebSocket(context, state, cancellation.Token, true));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
@@ -348,7 +351,7 @@ int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOpt
     }
 }
 
-async Task StreamWebSocket(HttpContext context, TelemetryServerState state, CancellationToken cancellationToken, bool smoothed = false)
+async Task StreamWebSocket(HttpContext context, TelemetryServerState state, CancellationToken cancellationToken, bool smoothed = false, bool sky = false)
 {
     var origin = context.Request.Headers.Origin.ToString();
     if (!string.IsNullOrEmpty(origin) && !IsAllowedBrowserOrigin(origin))
@@ -363,11 +366,11 @@ async Task StreamWebSocket(HttpContext context, TelemetryServerState state, Canc
         return;
     }
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    using var subscription = state.Subscribe(smoothed);
+    using var subscription = sky ? state.SubscribeSky() : state.Subscribe(smoothed);
     using var connectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     try
     {
-        var sendTask = SendSnapshots(socket, subscription, smoothed ? state.LatestSmoothedBytes : state.LatestBytes, connectionCancellation.Token);
+        var sendTask = SendSnapshots(socket, subscription, sky ? state.LatestSkyBytes : smoothed ? state.LatestSmoothedBytes : state.LatestBytes, connectionCancellation.Token);
         var receiveTask = WaitForWebSocketClose(socket, connectionCancellation.Token);
         await Task.WhenAny(sendTask, receiveTask);
         connectionCancellation.Cancel();
@@ -460,6 +463,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
                         captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation,
                         lights, runtime.SupportsLights, SchemaFor(lightOptions));
                     state.Publish(snapshot, tracker.AddressCount, discoveryMilliseconds);
+                    state.PublishSky(runtime.Sky?.Capture() ?? SkyAmbientReader.Unavailable("unsupported-build"));
                 }
                 catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
                 {
@@ -562,11 +566,11 @@ IReadOnlyList<BuildDefinition> LoadDefinitions() =>
 
 ResolvedBuild ResolveBuild(string executable) => BuildCompatibility.Resolve(executable, LoadDefinitions());
 
-byte[] LoadEmbeddedSchema()
+byte[] LoadEmbeddedSchema(string fileName = "telemetry-v1.schema.json")
 {
     var assembly = typeof(RuntimeContext).Assembly;
     var resourceName = assembly.GetManifestResourceNames().Single(name =>
-        name.EndsWith("schema.telemetry-v1.schema.json", StringComparison.OrdinalIgnoreCase));
+        name.EndsWith("schema." + fileName, StringComparison.OrdinalIgnoreCase));
     using var stream = assembly.GetManifestResourceStream(resourceName)
                        ?? throw new InvalidDataException("The embedded telemetry schema is missing.");
     using var buffer = new MemoryStream();
@@ -733,6 +737,8 @@ sealed class RuntimeContext(
     public EngineCameraReader Camera { get; } = camera;
     public EngineLightReader? Lights { get; } = lights;
     public RenderLightReader? Rendered { get; } = rendered;
+    public SkyAmbientReader? Sky { get; } = resolved.Compatibility.Mode == "tested" && resolved.GameBuild == "25116796"
+        ? new SkyAmbientReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
     public LightOptions LightOptions { get; } = lightOptions;
     public bool SupportsLights => Lights is not null;
 
@@ -793,6 +799,7 @@ sealed class RuntimeContext(
     public void Dispose()
     {
         Rendered?.Dispose();
+        Sky?.Dispose();
         Reader.Dispose();
         Process.Dispose();
     }

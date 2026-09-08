@@ -1,6 +1,7 @@
 #include "render_capture.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
+#include "sky_bridge.h"
 #include "native_contract.generated.h"
 #include "console/common.h"
 #include "console/mem.h"
@@ -46,6 +47,10 @@ using ExecuteFn = void(STDMETHODCALLTYPE*)(ID3D12CommandQueue*, UINT, ID3D12Comm
 ExecuteFn executeOriginal{};
 void* executeTarget{};
 bool ambientMode{};
+std::atomic<bool> skyStreaming{};
+bool pendingAmbient{};
+std::atomic<bool> skyHookEnabled{};
+uint64_t lastSkyAttempt{};
 HANDLE ambientFile = INVALID_HANDLE_VALUE;
 HANDLE ambientRequestEvent{};
 std::filesystem::path ambientDirectory;
@@ -172,16 +177,18 @@ void Fail(uint32_t code)
     // releasing them without a completion fence would itself be unsafe.
 }
 
-void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
+void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner, bool ambientCopy = false)
 {
     if (phase != Phase::Discover && phase != Phase::Ready) return;
     const uint64_t now = GetTickCount64();
-    if (now - lastAttempt < intervalMs) return;
-    lastAttempt = now;
+    auto& attempt = ambientCopy && skyStreaming ? lastSkyAttempt : lastAttempt;
+    const auto interval = ambientCopy && skyStreaming ? 500u : intervalMs;
+    if (now - attempt < interval) return;
+    attempt = now;
     ID3D12Resource* source{};
     ID3D12Resource* counter{};
     ID3D12GraphicsCommandList* list{};
-    if (ambientMode)
+    if (ambientCopy)
     {
         if (!ResolveAmbient(outer, command, source, list)) return;
     }
@@ -198,14 +205,17 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     IUnknown* counterDevice{};
     IUnknown* listDevice{};
     const bool sameDevice = SUCCEEDED(source->GetDevice(IID_PPV_ARGS(&sourceDevice))) &&
-        (ambientMode || SUCCEEDED(counter->GetDevice(IID_PPV_ARGS(&counterDevice)))) &&
+        (ambientCopy || SUCCEEDED(counter->GetDevice(IID_PPV_ARGS(&counterDevice)))) &&
         SUCCEEDED(list->GetDevice(IID_PPV_ARGS(&listDevice))) &&
-        sourceDevice == preparedDeviceIdentity && (ambientMode || counterDevice == preparedDeviceIdentity) &&
-        listDevice == preparedDeviceIdentity && list->GetType() == queueType;
+        sourceDevice == preparedDeviceIdentity && (ambientCopy || counterDevice == preparedDeviceIdentity) &&
+        listDevice == preparedDeviceIdentity && (skyStreaming || list->GetType() == queueType);
     if (sourceDevice) sourceDevice->Release();
     if (counterDevice) counterDevice->Release();
     if (listDevice) listDevice->Release();
     if (!sameDevice) { Fail(ERROR_INVALID_HANDLE); return; }
+    // One bounded in-flight transaction for BOTH feeds. Its exact submitting
+    // queue is checked below; no second ExecuteCommandLists detour is installed.
+    queueType = list->GetType();
     std::array<uint8_t, SceneBytes> confirmation{};
     if (!ReadScene(scene) || !ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) return;
     memcpy(&capturedFrame, scene.data() + contract::FrameOffset, sizeof(capturedFrame));
@@ -223,6 +233,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     pendingSource = source;
     pendingCounter = counter;
     pendingList = list;
+    pendingAmbient = ambientCopy;
     capturedAt = now;
     // These identities belong to THIS recorded pair. Never resolve them again
     // when the worker publishes: the renderer may already have switched banks.
@@ -231,7 +242,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     capturedOwner = owner;
     capturedBufferIndex = UINT32_MAX;
     uint32_t currentIndex{};
-    if (!ambientMode && owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
+    if (!ambientCopy && owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
     std::array<D3D12_RESOURCE_BARRIER, 2> barriers{};
     for (auto& barrier : barriers)
     {
@@ -242,12 +253,12 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     }
     barriers[0].Transition.pResource = source;
     barriers[1].Transition.pResource = counter;
-    const UINT barrierCount = ambientMode ? 1u : static_cast<UINT>(barriers.size());
+    const UINT barrierCount = ambientCopy ? 1u : static_cast<UINT>(barriers.size());
     list->ResourceBarrier(barrierCount, barriers.data());
-    list->CopyBufferRegion(readback, 0, source, 0, ambientMode ? AmbientBytes : LightBytes);
+    list->CopyBufferRegion(readback, 0, source, 0, ambientCopy ? AmbientBytes : LightBytes);
     // The counter is a GPU-written buffer, not a CPU count. Copy its bounded
     // prefix before subsequent engine passes reuse it, on the SAME list/fence.
-    if (!ambientMode) list->CopyBufferRegion(readback, LightBytes, counter, 0, CounterBytes);
+    if (!ambientCopy) list->CopyBufferRegion(readback, LightBytes, counter, 0, CounterBytes);
     for (auto& barrier : barriers)
     {
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
@@ -346,7 +357,9 @@ void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint
 
 void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path)
 {
-    if (!ambientMode || path >= ambientHits.size()) return;
+    if ((!ambientMode && !skyStreaming) || path >= ambientHits.size()) return;
+    // Only A has a validated public decode profile. B remains research-only.
+    if (skyStreaming && path != 0) return;
     ++ambientHits[path];
     if (!TryAcquireSRWLockExclusive(&lock)) return;
     __try
@@ -355,7 +368,7 @@ void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path)
         if ((phase == Phase::Discover || phase == Phase::Ready) && Read(sky + 0x98, outer) && outer)
         {
             const auto previous = phase;
-            Record(outer, command, 0, sky);
+            Record(outer, command, 0, sky, true);
             if (previous == Phase::Ready && phase == Phase::Recorded)
             {
                 ambientHeader.pid = GetCurrentProcessId();
@@ -509,7 +522,7 @@ const char* PreflightFailureName(PreflightFailure failure)
     return "unknown-preflight-failure";
 }
 
-bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
+bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled)
 {
     const auto preflight = CheckCapturePreflight(moduleBase);
     if (!preflight)
@@ -517,6 +530,13 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
         PublishStatus(Status::Incompatible, ERROR_INVALID_DATA, ExactBuild);
         ch::Log("ManyLights disabled before any hook: %s (context index %u).", PreflightFailureName(preflight.failure), preflight.contextIndex);
         return false;
+    }
+    // Check BEFORE the filter detour replaces bytes used by this preflight.
+    if (skyEnabled && !CheckAmbientPreflight(moduleBase))
+    {
+        sky::PublishStatus(Status::Incompatible, ERROR_INVALID_DATA);
+        ch::Log("Global sky disabled: ambient context preflight failed; local lights remain independent.");
+        skyEnabled = false;
     }
     gameBase = moduleBase;
     hookAddress = gameBase + contract::HookRva;
@@ -530,6 +550,25 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz)
     if (MH_EnableHook(reinterpret_cast<void*>(hookAddress)) != MH_OK)
     { phase = Phase::Stopped; PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
     hookEnabled = true;
+    if (skyEnabled)
+    {
+        auto* target = reinterpret_cast<void*>(gameBase + AmbientHookRvas[0]);
+        // Publish configuration under the same lock read by both callbacks.
+        AcquireSRWLockExclusive(&lock);
+        skyStreaming = true;
+        ReleaseSRWLockExclusive(&lock);
+        if (MH_CreateHook(target, CdtAmbientThunkA, &CdtAmbientTrampolineA) == MH_OK && MH_EnableHook(target) == MH_OK)
+        {
+            skyHookEnabled = true;
+            sky::PublishStatus(Status::Waiting);
+            ch::Log("Global sky stream enabled: native A, 2Hz opportunistic, shared bounded copy/fence; no exposure correction.");
+        }
+        else
+        {
+            AcquireSRWLockExclusive(&lock); skyStreaming = false; ReleaseSRWLockExclusive(&lock);
+            sky::PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION);
+        }
+    }
     ch::Log("ManyLights exact-build/context detour installed at RVA 0x%llX; waiting for renderer.", contract::HookRva);
     return true;
 }
@@ -577,6 +616,8 @@ void PollCapture()
                                 ambientSamples, capturedFrame, ambientHeader.producerRva, capturedOutputResource, fenceValue, ambientExposure.flags);
                     }
                 }
+                else if (capturedAt && pendingAmbient)
+                    sky::PublishSample(scene.data(), mapped, capturedAt, capturedOutputResource, ambientHeader.producerRva);
                 else if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
                     capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex);
                 const D3D12_RANGE noWrites{0,0};
@@ -601,6 +642,7 @@ void PollCapture()
     {
         if (!error) error = ERROR_INVALID_DATA;
         PublishStatus(Status::Fault, error, ExactBuild);
+        if (skyStreaming) sky::PublishStatus(Status::Fault, error);
         ch::Log("%s disabled after capture failure 0x%08X; pending resources retained safely until process exit.", ambientMode ? "Ambient probe" : "ManyLights", error);
         CloseAmbientFile();
         ambientAcceptRequests = false;
@@ -627,6 +669,7 @@ void StopCapture()
 {
     if (hookEnabled) MH_DisableHook(reinterpret_cast<void*>(hookAddress));
     if (hookEnabled && ambientMode) MH_DisableHook(reinterpret_cast<void*>(gameBase + AmbientHookRvas[1]));
+    if (skyHookEnabled) MH_DisableHook(reinterpret_cast<void*>(gameBase + AmbientHookRvas[0]));
     if (executeEnabled) MH_DisableHook(executeTarget);
     AcquireSRWLockExclusive(&lock);
     phase = Phase::Stopped;
@@ -634,12 +677,15 @@ void StopCapture()
     CloseAmbientFile();
     ReleaseSRWLockExclusive(&lock);
     PublishStatus(Status::Stopped);
+    if (skyStreaming) sky::PublishStatus(Status::Stopped);
     // Hooks/trampolines and bounded resources live until process exit. The ASI
     // is pinned while instrumentation is enabled, so in-flight thunks cannot
     // jump into an unloaded DLL. Never MH_Uninitialize: overlay shares MinHook.
 }
 bool OwnsCodeAddress(uint64_t address)
 {
+    if (skyHookEnabled && address >= gameBase + AmbientHookRvas[0] &&
+        address < gameBase + AmbientHookRvas[0] + AmbientSignatureA.size()) return true;
     if (ambientMode) return hookEnabled &&
         ((address >= gameBase + AmbientHookRvas[0] && address < gameBase + AmbientHookRvas[0] + AmbientSignatureA.size()) ||
          (address >= gameBase + AmbientHookRvas[1] && address < gameBase + AmbientHookRvas[1] + AmbientSignatureB.size()));
@@ -669,6 +715,7 @@ bool InitializeAmbientForTest(uint64_t moduleBase, const wchar_t* directory)
     return ambientAcceptRequests;
 }
 uint32_t AmbientSamplesForTest() { return ambientSamples; }
+void EnableSkyForTest() { skyStreaming = true; }
 
 const char* CapturePhaseForTest()
 {

@@ -12,6 +12,9 @@ Version **2.0.0** brings lighting to the foreground: inspect the positions, colo
 Development preview: [grouped and smoothed local-light stream](docs/SMOOTHED_LIGHTS.md)
 for lighting consumers, alongside unchanged raw data. Not included in public 2.0.0.
 
+Also in development: a separate [global sky ambient stream](docs/AMBIENT_STREAM.md),
+alongside local lights. It does **not** include local room/roof occlusion.
+
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
 
 *In-game light markers, separate contributions around a fire, and the player-centered 3D radar. Click the screenshot to watch the video.*

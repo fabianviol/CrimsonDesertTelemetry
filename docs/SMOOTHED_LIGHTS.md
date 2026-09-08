@@ -1,5 +1,8 @@
 # Smoothed local-light stream (development)
 
+The combined `2.0.1-sky.1` preview also includes this feed; keep
+Research/AmbientProbe=0. See [global sky stream](AMBIENT_STREAM.md).
+
 An additional consumer signal for CrimsonHue; **raw `/v1/snapshot` and
 `/v1/stream` payloads and their schema versions remain unchanged.** Not ambient.
 Available in private `2.0.1-local-lights.1`; not in the published 2.0.0 or

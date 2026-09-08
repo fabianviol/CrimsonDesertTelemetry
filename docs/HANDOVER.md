@@ -1,4 +1,41 @@
-# Current checkpoint — doorway control supports global sky, 2026-09-08, Codex/Astra
+# Current checkpoint — combined local lights + global sky preview ready, 2026-09-08, Codex/Astra
+
+Private **2.0.1-sky.1** built, NOT installed or live-tested. Current game still
+PID4208/probe.3; do not replace a loaded ASI. User has not confirmed shutdown.
+No publish/push. ZIP: artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sky.1-ModManagers.zip
+SHA256 C2864ECCB69D969432F1C46DE5839391FDFD9AED6949958A64DE29C241F33A88;
+ASI SHA256 A6B77099E26448260B922D6E9301CDCDD631A2039546D91381E93387811E5E55.
+Old packages/captures unchanged. ZIP's inherited README still describes public2.0;
+the private addition/config/semantics are documented in docs/AMBIENT_STREAM.md.
+
+New /v1/ambient HTTP, /v1/ambient/stream WS, /v1/ambient/schema: separate global
+sky envelope1.0, raw27 signed SH coefficients + measured normalization/matrix
+inverse and relative luminance estimate. Not player-local, lux, exposure-corrected,
+or separated sun/moon. No exposure cache exported or correction applied. Raw
+snapshot1.4, local smoothing and HUD unchanged. New Ambient/Enabled=1 in package.
+
+Production native A shares ONE bounded in-flight readback/fence transaction with
+ManyLights, optional nominal2Hz sky vs configured lights rate; either source can
+initialize. Distinct seqlock mapping/PID/start identity and1500ms sky freshness.
+Only A has public decode; B diagnostic-only. Exact-build/context guards, per-copy
+source/list/queue device identity and actual GPU fence maintained. Failed sky
+preflight leaves local capture operational; shared runtime GPU fault stops both.
+Shader-only update validation remains open; recovery notes added, no blind offsets.
+
+Validation: managed tests pass (four new sky suites); all19 native tests pass,
+including mixed-feed WARP with either discovery order, direct/compute queues,
+blocked GPU and no cross-feed data reuse. C# decode matches prior PowerShell
+results for120 saved doorway samples. HTTP/WS/origin/schema test on27312 passes;
+package validation/regression/payload match passes. These are NOT game evidence
+for combined mode. Opportunity-based sky scheduling/cadence needs live acceptance.
+
+**One next step:** user closes game, replaces whole package via DMM, ensures
+Lights/Enabled=1, ManyLights=1, Ambient/Enabled=1, Research/AmbientProbe=0, restarts
+and loads. Check fresh supported PID/ASI hash, progressing raw/smoothed LOCAL
+lights AND /v1/ambient captureSequence/freshness concurrently (no doorway repeat).
+No need to enable console/explorer or start a bounded diagnostic file recording.
+
+## Previous checkpoint — doorway control supports global sky
 
 ONE user-authorized repeat, PID4208/probe.3,19:50:34..19:51:34,120/120 v2
 samples,59.688s, frames54621..58051, A3849BB7/resource12A923050, fences241..360,

@@ -132,6 +132,9 @@ add_test(NAME render-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSm
 set_tests_properties(render-capture-d3d12 PROPERTIES TIMEOUT 20)
 add_test(NAME ambient-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --ambient)
 set_tests_properties(ambient-capture-d3d12 PROPERTIES TIMEOUT 20)
+add_test(NAME sky-shared-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --sky-shared)
+add_test(NAME sky-first-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --sky-first)
+set_tests_properties(sky-shared-capture-d3d12 sky-first-capture-d3d12 PROPERTIES TIMEOUT 25)
 add_executable(CrimsonDesertTelemetryRenderContractTests tests/render_contract_tests.cpp
     src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/ambient_thunk.asm src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetryRenderContractTests PRIVATE cxx_std_20)

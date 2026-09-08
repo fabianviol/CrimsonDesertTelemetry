@@ -24,7 +24,8 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
     LightSmoothingOptions? smoothingOptions = null)
 {
     private readonly object _gate = new();
-    private readonly ConcurrentDictionary<Guid, (Channel<byte[]> Channel, bool Smoothed)> _subscribers = new();
+    private readonly ConcurrentDictionary<Guid, (Channel<byte[]> Channel, int Feed)> _subscribers = new();
+    private SkyAmbientSnapshot _sky = SkyAmbientReader.Unavailable("waiting-for-game");
     private readonly SmoothedLightProcessor _smoother = new(smoothingOptions);
     private SmoothedLightsSnapshot? _smoothed;
     private TelemetrySnapshot? _latest;
@@ -62,6 +63,33 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
     }
     public byte[] LatestSmoothedBytes => JsonSerializer.SerializeToUtf8Bytes(LatestSmoothed, jsonOptions);
 
+    public SkyAmbientSnapshot LatestSky
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_sky.CapturedAt is { } captured)
+                {
+                    var age = (DateTimeOffset.UtcNow - captured).TotalMilliseconds;
+                    _sky = age is < 0 or > SkyAmbientReader.MaximumAgeMilliseconds
+                        ? SkyAmbientReader.Unavailable("source-stale")
+                        : _sky with { AgeMilliseconds = Math.Max(_sky.AgeMilliseconds ?? 0, (long)age) };
+                }
+                return _sky;
+            }
+        }
+    }
+    public byte[] LatestSkyBytes => JsonSerializer.SerializeToUtf8Bytes(LatestSky, jsonOptions);
+    public void PublishSky(SkyAmbientSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            _sky = _health.Status == "playing" ? snapshot : SkyAmbientReader.Unavailable(_health.Status);
+            SendFeed(JsonSerializer.SerializeToUtf8Bytes(_sky, jsonOptions), 2);
+        }
+    }
+
     public TelemetryHealth Health
     {
         get
@@ -90,6 +118,8 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
             {
                 _smoothed = _smoother.Unavailable(status, DateTimeOffset.UtcNow);
                 Send(JsonSerializer.SerializeToUtf8Bytes(_smoothed, jsonOptions), true);
+                _sky = SkyAmbientReader.Unavailable(status);
+                SendFeed(JsonSerializer.SerializeToUtf8Bytes(_sky, jsonOptions), 2);
             }
         }
     }
@@ -123,17 +153,28 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
                 Error = null
             };
             Send(JsonSerializer.SerializeToUtf8Bytes(_smoothed, jsonOptions), true);
+            if (snapshot.Game.State != "playing")
+            {
+                _sky = SkyAmbientReader.Unavailable(snapshot.Game.State);
+                SendFeed(JsonSerializer.SerializeToUtf8Bytes(_sky, jsonOptions), 2);
+            }
         }
         Send(bytes, false);
     }
 
     private void Send(byte[] bytes, bool smoothed)
+        => SendFeed(bytes, smoothed ? 1 : 0);
+
+    private void SendFeed(byte[] bytes, int feed)
     {
         foreach (var entry in _subscribers.Values)
-            if (entry.Smoothed == smoothed) entry.Channel.Writer.TryWrite(bytes);
+            if (entry.Feed == feed) entry.Channel.Writer.TryWrite(bytes);
     }
 
     public TelemetrySubscription Subscribe(bool smoothed = false)
+        => SubscribeFeed(smoothed ? 1 : 0);
+    public TelemetrySubscription SubscribeSky() => SubscribeFeed(2);
+    private TelemetrySubscription SubscribeFeed(int feed)
     {
         var id = Guid.NewGuid();
         var channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1)
@@ -142,7 +183,7 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
-        if (!_subscribers.TryAdd(id, (channel, smoothed))) throw new InvalidOperationException("Could not add subscriber.");
+        if (!_subscribers.TryAdd(id, (channel, feed))) throw new InvalidOperationException("Could not add subscriber.");
         return new TelemetrySubscription(id, channel.Reader, this);
     }
 

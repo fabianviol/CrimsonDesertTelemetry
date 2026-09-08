@@ -63,6 +63,24 @@ try {
         $null = $derivedSocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,'test complete',$derivedTimeout.Token).GetAwaiter().GetResult()
     } finally { $derivedSocket.Dispose(); $derivedTimeout.Dispose() }
 
+    $sky = Invoke-RestMethod -Uri "http://127.0.0.1:$port/v1/ambient"
+    if ($sky.schemaVersion -ne '1.0' -or $sky.scope -ne 'global-upper-hemisphere-sky' -or
+        $sky.localOcclusionIncluded -ne $false -or $sky.exposureNormalized -ne $false) { throw 'Sky scope mismatch.' }
+    $skySchema = Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/ambient/schema"
+    $skySchemaText = if ($skySchema.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($skySchema.Content) } else { [string]$skySchema.Content }
+    if (-not ($sky | ConvertTo-Json -Depth 8 | Test-Json -Schema $skySchemaText)) { throw 'Sky schema mismatch.' }
+    $skySocket = [System.Net.WebSockets.ClientWebSocket]::new()
+    $skyTimeout = [Threading.CancellationTokenSource]::new(5000)
+    try {
+        $null = $skySocket.ConnectAsync([Uri]"ws://127.0.0.1:$port/v1/ambient/stream",$skyTimeout.Token).GetAwaiter().GetResult()
+        $buffer = [byte[]]::new(8192)
+        $received = $skySocket.ReceiveAsync([ArraySegment[byte]]::new($buffer),$skyTimeout.Token).GetAwaiter().GetResult()
+        if (-not $received.EndOfMessage) { throw 'Unexpectedly large sky envelope.' }
+        $message = [Text.Encoding]::UTF8.GetString($buffer,0,$received.Count)
+        if (-not (Test-Json -Json $message -Schema $skySchemaText)) { throw 'Sky stream schema mismatch.' }
+        $null = $skySocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,'test complete',$skyTimeout.Token).GetAwaiter().GetResult()
+    } finally { $skySocket.Dispose(); $skyTimeout.Dispose() }
+
     if (-not $health.gameRunning -or $health.status -ne 'playing') {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/v1/snapshot" | Out-Null
@@ -85,7 +103,7 @@ try {
         $socket.Dispose()
     }
 
-    foreach ($streamPath in @('/v1/stream','/v1/lights/smoothed/stream')) {
+    foreach ($streamPath in @('/v1/stream','/v1/lights/smoothed/stream','/v1/ambient/stream')) {
     $remoteSocket = [System.Net.WebSockets.ClientWebSocket]::new()
     try {
         $remoteSocket.Options.SetRequestHeader('Origin', 'https://example.com')

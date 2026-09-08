@@ -1,6 +1,7 @@
 #include "render_capture.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
+#include "sky_bridge.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -21,6 +22,7 @@ void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint
 bool InitializeAmbientForTest(uint64_t base, const wchar_t* directory);
 uint32_t AmbientSamplesForTest();
 void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path);
+void EnableSkyForTest();
 }
 // The smoke executable links only memory/log support from imported research.
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t) { return false; } }
@@ -66,6 +68,8 @@ int main(int argc, char** argv)
     using namespace cdt::render;
     const bool rejectCounterDevice=argc==2 && std::string(argv[1])=="--counter-device";
     const bool ambientTest=argc==2 && std::string(argv[1])=="--ambient";
+    const bool mixedTest=argc==2 && (std::string(argv[1])=="--sky-shared" || std::string(argv[1])=="--sky-first");
+    const bool skyFirst=argc==2 && std::string(argv[1])=="--sky-first";
     ComPtr<IDXGIFactory4> factory; Hr(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory)),"factory");
     ComPtr<IDXGIAdapter> warp; Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)),"WARP");
     ComPtr<ID3D12Device> device; Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
@@ -144,6 +148,77 @@ int main(int argc, char** argv)
     HANDLE mapHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,mappingName.c_str());
     const auto* bridge=static_cast<const Mapping*>(MapViewOfFile(mapHandle,FILE_MAP_READ,0,0,MappingBytes));
     Check(bridge!=nullptr,"read bridge");
+    if (mixedTest)
+    {
+        Check(cdt::sky::OpenBridge(),"sky bridge");
+        Check(!cdt::sky::OpenBridge(),"duplicate sky bridge takeover");
+        const auto name=L"Local\\CrimsonDesertTelemetry.Sky."+std::to_wstring(GetCurrentProcessId());
+        HANDLE skyHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,name.c_str());
+        const auto* skyMap=static_cast<const cdt::sky::Mapping*>(MapViewOfFile(skyHandle,FILE_MAP_READ,0,0,sizeof(cdt::sky::Mapping)));
+        Check(skyMap!=nullptr,"sky mapping view");
+        // A distinct source payload catches cross-feed buffer interpretation.
+        std::array<uint8_t,AmbientBytes> skyBytes{}; skyBytes.fill(0x3F);
+        Hr(upload->Map(0,&noReads,&mapped),"sky upload map");
+        memcpy(static_cast<uint8_t*>(mapped)+2048,skyBytes.data(),skyBytes.size()); upload->Unmap(0,nullptr);
+        heap.Type=D3D12_HEAP_TYPE_DEFAULT; desc.Width=AmbientBytes; desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        ComPtr<ID3D12Resource> skySource;
+        Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&skySource)),"sky source");
+        list->CopyBufferRegion(skySource.Get(),0,upload.Get(),2048,AmbientBytes);
+        barrier.Transition.pResource=skySource.Get(); list->ResourceBarrier(1,&barrier);
+        std::array<uint8_t,0x200> skyInner{}; std::array<uint8_t,0x38> skyOuter{}; std::array<uint8_t,0xA0> skyOwner{};
+        Put(skyInner,0xC0,uint32_t{16}); Put(skyInner,0xC4,uint32_t{64});
+        Put(skyInner,0x168,reinterpret_cast<uint64_t>(skySource.Get()));
+        Put(skyOuter,0x30,reinterpret_cast<uint64_t>(skyInner.data())); Put(skyOwner,0x98,reinterpret_cast<uint64_t>(skyOuter.data()));
+        InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase)); EnableSkyForTest();
+        const auto capture=[&](bool sky) {
+            if(sky) CaptureAmbient(reinterpret_cast<uint64_t>(skyOwner.data()),reinterpret_cast<uint64_t>(command.data()),0);
+            else CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
+                reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data()));
+        };
+        CaptureAmbient(reinterpret_cast<uint64_t>(skyOwner.data()),reinterpret_cast<uint64_t>(command.data()),1);
+        Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"unvalidated B entered public stream");
+        capture(skyFirst); PollCapture(); Sleep(510); // Sky cadence applies to discovery too.
+        ComPtr<ID3D12CommandQueue> computeQueue;
+        D3D12_COMMAND_QUEUE_DESC cq{}; cq.Type=D3D12_COMMAND_LIST_TYPE_COMPUTE;
+        Hr(device->CreateCommandQueue(&cq,IID_PPV_ARGS(&computeQueue)),"mixed compute queue");
+        ComPtr<ID3D12CommandAllocator> ca; ComPtr<ID3D12GraphicsCommandList> cl;
+        Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,IID_PPV_ARGS(&ca)),"mixed compute allocator");
+        Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_COMPUTE,ca.Get(),nullptr,IID_PPV_ARGS(&cl)),"mixed compute list");
+        ComPtr<ID3D12Fence> gate; Hr(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"mixed gate");
+        uint64_t lightSequence=0,skySequence=0;
+        for(uint32_t n=0;n<4;++n)
+        {
+            const bool sky=(n%2==0)==skyFirst;
+            const bool compute=sky && n>0;
+            if(n>0 && !compute) { Hr(allocator->Reset(),"mixed reset allocator"); Hr(list->Reset(allocator.Get(),nullptr),"mixed reset list"); }
+            auto* targetList=compute ? cl.Get() : list.Get(); auto* targetQueue=compute ? computeQueue.Get() : queue.Get();
+            Put(holder,8,reinterpret_cast<uint64_t>(targetList)); Put(constants,0x20,uint32_t{100+n});
+            Sleep(510); capture(sky);
+            Check(std::strcmp(CapturePhaseForTest(),"recorded (not submitted)")==0,"mixed record failed");
+            capture(!sky); // In-flight copy must not be overwritten by the other feed.
+            Hr(targetList->Close(),"mixed close");
+            ID3D12CommandList* other[]{unrelated.Get()}; queue->ExecuteCommandLists(1,other);
+            Hr(targetQueue->Wait(gate.Get(),n+1),"mixed GPU block");
+            ID3D12CommandList* submission[]{targetList}; targetQueue->ExecuteCommandLists(1,submission);
+            for(int k=0;k<5;++k) { PollCapture(); Sleep(5); }
+            Check(bridge->header.sampleSequence==lightSequence && skyMap->header.sampleSequence==skySequence,"mixed premature publication");
+            Hr(gate->Signal(n+1),"mixed GPU release");
+            if(sky) ++skySequence; else ++lightSequence;
+            const auto deadline=GetTickCount64()+5000;
+            while((bridge->header.sampleSequence<lightSequence || skyMap->header.sampleSequence<skySequence) && GetTickCount64()<deadline) { PollCapture(); Sleep(5); }
+            Check(bridge->header.sampleSequence==lightSequence && skyMap->header.sampleSequence==skySequence && !CaptureFailureCode(),"mixed stream sequence/fence failure");
+            if(sky)
+                Check(skyMap->header.flags==7 && skyMap->header.producerRva==AmbientHookRvas[0] &&
+                    skyMap->header.frameNumber==100+n && memcmp(skyMap->data,skyBytes.data(),AmbientBytes)==0,"sky payload/provenance mismatch");
+            else Check(bridge->header.flags==15 && bridge->header.frameNumber==100+n &&
+                memcmp(bridge->lights,light.data(),sizeof(light))==0 && memcmp(bridge->counters,counterData.data(),CounterBytes)==0,"lights polluted by sky");
+            if(compute && n<3) { Hr(ca->Reset(),"mixed compute reset allocator"); Hr(cl->Reset(ca.Get(),nullptr),"mixed compute reset list"); }
+        }
+        StopCapture();
+        Check(bridge->header.state==Status::Stopped && skyMap->header.state==Status::Stopped,"mixed stop retained active data");
+        std::cout<<"Shared sky/ManyLights pipeline: either discovery order, direct/compute submission, blocked GPU, no cross-feed overwrite, recurring publication and stop passed.\n";
+        return 0;
+    }
     if (ambientTest)
     {
         const auto directory = std::filesystem::absolute(L"ambient-smoke-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));

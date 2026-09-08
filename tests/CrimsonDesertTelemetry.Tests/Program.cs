@@ -3,6 +3,7 @@ using System.Text.Json;
 
 if (args.Length != 0)
 {
+    if (args.Length == 2 && args[0] == "--replay-sky") return SkyAmbientTests.Replay(args[1]);
     if (args.Length == 2 && args[0] == "--replay-camera-right") return CameraCopyReplay.Run(args[1]);
     Console.Error.WriteLine("Usage: tests [--replay-camera-right <private-trace.jsonl>]");
     return 2;
@@ -10,6 +11,10 @@ if (args.Length != 0)
 
 var tests = new (string Name, Action Run)[]
 {
+    ("sky SH math, color inverse and raw preservation", SkyAmbientTests.MathAndRaw),
+    ("sky bridge protocol, producer identity and freshness", SkyAmbientTests.Protocol),
+    ("sky mapping cache and fault isolation", SkyAmbientTests.Mapping),
+    ("sky HTTP/WS state isolation and loading invalidation", SkyAmbientTests.Transport),
     ("signature exact", SignatureExact),
     ("signature wildcard", SignatureWildcard),
     ("signature rejects invalid input", SignatureRejectsInvalidInput),

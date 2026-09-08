@@ -107,3 +107,23 @@ progressing camera/movement control; light AN→AUS→AN at an already documente
 fresh prefix-count/scene pairing and one stable colored source. No fresh GPU buffer
 read can by itself establish permanent physical IDs, full360° coverage, or OFF state.
 Save the new EXE/evidence privately and commit the validated profile/provenance.
+# Global sky preview recovery addendum (2.0.1-sky.1)
+
+Sky reuses the exact-build capture gate and paired scene layout. Its additional
+producer signatures/context checks currently live in `src/ambient_probe.h` and
+`CheckAmbientPreflight` in `render_capture.cpp` under the native ASI. Only native
+A RVA3849BB7 is enabled for the stream; B384CBA3 is diagnostic only. Preflight
+runs before installing ManyLights, since it also verifies those original bytes.
+Failure disables sky independently; never relax the hash/signatures to force it.
+
+`docs/AMBIENT_DECODE.md` preserves the six identical shader-body variants, source
+chain/layout, SH packing, exact float32 normalization/color matrix and captures.
+`SkyAmbientReader` is cross-checked against `scripts/AmbientSh.psm1` through the
+test runner's `--replay-sky <ambient-derived-candidate.json>` option. Shared WARP
+tests cover either first producer, direct/compute queues, real submission fences
+and feed isolation. Do not rediscover these facts after an update.
+
+The current update-check CLI does not relocate the new ambient signatures or
+verify bound shaders. EXE identity does not detect all shader-only asset changes.
+Before promoting a new profile verify producer/context bytes, resource layout,
+paired scene frame, shader packing/body and a short live combined-feed check.

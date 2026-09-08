@@ -1,4 +1,5 @@
 #include "render_bridge.h"
+#include "sky_bridge.h"
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -110,5 +111,63 @@ bool SameScene(const void* first, const void* second)
             static_cast<const uint8_t*>(second) + native_contract::PositionOffset, 32) == 0 &&
         memcmp(static_cast<const uint8_t*>(first) + native_contract::ViewRelativeOffset,
             static_cast<const uint8_t*>(second) + native_contract::ViewRelativeOffset, 64) == 0;
+}
+}
+
+namespace cdt::sky
+{
+namespace { HANDLE handle{}; Mapping* mapping{}; SRWLOCK lock = SRWLOCK_INIT;
+void Begin() { InterlockedIncrement64(&mapping->header.seqlock); MemoryBarrier(); }
+void End() { MemoryBarrier(); InterlockedIncrement64(&mapping->header.seqlock); }
+}
+bool OpenBridge()
+{
+    if (mapping) return false;
+    const auto name = L"Local\\CrimsonDesertTelemetry.Sky." + std::to_wstring(GetCurrentProcessId());
+    handle = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(Mapping), name.c_str());
+    if (!handle) return false;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(handle); handle = nullptr; return false; }
+    mapping = static_cast<Mapping*>(MapViewOfFile(handle, FILE_MAP_WRITE, 0, 0, sizeof(Mapping)));
+    if (!mapping) { CloseHandle(handle); handle = nullptr; return false; }
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+    { UnmapViewOfFile(mapping); mapping = nullptr; CloseHandle(handle); handle = nullptr; return false; }
+    Begin();
+    auto& h = mapping->header;
+    h.magic = 0x53445443; h.version = 1; h.headerBytes = sizeof(Header); h.totalBytes = sizeof(Mapping);
+    h.pid = GetCurrentProcessId(); h.state = render::Status::Stopped;
+    h.processStartFileTime = (uint64_t{created.dwHighDateTime} << 32) | created.dwLowDateTime;
+    h.sceneBytes = render::SceneBytes; h.payloadBytes = PayloadBytes;
+    End();
+    return true;
+}
+void PublishStatus(render::Status state, uint32_t error)
+{
+    if (!mapping) return;
+    AcquireSRWLockExclusive(&lock); Begin();
+    mapping->header.state = state; mapping->header.error = error;
+    mapping->header.flags = 0; mapping->header.publishedTickMs = GetTickCount64();
+    End(); ReleaseSRWLockExclusive(&lock);
+}
+uint32_t FailureCode()
+{
+    if (!mapping) return ERROR_INVALID_HANDLE;
+    AcquireSRWLockShared(&lock);
+    const auto result = mapping->header.error;
+    ReleaseSRWLockShared(&lock);
+    return result;
+}
+void PublishSample(const void* scene, const void* data, uint64_t tick, uint64_t resource, uint32_t producerRva)
+{
+    if (!mapping || !render::ValidateScene(scene) || !data || !tick || !resource || producerRva != 0x3849BB7) return;
+    AcquireSRWLockExclusive(&lock); Begin();
+    memcpy(mapping->scene, scene, render::SceneBytes); memcpy(mapping->data, data, PayloadBytes);
+    auto& h = mapping->header;
+    ++h.sampleSequence; h.capturedTickMs = tick; h.publishedTickMs = GetTickCount64();
+    memcpy(&h.frameNumber, mapping->scene + native_contract::FrameOffset, sizeof(h.frameNumber));
+    h.resource = resource; h.producerRva = producerRva; h.error = 0;
+    h.flags = render::ExactBuild | render::FenceCompleted | render::PairedScene;
+    h.state = render::Status::Active;
+    End(); ReleaseSRWLockExclusive(&lock);
 }
 }

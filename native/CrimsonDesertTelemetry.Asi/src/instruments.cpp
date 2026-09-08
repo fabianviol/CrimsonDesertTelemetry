@@ -3,6 +3,7 @@
 #include "render_capture.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
+#include "sky_bridge.h"
 #include "native_contract.generated.h"
 #include "overlay.h"
 #include "console/common.h"
@@ -80,6 +81,7 @@ void RunImpl(HANDLE stopEvent)
     ch::OpenLog(moduleDirectory);
     ch::LogConfig();
     ch::bp::ReportStartup();
+    const bool skyBridge = sky::OpenBridge();
     if (!render::OpenBridge())
     {
         ch::Log("Native bridge already owned or unavailable; instrumentation skipped.");
@@ -91,6 +93,7 @@ void RunImpl(HANDLE stopEvent)
     {
         ch::Log("Native instruments refused: legacy CrimsonHueConsole is still installed/loaded. Archive the old ASI and restart.");
         render::PublishStatus(render::Status::LegacyConflict, ERROR_ALREADY_EXISTS);
+        sky::PublishStatus(render::Status::LegacyConflict, ERROR_ALREADY_EXISTS);
         overlay::SetLocalFault("native-capture", "Conflicting legacy console plugin",
             "CrimsonHueConsole is still installed or loaded. Archive the old ASI and restart with only the integrated CrimsonDesertTelemetry plugin.");
         return;
@@ -98,6 +101,7 @@ void RunImpl(HANDLE stopEvent)
     if (earlyFailed)
     {
         render::PublishStatus(render::Status::Fault, ERROR_DLL_INIT_FAILED);
+        sky::PublishStatus(render::Status::Fault, ERROR_DLL_INIT_FAILED);
         overlay::SetLocalFault("native-capture", "Native configuration or startup failed",
             "The plugin could not initialize its configuration or module context. Check CrimsonDesertTelemetry.ini and the native log, then restart.");
         return;
@@ -115,6 +119,7 @@ void RunImpl(HANDLE stopEvent)
     {
         ch::Log("Native game instrumentation disabled: executable SHA256 differs from validated build %s.", native_contract::BuildId.data());
         render::PublishStatus(render::Status::Incompatible, ERROR_REVISION_MISMATCH);
+        sky::PublishStatus(render::Status::Incompatible, ERROR_REVISION_MISMATCH);
         overlay::SetLocalFault("native-capture", "This game build is not validated for native lights",
             "Native hooks remain disabled. Install a telemetry version validated for this game build; check-update can inspect compatibility without enabling hooks.");
         return;
@@ -123,6 +128,7 @@ void RunImpl(HANDLE stopEvent)
     if (!ch::mem::GetModuleRange(nullptr, &ch::g_game.moduleBase, &ch::g_game.moduleSize))
     {
         render::PublishStatus(render::Status::Fault, ERROR_MOD_NOT_FOUND);
+        sky::PublishStatus(render::Status::Fault, ERROR_MOD_NOT_FOUND);
         overlay::SetLocalFault("native-capture", "Game module unavailable",
             "The plugin could not resolve the game image. Check the native log and restart the game; no capture hook was installed.");
         return;
@@ -154,11 +160,13 @@ void RunImpl(HANDLE stopEvent)
     {
         const unsigned rate = GetPrivateProfileIntW(L"Lights", L"ManyLightsSampleRateHz", 20, iniPath.c_str());
         const bool ambientProbe = GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) != 0;
+        const bool streamSky = skyBridge && GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0;
         capturing = ambientProbe
             ? render::StartAmbientProbe(ch::g_game.moduleBase, std::filesystem::path(moduleDirectory).c_str())
-            : render::StartCapture(ch::g_game.moduleBase, rate);
+            : render::StartCapture(ch::g_game.moduleBase, rate, streamSky);
         if (!capturing)
         {
+            if (streamSky) sky::PublishStatus(render::Status::Fault, ERROR_INVALID_FUNCTION);
             ch::Log("Automatic ManyLights instrumentation failed closed; authored telemetry remains independent.");
             const auto preflight = render::CheckCapturePreflight(ch::g_game.moduleBase);
             overlay::SetLocalFault("native-capture", "Native light capture refused initialization",
@@ -167,6 +175,11 @@ void RunImpl(HANDLE stopEvent)
                     "The validated capture hook could not initialize. Check the native log for MinHook or graphics errors and restart the game.");
         }
         else overlay::ClearLocalFault("native-capture");
+        if (GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 &&
+            (!skyBridge || (!ambientProbe && sky::FailureCode())))
+            overlay::SetLocalFault("ambient-capture", "Global sky capture unavailable",
+                "The sky bridge or validated capture hook could not initialize. Local lights may still work. Check the native log; use a plugin validated for this game build.");
+        else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
     uint32_t reportedCaptureError = 0;
@@ -197,6 +210,7 @@ void Run(HANDLE stopEvent)
     {
         ch::Log("Native instrumentation worker failed unexpectedly; capture cannot continue.");
         render::PublishStatus(render::Status::Fault, ERROR_UNHANDLED_EXCEPTION);
+        sky::PublishStatus(render::Status::Fault, ERROR_UNHANDLED_EXCEPTION);
         overlay::SetLocalFault("native-capture", "Native telemetry worker failed",
             "Native telemetry could not continue. Check the native log and restart the game; stale samples must not be treated as current lights.");
     }

@@ -19,7 +19,7 @@ struct PreflightResult
 // the generated exact EXE hash before calling StartCapture.
 PreflightResult CheckCapturePreflight(uint64_t moduleBase);
 const char* PreflightFailureName(PreflightFailure failure);
-bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz);
+bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled = false);
 void PollCapture();
 uint32_t CaptureFailureCode();
 void StopCapture();

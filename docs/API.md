@@ -4,6 +4,10 @@ Development addition (not in public 2.0.0): a separate
 [grouped and smoothed local-light HTTP/WebSocket feed](SMOOTHED_LIGHTS.md).
 The raw contract documented below is unchanged; the derived feed is not ambient.
 
+Private `2.0.1-sky.1` adds a separate [global sky HTTP/WebSocket feed](AMBIENT_STREAM.md)
+at `/v1/ambient`, `/v1/ambient/stream` and `/v1/ambient/schema`. It runs alongside
+raw/smoothed local lights, but is not roof-occluded player-local illumination.
+
 Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
 contributions, separate authored light records, and independent player/camera
 poses through local **HTTP and WebSocket APIs** with JSON snapshot schemas
