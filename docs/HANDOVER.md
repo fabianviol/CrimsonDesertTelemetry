@@ -25,10 +25,30 @@ native log, INI. Script Capture-LightStreams gains opt-in IncludeAmbient; old
 default stays two streams. Sky luminance estimate .005143259→.004315493 in run,
 not local room illumination or exposure-normalized RGB. User standing unchanged.
 
-**One next step:** this combined-path measurement is complete. Use the documented
-global-sky envelope in CrimsonHue with explicit weighting/indoor policy, or
-address a separately requested release task. Do not repeat ambient discovery or
-doorway tests. This short live test does not prove long-session/no-dropout behavior.
+**Latest user requirement:** source occlusion/visibility is a REQUIRED additional
+telemetry capability, not merely an incidental discovery. Preserve current raw
+and smoothed feeds without a new visibility filter AND provide a separate
+visibility-filtered view/stream once measured. Current renderer-filtered sources
+are not a complete world registry and do not prove line of sight (overlay has no
+depth test). Do not call current data "all game lights" or "unoccluded lights".
+
+Separate source visibility from camera (including offscreen/occluded/partial/
+unknown distinctions) from contribution to visible surfaces and light reaching
+the player. Hidden source can illuminate a visible surface; one point test would
+not establish visibility of its whole contribution. Unknown is not occluded;
+any derived view needs sample/camera provenance, freshness, method/limitations,
+and a relationship to the original contributions without promising physical IDs.
+No endpoint/schema/result invented yet. Requirements recorded in docs/API.md.
+
+**One next research step proposed/accepted in discussion:** inspect the ALREADY
+found exposure producer's input measurement, before adaptation/clamping, rather
+than scan arbitrary heaps for an indoor Boolean. Distinguish view-dependent
+brightness from local illumination with a fixed-player/changed-view control when
+a concrete candidate exists. Keep occlusion/visibility as its own required track;
+record relevant existing shader/renderer evidence encountered but do not equate
+exposure with visibility. No new experiment or code change in this requirements
+turn. Do not repeat sky discovery/doorway tests. Combined-feed acceptance above
+is complete but does not prove long-session/no-dropout behavior.
 
 ## Previous checkpoint — combined local lights + global sky preview ready
 

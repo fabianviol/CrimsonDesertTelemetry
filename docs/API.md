@@ -8,6 +8,31 @@ Private `2.0.1-sky.1` adds a separate [global sky HTTP/WebSocket feed](AMBIENT_S
 at `/v1/ambient`, `/v1/ambient/stream` and `/v1/ambient/schema`. It runs alongside
 raw/smoothed local lights, but is not roof-occluded player-local illumination.
 
+## Planned requirement: source visibility and occlusion (not implemented)
+
+User requirement2026-09-08: retain the current captured-source feeds without an
+additional visibility filter, AND provide a separately visibility-filtered stream.
+Current ManyLights filtering is not evidence that a source is unoccluded from the
+camera. The present overlay explicitly performs no depth test. Neither view is
+promised to be a complete registry of every light in the game.
+
+Define camera-relative source visibility separately from lighting contributions
+on visible surfaces and incident lighting at the player. A hidden source can
+still light a visible surface. Offscreen is different from behind geometry;
+partial visibility and unknown/unavailable tests must not become false OFF states.
+A visibility test of a source center alone must not be labeled visibility of its
+entire illuminated region. Grouped sources can contain differently visible members.
+
+Any future derived stream must identify its reference camera/sample, freshness,
+test method/limitations, unknown handling, and relation to original contributions;
+do not use ephemeral indices as permanent object identity. Existing raw/smoothed
+payloads remain intact. No new route, fields, shadow factor or visibility guarantee
+is specified until the measurement method is established. Exposure/global sky is
+not a substitute for source occlusion. This section is a requirement, not an API
+that clients can already call.
+
+## Current published contract
+
 Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
 contributions, separate authored light records, and independent player/camera
 poses through local **HTTP and WebSocket APIs** with JSON snapshot schemas
