@@ -9,7 +9,8 @@ param(
     [Parameter(Mandatory)][ValidateRange(1,2147483647)][int]$ProcessId,
     [Parameter(Mandatory)][string]$OutFile,
     [ValidateRange(1,60)][int]$Seconds = 10,
-    [ValidateRange(2,20)][int]$RateHz = 10
+    [ValidateRange(2,20)][int]$RateHz = 10,
+    [switch]$IncludeSpatialContext
 )
 $ErrorActionPreference = 'Stop'
 $product = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -131,6 +132,51 @@ function Read-Cache([uint64]$filterOwner) {
         identity=('{0:X}:{1:X}:{2:X}:{3:X}:{4:X}:{5:X}:{6:X}' -f $renderer,$sky,$owner,$outer,$inner,$resource,$readback) }
 }
 
+# Native producer 143C533A0 uploads filter+20 (768 bytes); AdaptExposure's
+# bindings use the bank at +560/+568 and texture at +4B8. CPU observations only:
+# neither matching copies nor a bridge frame proves the bytes bound to that GPU frame.
+function Read-SpatialContext([uint64]$filterOwner) {
+    $renderer=$memory.Pointer($filterOwner+0x10)
+    if($memory.Pointer($renderer+0x660) -ne $filterOwner) { throw 'GI filter backlink mismatch.' }
+    $bank=$memory.Read($filterOwner+0x705,1)[0]
+    $bankOffset=if($bank -eq 0){0x560}else{0x568}
+    $wrapper=$memory.Pointer($filterOwner+$bankOffset)
+    $outer=$memory.Pointer($wrapper+0x18)
+    $storage=$memory.Pointer($outer+0x30)
+    $resource=$memory.Pointer($storage+0x168)
+    $layout=[Convert]::ToHexString($memory.Read($storage+0xC0,8))
+    if($memory.Pointer($storage+0x10) -ne $outer -or
+        [BitConverter]::ToUInt32([Convert]::FromHexString($layout),0) -ne 768 -or
+        [BitConverter]::ToUInt32([Convert]::FromHexString($layout),4) -ne 1) { throw 'GI constant wrapper mismatch.' }
+    $textureOuter=$memory.Pointer($filterOwner+0x4B8)
+    $textureStorage=$memory.Pointer($textureOuter+0x30)
+    $textureResource=$memory.Pointer($textureStorage+0x100)
+    $shape=$memory.Read($textureStorage+0xD0,12)
+    if($memory.Pointer($textureStorage+0x10) -ne $textureOuter -or
+        [BitConverter]::ToUInt32($shape,0) -ne 64 -or
+        [BitConverter]::ToUInt32($shape,4) -ne 32 -or
+        [BitConverter]::ToUInt32($shape,8) -ne 264) { throw 'Sky texture CPU descriptor mismatch.' }
+    $raw=[Convert]::ToHexString($memory.Read($filterOwner+0x20,768))
+    if($memory.Pointer($filterOwner+0x10) -ne $renderer -or
+        $memory.Pointer($renderer+0x660) -ne $filterOwner -or
+        $memory.Read($filterOwner+0x705,1)[0] -ne $bank -or
+        $memory.Pointer($filterOwner+$bankOffset) -ne $wrapper -or
+        $memory.Pointer($wrapper+0x18) -ne $outer -or
+        $memory.Pointer($outer+0x30) -ne $storage -or
+        $memory.Pointer($storage+0x10) -ne $outer -or
+        $memory.Pointer($storage+0x168) -ne $resource -or
+        [Convert]::ToHexString($memory.Read($storage+0xC0,8)) -ne $layout -or
+        $memory.Pointer($filterOwner+0x4B8) -ne $textureOuter -or
+        $memory.Pointer($textureOuter+0x30) -ne $textureStorage -or
+        $memory.Pointer($textureStorage+0x10) -ne $textureOuter -or
+        $memory.Pointer($textureStorage+0x100) -ne $textureResource -or
+        [Convert]::ToHexString($memory.Read($textureStorage+0xD0,12)) -ne [Convert]::ToHexString($shape)) { throw 'GI context changed.' }
+    [pscustomobject]@{
+        raw=$raw; bank=$bank; textureResource=('0x{0:X}' -f $textureResource)
+        identity=('{0:X}:{1:X}:{2:X}:{3:X}:{4:X}:{5:X}:{6:X}:{7:X}:{8:X}' -f $filterOwner,$renderer,$wrapper,$outer,$storage,$resource,$textureOuter,$textureStorage,$textureResource)
+    }
+}
+
 $mapping=$null; $view=$null; $memory=$null; $output=$null
 try {
     $mapping=[IO.MemoryMappedFiles.MemoryMappedFile]::OpenExisting("Local\CrimsonDesertTelemetry.Render.$ProcessId",[IO.MemoryMappedFiles.MemoryMappedFileRights]::Read)
@@ -168,6 +214,26 @@ try {
                 rawBeforeHex=$a.raw; rawAfterHex=$b.raw
             }
         } catch { $row.error=$_.Exception.Message; $row.exposureCache=$null }
+        if($IncludeSpatialContext) {
+            # Separate failure domain: a changing GI context must not invalidate
+            # an independently readable exposure cache (or invent visibility=0).
+            try {
+                $spatialBefore=Read-Bridge
+                $sa=Read-SpatialContext $spatialBefore.owner
+                $sb=Read-SpatialContext $spatialBefore.owner
+                $spatialAfter=Read-Bridge
+                if($spatialBefore.owner -ne $spatialAfter.owner -or $sa.identity -ne $sb.identity -or
+                    $sa.bank -ne $sb.bank -or $sa.raw -ne $sb.raw) { throw 'GI copies/bank/identity changed.' }
+                $row.spatialContext=[ordered]@{
+                    source='inline-voxel-gi-upload-source'; status='stable-cpu-observation'
+                    rawBeforeHex=$sa.raw; rawAfterHex=$sb.raw; bankFlag=$sa.bank; provenance=$sa.identity
+                    textureResource=$sa.textureResource; textureCpuDimensions=@(64,32,264)
+                    resourceDescQueried=$false; textureReadBack=$false; gpuFramePaired=$false
+                    bridgeFrameBefore=$spatialBefore.frame; bridgeFrameAfter=$spatialAfter.frame
+                    cameraBefore=$spatialBefore.camera; cameraAfter=$spatialAfter.camera
+                }
+            } catch { $row.spatialContext=[ordered]@{status='unavailable'; reason=$_.Exception.Message} }
+        }
         $samples.Add([pscustomobject]$row)
     }
     $finalHealth=Invoke-RestMethod 'http://127.0.0.1:27311/v1/health' -TimeoutSec 3
@@ -178,6 +244,7 @@ try {
         format='private-exposure-context-v1'; processId=$ProcessId; processStartFileTime=$startFileTime
         executableSha256=$exeHash; startedAt=$started; durationMilliseconds=$timer.ElapsedMilliseconds
         controlProgressed=$validControl; distinctRenderFrames=$frames.Count
+        spatialContextRequested=[bool]$IncludeSpatialContext
         baseline='Production plugin unchanged; this recorder uses PROCESS_VM_READ only.'
         caveat='CPU readback cache age unknown. Neither sequential chain reads nor matching bytes prove a single GPU frame or exclude ABA/torn copies.'
         samples=@($samples)

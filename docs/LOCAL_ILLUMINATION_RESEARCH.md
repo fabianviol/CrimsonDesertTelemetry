@@ -27,8 +27,9 @@ the clipmap reference-origin context (no player pointer), samples using `_clipma
 and computes `v = saturate(1 - textureSample.x)`. If the selected clipmap is above
 3 or none matches, it substitutes **v=1**. Thus v=1 cannot prove texture coverage
 or an open sky. This is not visibility along camera-to-lamp rays.
-The exact world origin behind these GI constants still needs a native/control
-check; do not silently equate it to the player's position or camera position.
+Native producer and CPU camera comparison are now resolved below: this is a
+view-context position matching the camera, NOT the player. Pairing the actual
+bound GPU constants/texture with the inverse cache remains unverified.
 
 The existing large GI consumer independently samples the same-named texture at
 t232,space36, lines 5243..5280 of `gi-evaluate-largest.ll`: its `saturate(1-sample)`
@@ -115,7 +116,90 @@ calculation vs inverse, 3004 synthetic cases; packed NaN, invalid flags/length/
 layout/store controls, wrong-model values, absent layout assumption, missing
 data and missing progressing live control. Synthetic tests != game validation.
 
-## Source occlusion: concrete next resource, NOT implemented yet
+## Native spatial provenance resolved at21:22 — 2026-09-08
+
+Bounded inspection followed the existing exposure and filter owners. No broad
+heap scan, additional camera/doorway experiment, hook or plugin replacement.
+Exact EXE hash remains4D99C15C...; addresses below are build25116796 anchors,
+NOT a new update-stable public discovery mechanism.
+
+**Producer `0x143C533A0`:** RCX/filterOwner is saved in RBX, R9/view context in
+RBP. The position is `[RBP+8F8/8FC/900]`. Stores at143C53A85/3A8D/3A95 write
+`filterOwner+300/304/308 = viewPosition.xyz * [filterOwner+30/34/38]`.
+The latter is `_invClipmapExtent`. Thus `_clipmapUVRelativeOffset / invExtent`
+recovers the world-space view reference. Stores around143C538C6 also derive
+`_wrappedViewPos` from that position. Do not confuse viewContext+8F8 with an
+unrelated field at filterOwner+8F8.
+
+The **whole768-byte CPU GI constant block is inline at filterOwner+20**.
+Calls143C53B45/3B88 ->1432A3150 upload precisely that pointer/size to wrappers
+at filterOwner+568/+560, selected by byte+705 (nonzero/zero). No heap search
+or Map is needed to inspect this CPU upload source.
+
+**Consumer `0x1435429F0` (exposure pass):** R13 is renderer+660/filterOwner.
+143C-series producer above is NOT this consumer. At143544BFF the consumer
+selects the SAME +560/+568 wrappers; wrapper+18 is bound as Voxel GI CB at
+143544CD6. It takes the sky texture from filterOwner+4B8 at143544FD2, binds
+it at143545087 and dispatches(2,1,1) at14354509E (return1435450A4).
+This establishes a native source-to-binding chain, not a paired GPU capture.
+Producer has five statically validated callers (143C5BC12,143C611D7,
+143C612CA,143C61EB9,143C6E40C); possible auxiliary views mean caller selection
+must still be checked if taking a future at-dispatch snapshot.
+
+Resource chains, re-resolved from the existing Render bridge, never saved PID
+addresses as restart anchors:
+
+- Selected CB wrapper+18 -> outer+30 -> storage; storage+10 backlink to outer,
+  +C0 stride768, +C4 count1, +168 resource pointer.
+- Sky texture filterOwner+4B8 -> outer+30 -> storage; storage+10 backlink,
+  +100 resource pointer, CPU descriptor at+D0/D4/D8 reports64x32x264.
+- These are CPU wrapper observations: no in-process GetDesc, format query,
+  resource-state confirmation, sampler query, Map or texture readback yet.
+  The storage+68/+20 objects are metadata, NOT mapped CB/texture contents.
+
+`Capture-ExposureContext.ps1 -IncludeSpatialContext` now records the two
+matching bounded CPU copies, bank, validated links/shape and surrounding bridge
+camera observations. It rejects changing data independently of the exposure
+cache. Decoder follows AdaptExposure SSA199..284 (clipmaps1..7, lower-inclusive,
+upper-exclusive bounds, fallback for none/>3) and returns unwrapped sample
+coordinates, NOT a texture value. Sequential FP32 is diagnostic; fast-math near
+cell boundaries and unverified sampler addressing/filtering remain caveats.
+
+**Live access check21:22:01 CEST, same PID22128/sky.1:**50 attempts/4.923s,
+50 progressing renderer frames.45 stable spatial contexts;2 changing-link and3
+changing-copy/bank probes unavailable. All45 CPU shader-model evaluations select
+clipmap1 (texture-sample branch), texture pointer0x139A2FF40. Inferred reference
+vs bridge camera distance0.000319..0.000970gu (includes float JSON precision and
+sequential timing), camera near(-10537.138,612.818,-4414.379). This supports camera
+reference, not player-local irradiance or current-GPU-frame pairing. Player has
+moved since the preceding outdoor recording; no new environment transition was
+instructed or inferred.44 independent valid exposure inverses v.007111..016297;
+6 unavailable. Do not attribute that change to an unreported roof transition.
+
+Artifacts `local-illumination-spatial-context-20260908-pid22128-check1.json`
+and `-derived.json` under artifacts/light-research. Raw SHA256:
+`F34EB56EBC5CDCC58A58CF38DD7363B7A7A8270C0A5E4997539FE8481A6BF832`.
+Native bytes/meta under artifacts/light-research/rawpages:
+`local-sky-exposure-code-pid22128`, `local-sky-cb-producer-pid22128`
+(producer SHA711BF82F04E1538036499D6137BE8FEEB866DC572458EAEE62D7334E5EBF29AA),
+`local-sky-filter-resources-pid22128`, `local-sky-resource-storage-pid22128`.
+The earlier `local-sky-resource-inners-pid22128` WITHOUT `-corrected` is an invalid
+zero-byte failed-address dump (PowerShell numeric-string conversion), not absence
+evidence. Corrected dump preserved separately; quote large hex addresses.
+
+Tests:14/14 Python tests, including previous3004 independent FP32 inverse cases
+and new synthetic spatial origin/negative coordinates/bounds/fallback/malformed
+data/failure independence. PS7 parse clean, live progressing-control check above.
+
+**One next step:** resolve this identified texture's actual format, sampler and
+legal copy state at the existing exposure binding/dispatch boundary, then implement
+a bounded paired direct readback with its768-byte CB. Do not guess a barrier or
+assume R8 from the dimensions. Compare direct `saturate(1-sample.x)` to inverse
+with measured cache age; only then assess its outdoor fluctuations. No more
+generic walking tests yet. Raw/smoothed/sky APIs and ASI unchanged; source
+occlusion remains independently required via the depth route below.
+
+## Previous control and separate source occlusion
 
 ### View-control recording completed at20:57 — 2026-09-08
 

@@ -112,6 +112,84 @@ def decode_cache(cache, assume_layout=False):
     return result
 
 
+def f32(x):
+    return struct.unpack('<f', struct.pack('<f', x))[0]
+
+
+def decode_spatial(context, assume_layout=False):
+    """CPU upload-source interpretation, NOT a paired GPU texture sample.
+
+    Sequential FP32 emulates inspected SSA 199..284; GPU fast-math/fusion may
+    differ near cell boundaries. Native producer establishes UV = world * invExtent.
+    Do not wrap X/Y or invent the sampler's unverified addressing/filter mode.
+    """
+    result = dict(status='unavailable', reason='spatial-context-unavailable',
+                  gpuFramePaired=False, textureReadBack=False)
+    if not isinstance(context, dict):
+        return result
+    try:
+        if (context.get('source') != 'inline-voxel-gi-upload-source' or
+                context.get('status') != 'stable-cpu-observation'):
+            raise ValueError('spatial-context-not-stable')
+        raw = bytes.fromhex(context['rawBeforeHex'])
+        if len(raw) != 768 or raw != bytes.fromhex(context['rawAfterHex']):
+            raise ValueError('spatial-size-or-copy-mismatch')
+        if context.get('textureCpuDimensions') != [64, 32, 264]:
+            raise ValueError('spatial-texture-layout-mismatch')
+        if not assume_layout:
+            raise ValueError('shader-layout-not-assumed')
+        def vec(offset):
+            values = struct.unpack_from('<4f', raw, offset)
+            if not all(math.isfinite(v) and abs(v) < 1e8 for v in values):
+                raise ValueError('invalid-spatial-lane')
+            return values
+        inv = vec(0x10)[:3]
+        if not all(0 < v <= 1 for v in inv):
+            raise ValueError('invalid-inverse-clipmap-extent')
+        wrapped, uv = vec(0x130)[:3], vec(0x2E0)[:3]
+        world = [uv[j]/inv[j] for j in range(3)]
+        selected = None
+        # Clipmap 0 is intentionally not tested by this AdaptExposure shader.
+        for i in range(1, 8):
+            origin = vec(0x140 + i*16)
+            relative = vec(0x240 + i*16)
+            if not 0 < origin[3] <= 1e4:
+                raise ValueError('invalid-clipmap-scale')
+            low = [int(f32(origin[j]-radius)) for j, radius in enumerate((63, 31, 63))]
+            high = [int(f32(origin[j]+radius)) for j, radius in enumerate((63, 31, 63))]
+            cell = [math.floor(f32(f32(wrapped[j]*origin[3])+relative[j])) for j in range(3)]
+            if all(low[j] <= cell[j] < high[j] for j in range(3)):
+                selected = i
+                break
+        result.update(status='candidate', reason=None, layoutAssumption=LAYOUT,
+                      referenceWorldCandidate=world, selectedClipmap=selected,
+                      textureResource=context.get('textureResource'),
+                      bankFlag=context.get('bankFlag'),
+                      referenceMeaning='view-context world position; CPU observation, not GPU-frame paired',
+                      samplerAddressing='unverified; X/Y coordinates left unwrapped',
+                      shaderBranch='fallback-one' if selected is None or selected > 3 else 'texture-sample')
+        if result['shaderBranch'] == 'texture-sample':
+            scale = 1.0/(1 << selected)
+            z = f32(uv[2]*scale)
+            fraction = f32(z-math.floor(z))
+            if fraction < 0:
+                fraction = f32(1+fraction)
+            tex_z = f32(f32(float(selected*66+1)+f32(fraction*64)) * ir_float('3F6F07C200000000'))
+            result['sampleCoordinatesBeforeSampler'] = [f32(uv[0]*scale), f32(uv[1]*scale), tex_z]
+        for key in ('cameraBefore', 'cameraAfter'):
+            camera = context.get(key)
+            if (isinstance(camera, list) and len(camera) == 3 and
+                    all(isinstance(v, (float, int)) and math.isfinite(v) for v in camera)):
+                result[key] = camera
+                result[key+'Distance'] = math.dist(world, camera)
+        result['bridgeFrames'] = [context.get('bridgeFrameBefore'), context.get('bridgeFrameAfter')]
+    except (ValueError, KeyError, TypeError, struct.error, OverflowError) as exc:
+        # No partially computed coordinates/branch survive an invalid record.
+        result = dict(status='unavailable', reason=str(exc),
+                      gpuFramePaired=False, textureReadBack=False)
+    return result
+
+
 def decode_report(source, assume_layout=False):
     if source.get('format') not in ('private-ambient-probe-v2',
                                    'private-exposure-context-v1'):
@@ -123,9 +201,12 @@ def decode_report(source, assume_layout=False):
         raise ValueError('Expected 1..1200 bounded samples')
     rows = []
     for sample in samples:
-        rows.append({**{k: sample[k] for k in ('sequence', 'frame', 'capturedTick',
-                                              'camera') if k in sample},
-                     **decode_cache(sample.get('exposureCache'), assume_layout)})
+        row = {**{k: sample[k] for k in ('sequence', 'frame', 'capturedTick',
+                                       'timestamp', 'camera', 'viewDirection') if k in sample},
+               **decode_cache(sample.get('exposureCache'), assume_layout)}
+        if 'spatialContext' in sample:
+            row['spatialContext'] = decode_spatial(sample['spatialContext'], assume_layout)
+        rows.append(row)
     return {
         'format': 'private-exposure-context-derived-v1',
         'layoutAssumed': assume_layout, 'publicTelemetry': False,

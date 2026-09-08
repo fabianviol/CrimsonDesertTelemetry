@@ -1,4 +1,33 @@
-# Current checkpoint — view-control recorded; candidate remains diagnostic, 2026-09-08, Codex/Astra
+# Current checkpoint — GI reference is camera-linked; direct sample still open, 2026-09-08, Codex/Astra
+
+Followed existing exposure/filter chain, found exact GI constant producer
+143C533A0: uploads768 bytes inline filterOwner+20; `_clipmapUVRelativeOffset`
+equals viewContext+8F8/8FC/900 world position times `_invClipmapExtent`.
+Exposure consumer1435429F0 selects the SAME CB at filterOwner+560/+568 via
+byte+705 and sky texture at+4B8. Exact binding/producer offsets and preserved
+native evidence: **docs/LOCAL_ILLUMINATION_RESEARCH.md**, native section.
+No heap search/hook/new API/config/ASI/install needed for this discovery.
+
+Implemented optional Capture-ExposureContext.ps1 -IncludeSpatialContext and
+offline spatial decoder (same explicit shader-layout flag): bounded double CPU
+copies, backlink/bank/layout guards, coordinates and fallback, no texture value.
+14/14 synthetic tests (including3004 old FP32 cases), PS7 parse clean.
+Live21:22:01 PID22128/sky.1:50 attempts/4.923s,50 progressing frames;45 stable
+spatial observations,5 changing contexts rejected. Reference matches camera to
+<0.001gu, NOT player. All45 CPU-model clipmap1, texture0x139A2FF40, CPU shape
+64x32x264.44 independent exposure candidates,6 unavailable. User moved since
+the prior outdoor control; do not invent an indoor transition from v changes.
+Evidence artifacts/light-research/local-illumination-spatial-context-20260908-
+pid22128-check1{,-derived}.json, rawSHA F34EB56E… . No GPU-frame pairing yet.
+
+**Next bounded step:** verify this texture's actual format/sampler/legal copy
+state at the known exposure binding/dispatch boundary and prepare paired direct
+texture+GI-CB readback. No guessed ResourceBarrier or generic movement test.
+Why v varied outdoors remains OPEN. Camera sky visibility is not player-local
+irradiance, direct sun/moon shadows or source visibility. Separate hiZ
+t15,space36 source-occlusion track still required; raw/smoothed feeds unchanged.
+
+## Previous checkpoint — outdoor view-control, 2026-09-08
 
 User said ready; ONE30s read-only exposure context recording20:57:18..48 CEST,
 PID22128/sky.1 unchanged.300 attempts,297 progressing renderer frames56279..57769,
