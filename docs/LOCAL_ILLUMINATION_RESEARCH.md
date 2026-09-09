@@ -107,6 +107,42 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Native sampler — 2026-09-09, bit-exact against seven captures
+
+The evaluation now exists in C++ as well as Python. This is the step that lets the
+plugin turn a volume into a handful of numbers instead of shipping 540672 bytes,
+which is the precondition for any continuous feed.
+
+`src/spatial_sample.cpp` ports the offline model exactly: the same layout offsets,
+the same clipmap selection over levels 1..7 with the same +-63/31/63 cell bounds,
+the same float32 rounding of every intermediate, the same slab z mapping through
+the DXIL constant, and the same linear-WRAP trilinear read accumulated in the same
+loop order so the sums round identically. Three entry points: `DecodeReference` for
+the position and clipmap, `SampleAtReference` for the exact reference path, and
+`SampleAtWorld` for the offsets a directional read needs.
+
+Two limitations are stated in the header rather than hidden. `SampleAtWorld` REUSES
+the clipmap selected for the reference instead of recomputing it, which holds for
+small offsets well inside the clipmap and not for arbitrary distances. And
+neighbouring offsets can fall in different amortised update blocks, so several
+offsets from one volume are not necessarily of the same age.
+
+**Verification against real captures is bit-exact.** `scripts/Verify-NativeSampler.py`
+extracts the constants and volume from every preserved capture, runs the native
+code through its `--vector` mode and compares against the Python decoder that every
+published number came from: **56 comparisons across seven captures, zero
+mismatches**, agreeing to all 17 significant digits. That includes the reference
+values 0.54354636445595861, 0.5968498114236247, 0.45754767087123838,
+0.047033219041111129 and 3.1052094153216636e-05, the exact zeros returned when
+sampling into the ground, and offsets at +-2, +-5 and +-3 game units on each axis.
+
+The captures stay out of Git, so this verification is run by hand. The 22 synthetic
+controls that DO run in CTest cover the algorithm rather than the data: weights
+summing to one, a midpoint weighting two texels equally, negative coordinates
+wrapping to the far edge while an interior coordinate does not see it, the
+fallback branch reporting one without ever sampling, and the guards on inverse
+extent, clipmap scale, null constants and a missing volume.
+
 ## The drift explained: amortised block updates — 2026-09-09, analysis
 
 Offline analysis of the eight volumes in each series. No new capture. This retires

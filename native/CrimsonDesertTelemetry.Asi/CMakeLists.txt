@@ -130,6 +130,10 @@ target_compile_options(CrimsonDesertTelemetrySpatialPairTests PRIVATE "$<$<COMPI
 target_link_libraries(CrimsonDesertTelemetrySpatialPairTests PRIVATE minhook nlohmann_json::nlohmann_json d3d12 dxgi d3dcompiler psapi user32)
 add_test(NAME spatial-paired-readback COMMAND CrimsonDesertTelemetrySpatialPairTests)
 set_tests_properties(spatial-paired-readback PROPERTIES TIMEOUT 30)
+add_executable(CrimsonDesertTelemetrySpatialSampleTests tests/spatial_sample_tests.cpp src/spatial_sample.cpp)
+target_compile_features(CrimsonDesertTelemetrySpatialSampleTests PRIVATE cxx_std_20)
+add_test(NAME spatial-native-sampler COMMAND CrimsonDesertTelemetrySpatialSampleTests)
+
 add_executable(CrimsonDesertTelemetrySpatialThunkTests tests/spatial_thunk_tests.cpp tests/spatial_thunk_fixture.asm src/spatial_thunk.asm)
 target_compile_features(CrimsonDesertTelemetrySpatialThunkTests PRIVATE cxx_std_20)
 target_compile_options(CrimsonDesertTelemetrySpatialThunkTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")

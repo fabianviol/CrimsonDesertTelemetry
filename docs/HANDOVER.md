@@ -4,9 +4,9 @@ The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
-position, the cheap CPU shortcut is proven ill-conditioned, and three live
-series plus offline analysis show the plateaus are amortised block refresh of the
-voxel volume, which caps how responsive any feed built on it can be** (current checkpoint below). readback.4 is the ASI in
+position, the cheap CPU shortcut is proven ill-conditioned, and the plateaus are amortised block refresh of the voxel
+volume, and a native sampler now reproduces the offline model bit-exactly on seven
+real captures** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,47 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — the drift is amortised block refresh, 2026-09-09
+## Current checkpoint — native sampler built and verified, 2026-09-09
+
+The evaluation now exists in C++ as well as Python, which is what lets the plugin
+turn a volume into a few numbers instead of shipping 540672 bytes. No package built
+yet and nothing installed; this is source, tests and a verification tool.
+
+`src/spatial_sample.cpp` ports the offline model exactly: same layout offsets, same
+clipmap selection over levels1..7 with the same +-63/31/63 bounds, same float32
+rounding of every intermediate, same slab z mapping through the DXIL constant, and
+the same linear-WRAP trilinear read accumulated in the same loop order so the sums
+round identically. Entry points are `DecodeReference`, `SampleAtReference` and
+`SampleAtWorld`, the last being what a directional read needs.
+
+Two limitations are in the header, not hidden: `SampleAtWorld` REUSES the clipmap
+selected for the reference rather than recomputing it, valid only for small offsets
+well inside the clipmap; and neighbouring offsets can fall in different amortised
+update blocks, so offsets from one volume are not necessarily the same age.
+
+**VERIFIED BIT-EXACT AGAINST REAL CAPTURES.** `scripts/Verify-NativeSampler.py`
+runs the native code over every preserved capture and compares to the Python
+decoder all published numbers came from: **56 comparisons across seven captures,
+zero mismatches**, to all17 significant digits — including 0.54354636445595861,
+0.5968498114236247, 0.45754767087123838, 0.047033219041111129 and
+3.1052094153216636e-05, the exact zeros from sampling into the ground, and offsets
+of +-2, +-5 and +-3 gu per axis. Captures stay out of Git so this is run by hand.
+
+24/24 native CTests, up from 23: the new `spatial-native-sampler` test carries 22
+synthetic controls covering the algorithm rather than the data — weights summing to
+one, a midpoint weighting two texels equally, negative coordinates wrapping while
+an interior coordinate does not, the fallback reporting one without sampling, and
+guards on inverse extent, clipmap scale, null constants and a missing volume.
+
+**ONE next step:** wire the sampler into the probe so a transaction records a small
+set of sampled values — reference plus a fixed offset pattern — beside the volume,
+and confirm live that the recorded natives match what the decoder derives from the
+same volume. That closes the loop in game and produces the first payload small
+enough to be a feed. Only then design the public contract, and state in it the two
+limitations above plus the amortisation freshness bound. Independent hiZ
+per-source visibility remains pending and required.
+
+## Previous checkpoint — the drift is amortised block refresh, 2026-09-09
 
 Offline analysis of the eight volumes in each series, no new capture. The drift
 that dominated the day/night test now has a mechanism, and it explains every
