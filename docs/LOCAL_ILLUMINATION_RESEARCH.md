@@ -14,6 +14,83 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## The moment test, run offline from the capture — 2026-09-09
+
+The review asked for a static moment test before any day/night comparison: read
+the live buffer, decode it, and see whether the contents behave like an ambient
+SH rather than merely changing. It did not need a game run. The 2.7 GB
+`export-to-cpp` tree contains the frame's actual resource contents.
+
+**Getting bytes out of a PIX export.** `resources.bin` has no index. It is a bare
+concatenation of XPRESS-compressed blocks consumed in program order by
+`ResourceReader::Read(buffer, compressedSize)`, so a block's file offset is the sum
+of every compressed size read before it. `scripts/Read-PixExportResource.py`
+reconstructs that order from the generated source and decompresses one block
+through `Cabinet.dll`. The walk is self-checking: a wrong order makes XPRESS fail
+rather than return plausible bytes. Summing the reconstructed sequence accounts for
+2,705,577,794 of the file's 2,707,270,671 bytes, the remainder being the later
+render-phase reads.
+
+**Finding the buffer.** The whole capture contains exactly THREE constant buffer
+views of 1024 bytes. All three resolve through their heaps to offset 0 of a placed
+resource, and all three decompressed cleanly to 65536-byte resources:
+
+| view | resource | contents |
+|---|---|---|
+| `GetGpuva(223, 393216)` x126 | 224 | 32 pairs of world-space triples, tens of units apart |
+| `GetGpuva(15409, 851968)` x8 | 15411 | a position `(-10487.69, 605.58, -4436.77)`, a unit direction `(0.9406, 0, -0.3396)`, and `30` |
+| `GetGpuva(15728, 589824)` x348 | **15739** | **the ambient** |
+
+The second is recognisably a camera: the direction squares to 1.0000.
+
+**What resource 15739 holds,** from the lantern capture of 2026-09-05:
+
+```
+R   0.013965  -0.005414   0.000620   0.000601  -0.000037  -0.000080   0.005426   0.003394   0.009995
+G   0.010839  -0.004973   0.000332   0.000320  -0.000002  -0.000034   0.003769   0.002348   0.006945
+B   0.004911  -0.002985   0.000053   0.000046   0.000028   0.000015   0.001189   0.000842   0.002218
+```
+
+**The predicted layout is what came out.** Slots 0..5 fall into three pairs, one per
+channel, and slot 6 supplies each channel's ninth value in x/y/z — exactly the
+`SHColor2` split the producer's groupshared memory implied, with slot 6's w spare.
+This was predicted from DXC's array sizes before any byte was read.
+
+**Coefficient 0 is the DC term, and this is measured, not assumed.** It is the
+largest by magnitude in all three channels. For a smooth environment the direct term
+must dominate, so index 0 is pinned. Indices 1..8 remain unordered: no shader in the
+local listings reads slots 0..6, so nothing available pins the basis convention.
+
+**A second, independent value agrees on the colour.** Slot 56 — the one the two
+atmospheric-scattering renderers read — holds a bare RGB triple, not a set of
+harmonics: `(0.022237, 0.016027, 0.006020)`. Its hue matches the DC term derived
+from the SH split:
+
+```
+DC term   R:G:B = 1.000 : 0.776 : 0.352
+slot 56   R:G:B = 1.000 : 0.721 : 0.271
+```
+
+Two different regions of the buffer, produced by different code paths, agree on a
+warm ambient. That agreement is the strongest evidence yet that the split is read
+correctly — a mis-framed layout would not produce a matching hue by chance.
+
+**The magnitudes are small: a DC term around 0.014.** Whether a warm tint is correct
+for that scene is not something the shader can tell us; the file name records the
+wall clock, not the in-game hour. It does give a falsifiable prediction for the
+next capture: **a daytime sky must invert the ratio, with B above R.** If a midday
+capture also reads warm, the layout is wrong.
+
+**Slot 7 is not harmonics** and is unexplained: `(16366681.0, 1115.56, 1673.45,
+0.111556)`. It is the slot every consumer in the local listings reads. The 16.4
+million is far outside the range of everything else in the buffer.
+
+**Only sets 0 and 7 are populated.** Sets 1..6 are entirely zero in this frame, so
+whatever `_renderFlags.x` selects, it was not exercising them here.
+
+`scripts/Decode-AmbientSH.py` performs the decode; 16 tests cover both scripts,
+68 in the suite.
+
 ## The engine multiplies environment radiance by our own quantity — 2026-09-09
 
 Prompted by an outside review that refused to accept "the two multiply" as anything

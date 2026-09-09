@@ -55,8 +55,25 @@ for `GetResource(<id>)` to obtain the actual SRV format, `MostDetailedMip` and
 Existing captures live in `artifacts/light-research/pix-captures/`; existing
 exports in `artifacts/light-research/pix-provenance-*/`. Both stay out of Git.
 
-Buffer contents (constant buffers, structured buffers) were exported through the
-export button in PIX's own buffer view, not by script.
+**Buffer and texture contents can be read from an export WITHOUT building it.**
+`resources.bin` is a bare concatenation of XPRESS-compressed blocks with no index,
+consumed in program order by `ResourceReader::Read(buffer, compressedSize)`, so a
+block's file offset is the sum of every compressed size read before it.
+`scripts/Read-PixExportResource.py` reconstructs that order from the generated
+source and decompresses one block through `Cabinet.dll`:
+
+```powershell
+$export = 'artifacts/light-research/pix-provenance-20260909/cpp'
+python scripts/Read-PixExportResource.py $export --list-cbv 1024
+python scripts/Read-PixExportResource.py $export --cbv 15728 589824 --out out.bin
+python scripts/Read-PixExportResource.py $export --resource 15739 --out out.bin
+```
+
+`--list-cbv SIZE` finds every constant buffer view of exactly that size and resolves
+each to a resource; a CBV names the HEAP for placed resources, so the resource is
+whichever one covers that heap offset. The walk is self-checking -- a wrong order
+makes XPRESS fail rather than return plausible bytes. Alternatively, buffer contents
+can be exported by hand through the export button in PIX's own buffer view.
 
 ## Shader extraction and lookup — existing Codex tools
 
@@ -206,6 +223,8 @@ requires 7.4 or newer.
 | `Analyze-SegmentOcclusion.py` | one capture, given viewpoints and a target |
 | `Analyze-VolumeChurn.py` | how much of a volume changes between transactions |
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
+| `Read-PixExportResource.py` | reads a resource's captured bytes out of a pixtool export without building it |
+| `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
 
 All the Python tools read only preserved artifacts and never touch the game.
 

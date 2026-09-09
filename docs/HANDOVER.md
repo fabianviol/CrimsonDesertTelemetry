@@ -245,7 +245,26 @@ feed (the earlier survey used the authored array), 302 segments give 119 blocked
 78 clear and 105 honestly unknown. The validated lantern still resolves correctly.
 52 Python tests, six new, one encoding the measured failure mode.
 
-**THE AMBIENT HALF MAY ALREADY BE SOLVED, and it is 1024 bytes.**
+**THE MOMENT TEST IS DONE, OFFLINE, AND THE PREDICTED LAYOUT HELD.** No game run
+was needed: the `export-to-cpp` tree carries the frame's real resource contents.
+`resources.bin` has no index -- it is a concatenation of XPRESS blocks read in
+program order -- so `scripts/Read-PixExportResource.py` reconstructs that order from
+the generated source and decompresses one block. The capture holds exactly THREE
+1024-byte CBVs; one is a camera (its direction squares to 1.0000), one is a list of
+world-space pairs, and the third, resource 15739, is the ambient.
+
+Its bytes fall into three channels of nine exactly as DXC's array sizes predicted
+before anything was read, and coefficient 0 is measurably the largest in every
+channel, so the DC term is pinned. Slot 56 -- the slot the atmospheric renderers
+read -- holds a bare RGB triple whose hue MATCHES the DC term (1.000:0.776:0.352
+against 1.000:0.721:0.271), two code paths agreeing on a warm ambient. Indices 1..8
+stay unordered; nothing local reads slots 0..6. Slot 7 is unexplained and huge
+(16366681.0, 1115.56, 1673.45, 0.111556). Sets 1..6 are all zero in this frame.
+
+**Falsifiable next step: a DAYTIME capture must invert the ratio, B above R.** If a
+midday sky also reads warm, the layout is wrong. 68 script tests pass.
+
+**The ambient half, in detail: 1024 bytes.**
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (in
 `artifacts/light-research/ambient-check-20260907-sky-ca7a87f5.ll`, unopened since
 2026-09-07) integrates the sky inscatter LUT into **L2 spherical harmonics, RGB** —
