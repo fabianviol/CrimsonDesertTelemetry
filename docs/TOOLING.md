@@ -233,6 +233,7 @@ requires 7.4 or newer.
 | `Analyze-VolumeChurn.py` | how much of a volume changes between transactions |
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
 | `Read-PixExportResource.py` | reads a resource's captured bytes out of a pixtool export without building it |
+| `Map-PixExportShaders.py` | names the pipeline states in a pixtool export, so a dispatch can be attributed to a shader |
 | `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
 
 All the Python tools read only preserved artifacts and never touch the game.

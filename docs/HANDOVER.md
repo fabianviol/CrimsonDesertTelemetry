@@ -288,14 +288,18 @@ SH; the measure is missing.
 **The 1/6144 is not arbitrary, and it points at cube faces.** Each entry samples
 4096 directions -- proven twice: 16x16 threads with `threadId << 2` and 4x4 loops, and
 the NDC scale 1/32 needing 64 steps to span [-1,1]. Six entries is therefore
-N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map. And 1/6144 = 4/24576 =
-(4*pi/24576)/pi: **the canonical uniform-sphere weight for 24576 directions with a
-Lambertian 1/pi folded in**, both to float32 precision. That only makes sense if the
-six together cover a sphere. So the engine applies the UNIFORM-sphere weight to a
-grid that is not uniform -- on a cube face the per-texel solid angle varies by
-3^(3/2) = 5.2 from centre to corner -- which is a deliberate approximation, not a
-wrong constant. (Back door: a weight baked into `g_texSkyInscatter` itself cannot be
-excluded without tracing its producer.)
+N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map, and 1/6144 = 4/24576 =
+(4*pi/24576)/pi to float32 precision. **The Lambertian reading of that 1/pi is
+WITHDRAWN** -- a cosine convolution is band-dependent (1, 2/3, 1/4 after dividing by
+pi), so one global scalar cannot be it, and searching all 79 listings finds NO band
+factors and none of the Ramamoorthi constants. Nor does the constant prove a sphere:
+1/6144 also factors as (2/3)/4096. Honest statement: **the normalisation is consistent
+with six jointly evaluated 64x64 projection faces and notably compatible with a cube
+map**; 6 x 1024 is refuted, and that is all. Certain about the Jacobian: every sample
+in this shader carries the same scalar weight with no position-dependent correction.
+IF the six are faces, that approximates a spherical integral, since a cube face's
+per-texel solid angle varies by 3^(3/2) = 5.2 -- unless `g_texSkyInscatter` is already
+pre-weighted, which needs its producer to exclude.
 
 Accordingly the directional result is stated as: the red L1 band is strongly oriented
 toward +y (`(-0.000601, +0.005414, +0.000620)`), by an order of magnitude. Calling it
@@ -313,16 +317,31 @@ slots  8..55  SIX ENTRIES, _renderFlags.x selecting the write slot
 slots 56..63  outside those six, contents unknown
 ```
 
-**Cube faces or six frames is the open question; the normalisation favours faces.**
-Against it: the projection matrix is read from LITERAL rows 30..33 of
-SceneConstantBuffer, the same slot every time -- though the engine may upload a
-different constant buffer per dispatch, so that is not decisive. What would settle it
-is `_renderFlags.x`, which could NOT be read here: the export records **no
-SetComputeRoot32BitConstants at all** (368 root CBVs, 1284 descriptor tables, zero
-root constants), so GlobalPushConstants is bound as a root CBV by address despite the
-name -- and root CBVs carry no descriptor, which is itself why the `--list-cbv` count
-is not an inventory. Reading it needs the six dispatches located, which needs a
-PSO-to-shader mapping.
+**Cube faces or six frames is the open question, and THIS CAPTURE CANNOT SETTLE IT.**
+Settling it needs `_renderFlags.x` and the six matrices, which needs the dispatches
+located, which needs a PSO-to-shader mapping -- so `scripts/Map-PixExportShaders.py`
+was built. `CreatePSOs.cpp` reads each pipeline state's bytecode from resources.bin
+and a DXIL container keeps its entry name as a NUL-terminated string, so the same
+read-order walk names them: **236 of this capture's 287 compute pipeline states**.
+(The engine names entries either with a stage suffix, `RenderDiffuseCS`, or a
+lowercase prefix, `csPrecomputeAmbient`; matching only the first drops the whole
+atmospheric family.)
+
+**A direct byte search across all 287 blobs finds no
+`GenerateAmbientFromEnvironmentAtmosphericScatteringCS`**, while every sibling is
+there: csPrecomputeAmbient 22283, csRenderAtmosphericScattering 22314 and 22337,
+GenerateAtmosphericScatteringDispatchIndirectArgumentsCS 22313, SkyMaterialCS 22306,
+EvaluateDiffuseRadianceCS 22408/22409, RenderDiffuseTiledCS 22565/22566. So the SH
+producer runs on a different cadence, nothing in this export writes slots 8..55 --
+which explains the zeros and also closes the idea of replaying the export to
+reconstruct a consistent state.
+
+**What the next capture must contain:** a dispatch of the ambient producer. Then per
+dispatch resolve the root CBV holding GlobalPushConstants for `_renderFlags.x`, and
+rows 30..33 of the bound SceneConstantBuffer for the direction at the NDC centre. Six
+centres near +-X, +-Y, +-Z would prove the faces. Note the export records **no
+SetComputeRoot32BitConstants at all** -- GlobalPushConstants is a root CBV by address
+despite the name, which is also why the `--list-cbv` count is not an inventory.
 
 **Two retractions.** Slot 56 is NOT "a bare RGB triple corroborating the hue" -- it
 lies outside the six and its meaning is unknown; that corroboration is withdrawn as a

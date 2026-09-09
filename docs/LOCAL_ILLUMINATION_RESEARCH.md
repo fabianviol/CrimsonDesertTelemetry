@@ -60,17 +60,41 @@ the shader's constant      1.627604215e-04     (float32)
 canonical / shader         3.14159256          against pi = 3.14159265
 ```
 
-So the factor is **the canonical uniform-solid-angle weight for 24576 directions
-covering a full sphere, with a 1/pi folded in** — the Lambertian normalisation, so a
-consumer can use the result as irradiance without dividing. Both halves of that agree
-to float32 precision. 6 x 1024 is a coincidence; 6 x 64 x 64 over a sphere is not.
+So the factor equals the canonical uniform-solid-angle weight for 24576 directions
+over a sphere, divided by pi, both to float32 precision.
 
-**That reframes the missing Jacobian.** The engine is not merely omitting a weight —
-it is applying the weight for a UNIFORM sphere sampling to a grid that is not
-uniform. On a cube face the per-texel solid angle goes as
-`(1 + x^2 + y^2)^(-3/2)`, a factor of `3^(3/2)` = 5.2 between face centre and corner.
-Treating the grid as uniform is a deliberate approximation of that, not an oversight
-in the constant.
+**The Lambertian reading of that 1/pi is WITHDRAWN.** It was invented rationale. A
+cosine convolution of SH is band-dependent — the irradiance factors are `pi`,
+`2*pi/3`, `pi/4`, or after dividing by pi, `1`, `2/3`, `1/4` — so one global scalar
+applied identically to all 27 accumulators cannot be it. Searching all 79 listings for
+those factors and for the Ramamoorthi constants finds none of them:
+
+| constant | where it appears |
+|---|---|
+| `pi` | InjectLightGroupsCS, InjectLightsCS, ProcessManyLightsCS |
+| `2*pi/3`, `pi/4`, `2/3` | absent from all 79 |
+| 0.886227, 1.023328, 0.247708 | absent from all 79 |
+| 0.429043, 0.511664, 0.743125 | absent from all 79 |
+
+(`1/4` does occur, but 0.25 is too common to mean anything.) So no cosine convolution
+is visible anywhere in what we hold, and the 1/pi has no demonstrated Lambertian
+meaning. It is, for now, an engine-specific projection normalisation.
+
+**And 6 x 64 x 64 must not be over-read either.** 1/6144 also factors as `(2/3)/4096`
+and `1/(1.5 * 4096)`; the constant alone cannot prove six faces over a sphere. The
+honest statement is that the normalisation **is consistent with six jointly evaluated
+64x64 projection faces and is notably compatible with a cube map construction**, and
+that what the six entries are remains to be shown. 6 x 1024 is refuted; that is all.
+
+**On the missing Jacobian, what is actually certain** is narrower than "the engine
+applies a uniform-sphere weight to a non-uniform grid", since that already assumes
+the constant is meant as that weight. Certain: within this shader every sample carries
+the same scalar weight, and there is no position-dependent correction of any kind. IF
+the six are cube faces, that is an approximation against a true spherical integral,
+because a regular grid on a cube face has per-texel solid angle going as
+`(1 + x^2 + y^2)^(-3/2)` — a factor of `3^(3/2)` = 5.2 from centre to corner — unless
+`g_texSkyInscatter` is already pre-weighted, which cannot be excluded without tracing
+its producer.
 
 **One back door stays open.** What is proven is that no solid-angle correction
 appears IN THIS SHADER. A weight baked into `g_texSkyInscatter` itself cannot be
@@ -104,13 +128,48 @@ LITERAL rows 30..33 of the 2768-byte `SceneConstantBuffer`, the same slot every 
 though that is not an argument against faces, since the engine is free to upload a
 different constant buffer for each of six dispatches.
 
-What would settle it is `_renderFlags.x`. That could not be read from the capture
-here: the export records **no `SetComputeRoot32BitConstants` at all** — 368
-`SetComputeRootConstantBufferView`, 1284 `SetComputeRootDescriptorTable`, and no root
-constants — so `GlobalPushConstants` is bound as a root CBV by address despite its
-name. Root CBVs carry no descriptor, which is also a live demonstration of why the
-`--list-cbv` count is not an inventory. Reading it needs the six dispatches located
-first, which needs a PSO-to-shader mapping.
+What would settle it is `_renderFlags.x` and the six matrices. Reading them needs the
+dispatches located, which needs a PSO-to-shader mapping — so that was built, and it
+answers the question in an unexpected way.
+
+**A PSO-to-shader index, from the same read-order walk.** `CreatePSOs.cpp` reads each
+pipeline state's bytecode from `resources.bin`, and a DXIL container keeps its entry
+point name as a NUL-terminated string. `scripts/Map-PixExportShaders.py` walks the
+287 compute pipeline states of this capture and names 236 of them. It is the piece
+that lets a dispatch in `CommandLists_*.cpp` be attributed to a shader.
+
+A detail that cost a rebuild: this engine names entries either with a stage suffix
+(`RenderDiffuseCS`) or with a lowercase stage prefix (`csPrecomputeAmbient`). Matching
+only the first silently drops the entire atmospheric-scattering family.
+
+**And the producer is not in this capture.** A direct byte search for
+`GenerateAmbientFromEnvironmentAtmosphericScatteringCS` across all 287 pipeline state
+blobs finds nothing, while its siblings are all present:
+
+| shader | PSO |
+|---|---|
+| `csPrecomputeAmbient` | 22283 |
+| `csRenderAtmosphericScattering` | 22314, 22337 |
+| `csCopyCloudDensity` | 22280 |
+| `csPrecomputeCloudVolumeShadow` | 22281 |
+| `GenerateAtmosphericScatteringDispatchIndirectArgumentsCS` | 22313 |
+| `SkyMaterialCS` | 22306 |
+| `EvaluateDiffuseRadianceCS` | 22408, 22409 |
+| `RenderDiffuseTiledCS` | 22565, 22566 |
+
+So the SH producer runs on a different cadence from the rest of the atmospheric
+chain, and **this capture cannot settle cube faces against frames**: it contains no
+dispatch of the shader that writes the six entries. That also closes the idea of
+reconstructing a consistent buffer state by replaying this export — nothing in it
+writes slots 8..55. It explains the zeros too.
+
+**What a capture would need in order to settle it:** it must contain a dispatch of
+`GenerateAmbientFromEnvironmentAtmosphericScatteringCS`. Then, per dispatch, resolve
+the root CBV holding `GlobalPushConstants` to read `_renderFlags.x`, and rows 30..33
+of the bound `SceneConstantBuffer` to reconstruct the direction at the NDC centre. Six
+centres landing near +X, -X, +Y, -Y, +Z, -Z would prove the faces. 51 of the 287
+pipeline states are still unnamed, so absence in the map alone would not be proof —
+the direct byte search is what carries the negative here.
 
 Each ring entry is packed exactly like set 0: `R.v0, R.v1, G.v0, G.v1, B.v0, B.v1,
 (R.c, G.c, B.c, 0)`. That is where the `{ 8 x float4, [56 x float4] }` declaration

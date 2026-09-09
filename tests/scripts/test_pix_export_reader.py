@@ -17,6 +17,7 @@ def _load(name, filename):
 
 reader = _load('pixreader', 'Read-PixExportResource.py')
 ambient = _load('ambientsh', 'Decode-AmbientSH.py')
+shadermap = _load('shadermap', 'Map-PixExportShaders.py')
 
 
 CREATE_RESOURCES = '''#include "pch.h"
@@ -190,6 +191,45 @@ class AmbientBasisTests(unittest.TestCase):
         self.assertGreater(y, 0.0)
         self.assertGreater(abs(y), abs(x))
         self.assertGreater(abs(y), abs(z))
+
+
+NUL = bytes([0])
+
+
+def container(*names, trailing=True):
+    """A stand-in DXIL container: NUL-terminated strings amid binary noise."""
+    blob = bytes([0, 1]) + b'DXBC'
+    for name in names:
+        blob += NUL + name.encode('ascii')
+    return blob + (NUL if trailing else b'') + b'tail'
+
+
+class ShaderMapTests(unittest.TestCase):
+    """Entry names are pulled out of DXIL containers as NUL-terminated strings."""
+
+    def test_a_suffixed_entry_name_is_found(self):
+        self.assertEqual(shadermap.entry_names(container('EvaluateDiffuseRadianceCS')),
+                         ['EvaluateDiffuseRadianceCS'])
+
+    def test_a_prefixed_entry_name_is_found(self):
+        # csPrecomputeAmbient and its family end in no stage suffix at all.
+        self.assertEqual(shadermap.entry_names(container('csPrecomputeAmbient')),
+                         ['csPrecomputeAmbient'])
+
+    def test_names_are_deduplicated_but_keep_their_order(self):
+        self.assertEqual(shadermap.entry_names(container('BravoCS', 'AlphaCS', 'BravoCS')),
+                         ['BravoCS', 'AlphaCS'])
+
+    def test_an_unterminated_candidate_is_not_reported(self):
+        self.assertEqual(shadermap.entry_names(b'RenderDiffuseCS'), [])
+
+    def test_a_container_without_names_yields_nothing(self):
+        self.assertEqual(shadermap.entry_names(container()), [])
+
+    def test_only_pipeline_state_reads_are_collected(self):
+        directory = tempfile.mkdtemp()
+        make_export(directory)
+        self.assertEqual(list(shadermap.pipeline_blocks(reader, directory)), [])
 
 
 if __name__ == '__main__':
