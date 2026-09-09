@@ -2171,3 +2171,55 @@ accumulated value was not traced instruction by instruction, so how a sample
 contributes to the accumulator — weighting, step-length scaling, any density
 factor — is unread. The sign convention question is now differently shaped: if this
 is coverage rather than distance, there may be no sign at all.
+
+## The full sample-to-hit chain, closed — 2026-09-09
+
+Traced instruction by instruction in `gi-entry-864eec9d.ll`, lines 1206..1290. This
+answers the questions the outside review posed and CORRECTS two claims made here
+one commit earlier.
+
+**The recurrence.**
+
+```
+d        = SampleLevel(Texture3D<float> t233, sampler, u, v, w)   trilinear, LOD 0, channel 0
+coverage = saturate(1 - ((d + bias) / width(t))^2)
+A        = saturate(A + coverage * gate)                          gate is 0 or 1
+hit      when A >= 0.5
+step     = FMax(FMin(stepCandidate, d), minStep)                  only while d <= width and level <= 2
+```
+
+**CORRECTION 1: t233 behaves as a DISTANCE field, not an opacity volume.** The
+previous entry suggested it might be coverage or opacity. The chain refutes that.
+The sample is divided by a width, squared and subtracted from one, so a large
+sample yields zero coverage and a small sample yields full coverage — the algebra
+of a distance. The same sample also limits the next step through
+`FMin(stepCandidate, d)`, which is sphere tracing and only makes sense for a
+distance. The SDF reading is therefore supported, not undermined.
+
+**CORRECTION 2: "integral" was the wrong word.** The accumulation weight `%831` is
+`uitofp i1`, a boolean widened to float, so it is 0 or 1 — a gate, not a step
+length. Each qualifying sample adds its FULL coverage; non-qualifying samples add
+nothing. It is a gated sum of per-sample coverages, not an integral over path
+length, and it is not alpha compositing or a maximum either. The review was right
+to withhold the word until the chain was read.
+
+**The 0.5 threshold is footprint-relative and must NOT be transplanted.** The width
+in the coverage term is built from the accumulated distance `t`: the code forms
+`saturate(t*0.5 + 0.5)`, scales the cell size by ~1.0605, and combines these so the
+normalising width GROWS with distance travelled. That is a cone footprint widening
+along the ray, exactly the concern the review raised. A thin camera-to-light ray
+has no such footprint, so 0.5 means something different there and would have to be
+re-derived rather than copied.
+
+**Why this is still the better basis than our refuted heuristic.** A single low
+sample cannot decide anything: it contributes one coverage term that must compete
+with the 0.5 budget. A grazing wall contributes a little, a thick wall contributes
+repeatedly and crosses the threshold quickly, and a thin occluder lands in between
+instead of being treated like a solid mountain. That is the graded behaviour the
+minimum test could never produce.
+
+**Still open.** What the gate `%830` tests, the bias `%661` (a small constant scale
+of another value), the exact composition of the width, whether `t233` is the same
+resource as the `t66` that PropagateSignedDistanceCS writes, and the field's world
+scale and sign. None of these blocks designing our own accumulation, but all of
+them block copying the engine's constants verbatim.
