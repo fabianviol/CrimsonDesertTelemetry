@@ -220,10 +220,33 @@ entirely in clipmap 1. The two survey flaws are still unfixed: uncovered points 
 silently skipped and resolution changes mid-segment. The survey also used the
 authored light array rather than the rendered feed and should be re-run.
 
-**ONE next step:** fix those two flaws, then repeat the A-B-A at a geometry that
-probes the hard cases — a doorway rather than a wall corner, and a source far
-enough away to cross into clipmap 2 or 3. A threshold may only be proposed once
-visible cases at grazing angles have been seen to stay above it. It must state the camera reference, the candidate-not-measurement
+**THE METHOD IS REFUTED AS A GENERAL TEST, by our own data.** An independent
+review pointed out that the field is sky visibility, not occupancy, so free air
+inside an enclosure can read as low as solid. It does: the camera under the barn
+roof stood in FREE AIR and marching outward, still in free air, reaches 0.0001 —
+below the 0.000661 measured inside a wall. The lantern case worked only because
+both endpoints were outdoors. Indoors, and therefore in a cave, both ends read near
+zero and a naive minimum reports "blocked" for everything.
+
+Fixed in response: the marcher now lives once in
+`Decode-SpatialReadback.march_segment`, steps at 0.5 gu instead of 0.25, excludes
+endpoint neighbourhoods, COUNTS uncovered points into `unknown-uncovered` rather
+than skipping them, requires a connected low run of real thickness, and returns
+`unknown-enclosed` when both ends already see no sky. Re-run against the RENDERED
+feed (the earlier survey used the authored array), 302 segments give 119 blocked,
+78 clear and 105 honestly unknown. The validated lantern still resolves correctly.
+52 Python tests, six new, one encoding the measured failure mode.
+
+**ONE next step: find the resource UPSTREAM of the R8 texture.** It is the result
+of a geometric computation, and whatever feeds it — opacity, occupancy, a distance
+field — is the right input for line of sight, where voxel-exact DDA traversal would
+replace point sampling. Same targeted method as everything so far, in a system we
+are already inside. In parallel, a ground-truth labeller from the depth buffer
+(`g_hiZMap t15, space36`, already identified) would let competing statistics be
+compared on error rates rather than on one lantern. Sky visibility stays the right
+quantity for the AMBIENT feed and, for occlusion, a confidence rather than an
+answer. Engine raycast, inline DXR and per-light shadow maps are recorded as
+alternatives, none adopted. It must state the camera reference, the candidate-not-measurement
 framing, the amortisation freshness bound, the clipmap reuse for offsets, the
 mixed-age offsets, the toroidal offset bound above, and that the value does not
 reach 1 under open sky (~0.53) BY DESIGN rather than by defect. Decide the offset

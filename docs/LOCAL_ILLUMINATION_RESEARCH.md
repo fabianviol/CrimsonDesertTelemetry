@@ -107,6 +107,88 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## The occlusion test is refuted as a general method — 2026-09-09
+
+An independent review, sought by the user, raised an objection that our own data
+confirms. It is recorded here in full because it changes the direction of this
+line of work.
+
+**The objection.** The field is SKY VISIBILITY, not occupancy. Below ground, inside
+a wall and deep under a roof all read near zero. If "deep under a roof" was a point
+in free air, then free space can read the same as solid, and no general line of
+sight can be recovered from this single scalar field.
+
+**It was free air, and the refutation holds.** The camera under the barn roof stood
+in open space and read 0.047033. Marching outward from it, still entirely in free
+air:
+
+```
++Z  0.0470  0.0051  0.0009  0.0020  0.0012  0.0001  0.0094 ...
+```
+
+Free air under a roof reaches **0.0001**, which is BELOW the 0.000661 measured
+inside a building wall and comparable to the 0.000000 measured below ground. So a
+low value does not mean solid; it means "sees no sky". The validated lantern case
+worked only because both endpoints were outdoors. Run the same experiment inside a
+building or a cave and both ends read near zero, and a naive minimum test would
+report "blocked" for everything — precisely where fire occlusion matters most.
+
+Two further points from the review are also correct: a longer segment with more
+samples is systematically more likely to find a low value, and 0.25 gu steps on a
+1 gu grid are fourfold oversampling of correlated, trilinearly interpolated data
+that adds no geometric information.
+
+**What was changed in response.** The marcher now lives once, in
+`Decode-SpatialReadback.march_segment`, instead of being copied into each script
+where the flaws could diverge. It steps at 0.5 gu, half the finest voxel, so coarse
+levels are oversampled rather than undersampled. It excludes the endpoints' own
+neighbourhoods. Points that no sampled clipmap covers are COUNTED and force
+`unknown-uncovered` instead of being silently dropped, which was the first
+recorded flaw. It requires a connected low run of real thickness before saying
+blocked, rather than a single low sample. And it applies the relative rule the
+review suggested: when both endpoints already read below the free threshold, the
+verdict is `unknown-enclosed`, because the field cannot then distinguish a wall
+between them from an enclosure around both.
+
+**Effect on the survey.** Re-run against the RENDERED light feed — the earlier
+survey wrongly used the authored array — 302 segments now come out as 119 blocked,
+78 clear, and 105 honestly unknown (81 marginal, 19 enclosed, 5 too short). A third
+of the cases no longer receive a verdict they cannot support. The earlier clean
+bimodality was partly an artefact of silent skipping.
+
+The validated lantern case still resolves correctly under the stricter rules:
+`clear` with minimum 0.128 from the visible viewpoint, `blocked` with a 4.1 gu low
+run from the occluded one, across all eight volumes.
+
+**Revised plan, in priority order.**
+
+1. **Find the resource upstream of this texture.** The R8 volume is the *result* of
+   a geometric computation. Whatever feeds it — an opacity, occupancy or distance
+   field — would be the right input for a line-of-sight test, and on a true
+   occupancy grid the correct algorithm is voxel-exact DDA traversal rather than
+   point sampling. This is the same targeted approach that found everything so far,
+   in a system we are already inside; it is not a return to broad scanning.
+2. **Build a ground-truth labeller from the depth buffer.** The review's best
+   suggestion, and better than treating depth as the answer. For lights currently
+   on screen we already have camera matrices and light positions, so projecting a
+   source and comparing against scene depth yields hundreds of labelled
+   visible/occluded examples automatically. Only then can competing statistics —
+   minimum, quantile, low-run length, multiple offset rays — be compared on error
+   rates instead of on one lantern. The depth resource is already identified as
+   `g_hiZMap t15, space36` in ProcessManyLightsCS.
+3. **Keep sky visibility for what it is good at.** It remains the right quantity
+   for the ambient feed, where "sees no sky" is exactly the question. As an
+   occlusion input it should be labelled a confidence, never a visibility answer.
+
+Two further alternatives the review raised are recorded but not adopted now. An
+engine-internal physics raycast would be ideal in principle, but calling engine
+code with our own arguments is a different risk class from reading and copying, and
+it breaks on every game update, which the build-guard rules here explicitly guard
+against. Inline DXR would be exact if the game builds acceleration structures at
+all — cheap to check, larger to integrate. Per-light shadow maps are exact for
+lights that have them, with the difficulty being to locate each light's map and
+matrices.
+
 ## Occlusion validated against ground truth — 2026-09-09, PID29632
 
 First occlusion result with a known answer. A lantern on the player home wall, the

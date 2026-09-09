@@ -122,6 +122,36 @@ def with_native(offsets=((2, 0, 0), (0, -5, 0)), break_reference=False, break_of
     return r
 
 
+def segment_world(free=0.30, wall=None, wall_span=None, size=(64, 32, 264)):
+    """A synthetic volume plus constants where clipmap 1 covers everything.
+
+    x runs along the marched segment. `wall` fills a span of x with a low value.
+    """
+    constants = bytearray(768)
+
+    def lane(offset, index, value):
+        struct.pack_into('<f', constants, offset+index*4, value)
+    for axis, value in enumerate((0.03125, 0.0625, 0.03125)):
+        lane(0x10, axis, value)
+    for axis in range(3):
+        lane(0x130, axis, 0.0)          # wrapped: the anchor itself
+        lane(0x2E0, axis, 0.0)
+    for level in range(1, 8):
+        for axis in range(3):
+            lane(0x140+level*16, axis, 0.0)
+            lane(0x240+level*16, axis, 0.0)
+        lane(0x140+level*16, 3, 2.0**(2-level))
+    byte = round((1-free)*255)
+    volume = bytearray([byte])*(size[0]*size[1]*size[2])
+    if wall is not None:
+        low = round((1-wall)*255)
+        for x in range(*wall_span):
+            for z in range(size[2]):
+                for y in range(size[1]):
+                    volume[(z*size[1]+y)*size[0]+(x % size[0])] = low
+    return bytes(volume), bytes(constants)
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -332,6 +362,44 @@ class SpatialReadbackTests(unittest.TestCase):
         r = with_native()
         r['textureReadback']['nativeSamples']['available'] = False
         self.assertNotIn('nativeSampler', decoder.decode(r, True))
+
+    def test_march_clear_segment(self):
+        volume, constants = segment_world(free=0.30)
+        r = decoder.march_segment(volume, constants, [0, 0, 0], [12, 0, 0])
+        self.assertEqual(r['verdict'], 'clear')
+        self.assertGreater(r['minimum'], decoder.CLEARLY_FREE)
+        self.assertEqual(r['lowRun'], 0.0)
+        self.assertEqual(r['uncovered'], 0)
+
+    def test_march_reports_a_thick_wall_as_blocked(self):
+        volume, constants = segment_world(free=0.30, wall=0.0, wall_span=(5, 9))
+        r = decoder.march_segment(volume, constants, [0, 0, 0], [12, 0, 0])
+        self.assertEqual(r['verdict'], 'blocked')
+        self.assertGreaterEqual(r['lowRun'], 1.0)
+
+    def test_march_will_not_claim_a_blockage_when_both_ends_are_enclosed(self):
+        # The failure mode measured in game: free air under a roof reads as low as
+        # solid rock, so a low minimum there proves nothing about a wall between.
+        volume, constants = segment_world(free=0.002)
+        r = decoder.march_segment(volume, constants, [0, 0, 0], [12, 0, 0])
+        self.assertEqual(r['verdict'], 'unknown-enclosed')
+        self.assertLess(r['endpointMax'], decoder.CLEARLY_FREE)
+
+    def test_march_reports_uncovered_points_instead_of_skipping_them(self):
+        volume, constants = segment_world(free=0.30)
+        # Push the far end outside every clipmap by using a huge offset.
+        r = decoder.march_segment(volume, constants, [0, 0, 0], [4000, 0, 0])
+        self.assertEqual(r['verdict'], 'unknown-uncovered')
+        self.assertGreater(r['uncovered'], 0)
+
+    def test_march_refuses_a_segment_shorter_than_its_endpoint_margins(self):
+        volume, constants = segment_world(free=0.30)
+        self.assertEqual(decoder.march_segment(volume, constants, [0, 0, 0], [1, 0, 0])['verdict'],
+                         'unknown-too-short')
+
+    def test_select_clipmap_prefers_the_finest_covering_level(self):
+        _, constants = segment_world()
+        self.assertEqual(decoder.select_clipmap(constants, [0, 0, 0]), 1)
 
     def test_pair_no_layout(self):
         d = decoder.decode(paired_report(), False)

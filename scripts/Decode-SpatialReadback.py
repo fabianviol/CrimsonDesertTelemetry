@@ -74,6 +74,108 @@ def sample_world(volume, constants, clipmap, world):
     return max(0.0, min(1.0, 1-value))
 
 
+def select_clipmap(constants, world):
+    """The shader's own cell test, generalised to an arbitrary point.
+
+    `wrapped` in the constants is the world position measured from a common
+    anchor, and relative/originScale is identical across levels, so the anchor can
+    be recovered and the test run anywhere rather than only at the reference.
+    """
+    origin1 = struct.unpack_from('<4f', constants, 0x140+16)
+    relative1 = struct.unpack_from('<4f', constants, 0x240+16)
+    anchor = [relative1[j]/origin1[3] for j in range(3)]
+    w = [world[j]-anchor[j] for j in range(3)]
+    for level in range(1, 8):
+        origin = struct.unpack_from('<4f', constants, 0x140+level*16)
+        relative = struct.unpack_from('<4f', constants, 0x240+level*16)
+        if not 0 < origin[3] <= 1e4:
+            return None
+        if all(int(model.f32(origin[j]-radius)) <=
+               math.floor(model.f32(model.f32(w[j]*origin[3])+relative[j])) <
+               int(model.f32(origin[j]+radius))
+               for j, radius in enumerate((63, 31, 63))):
+            return level
+    return None
+
+
+def sample_world_auto(volume, constants, world):
+    """Sky visibility at a point, selecting the clipmap for THAT point.
+
+    Returns (value, level). value is None where no sampled level covers the point,
+    which callers must treat as unknown rather than skipping it.
+    """
+    level = select_clipmap(constants, world)
+    if level is None or level > 3:
+        return None, level
+    return sample_world(volume, constants, level, world), level
+
+
+# Two thresholds from the observed distribution. Between them is deliberately
+# neither: the field is smooth and a single cut would invent certainty.
+SOLID_LIKE = 0.01
+CLEARLY_FREE = 0.05
+
+
+def march_segment(volume, constants, a, b, step=0.5, endpoint_skip=1.0, min_run=1.0):
+    """Occlusion evidence along a segment, with the failure mode made explicit.
+
+    The field is SKY VISIBILITY, not occupancy: free air inside an enclosed space
+    reads as low as solid rock — measured at 0.0001 in open air under a roof,
+    below the 0.000661 measured inside a wall. A low minimum therefore does not
+    imply an obstruction. When both ends are already sky-occluded this returns
+    'unknown-enclosed' instead of claiming a blockage.
+
+    Sampling steps at half the finest voxel size, so coarse levels are merely
+    oversampled and never undersampled. Points no level covers are counted and
+    force 'unknown' rather than being dropped. The endpoints' own neighbourhoods
+    are excluded, and a blockage needs a connected low run of real thickness.
+    """
+    length = math.dist(a, b)
+    if length <= 2*endpoint_skip:
+        return dict(verdict='unknown-too-short', length=length)
+    steps = max(4, int(length/step))
+    samples, levels, uncovered = [], set(), 0
+    for i in range(steps+1):
+        t = i/steps
+        point = [a[j]+(b[j]-a[j])*t for j in range(3)]
+        value, level = sample_world_auto(volume, constants, point)
+        levels.add(level)
+        if value is None:
+            uncovered += 1
+        samples.append((t*length, value))
+    inner = [(d, v) for d, v in samples
+             if endpoint_skip <= d <= length-endpoint_skip and v is not None]
+    ends = [v for d, v in samples if (d < endpoint_skip or d > length-endpoint_skip) and v is not None]
+    result = dict(length=length, uncovered=uncovered, levels=sorted(l for l in levels if l),
+                  coarsestLevel=max((l for l in levels if l), default=None),
+                  endpointMax=max(ends) if ends else None,
+                  minimum=min(v for _, v in inner) if inner else None)
+    # Longest connected run below the solid-like threshold, in world units.
+    run = best = 0.0
+    previous = None
+    for d, v in inner:
+        if v < SOLID_LIKE:
+            run += (d-previous) if previous is not None else step
+            best = max(best, run)
+        else:
+            run = 0.0
+        previous = d
+    result['lowRun'] = best
+    if not inner or uncovered:
+        result['verdict'] = 'unknown-uncovered'
+    elif result['endpointMax'] is not None and result['endpointMax'] < CLEARLY_FREE:
+        # Both ends already see almost no sky, so the field cannot distinguish a
+        # wall between them from an enclosure around both.
+        result['verdict'] = 'unknown-enclosed'
+    elif best >= min_run:
+        result['verdict'] = 'blocked'
+    elif result['minimum'] is not None and result['minimum'] > CLEARLY_FREE:
+        result['verdict'] = 'clear'
+    else:
+        result['verdict'] = 'unknown-marginal'
+    return result
+
+
 def verify_native(native, volume, constants, clipmap, reference_world, reference_value):
     """Recompute what the plugin sampled natively. Disagreement is reported, never hidden."""
     if not isinstance(native, dict) or not native.get('available'):
