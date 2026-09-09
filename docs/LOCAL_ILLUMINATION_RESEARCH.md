@@ -2626,3 +2626,52 @@ the voxelisation treats the inside of a volume is still unknown. Three points fr
 the same real wall in the same frame say far more than a single wall point: for a
 distance field one expects a clear minimum at the surface, and for the packed
 volume the interesting question is simply which of the three carries content.
+
+## Resources identified from the capture export — 2026-09-09
+
+Codex ran `pixtool open-capture <wpix> export-to-cpp`, producing a full C++
+reconstruction under `artifacts/light-research/pix-provenance-20260909/cpp`. The
+resource identities fall straight out of it.
+
+| ApiObjectId | dimensions | resource format | SRV format | role |
+|---|---|---|---|---|
+| 190 | 64 x 32 x 264 | R8_TYPELESS | R8_UNORM | the sky-visibility volume already copied |
+| **191** | **128 x 64 x 1040** | R16_TYPELESS | **R16_FLOAT** | the raymarch volume, t233 |
+| **211** | **64 x 32 x 512** | R8G8B8A8_TYPELESS | **R8G8B8A8_UINT** | the packed companion, t224 |
+
+All three are `TEXTURE3D` with `ALLOW_UNORDERED_ACCESS`, and all three SRVs are
+created with MostDetailedMip 0 and MipLevels 1, so shader LOD 0 is resource mip 0
+and the MostDetailedMip trap does not apply anywhere here.
+
+**The 1040 depth confirms the shader derivation independently.** The addressing in
+`RaymarchLocalLightsCS` was read as 8 levels of 130 slices, giving 1040, before any
+resource was inspected. The actual resource is 1040 deep. Likewise 190's 264 is the
+4 x 66 already established for the sky-visibility volume.
+
+**`Texture3D<uint4>` is confirmed as four 8-bit channels**, which is what the
+nibble unpacking in the shader operates on.
+
+**A structural observation that matters for the variant choice.** The two volumes
+are NOT the same shape:
+
+```
+191  128 x 64 x 1040     8 levels x 130 slices, 128 usable plus 2 border
+211   64 x 32 x  512     8 levels x  64 slices, no border
+```
+
+The companion is half the resolution of the distance field on every axis. So if
+t224 does carry geometry occupancy, traversing it directly — variant D — would be
+COARSER than the distance field it accompanies, not finer. That weakens D relative
+to the hybrid E, where the fine field drives traversal and the coarse one only
+qualifies the decision. It also means a thin wall is more likely to be missed by
+t224 than by t233.
+
+**Incidental but significant: the game builds raytracing acceleration structures.**
+The export contains `AccelStructureRecreation` files, so DXR is in use. Inline
+`RayQuery` therefore remains technically available as an exact alternative, which
+had been listed earlier as unknown.
+
+**Still open.** Which shader writes 191 and 211. Both are written through UAVs, and
+identifying the producers requires correlating descriptor heap slots with the root
+tables set before each dispatch in the recorded command lists. That is the next
+step and it is mechanical rather than uncertain.
