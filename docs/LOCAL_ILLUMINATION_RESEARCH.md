@@ -2128,3 +2128,46 @@ it returns a hit distance. That shader has not been read.
 
 Also unresolved and needed before any of this can be used: the sign convention of
 the field, its x and y mapping, and the identity of the live resource.
+
+## The engine's hit criterion is integrated, not a distance test — 2026-09-09
+
+Read offline from `RaymarchDiffuseHitDistanceCS`
+(`artifacts/light-research/gi-entry-864eec9d.ll`). It binds the SAME volume as
+RaymarchLocalLightsCS — `Texture3D<float>` t233/space36 and `Texture3D<uint4>`
+t224/space36 — and writes `RWTexture2D<float4>` u42/space38.
+
+The loop terminates on this test:
+
+```
+value < 0.5   ->  keep marching
+value >= 0.5  ->  stop, this is the hit
+```
+
+and the continuation branch caps the march at a dynamic iteration limit and an
+accumulated distance below 10000 units, stepping by FMax(candidate, minimum).
+
+**The tested value is an accumulator, not a sample.** It enters the loop as
+`phi float [ previous, continue ], [ 0.000000e+00, entry ]`, so it starts at zero
+and carries forward, and the values feeding it are `Saturate` results clamped to
+[0,1]. The engine therefore accumulates saturated coverage along the ray and calls
+a hit when the accumulation reaches **0.5**.
+
+**This contradicts the assumption we were working under.** Both the outside review
+and this analysis had expected a distance field traced until the distance falls to
+near zero. What the engine actually does is integrate occlusion along the ray and
+threshold the integral. That is much closer in spirit to the minimum-along-the-
+segment heuristic we refuted, except done correctly: an integral rather than an
+extremum, which is exactly the more robust statistic the review suggested when it
+proposed an integral or a run length over a bare minimum.
+
+**Consequences.** A line-of-sight test built here should accumulate rather than
+look for a single low sample, and 0.5 is the engine's own threshold rather than one
+we would have to calibrate. It also means the field at t233 may be an opacity or
+coverage volume rather than a signed distance field; the SDF names elsewhere in the
+pipeline describe other resources, and which one t233 actually is remains open.
+
+**Not established.** The chain from the 3D `SampleLevel` at line 1214 to the
+accumulated value was not traced instruction by instruction, so how a sample
+contributes to the accumulator — weighting, step-length scaling, any density
+factor — is unread. The sign convention question is now differently shaped: if this
+is coverage rather than distance, there may be no sign at all.
