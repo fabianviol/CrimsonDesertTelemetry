@@ -288,14 +288,15 @@ SH; the measure is missing.
 **The 1/6144 is not arbitrary, and it points at cube faces.** Each entry samples
 4096 directions -- proven twice: 16x16 threads with `threadId << 2` and 4x4 loops, and
 the NDC scale 1/32 needing 64 steps to span [-1,1]. Six entries is therefore
-N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map. **The best reading of the
-constant has no pi in it at all: `1/6144 = (4/4096)/6`.** The NDC square [-1,+1]^2 has
-area 4, a uniform 64x64 grid gives each sample 4/4096, and averaging six faces adds
-the 1/6 -- a plain Riemann weight in the projection's own parameter space. That also
-explains the missing Jacobian outright: **the engine integrates in the cube-face
-parameter space, not in the spherical measure.** If the six are faces, that is the
-engine property worth naming. (The factor also equals (4*pi/24576)/pi, numerically
-true but semantically unsupported.) **The Lambertian reading of that 1/pi is
+N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map. **The leading reading has no
+pi in it: `1/6144 = (4/4096)/6`**, where 4/4096 is exactly the uniform Riemann weight
+of one cell of a 64x64 grid over the area-4 square [-1,+1]^2. So the normalisation is
+**exactly compatible with six equally weighted 64x64 integrals over [-1,+1]^2**; IF
+the six are cube faces that is very natural, and it would explain the absent Jacobian
+outright (integration in the face parameter space, not the spherical measure). A
+hypothesis with an exact numerical fit, not a finding -- it presupposes what is still
+open. (The factor also equals (4*pi/24576)/pi, numerically true, semantically
+unsupported.) **The Lambertian reading of that 1/pi is
 WITHDRAWN** -- a cosine convolution is band-dependent (1, 2/3, 1/4 after dividing by
 pi), so one global scalar cannot be it, and searching all 79 listings finds NO band
 factors and none of the Ramamoorthi constants. Nor does the constant prove a sphere:
@@ -342,19 +343,34 @@ narrowly: **the producer was not executed in this capture** -- consistent with a
 or dirty-driven update, but it could also have run before the capture or on a region
 it does not cover.
 
-**It does NOT explain the zeros, and checking that produced a name.** The capture
-creates **14 UAV descriptors over resource 15739**, each `FirstElement 0, NumElements
-64, StructureByteStride 16` -- the whole 1024 bytes. Attributing the dispatches that
-bind them (`scripts/Find-PixExportDispatches.py` plus the PSO map) gives exactly one:
-**ClearVoxelsBufferCS, pso 22274**. A clear pass has the whole buffer bound writable
-in this frame, which is a concrete candidate for the zeros. Not proof it wrote them --
-a table covers a range from its base -- but "no runtime state could look like that" is
-withdrawn.
+**It does NOT explain the zeros.** The capture creates **14 UAV descriptors over
+resource 15739**, each `FirstElement 0, NumElements 64, StructureByteStride 16` -- the
+whole 1024 bytes. `Find-PixExportDispatches.py` plus the PSO map named the one dispatch
+binding a table based on them: ClearVoxelsBufferCS, pso 22274.
+
+**Then reading that shader refuted it.** `Map-PixExportShaders.py --extract` pulls a
+pipeline state's DXBC out of resources.bin -- **the shader the frame ACTUALLY ran, not
+an archive variant**, which removes a standing caveat on every .ll here -- and DXC
+disassembles it. PSO 22274 binds `g_voxelHeadIndexBufferUAV` (u5), 
+`g_voxelGeneratedFlagsUAV` (u6) and `g_voxelIndexListBufferUAV` (u15), writing i32
+zeros into voxel bookkeeping. None is the ambient buffer. The table's BASE views it,
+but the shader's registers resolve elsewhere in the range -- a false positive, and what
+"can reach" means in practice. Attributing a register to a descriptor needs the root
+signature's range mapping, which is not done.
+
+So **nothing in this capture is shown to write the ambient buffer and the zeros stay
+unexplained**; what is withdrawn is only the claim that no runtime state could look
+like that.
 
 **What the next capture must contain:** a dispatch of the ambient producer. Then per
 dispatch resolve the root CBV holding GlobalPushConstants for `_renderFlags.x`, and
-rows 30..33 of the bound SceneConstantBuffer for the direction at the NDC centre. Six
-centres near +-X, +-Y, +-Z would prove the faces. Note the export records **no
+rows 30..33 of the bound SceneConstantBuffer to unproject. Six centre directions near
+the axes are suggestive but not enough: unproject the four NDC CORNERS too, since a
+real `+X` cube face gives corner rays proportional to `(+1, +-1, +-1)`, with square
+aspect and a 90 degree opening following from the same rays. **Faces and frames need
+not be exclusive** -- if `_renderFlags.x` cycles 0..5 across frames, the six could be
+spatially the faces and temporally amortised, one refreshed per update, which is how
+an engine would spread this cost. Note the export records **no
 SetComputeRoot32BitConstants at all** -- GlobalPushConstants is a root CBV by address
 despite the name, which is also why the `--list-cbv` count is not an inventory.
 

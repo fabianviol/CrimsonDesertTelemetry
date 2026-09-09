@@ -86,6 +86,11 @@ in PIX's own buffer view.
 
 ## Shader extraction and lookup — existing Codex tools
 
+**There are now two routes to a shader.** This section covers the archive route. The
+other is `Map-PixExportShaders.py --extract` on a PIX export, which yields the DXBC a
+captured frame actually ran and so is not subject to the variant caveat below; feed it
+to the same `dxc -dumpbin` call.
+
 These `.padxil/.dxbc/.ll` families came from the game's **on-disk shader-cache
 archives**, NOT PIX or process memory. Both examples below came from
 `C:\Steam\steamapps\common\Crimson Desert\0017\1.paz`. An archive variant
@@ -233,7 +238,7 @@ requires 7.4 or newer.
 | `Analyze-VolumeChurn.py` | how much of a volume changes between transactions |
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
 | `Read-PixExportResource.py` | reads a resource's captured bytes out of a pixtool export without building it |
-| `Map-PixExportShaders.py` | names the pipeline states in a pixtool export, so a dispatch can be attributed to a shader |
+| `Map-PixExportShaders.py` | names the pipeline states in a pixtool export, and `--extract` writes one's DXBC out for DXC |
 | `Find-PixExportDispatches.py` | names the dispatches in an export that can reach a given resource |
 | `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
 

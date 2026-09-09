@@ -233,5 +233,49 @@ class ShaderMapTests(unittest.TestCase):
         self.assertEqual(list(shadermap.pipeline_blocks(reader, directory)), [])
 
 
+PSO_SOURCE = '''#include "pch.h"
+
+// ApiObjectId     = 450
+void CreateComputePipelineState_450()
+{
+    UINT offset = 0u;
+    std::vector<BYTE> data;
+    g_resourceReader->Read(data, 5460);
+    cpsoDesc.CS = { reinterpret_cast<BYTE*>(&data[offset]), 7016 };
+    offset += 7016;
+}
+
+// ApiObjectId     = 452
+void CreateComputePipelineState_452()
+{
+    UINT offset = 0u;
+    std::vector<BYTE> data;
+    g_resourceReader->Read(data, 99);
+    cpsoDesc.CS = { reinterpret_cast<BYTE*>(&data[offset]), 128 };
+}
+'''
+
+
+class BytecodeLengthTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.mkdtemp()
+        with open(os.path.join(self.directory, 'CreatePSOs.cpp'), 'w', encoding='utf-8') as f:
+            f.write(PSO_SOURCE)
+
+    def test_the_declared_length_is_read_not_the_block_size(self):
+        # 7016 is the bytecode; 5460 is the COMPRESSED block. Confusing them pads
+        # the container with whatever follows it in the stream.
+        self.assertEqual(shadermap.bytecode_length(self.directory, 450), 7016)
+
+    def test_each_pipeline_state_gets_its_own_length(self):
+        self.assertEqual(shadermap.bytecode_length(self.directory, 452), 128)
+
+    def test_an_unknown_pipeline_state_has_no_length(self):
+        self.assertIsNone(shadermap.bytecode_length(self.directory, 999))
+
+    def test_an_export_without_the_file_is_not_fatal(self):
+        self.assertIsNone(shadermap.bytecode_length(tempfile.mkdtemp(), 450))
+
+
 if __name__ == '__main__':
     unittest.main()

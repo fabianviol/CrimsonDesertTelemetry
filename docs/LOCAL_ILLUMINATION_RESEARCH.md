@@ -60,20 +60,21 @@ the shader's constant      1.627604215e-04     (float32)
 canonical / shader         3.14159256          against pi = 3.14159265
 ```
 
-**The best reading of the constant is far more mundane than anything with pi.**
-Suggested by the same review, and it fits everything measured:
+**A far more mundane reading of the constant, and the leading one.** Suggested by the
+same review. It is not established — it presupposes exactly what is still open, that
+the six entries are six equally treated projection faces whose parameter-space mean
+the engine wants. What IS exact:
 
 ```
 1/6144 = (4 / 4096) / 6
 ```
 
-The NDC square [-1, +1]^2 has area 4. A uniform 64x64 grid over it gives each sample
-an area of 4/4096. Averaging six such faces adds the 1/6. That is a plain Riemann
-weight in the projection's own parameter space — no sphere, no Lambert, nothing to
-interpret. And it explains the absence of a Jacobian directly: **the engine integrates
-in the cube-face parameter space rather than in the spherical measure.** If the six
-are faces, that is the interesting engine property here, and it is a much better
-explanation than the identity below.
+`4/4096` is exactly the uniform Riemann weight of one cell of a 64x64 grid over
+[-1, +1]^2, whose area is 4. So **the normalisation is exactly compatible with six
+equally weighted 64x64 integrals over [-1, +1]^2.** If the six are cube faces, that is
+a very natural explanation, and it would explain the absent Jacobian outright: the
+engine would be integrating in the face parameter space rather than the spherical
+measure. That is a hypothesis with an exact numerical fit, not a finding.
 
 The pi identity, kept for the record: the factor also equals the canonical
 uniform-solid-angle weight for 24576 directions over a sphere divided by pi, both to
@@ -151,6 +152,12 @@ What would settle it is `_renderFlags.x` and the six matrices. Reading them need
 dispatches located, which needs a PSO-to-shader mapping — so that was built, and it
 answers the question in an unexpected way.
 
+**Disassembling the shaders the frame actually ran.** `--extract` writes a pipeline
+state's DXBC container out of `resources.bin`, which DXC then disassembles with the
+call already in `docs/TOOLING.md`. This removes a standing caveat: until now every
+`.ll` here came from the game's archives, where a variant is not proof of what was
+bound. A pipeline state from the capture is what the frame ran.
+
 **A PSO-to-shader index, from the same read-order walk.** `CreatePSOs.cpp` reads each
 pipeline state's bytecode from `resources.bin`, and a DXIL container keeps its entry
 point name as a NUL-terminated string. `scripts/Map-PixExportShaders.py` walks the
@@ -193,19 +200,47 @@ slots 8..55 included. Attributing the dispatches that bind them (via
 CommandLists_000.cpp   Dispatch   pso 22274   ClearVoxelsBufferCS
 ```
 
-So a clear pass does have the whole buffer bound writable in this frame, which is a
-concrete candidate for how the six entries come to be zero while their sum is not. It
-is not proof that it wrote them: a descriptor table covers a range from its base, and
-this shows the resource sits at that base. But "no runtime state could look like that"
-was wrong and is withdrawn.
+**That candidate is now refuted, by reading the shader the frame actually ran.**
+`--extract` on the same walk pulls a pipeline state's DXBC out of `resources.bin`, and
+DXC disassembles it. PSO 22274 binds three UAVs and none is the ambient buffer:
+
+```
+g_voxelHeadIndexBufferUAV     u5,  space39   byte
+g_voxelGeneratedFlagsUAV      u6,  space39   byte
+g_voxelIndexListBufferUAV     u15, space39   struct
+```
+
+It writes single i32 zeros into voxel bookkeeping. So the descriptor-table-base
+heuristic produced a false positive: the table's BASE views the ambient buffer, but
+the shader's registers resolve to other descriptors in that range. Attributing a
+register to a descriptor properly needs the root signature's range mapping, which this
+does not do — `Find-PixExportDispatches.py` says "can reach" for that reason, and this
+is what that caveat looks like in practice.
+
+Where that leaves it: **nothing in this capture is shown to write the ambient buffer,
+and the zeros are unexplained.** What is withdrawn is my claim that no runtime state
+could look like that — 14 UAV descriptors over the whole 1024 bytes exist, so a writer
+is entirely possible; it just has not been identified.
 
 **What a capture would need in order to settle it:** it must contain a dispatch of
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS`. Then, per dispatch, resolve
 the root CBV holding `GlobalPushConstants` to read `_renderFlags.x`, and rows 30..33
-of the bound `SceneConstantBuffer` to reconstruct the direction at the NDC centre. Six
-centres landing near +X, -X, +Y, -Y, +Z, -Z would prove the faces. 51 of the 287
-pipeline states are still unnamed, so absence in the map alone would not be proof —
-the direct byte search is what carries the negative here.
+of the bound `SceneConstantBuffer` to unproject.
+
+Six centre directions near the six axes would be suggestive but are not enough on
+their own. Unproject the **four NDC corners** as well — `(-1,-1)`, `(+1,-1)`,
+`(-1,+1)`, `(+1,+1)` — and a genuine cube face shows it: for a `+X` face the corner
+rays come out proportional to `(+1, ±1, ±1)`. Square aspect and a 90 degree opening
+follow from the same four rays. That is the hard test.
+
+**And faces against frames need not be exclusive.** If `_renderFlags.x` cycles 0..5
+across frames, the six could be spatially the six faces AND temporally amortised, one
+face refreshed per update — which is exactly how an engine would spread the cost of an
+expensive atmospheric projection. Reading the write index over several frames settles
+that at the same time as it decodes `_renderFlags.x`.
+
+51 of the 287 pipeline states are still unnamed, so absence in the map alone would not
+be proof — the direct byte search is what carries the negative here.
 
 Each ring entry is packed exactly like set 0: `R.v0, R.v1, G.v0, G.v1, B.v0, B.v1,
 (R.c, G.c, B.c, 0)`. That is where the `{ 8 x float4, [56 x float4] }` declaration
