@@ -107,6 +107,49 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Precision, plateaus and a steep field — 2026-09-09, PID31352, series.1
+
+Second live series, eight transactions standing under the barn roof, camera at
+-10531.94/611.35/-4424.06, only 1.27 gu from the point run3 measured earlier that
+day. 8 of 8 completed and decoded, fences 1..8, no fallback, reference equal to the
+API camera position to 0.00 gu for the fifth time. Cadence 1031..1531 ms, so the
+configured 1000 ms minimum is reachable when dispatch selection lines up.
+
+Values in order: 0.0470332190, 0.0471239112, 0.0471551429, 0.0471701582,
+0.0471641521, then 0.0375554250, 0.0375656267, 0.0375737416.
+
+**Read the shape, not the range.** The naive spread is 0.0096, about 20% relative
+at this level, which looks alarming beside the 2.9% measured at 0.53. But the
+series is not scatter: it is two stable plateaus with one step between them. Within
+the first plateau the values span 0.00014, about **0.3%**; within the second they
+span 0.0000183, about **0.05%**. The Abyss series has the same shape. So the
+instrument repeats far better than the range suggests, and what moved during the
+twelve-second window was the world or the volume refresh, not the measurement.
+
+For a consumer this is the good case: a precise reading that occasionally steps.
+Temporal smoothing absorbs steps; it cannot rescue genuine scatter.
+
+**Cross-validation of the offline directional method.** run3's stored volume,
+captured roughly six minutes earlier in a different process, was sampled offline at
+today's camera position. It predicts **0.0341**, against today's live plateaus of
+0.0470 and 0.0376 — and against 0.000031 at run3's own point 1.27 gu away. The
+prediction lands within 10% of the second plateau and within a factor 1.4 of the
+first, while correctly crossing three orders of magnitude over that 1.27 gu. This
+is the first independent check that sampling the stored volume at an offset
+predicts what a real capture at that offset actually reads.
+
+**A steep field is a product warning.** Moving 1.27 gu changed the reading by a
+factor of about 1500. Under a roof edge the field is extremely steep, so a
+lamp mapping that samples fixed offsets will swing hard when the player moves a
+metre indoors. That is physically correct behaviour, not instrument error, but a
+consumer must expect it and smooth accordingly. It also means the earlier
+"repeat spread" question is regime-dependent in a second way: position
+reproducibility, not just measurement noise, dominates wherever the field is steep.
+
+Evidence artifacts/light-research/series-20260909/run2-under-roof-floor-pid31352/
+holds the 12453931-byte raw JSON, derived.json, pre and post snapshots, the native
+log and the INI actually used.
+
 ## Spread and the open-sky anchor — 2026-09-09, PID9464, series.1
 
 First live series. Eight transactions in one process, standing still in the Abyss

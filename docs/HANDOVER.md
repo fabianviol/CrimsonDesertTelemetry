@@ -4,9 +4,9 @@ The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
-position, the cheap CPU shortcut is proven ill-conditioned, and a repeated
-series now runs live: the repeat spread at one place is 0.0156 and the open-sky
-anchor is about 0.53, not 1.0** (current checkpoint below). readback.4 is the ASI in
+position, the cheap CPU shortcut is proven ill-conditioned, and two live
+series show the instrument repeats to 0.05..0.3% within a plateau, with an
+open-sky anchor near 0.53 rather than 1.0** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,46 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — spread measured, open-sky anchor found, 2026-09-09
+## Current checkpoint — precision established, method cross-validated, 2026-09-09
+
+Second live series with 2.0.1-spatial-series.1 in PID31352, eight transactions
+standing under the barn roof at -10531.94/611.35/-4424.06, 1.27 gu from the point
+run3 measured earlier. 8 of 8 completed, fences 1..8, no fallback, reference equal
+to the camera to 0.00 gu for the fifth time, cadence 1031..1531 ms.
+
+Values: 0.0470332190, 0.0471239112, 0.0471551429, 0.0471701582, 0.0471641521,
+then 0.0375554250, 0.0375656267, 0.0375737416.
+
+**THE INSTRUMENT IS FAR MORE PRECISE THAN THE RANGE SUGGESTS.** The naive spread is
+0.0096 (20% relative), but the series is two stable plateaus with one step, not
+scatter: within the plateaus the values span 0.3% and 0.05%. The Abyss series has
+the same shape. What moved across twelve seconds was the world or a volume refresh,
+not the measurement. Smoothing absorbs steps; it could not have rescued scatter.
+
+**THE OFFLINE DIRECTIONAL METHOD IS CROSS-VALIDATED.** run3's stored volume, from a
+different process six minutes earlier, sampled offline at today's camera position
+predicts 0.0341 against today's live plateaus of 0.0470 and 0.0376 — within 10% of
+one and a factor 1.4 of the other, while correctly crossing three orders of
+magnitude relative to run3's own point 1.27 gu away. Sampling the stored volume at
+an offset therefore predicts what a real capture at that offset reads.
+
+**A STEEP FIELD IS A PRODUCT CONSTRAINT.** 1.27 gu changed the reading by about
+1500x. Under a roof edge a lamp mapping on fixed offsets will swing hard when the
+player moves a metre. That is correct behaviour, not error, but it must be
+smoothed, and it means position reproducibility — not measurement noise — dominates
+wherever the field is steep.
+
+Evidence artifacts/light-research/series-20260909/run2-under-roof-floor-pid31352/.
+
+**ONE next step:** the remaining untested assumption is TIME. Every capture so far
+is dusk or night, and the model assumes this term is geometric and therefore
+time-invariant, while the SH sky stream carries the brightness. Test it at a FLAT
+part of the field where position error cannot dominate — open sky, ideally the
+Abyss where 0.53 is already recorded at 20:29 — by returning there in daylight. If
+the value moves, the separation of geometry from sky brightness is wrong and the
+feed design changes. Independent hiZ per-source visibility remains pending.
+
+## Previous checkpoint — spread measured, open-sky anchor found, 2026-09-09
 
 PRIVATE **2.0.1-spatial-series.1** installed via DMM and LIVE-TESTED in PID9464.
 ASI SHA256 51BFE1C97BAB646EDA2462189DEA04196DE8F07B7A96632583B7494C23921339
