@@ -14,6 +14,56 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## Directional profile measured offline — 2026-09-09
+
+No new game capture. The three preserved volumes were re-sampled at offsets around
+their recorded camera positions, reusing the shipped decoder's world-to-texture
+mapping and its linear-WRAP sampler. Sampling at the camera position itself
+reproduced the published value exactly in all three runs (0.386534, 0.117666,
+0.000031), which validates the re-sampling before any offset is trusted.
+
+**Geometry.** At the selected clipmap1 the inverse extents are 0.03125/0.0625/0.03125
+with scale 1/2, giving **1.00 game unit per voxel on all three axes** and a clipmap
+covering 64x32x64 gu. Offsets of 2..10 gu are therefore 2..10 voxels and stay well
+inside the clipmap.
+
+**Physical sanity check.** Sampling downward (-Y) at 5 and 10 gu returns exactly
+0.000000 in all three runs. Below the camera is ground, and the field says so.
+
+**run3, under the roof, one instant, base 0.000031:**
+
+| offset | +X | -X | +Y | -Y | +Z | -Z |
+|---|---|---|---|---|---|---|
+| 2 gu | 0.000323 | 0.004531 | **0.000029** | 0.044253 | 0.035764 | 0.098670 |
+| 5 gu | 0.311679 | 0.080739 | **0.432942** | 0.000000 | 0.021155 | 0.285750 |
+| 10 gu | 0.375227 | 0.260822 | 0.489194 | 0.000000 | 0.205883 | 0.311480 |
+
+The +Y column is the result. Two units straight up is still 0.000029 — the roof is
+directly overhead. Five units up is 0.432942, above the roof in open sky. Sideways,
++X at five units reaches 0.311679, out from under the structure. **A factor of more
+than a thousand across a few metres, at a single instant, from one stored volume.**
+
+run1 in the open shows the same field behaving sensibly in the other direction:
+upward increases (0.399939 at 5 gu against a 0.386534 base) while downward goes to
+zero. run2 at the wall shows the horizontal gradient: -Z two units is 0.047271
+toward the structure against +Z 0.196598 toward the opening.
+
+**This demonstrates the cave-mouth effect is expressible.** Lamps around the player
+can be driven from offsets in their own directions: the side under cover reads near
+zero while the side toward the opening reads a few tenths, from the same capture.
+
+**Limits, all real.** This approximates direction by sampling a scalar field at
+neighbouring points; it is not sky visibility as a directional function at one
+point. The clipmap selection was held fixed for the offsets rather than recomputed
+per sample, which is reasonable at 2..10 gu inside a 64 gu clipmap but is an
+assumption, not a check. The sampling distance becomes a design parameter: too
+small gives no contrast, too large samples through walls into unrelated space.
+Horizontal readings are not yet interpretable without the building's actual
+geometry — run3 reads brighter toward -Z than +Z, which may mean the structure is
+open on that side or may mean something else, and no claim is made here. Nothing
+about this changes the pairing standard: still same-submission, still not a
+validated illumination measure, still not room brightness or per-source occlusion.
+
 ## Why the CPU exposure shortcut fails — 2026-09-09, analysis
 
 Anyone looking for a continuous ambient-occlusion signal will find this shortcut

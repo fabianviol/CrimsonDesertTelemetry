@@ -173,13 +173,23 @@ consumer-specific model into the API. The Hue consumer lives in C:\DEV\CrimsonHu
 what is published here stays a neutral directional ambient/occlusion contract that
 any developer can consume. Nothing in the current API violates this; keep it so.
 
-**ONE next step, a choice for the user:** either measure the directional profile
-offline from the captures already preserved — sample the stored volumes at offsets
-around the recorded camera position and see whether a cave-mouth-like gradient
-appears, which costs no new capture at all — or first close the repeat-spread gap
-with one more capture at an already measured point. The offline direction test is
-cheaper and answers the newer question. Independent hiZ per-source visibility
-remains pending and required; no public API, stream or schema changed today.
+**DONE, same day:** the offline directional test was run on the preserved volumes
+and the gradient is there. Sampling at the camera reproduced all three published
+values exactly; the clipmap is 1.00 gu per voxel over 64x32x64 gu; sampling into
+the ground returns exactly zero. In run3 under the roof, two units straight up is
+still 0.000029 while five units up is 0.432942 and five units sideways is 0.311679
+— more than a thousandfold across a few metres, at one instant, from one stored
+volume. The cave-mouth effect is therefore expressible from data this instrument
+already produces. Details and limits in LOCAL_ILLUMINATION_RESEARCH, "Directional
+profile measured offline".
+
+**ONE next step:** decide the shape of a directional feed before building anything.
+The open questions are which offsets a consumer should sample, how to keep a lamp
+from sampling through a wall into unrelated space, and whether the clipmap
+selection must be recomputed per offset rather than held fixed. The repeat-spread
+gap at a fixed point is still open and still wants one capture. Independent hiZ
+per-source visibility remains pending and required; no public API, stream or
+schema changed today.
 
 ## Previous checkpoint — occlusion series measured, 2026-09-09
 
