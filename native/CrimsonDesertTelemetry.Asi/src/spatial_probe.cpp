@@ -338,12 +338,26 @@ long long FindGiWindow(const std::vector<uint8_t>& gpu,const std::array<uint8_t,
         }
     return found;
 }
-// Fixed pattern for a directional read: the reference plus six axes at two ranges.
-// Entries are NOT necessarily the same age; neighbouring offsets can lie in
-// different amortised update blocks of the volume.
-constexpr double SampleOffsets[][3]={
-    {2,0,0},{-2,0,0},{0,2,0},{0,-2,0},{0,0,2},{0,0,-2},
-    {5,0,0},{-5,0,0},{0,5,0},{0,-5,0},{0,0,5},{0,0,-5}};
+// Contract pattern: 26 normalized directions at two radii. Every combination of
+// -1,0,+1 except the centre, so six axes, twelve edges and eight corners, which
+// keeps the widest angular gap near45 degrees. Two radii because the field falls
+// off sharply over a few units. Well inside the toroidal wrap bound (|x|,|z|<=16,
+// |y|<=8). Entries are NOT necessarily the same age; neighbouring offsets can lie
+// in different amortised update blocks of the volume.
+constexpr double SampleRadii[]={3.0,6.0};
+std::vector<std::array<double,3>> BuildSampleOffsets()
+{
+    std::vector<std::array<double,3>> offsets;
+    for(double radius:SampleRadii)
+        for(int x=-1;x<=1;++x)for(int y=-1;y<=1;++y)for(int z=-1;z<=1;++z)
+        {
+            if(!x&&!y&&!z)continue;
+            const double length=std::sqrt(double(x*x+y*y+z*z));
+            offsets.push_back({radius*x/length,radius*y/length,radius*z/length});
+        }
+    return offsets;
+}
+const std::vector<std::array<double,3>> SampleOffsets=BuildSampleOffsets();
 nlohmann::json NativeSamplesJson(const cdt::spatial::CopyResult& copy,const Observation& observation)
 {
     using namespace cdt::spatial;

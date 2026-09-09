@@ -165,8 +165,20 @@ Sampling +15 or +20 gu in Y returns exactly 0.0000 and +30 returns precisely the
 value of -2. The recorded ±2 and ±5 pattern is safely inside; the contract must
 state the bound or a consumer will ask for ±20 and get unrelated space.
 
-**ONE next step: design the public contract**, because every prerequisite is now
-measured. It must state the camera reference, the candidate-not-measurement
+**CONTRACT DRAFTED, and a surprise:** docs/SKY_VISIBILITY_STREAM.md fixes the shape
+and every promise before code. Default pattern is 26 directions at radii 3 and 6 gu,
+52 self-describing samples, each carrying its own offset. While writing its scope
+section, the assumption that per-source occlusion needs a DIFFERENT technique was
+tested offline and did not hold: marching the segment from the camera to a light
+8.2 gu away gave a minimum of 0.000000 along the way, against 0.285 and 0.139 for
+two clear controls of the same length. A volume march may therefore answer fire
+occlusion too, reusing everything already built, and unlike a depth test it works
+off screen, which is exactly the product case. One example only; see "Segment
+occlusion" in LOCAL_ILLUMINATION_RESEARCH for what it does not establish and for
+the per-point clipmap selection that segments beyond ~32 gu would need.
+
+**ONE next step: implement continuous publication**, because the contract is now
+written and every prerequisite measured. It must state the camera reference, the candidate-not-measurement
 framing, the amortisation freshness bound, the clipmap reuse for offsets, the
 mixed-age offsets, the toroidal offset bound above, and that the value does not
 reach 1 under open sky (~0.53) BY DESIGN rather than by defect. Decide the offset

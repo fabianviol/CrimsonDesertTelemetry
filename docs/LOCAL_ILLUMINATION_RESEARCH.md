@@ -107,6 +107,57 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Segment occlusion — 2026-09-09, first offline test
+
+The question was whether per-source occlusion needs a different technique from the
+ambient work, or whether the same volume can answer it. This is a first test on
+data already captured; it is encouraging and it is one example.
+
+The volume distinguishes solid from open: measured values are 0.000000 below the
+surface and 0.000661 inside a building wall, against 0.37 in open air a few metres
+away. So marching the segment between two points and watching for near-zero values
+is at least plausible as a line-of-sight test.
+
+Tested on the player-home capture. The camera sat at -10411.00/614.15/-4419.57 and
+the API reported a spot light 8.2 gu away at -10412.12/613.08/-4411.52, in the +Z
+direction that the doorway profile had already shown falling to 0.00066. Marching
+in eighteen steps, against two controls of the same length:
+
+| segment | minimum along the way, endpoints excluded |
+|---|---|
+| camera to the light (+Z) | **0.000000** |
+| control into the open (-Z) | 0.285248 |
+| control upward (+Y) | 0.139232 |
+
+The path to the light reads 0.000 to 0.004 across almost its whole length while
+neither control approaches zero. A criterion as simple as the minimum along the
+segment separates the cases by orders of magnitude here.
+
+**Why this could matter more than the hiZ route.** A depth test answers only for
+source centres that are on screen. The product case that motivated all of this —
+lamps behind the player expressing what is behind the camera — is exactly the case
+a screen-space test cannot serve. A volume march is view-independent and works off
+screen, and it reuses the readback, the clipmap mapping and the native sampler that
+already exist and are verified.
+
+**What this is not.** One light, one geometry, one capture, and the light was only
+inferred to be behind a wall rather than independently known to be. Nothing here
+establishes a threshold, a false-positive rate or behaviour at a doorway, a window,
+a thin wall or a partially open structure. The 1 gu grid is coarse for a point
+source: a wall thinner than a voxel may be missed and a narrow opening may read as
+closed. Amortised staleness applies as everywhere else.
+
+**A range limit that must be solved first.** The three other lights in that capture
+sat 71 to 92 gu away, outside clipmap 1's 64 gu extent, and the sampler currently
+reuses the reference's clipmap for every point. Segment tests beyond about 32 gu
+therefore need per-point clipmap selection across levels 1..3, whose extents are
+64, 128 and 256 gu. That is well defined but not written.
+
+**The controlled experiment this needs**, before any of it is promoted: the A-B-A
+that the depth route was always going to require — a source in clear view, the same
+source with a wall interposed, then clear view again, at one place in one session,
+with the profile recorded each time.
+
 ## What the quantity most likely is — 2026-09-09, interpretation
 
 Stated by the user and recorded here as the reading that fits every observation:
