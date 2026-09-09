@@ -259,12 +259,35 @@ we already snapshot. Consumers across all 79 local listings: the two atmospheric
 scattering renderers (slots 7 and 56), the indirect-args shader, `RenderDiffuseCS`,
 `RenderDiffuseTiledCS` and `EvaluateDiffuseRadianceCS` (slot 7).
 
-This is ambient from the SKY, unoccluded — the colour term. Sky visibility is the
-occlusion term. They multiply, which is a cleaner split than forcing one scalar
-field to answer both, the thing that failed. Unknown: coefficient order within the
-seven float4, what `_renderFlags.x` selects among the eight sets, and whether the
-values are pre- or post-exposure (`ExposureConstantBuffer`, 80 bytes, is read by
-nearly every lighting shader here including `ProcessManyLightsCS`).
+The SH already contains atmospheric extinction and cloud shadow (it samples
+`g_texNetDensity` and `g_texCloudVolumeShadow`); what it lacks is LOCAL scene
+occlusion. The layout match between producer UAV and CBV is exact but the transfer
+between them is not shown — treat them as layout-compatible, not identical, until a
+capture shows the copy. Unknown: coefficient order within the seven float4, what
+`_renderFlags.x` selects among the eight sets, and whether the values are pre- or
+post-exposure (`ExposureConstantBuffer`, 80 bytes, read by nearly every lighting
+shader here including `ProcessManyLightsCS`).
+
+**AND THE COMPOSITION IS DEMONSTRATED, in `EvaluateDiffuseRadianceCS`
+(`gi-entry-b909d0e8.ll`).** It binds everything at once and names three volumes we
+had only inferred: **t232 = `g_skyVisibilityVoxelsTexturesLikeUav`, t233 =
+`g_signedDistanceVoxelsTexturesLikeUav`, t224 = `g_axisAlignedDistanceTextures`** —
+so t233 is a signed distance field by the engine's own naming. The instruction
+stream reads:
+
+```
+s   = SampleLevel(t232, u, v, w).x
+vis = saturate(1 - s) * 0.03125          (fallback branch: bare 0.03125)
+env = SampleLevel(t234 g_environmentColor CUBE, -d.x, d.y, -d.z, LOD 4).rgb
+out = env * (vis * cb[0].w)
+```
+
+`saturate(1 - sample)` is thus the ENGINE'S own expression, not our inference, and
+the polarity is fixed: s = 0 is full sky visibility. The w coordinate is scaled by
+1/264 — the depth of the 64x32x264 volume that PIX identified as ApiObjectId 190,
+tying binding and captured resource together. But note the radiance carrier here is
+the environment CUBE, not the SH; whether the SH is ever multiplied by sky
+visibility is still unshown.
 
 **Also found without a new capture: the engine has a signed distance field.** The
 shaders extracted on 2026-09-06 were never mined for names. They contain

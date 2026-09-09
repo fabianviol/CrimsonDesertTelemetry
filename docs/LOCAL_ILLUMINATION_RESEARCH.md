@@ -14,6 +14,60 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## The engine multiplies environment radiance by our own quantity — 2026-09-09
+
+Prompted by an outside review that refused to accept "the two multiply" as anything
+but a hypothesis. It was right to refuse, and checking it changed the answer.
+
+`EvaluateDiffuseRadianceCS` (`artifacts/light-research/gi-entry-b909d0e8.ll`) binds
+all of it at once, and the engine's own names settle three identities we had only
+inferred:
+
+| binding | engine name |
+|---|---|
+| t232, space36 | `g_skyVisibilityVoxelsTexturesLikeUav` |
+| t233, space36 | `g_signedDistanceVoxelsTexturesLikeUav` |
+| t224, space36 | `g_axisAlignedDistanceTextures` |
+| t234, space36 | `g_environmentColor` (TextureCube) |
+
+So t233 is a signed distance field by the engine's own naming, not merely something
+that behaves like one, and t224 is the axis-aligned distance companion that
+`GenerateAxisAlignedDistancePass0..2_CS` produces.
+
+**The composition, read out of the instruction stream:**
+
+```
+s   = SampleLevel(t232 skyVisibilityVoxels, u, v, w).x
+vis = saturate(1 - s)                       * 0.03125      -- fallback branch: 0.03125
+env = SampleLevel(t234 environmentColor, -d.x, d.y, -d.z, LOD 4).rgb
+out = env * (vis * cb[0].w)
+```
+
+Three things follow, none of them previously established.
+
+**`saturate(1 - sample)` is the engine's own expression.** Our decode convention was
+an inference from behaviour; here it is the literal instruction sequence, and the
+polarity is fixed with it — the alternative branch supplies a bare `0.03125`, the
+same value `saturate(1-s)` yields at `s = 0`, so `s = 0` is full sky visibility.
+
+**The w coordinate is scaled by 0.0037878789 = 1/264.** That is the depth of the
+64x32x264 volume identified from the PIX export as ApiObjectId 190. The shader
+binding and the captured resource are tied together by a constant neither derivation
+shared.
+
+**The multiplication is real, but the other factor is the cube, not the SH.** The
+architecture is what was claimed — directional environment radiance times a local
+visibility scalar — but in this shader the radiance carrier is `g_environmentColor`
+at LOD 4, while `PrecomputedAmbientConstantBuffer` slot 7 enters elsewhere in the
+same shader as a hemispherical term. Whether the SH is ever multiplied by sky
+visibility is still unshown.
+
+The environment contribution is then clamped by Rec.709 luminance against
+`FMax(0.01, exposure[3].w) * 2048`, from the 80-byte `ExposureConstantBuffer`. That
+exposure appears as an outside scale on these values is consistent with them being
+pre-exposure radiometric quantities, but a clamp is not a proof of where exposure is
+applied.
+
 ## The engine's ambient light is 1024 bytes of spherical harmonics — 2026-09-09
 
 Read from `GenerateAmbientFromEnvironmentAtmosphericScatteringCS`
@@ -40,12 +94,17 @@ indices 0..6 — 28 floats, the standard packing of 27 SH coefficients with one 
 lane — then an eighth `float4` at index 7 computed separately, and a second block of
 seven at `(_renderFlags.x) * 8 + 8..14`. Stride eight `float4` per set.
 
-**The same bytes are read back as a constant buffer.** Other shaders declare
+**A constant buffer with a layout that matches exactly.** Other shaders declare
 `PrecomputedAmbientConstantBuffer` as `{ 8 x float4, [56 x float4] }` — 64 float4,
 and DXC's own annotation on the handle says `ResourceProperties { 13, 1024 }`.
-**1024 bytes, eight sets of eight float4.** A CBV, in space35, the same space as the
-768-byte `VoxelGlobalIlluminationConstantBuffer` we already snapshot. Nothing about
-reaching it is new work.
+**1024 bytes, eight sets of eight float4**, the same 8-stride the producer writes at.
+A CBV, in space35, the same space as the 768-byte
+`VoxelGlobalIlluminationConstantBuffer` we already snapshot.
+
+The layout match is strong but it is not resource identity. What is NOT shown is the
+transfer — copy, upload, alias — from the producer's UAV to this CBV, or whether an
+intervening pass repacks or assembles the eight sets. Treat them as
+layout-compatible until a capture shows the copy.
 
 **Who consumes it,** across all 79 local listings:
 
@@ -71,11 +130,15 @@ SH against an up vector is a few multiplies. There is no clipmap origin to resol
 no trilinear sampling, no amortised refresh to wait out, and no 1465-byte payload —
 1024 bytes covers the whole sky.
 
-**And it composes cleanly with the refuted occlusion work.** This is the ambient
-from the SKY, unoccluded: it says how bright and what colour the environment is,
-and nothing at all about standing in a cave. Sky visibility is the term that knows
-about the cave. The two multiply. That is a better division of labour than trying
-to make one scalar field answer both questions, which is exactly what failed.
+**It is not unoccluded — it is unoccluded BY LOCAL GEOMETRY.** The shader samples
+`g_texNetDensity` and `g_texCloudVolumeShadow`, so atmospheric extinction and cloud
+shadowing are already inside these coefficients. What is absent is local scene
+occlusion: the SH says nothing about standing in a cave. Sky visibility is the term
+that knows about the cave. They are complementary quantities.
+
+Whether the SH specifically is combined with sky visibility downstream is NOT shown
+here, and should not be assumed. The multiplication that IS demonstrated involves a
+different carrier — see the next section.
 
 **Not established here.** The coefficient order inside the seven float4 is inferred
 from the shape, not verified lane by lane. What `_renderFlags.x` selects, and
