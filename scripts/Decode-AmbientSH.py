@@ -6,15 +6,21 @@ eight `float4`. Within a set, slots 0..5 are three channels of two `float4`,
 slot 6 holds each channel's ninth coefficient in x/y/z, and slot 7 is a
 separately computed summary that is not part of the harmonics.
 
-The sets are not eight of the same thing. The shader writes this frame's
-projection, scaled by 1/6144, into `_renderFlags.x * 8 + 8`, then sums SIX ring
-entries at `i * 8 + 8` for i in 0..5 and stores that sum unscaled into slots
-0..6. So sets 1..6 are a six-frame ring, set 0 is their sum, and set 7 lies
-outside the ring with unknown contents.
+The sets are not eight of the same thing. The shader writes one projection,
+scaled by 1/6144, into `_renderFlags.x * 8 + 8`, then sums SIX such entries at
+`i * 8 + 8` for i in 0..5 and stores that sum unscaled into slots 0..6. So sets
+1..6 are six partial contributions, set 0 is their sum, and set 7 lies outside
+with unknown contents. Whether the six are cube faces or six frames is open;
+the normalisation favours faces.
+
+Each entry samples 4096 directions (16x16 threads, 4x4 each, a 64x64 grid), so
+the six together are 24576 = 6 * 64 * 64. The 1/6144 is exactly `4/24576`,
+which is `(4*pi/24576)/pi`: the uniform-sphere weight for that many directions
+with a Lambertian 1/pi folded in.
 
 The stored values are moments against the L0-L2 basis, NOT canonical spherical
-harmonic coefficients: the producer samples a uniform grid in projected space
-and applies no solid-angle weight, so the integration measure is missing.
+harmonic coefficients. The producer applies no per-sample solid-angle weight, so
+a grid that is not uniform in solid angle is normalised as though it were.
 
 That gives three channels of nine coefficients, matching the producer's
 groupshared `SHColor2`, which DXC split into two vector members and one scalar
@@ -36,15 +42,15 @@ import sys
 SET_STRIDE = 8          # float4 per set
 SETS = 8
 CHANNELS = 'RGB'
-RING = range(1, 7)      # sets 1..6, the six-frame ring the shader sums
+PARTIALS = range(1, 7)  # sets 1..6, the six partial entries the shader sums
 
 
 def role(index):
     if index == 0:
-        return 'the sum of the six ring entries, unscaled'
-    if index in RING:
-        return 'ring entry %d of 6' % index
-    return 'outside the ring, contents unknown'
+        return 'the sum of the six partial entries, unscaled'
+    if index in PARTIALS:
+        return 'partial entry %d of 6 (cube face or frame, unresolved)' % index
+    return 'outside the six, contents unknown'
 
 
 # Lane -> (name, the producer's own expression in the sampled direction d).

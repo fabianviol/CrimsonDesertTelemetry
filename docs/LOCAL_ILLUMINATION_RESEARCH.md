@@ -38,13 +38,46 @@ statement: the L1 band is strongly oriented toward +y, by an order of magnitude 
 the other axes. The stronger claim, that the physical first moment of the sky
 radiance points up, needs the integration measure to be right, and it is not.
 
-**The normalisation is a flat 1/6144 per frame**, applied identically to all 27
-reduced values (float32 of 1/6144 exactly). 4096 samples, so this is not `4*pi/N`
-(which would be 0.00307, not 0.00016). Note 6144 = 6 x 1024 and also 1.5 x 4096;
-which factorisation is meant is not established.
+**The normalisation is 1/6144, and it is the uniform-sphere weight for all six
+entries together, divided by pi.** A review suggested reading 6144 as 6 x 1024 and
+therefore 1024 samples per entry. The sample count refutes that arithmetic but the
+structural instinct behind it turns out to be right, through a different identity.
 
-**And the buffer is a six-entry ring, not eight sets of the same thing.** The tail of
-the shader was misread earlier. Its real shape:
+Samples per entry, two independent ways. The loop bounds: `numthreads(16,16,1)`,
+`threadId.x << 2` and `threadId.y << 2`, an outer loop of 4 and an inner loop of 4,
+one `textureLoad` in the body — 256 threads x 16 = **4096**. And the NDC step: the
+grid coordinate is scaled by `3.125e-02` = 1/32 and offset by -1, so spanning
+[-1, +1] requires 64 steps per axis. **64 x 64 = 4096 per entry, not 1024.**
+
+But six entries of 4096 is **N = 24576 directions, exactly 6 x 64 x 64** — the
+count of a 64x64 cube map. And:
+
+```
+the shader's constant      1.627604215e-04     (float32)
+4 / 24576                  1.627604167e-04
+(4*pi / 24576) / pi        1.627604167e-04
+4*pi / 24576               5.113269293e-04     the canonical uniform-sphere weight
+canonical / shader         3.14159256          against pi = 3.14159265
+```
+
+So the factor is **the canonical uniform-solid-angle weight for 24576 directions
+covering a full sphere, with a 1/pi folded in** — the Lambertian normalisation, so a
+consumer can use the result as irradiance without dividing. Both halves of that agree
+to float32 precision. 6 x 1024 is a coincidence; 6 x 64 x 64 over a sphere is not.
+
+**That reframes the missing Jacobian.** The engine is not merely omitting a weight —
+it is applying the weight for a UNIFORM sphere sampling to a grid that is not
+uniform. On a cube face the per-texel solid angle goes as
+`(1 + x^2 + y^2)^(-3/2)`, a factor of `3^(3/2)` = 5.2 between face centre and corner.
+Treating the grid as uniform is a deliberate approximation of that, not an oversight
+in the constant.
+
+**One back door stays open.** What is proven is that no solid-angle correction
+appears IN THIS SHADER. A weight baked into `g_texSkyInscatter` itself cannot be
+excluded without tracing that texture's producer, and would change the reading.
+
+**And the buffer holds six partial contributions, not eight sets of the same thing.**
+The tail of the shader was misread earlier. Its real shape:
 
 ```
 block 2681   thread 0 reads the 27 reduced values, scales each by 1/6144,
@@ -58,10 +91,26 @@ So:
 
 | slots | contents |
 |---|---|
-| 0..6 | the sum of the six ring entries, unscaled |
+| 0..6 | the sum of the six partial entries, unscaled |
 | 7 | a separately computed summary, not harmonics |
-| 8..55 | a **six-frame ring**, `_renderFlags.x` selecting the write slot |
-| 56..63 | outside the ring; written by something else, contents unknown |
+| 8..55 | **six entries**, `_renderFlags.x` selecting the write slot |
+| 56..63 | outside those six; written by something else, contents unknown |
+
+**Whether those six are cube faces or six frames is the open question, and the
+evidence currently favours faces.** The normalisation above only makes sense if the
+six together are meant to cover a sphere, which six 64x64 faces do exactly and six
+repetitions of one view do not. Against that, the projection matrix is read from
+LITERAL rows 30..33 of the 2768-byte `SceneConstantBuffer`, the same slot every time —
+though that is not an argument against faces, since the engine is free to upload a
+different constant buffer for each of six dispatches.
+
+What would settle it is `_renderFlags.x`. That could not be read from the capture
+here: the export records **no `SetComputeRoot32BitConstants` at all** — 368
+`SetComputeRootConstantBufferView`, 1284 `SetComputeRootDescriptorTable`, and no root
+constants — so `GlobalPushConstants` is bound as a root CBV by address despite its
+name. Root CBVs carry no descriptor, which is also a live demonstration of why the
+`--list-cbv` count is not an inventory. Reading it needs the six dispatches located
+first, which needs a PSO-to-shader mapping.
 
 Each ring entry is packed exactly like set 0: `R.v0, R.v1, G.v0, G.v1, B.v0, B.v1,
 (R.c, G.c, B.c, 0)`. That is where the `{ 8 x float4, [56 x float4] }` declaration
@@ -74,11 +123,16 @@ outside the ring, and what it is remains unknown. The corroboration argument is
 withdrawn entirely; it was built on a misreading, not merely overstated.
 
 And the extracted bytes are not a self-consistent single frame. Set 0 is the sum of
-sets 1..6, but sets 1..6 read as all-zero while set 0 is populated. A live frame
-cannot look like that. What was extracted is the resource's contents as PIX recorded
-them for replay, and where in the frame that state comes from is not established.
-The numbers in set 0 are real engine values, but which frames they sum over is
-unknown.
+sets 1..6, but sets 1..6 read as all-zero while set 0 is populated. No executed frame
+can look like that.
+
+So the right description of what `resources.bin` yields is **the serialised initial
+resource payload of a PIX replay export** — the state the replay must restore before
+replaying commands — and its position relative to the target dispatch is not
+established. It should not be called live buffer contents. Until that is pinned down,
+**do not use these bytes for semantic validation**: the numbers are real engine
+values, but what they are a sum over is unknown. Everything drawn from the shader
+rather than the bytes is unaffected.
 
 **What survives untouched,** because it comes from the shader rather than the bytes:
 the 3 x 9 split, the basis order proven by its own constants, and the packing.

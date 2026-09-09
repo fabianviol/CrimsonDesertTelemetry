@@ -283,33 +283,57 @@ non-negative -> multiply by the nine basis functions -> add. No Jacobian, no per
 solid angle, no cosine. A uniform grid in projected space is not uniform in solid
 angle, so these are **projection-weighted moments against the L0-L2 basis, not
 canonical SH coefficients of a spherical radiance field.** The basis is exactly real
-SH; the measure is missing. Normalisation is a flat 1/6144 per frame (6144 = 6*1024
-= 1.5*4096; which is meant is unknown). The sampling domain is matrix-defined --
-whether it is the player frustum or a dedicated sky projection is open.
+SH; the measure is missing.
+
+**The 1/6144 is not arbitrary, and it points at cube faces.** Each entry samples
+4096 directions -- proven twice: 16x16 threads with `threadId << 2` and 4x4 loops, and
+the NDC scale 1/32 needing 64 steps to span [-1,1]. Six entries is therefore
+N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map. And 1/6144 = 4/24576 =
+(4*pi/24576)/pi: **the canonical uniform-sphere weight for 24576 directions with a
+Lambertian 1/pi folded in**, both to float32 precision. That only makes sense if the
+six together cover a sphere. So the engine applies the UNIFORM-sphere weight to a
+grid that is not uniform -- on a cube face the per-texel solid angle varies by
+3^(3/2) = 5.2 from centre to corner -- which is a deliberate approximation, not a
+wrong constant. (Back door: a weight baked into `g_texSkyInscatter` itself cannot be
+excluded without tracing its producer.)
 
 Accordingly the directional result is stated as: the red L1 band is strongly oriented
 toward +y (`(-0.000601, +0.005414, +0.000620)`), by an order of magnitude. Calling it
 the physical first moment of the sky radiance needs the measure to be right.
 
-**AND THE BUFFER IS A SIX-ENTRY RING.** The shader's tail was misread before. Thread 0
-scales the 27 reduced values by 1/6144 and stores them at `_renderFlags.x * 8 + 8`;
-then a six-iteration loop rawBufferLoads `i*8 + 8` for i in 0..5, sums all 27, and
-stores that sum UNSCALED to slots 0..6.
+**AND THE BUFFER HOLDS SIX PARTIAL CONTRIBUTIONS.** The shader's tail was misread
+before. Thread 0 scales the 27 reduced values by 1/6144 and stores them at
+`_renderFlags.x * 8 + 8`; a six-iteration loop then rawBufferLoads `i*8 + 8` for
+i in 0..5, sums all 27, and stores that sum UNSCALED to slots 0..6.
 
 ```
-slots  0..6   the sum of the six ring entries, unscaled
+slots  0..6   the sum of the six partial entries, unscaled
 slot   7      a separate summary, huge and unexplained (16366681.0, ...)
-slots  8..55  a SIX-FRAME RING, _renderFlags.x selecting the write slot
-slots 56..63  outside the ring, contents unknown
+slots  8..55  SIX ENTRIES, _renderFlags.x selecting the write slot
+slots 56..63  outside those six, contents unknown
 ```
+
+**Cube faces or six frames is the open question; the normalisation favours faces.**
+Against it: the projection matrix is read from LITERAL rows 30..33 of
+SceneConstantBuffer, the same slot every time -- though the engine may upload a
+different constant buffer per dispatch, so that is not decisive. What would settle it
+is `_renderFlags.x`, which could NOT be read here: the export records **no
+SetComputeRoot32BitConstants at all** (368 root CBVs, 1284 descriptor tables, zero
+root constants), so GlobalPushConstants is bound as a root CBV by address despite the
+name -- and root CBVs carry no descriptor, which is itself why the `--list-cbv` count
+is not an inventory. Reading it needs the six dispatches located, which needs a
+PSO-to-shader mapping.
 
 **Two retractions.** Slot 56 is NOT "a bare RGB triple corroborating the hue" -- it
-lies outside the ring and its meaning is unknown; that corroboration is withdrawn as
-a misreading. And the extracted bytes are not a self-consistent frame: set 0 is the
-sum of sets 1..6, yet those read all-zero while set 0 is populated. What was
-extracted is the state PIX recorded for replay; where in the frame it comes from is
-not established. Untouched, because they come from the shader and not the bytes: the
-3 x 9 split, the basis order, the packing.
+lies outside the six and its meaning is unknown; that corroboration is withdrawn as a
+misreading. And the extracted bytes are not a self-consistent frame: set 0 is the sum
+of sets 1..6, yet those read all-zero while set 0 is populated. No executed frame
+looks like that, so what `resources.bin` yields is **the serialised initial resource
+payload of a replay export**, not live buffer contents, and its position relative to
+the target dispatch is unestablished. **Do not use these bytes for semantic
+validation until that is pinned down.** Untouched, because they come from the shader
+and not the bytes: the 3 x 9 split, the basis order, the packing, the normalisation
+identity.
 
 **The hard test, needing no new capture:** extract `g_texSkyInscatter` from this same
 frame, reproduce the 4096-sample projection offline with the constants above and the
