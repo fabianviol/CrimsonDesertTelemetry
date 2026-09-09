@@ -2576,3 +2576,53 @@ MipLevels, and FirstWSlice/WSize where they apply.
 jitter in the projection, dynamic resolution and viewport scaling, and which depth
 buffer that particular pass used. Taking a point from the draw's geometry directly
 is cleaner where the capture exposes it.
+
+## Same frame is not the same as fresh, and one frame is not the whole history
+
+Two final precisions before opening a capture.
+
+**Spatial validity and temporal freshness are different properties.** "From the
+same frame" makes a point spatially valid for that frame's clipmap. It does not
+make the sampled content current, because the volume is amortised. This is not
+speculation here: it was measured. About a quarter of the voxels change between
+reads 1.5 s apart, updates rotate through blocks of 16 z-slices, and in every
+observed step at least one block was byte-identical. A validation point can
+therefore be correctly placed and still hold content several cycles old.
+
+```
+spatially valid    the point lies inside this frame's volume
+temporally fresh   its region was updated for the current clipmap state
+```
+
+Where the capture reveals which slabs were written in the frame, a ground-truth
+point inside a freshly updated region is worth considerably more than one outside.
+
+**A single frame may not contain the whole writer history.** For a persistent,
+amortised resource, part of the content can have been written before the capture
+began and merely carried forward. So the goal of "all writers since the last full
+initialisation" may be unreachable from one capture. Record what is visible and do
+not overstate it:
+
+```
+record:  every writer visible in this frame, the regions each touches,
+         and the last visible writer before the dispatch
+do not:  conclude that the provenance of the current content is fully known
+```
+
+Completing the chain may need the shader graph plus a later multi-frame or live
+observation.
+
+**Take three points from one confirmed surface, not one.** Given a surface point P
+with a reliably oriented normal:
+
+```
+Pfree    = P + normal * eps      confirmed free air immediately in front
+Psurface = P                     the confirmed surface
+Pback    = P - normal * eps      just on the other side
+```
+
+`Pback` must be labelled "behind surface" and never "solid interior", because how
+the voxelisation treats the inside of a volume is still unknown. Three points from
+the same real wall in the same frame say far more than a single wall point: for a
+distance field one expects a clear minimum at the surface, and for the packed
+volume the interesting question is simply which of the three carries content.
