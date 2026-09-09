@@ -3,8 +3,9 @@
 The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure,
-across roughly four orders of magnitude, and its reference is confirmed to be
-exactly the camera position** (current checkpoint below). readback.4 is the ASI in
+across roughly four orders of magnitude, its reference is confirmed to be exactly
+the camera position, and the cheap CPU shortcut to the same quantity is proven
+ill-conditioned and must not be used** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -117,7 +118,70 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — occlusion series measured, 2026-09-09
+## Current checkpoint — CPU shortcut rejected, direction required, 2026-09-09
+
+No new capture. This checkpoint records an analysis of the existing five captures
+and a product requirement that changes what the feed has to look like.
+
+**The CPU exposure-cache route is ill-conditioned. Do not build a stream on it.**
+It was tempting because it needs no GPU readback and no one-shot: the same
+candidate is recoverable algebraically from `exposureCacheHex` through
+`infer_visibility(lanes[8], lanes[5])`. Measured against the paired GPU texture in
+the same captures, it tracks well in the open (CPU max0.386272 vs GPU0.386534) and
+at the wall (CPU min0.117770 vs GPU0.117666), but collapses under a roof, ranging
+0.000000..0.032105 where the GPU says0.000031.
+
+The reason is conditioning, not noise. Across all 20 samples of a run the raw lanes
+differ every time and vary continuously, so the cache is NOT stale; the plateaus
+seen in the derived values are quantisation inside the decoder's inversion, not in
+the data. But `lanes[8]` is essentially identical between open (~0.000174) and
+under a roof (~0.000176) and therefore carries no visibility information, while
+`lanes[5]` differs by only about5% (-6.12 vs -6.43) across a real difference of
+more than a factor100 in the result. Inverting a near-exponential exposure relation
+turns a five-percent input change into orders of magnitude at the output.
+`lanes[5]` also behaves like an exposure/EV term — it varies MORE under the roof
+than in the open, which fits auto-exposure adaptation rather than geometry, so a
+signal built on it would react to where the camera looks, not only to structures.
+
+The sound quantity remains the DIRECT texture sample, which is geometric and not
+mediated by exposure. Making it usable therefore means lifting the one-shot limit
+into a bounded periodic measurement of the small region of interest, not copying
+2MB per frame and not substituting the CPU algebra.
+
+**New product requirement: the ambient feed must be DIRECTIONAL.** Lamps placed
+around the player follow the camera, but they must also express what is behind it.
+Reference scenario from the user: standing in a cave mouth looking in — lamps
+toward the interior go dark, unless a fire bowl stands there, while lamps toward
+the opening stay bright if it is day outside. A single scalar at the camera cannot
+express this; it would dim every lamp equally, which is exactly wrong.
+
+The decomposition, with current status of each part:
+- Directional sky radiance: ALREADY AVAILABLE. `/v1/ambient` carries9 SH
+  coefficients per RGB channel, so it can be evaluated per direction.
+- Directional occlusion: RECOVERABLE FROM DATA WE ALREADY COPY. The readback holds
+  the whole64x32x264 volume and we have been reading a single texel of it at the
+  camera position. Sampling the same volume at offsets around the camera gives a
+  spatial profile; in a cave mouth the field genuinely differs over a few metres.
+  Note the limits: this approximates direction by sampling a scalar field at
+  neighbouring points, it is not a directional function at one point, and clipmap
+  extent and resolution bound how far out it stays meaningful. Unmeasured so far.
+- Local lights such as a fire bowl: ALREADY WORKS through existing ManyLights.
+- Occlusion of those local lights: NOT BUILT. Still the separate hiZ route.
+
+**Vendor neutrality:** this repository must not name Philips Hue or bake a
+consumer-specific model into the API. The Hue consumer lives in C:\DEV\CrimsonHue;
+what is published here stays a neutral directional ambient/occlusion contract that
+any developer can consume. Nothing in the current API violates this; keep it so.
+
+**ONE next step, a choice for the user:** either measure the directional profile
+offline from the captures already preserved — sample the stored volumes at offsets
+around the recorded camera position and see whether a cave-mouth-like gradient
+appears, which costs no new capture at all — or first close the repeat-spread gap
+with one more capture at an already measured point. The offline direction test is
+cheaper and answers the newer question. Independent hiZ per-source visibility
+remains pending and required; no public API, stream or schema changed today.
+
+## Previous checkpoint — occlusion series measured, 2026-09-09
 
 Five paired captures with the installed 2.0.1-spatial-readback.4
 (ASI 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E), one

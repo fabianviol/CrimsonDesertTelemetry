@@ -5,13 +5,85 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. The latest LIVE
-result is "Occlusion series" immediately below: the sample responds to local
+not a new public local-illumination or source-visibility API. Read "Why the CPU
+exposure shortcut fails" first if you are tempted by the cheap route. The latest
+LIVE result is "Occlusion series" after it: the sample responds to local
 enclosure across about four orders of magnitude, and its reference is proven to be
 the camera position exactly. "First paired GI and texture capture" after it records
 the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
+
+## Why the CPU exposure shortcut fails — 2026-09-09, analysis
+
+Anyone looking for a continuous ambient-occlusion signal will find this shortcut
+and should not take it. The analysis below uses only the five captures already
+preserved; no new game run was needed.
+
+The shortcut: the same candidate can be recovered algebraically from the CPU
+`exposureCacheHex` in every observation via `infer_visibility(lanes[8], lanes[5])`,
+with no GPU readback, no fenced copy and no one-shot limit. Compared against the
+paired GPU texture value in the same captures:
+
+| capture | GPU texture | CPU median | CPU range over 20 samples |
+|---|---|---|---|
+| run1 open | 0.386534 | 0.316849 | 0.247303 .. 0.386272 |
+| run2 at the wall | 0.117666 | 0.127199 | 0.117770 .. 0.127201 |
+| run3 under the roof | 0.000031 | 0.002449 | 0.000000 .. 0.032105 |
+
+It tracks well where the value is large and fails where the answer matters most.
+
+**It is not staleness.** All twenty raw lane pairs in every run are distinct and
+vary continuously, so the cache updates. The plateaus visible in the derived series
+(the same value repeated ten times) are quantisation inside the decoder inversion,
+not held data.
+
+**It is conditioning.** `lanes[8]` is essentially the same in the open (~0.000174)
+and under a roof (~0.000176), so it carries no visibility information at all.
+`lanes[5]` differs by about5% (-6.12 versus -6.43) across a real difference of more
+than a factor100 in the result. Recovering visibility means inverting a
+near-exponential exposure relation, so a five-percent input perturbation becomes
+orders of magnitude at the output. That is why the spread was WORST under the roof,
+where the geometry is most stable — precisely the opposite of a geometric signal.
+
+**It is also the wrong physical quantity.** `lanes[5]` behaves like an exposure/EV
+term: it varies more under the roof than in the open, which fits auto-exposure
+adaptation rather than occlusion. A lamp signal built on it would respond to what
+the camera is pointed at, not only to whether a structure is overhead.
+
+The sound quantity is the direct texture sample: geometric, not mediated by
+exposure, and it produced the clean monotonic series below. Making it usable means
+lifting the one-shot limit into a bounded periodic read of the small region of
+interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
+this algebra.
+
+## Directional ambient — requirement and where the data already is
+
+Stated by the user as the product target, recorded here as a design note, not a
+measurement. Lamps distributed around the player follow the camera, but must also
+express what is behind it. Reference scenario: standing in a cave mouth looking in,
+lamps toward the interior go dark unless a fire bowl stands there, while lamps
+toward the opening stay bright if it is day outside.
+
+A single scalar at the camera cannot express this — it dims every lamp equally.
+The parts, and what exists today:
+
+- **Directional sky radiance — available.** `/v1/ambient` carries nine SH
+  coefficients per RGB channel, so it can be evaluated per direction already.
+- **Directional occlusion — latent in data we already copy.** The readback holds
+  the whole 64x32x264 volume, and every result so far has read a single texel of it
+  at the camera position. Sampling the stored volume at offsets around that
+  position yields a spatial profile, and in a cave mouth the field should differ
+  over a few metres. Limits to respect: this approximates direction by sampling a
+  scalar field at neighbouring points rather than evaluating a directional function
+  at one point, and clipmap extent and resolution bound how far out it stays
+  meaningful. Entirely unmeasured so far — but testable offline, with no new capture.
+- **Local lights such as a fire bowl — already works** through existing ManyLights.
+- **Occlusion of those local lights — not built.** Still the separate hiZ route.
+
+Keep this repository vendor-neutral: no Philips Hue naming and no consumer-specific
+model in the API. The Hue consumer lives in its own repository and any published
+contract here must stay a neutral directional ambient/occlusion feed.
 
 ## Occlusion series — 2026-09-09, five captures, readback.4
 
