@@ -2275,3 +2275,62 @@ hit test on `d < epsilon`, which is geometrically cleaner, against coverage
 accumulation, which should degrade more gracefully at voxel resolution and on
 grazing or thin geometry. The lantern case already provides one labelled example,
 and the depth-buffer labeller would provide many.
+
+## The gate resolves to a second volume, and three corrections — 2026-09-09
+
+**The gate is a data dependency, not a geometric guard.**
+
+```
+u    = textureLoad(Texture3D<uint4> t224, space36)
+gate = saturate((u.w >> 2) / 63) > 0
+```
+
+The scale constant is exactly 1/63, so the top six bits of the `w` component are
+normalised to [0,1] and any non-zero value opens the gate. The other components are
+unpacked as 4-bit nibbles (`and 15`, `lshr 4 and 15`), so `t224` is a packed volume
+carrying several small fields per texel.
+
+This changes the shape of the task: the engine's occlusion march depends on **two**
+resources, the `Texture3D<float>` at t233 and this packed companion at t224. Our
+own implementation would need the companion too, or a defensible substitute for
+whatever presence it encodes. That was not visible before tracing the gate, and it
+is the reason the outside review was right to insist on tracing it.
+
+**Three corrections to the previous entries, all conceded.**
+
+1. The bias reading — that a positive bias thins geometry — holds only if `d` is
+   positive outside geometry. If the field is genuinely signed and goes negative
+   inside, the statement is not uniformly true. The sign convention remains open
+   and the earlier phrasing was too flat.
+
+2. The constant 1.0606600 was described here as a conservative cell radius. More
+   precisely it is 1.5 * sqrt(2)/2, and sqrt(2)/2 is the half-diagonal of a SQUARE,
+   not of a cube, whose half-diagonal would be sqrt(3)/2 ~ 0.866. In a screen-space
+   cone pass a 2D footprint is the natural reading, so this is probably pixel
+   geometry rather than voxel geometry.
+
+3. The claim that a single sample decides everything under plain sphere tracing was
+   unfair to that method. Only a sample very close to the reconstructed surface
+   triggers a hit. Sphere tracing's real risk is different: whether a discretised
+   field represents thin geometry conservatively enough to be hit at all.
+
+**A third variant is worth benchmarking.** Unweighted coverage summation couples to
+the step strategy, because ten short steps near a surface contribute ten terms
+where three long ones contribute three. The engine can afford that because its step
+rule, cone width and 0.5 threshold were designed together; a reimplementation
+cannot. So the comparison should be three-way:
+
+```
+A   sphere-traced hit,        d < epsilon
+B   engine-shaped sum,        sum(coverage) >= T
+C   length-normalised sum,    sum(coverage * stepLength) >= T
+```
+
+C is not what the engine does, but it is invariant to step strategy, which for an
+arbitrary point-to-point ray is likely to matter more than fidelity to the engine.
+
+**And t233 should not be assumed to be the destination.** If the resource history
+shows it is produced by `GenerateHiZLevel0FromSDF_CS` rather than by
+`PropagateSignedDistanceCS`, then it is a hierarchy built for cone tracing, and the
+raw field behind it may suit a thin segment better. Both should be secured if both
+exist.
