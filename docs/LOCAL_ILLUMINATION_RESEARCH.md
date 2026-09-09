@@ -2049,3 +2049,43 @@ clipmap levels, or different fields entirely is UNKNOWN and must not be assumed.
 Not yet read: the step logic, hit threshold and how visibility is derived. That is
 the part worth having, since it would remove the guesswork from sphere-tracing
 parameters. The file is 1850 lines and available offline.
+
+## The raymarch volume is a different, finer clipmap — 2026-09-09
+
+Read offline from `RaymarchLocalLightsCS`. Its 3D `SampleLevel` builds the z
+coordinate like this:
+
+```
+z < 0 ? z+1 : z          wrap into [0,1)
+* 128.0                  128 usable slices per level
++ level * 130            stride 130 = 128 + 2 border texels
++ 1.0                    skip the leading border texel
+* 0x3F4F81F820000000     = 1/1040 exactly = 8 levels * 130
+```
+
+So this volume holds **8 clipmap levels of 130 z-slices**, 128 usable plus two
+border texels, which is what `PadClipmapBorderTexelsCS` maintains.
+
+Our sky-visibility texture uses the same construction with different numbers:
+64 usable slices, stride 66, scale 1/264 = 4 levels * 66.
+
+| volume | levels | usable z per level | format |
+|---|---|---|---|
+| sky visibility (already copied) | 4 | 64 | R8 |
+| raymarch target | 8 | 128 | float |
+
+The raymarch volume is finer on both axes, which fits a field meant for precise
+tracing while the R8 texture is a coarser derived product. It also means the
+mapping we verified for the R8 texture does NOT transfer unchanged: the slab
+stride, the level count and the scale constant all differ, even though both take
+their origins from the same 768-byte constant buffer. The x and y coordinates are
+built from a shared scale factor that is not yet resolved.
+
+Two consequences. The coarse-level worry recorded earlier is smaller here than
+feared, because level 0 of this volume is finer than anything we have sampled so
+far. And the reach is larger: eight levels rather than four.
+
+Still unknown: which resource this is (t233/space36 at the bind site, against
+t66/space36 for PropagateSignedDistanceCS), its x and y dimensions, the sign
+convention, the world scale of a unit, and whether it can be copied with the
+existing fenced machinery.
