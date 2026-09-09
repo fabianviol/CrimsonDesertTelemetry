@@ -237,7 +237,32 @@ feed (the earlier survey used the authored array), 302 segments give 119 blocked
 78 clear and 105 honestly unknown. The validated lantern still resolves correctly.
 52 Python tests, six new, one encoding the measured failure mode.
 
-**ONE next step: find the resource UPSTREAM of the R8 texture.** It is the result
+**FOUND, WITHOUT A NEW CAPTURE: the engine has a signed distance field.** The
+shaders extracted on 2026-09-06 were never mined for names. They contain
+`GenerateDistanceFieldsCS`, `PropagateSignedDistanceCS`,
+`GenerateAxisAlignedDistancePass0..2_CS`, `InitVoronoiSeedsCS`,
+`JumpFloodVoronoiDiagramsCS`, and — telling — `GenerateHiZLevel0FromSDF_CS`, so the
+hiZ the deferred route was about is DERIVED from the SDF, and
+`RaymarchLocalLightsCS`, so the engine already raymarches local lights.
+
+`PropagateSignedDistanceCS` reads a `Texture3D<float>` (t66, space36), writes a
+`RWTexture3D<float>` (u5, space38), and uses the **same 768-byte
+VoxelGlobalIlluminationConstantBuffer we already decode** (b1, space35). The clipmap
+origins, common anchor, inverse extents and level selection therefore carry over
+unchanged. An SDF stores distance to nearest geometry, so free space reads
+positive — which is precisely what sky visibility could not express and what broke
+the occlusion test. Sphere tracing replaces fixed-step sampling.
+
+Unknown: dimensions, clipmap layout, sign convention, world scale per unit,
+residency, binding, and whether the existing fenced copy can reach it.
+
+**ONE next step: locate the live Texture3D<float> behind t66/space36**, verify its
+descriptor and dimensions, copy it with the same release-barrier and fence
+machinery as the R8 volume, then sphere-trace the lantern case and compare against
+the validated ground truth. The 2026-09-05 PIX capture stays available if the live
+binding is hard to reach, but is no longer needed to establish that an SDF exists.
+
+Superseded plan, kept for context: find the resource UPSTREAM of the R8 texture. It is the result
 of a geometric computation, and whatever feeds it — opacity, occupancy, a distance
 field — is the right input for line of sight, where voxel-exact DDA traversal would
 replace point sampling. Same targeted method as everything so far, in a system we

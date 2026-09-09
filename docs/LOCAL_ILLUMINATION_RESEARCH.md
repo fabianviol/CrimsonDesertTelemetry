@@ -107,6 +107,70 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## A signed distance field exists, and it was already in our artifacts — 2026-09-09
+
+The review's advice to look one level upstream turned out to be answerable without
+any new capture. The shaders extracted on 2026-09-06 were never mined for names.
+They describe the whole structure.
+
+**The distance-field pipeline, from the extracted shader names:**
+
+```
+GenerateDistanceFieldsCS
+GenerateAxisAlignedDistancePass0_CS / Pass1 / Pass2
+PropagateSignedDistanceCS
+ClearInvalidSignedDistanceVoxelsCS
+InitVoronoiSeedsCS, JumpFloodVoronoiDiagramsCS      (jump-flood SDF construction)
+GenerateHiZLevel0FromSDF_CS                          (the hiZ is DERIVED from the SDF)
+RaymarchLocalLightsCS, RaymarchDiffuseHitDistanceCS  (the engine raymarches already)
+PadClipmapBorderTexelsCS, ClearVoxelsCS, InjectLightsCS, CopyVoxels_*
+```
+
+Two of those names matter beyond the SDF itself. `GenerateHiZLevel0FromSDF_CS` says
+the depth pyramid that ProcessManyLightsCS samples is built FROM the distance field,
+so the deferred hiZ route was always downstream of this. And `RaymarchLocalLightsCS`
+says the engine already raymarches local lights, which is the operation we want.
+
+**`PropagateSignedDistanceCS` in detail** (from
+`artifacts/light-research/filtered-count-095db9ce-20260906-2111-71fe2870.ll`):
+
+| binding | resource |
+|---|---|
+| SRV t66, space36 | `Texture3D<float>` |
+| UAV u5, space38 | `RWTexture3D<float>` |
+| CBV b1, space35 | `VoxelGlobalIlluminationConstantBuffer`, **768 bytes** |
+| CBV b0, space1 | `GenerateVoxelConstants`, 80 bytes |
+
+Thread group 8x8x8, body using Sqrt, FAbs and FMin — ordinary distance propagation.
+
+**The decisive detail is that 768-byte constant buffer: it is the same one we
+already decode.** The clipmap origins, the common anchor, the inverse extents and
+the level selection all carry over unchanged, so a distance-field volume can be
+addressed with the mapping already written and verified. Nothing would have to be
+re-derived.
+
+**Why this fixes the refuted method rather than patching it.** A signed distance
+field stores distance to the nearest geometry. A positive value means free space
+with that much clearance, which is exactly the information the sky-visibility field
+lacks: there, free air inside an enclosure reads like solid rock, and the whole
+failure mode followed from that. On an SDF the correct algorithm is also standard —
+sphere tracing along the segment, stepping by the distance value itself — rather
+than fixed-step sampling of a smoothed quantity, and it is cheaper as well as more
+exact. The format is float, not the R8 of the sky-visibility volume.
+
+**What is not known yet.** The volume's dimensions, its clipmap layout, the sign
+convention and the world scale of a unit are all unmeasured; the shader takes them
+from constants rather than hardcoding them. Whether the resource is resident every
+frame, how it is bound, and whether it can be copied with the existing fenced
+machinery are open. None of that is answered by a shader dump.
+
+**Next step, unchanged in method from everything that worked today:** locate the
+live `Texture3D<float>` behind t66/space36, verify its descriptor and dimensions,
+and copy it with the same release-barrier and fence machinery used for the R8
+volume. Then sphere-trace the lantern case again and compare against the validated
+ground truth. The PIX capture from 2026-09-05 remains available if the live binding
+proves hard to reach, but it is no longer needed to establish that an SDF exists.
+
 ## The occlusion test is refuted as a general method — 2026-09-09
 
 An independent review, sought by the user, raised an objection that our own data
