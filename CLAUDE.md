@@ -18,4 +18,5 @@ Documentation is for the assistants, not homework for the user.
 - Captures: `artifacts/`; third-party checkouts: `external/`; obsolete copies: `archive/crimsonhue-workspace-20260906/`. Never develop the archived standalone copy.
 - Future Philips Hue consumer: `C:\DEV\CrimsonHue`; it consumes the telemetry API and contains no telemetry implementation.
 - Tooling: read [docs/TOOLING.md](docs/TOOLING.md) before reaching for a GPU capture, a native build or a repository script. pixtool export-to-cpp answers resource identity and provenance far faster than shader disassembly, and cmake/ctest are not on PATH.
+- GPU capture forensics: [docs/GPU_CAPTURE_FORENSICS.md](docs/GPU_CAPTURE_FORENSICS.md) is self-contained. Read it before any claim about what a frame did. It carries the four-script chain from a PIX export to a proven shader-register-to-resource binding, the identities found so far, and a ledger separating established findings from hypotheses and from ones already withdrawn.
 - Old research paths under `C:\DEV\CrimsonHue` map to this repository after the 2026-09-06 migration.

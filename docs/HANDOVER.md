@@ -11,6 +11,34 @@ effect** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
+## READ THIS FIRST if you are picking up the GPU capture work
+
+**`docs/GPU_CAPTURE_FORENSICS.md` is self-contained and current.** It holds the
+toolchain for reading a PIX capture offline, the resource and shader identities, a
+ledger separating what is established from what is hypothesis from what was
+WITHDRAWN, the open questions in priority order, and the traps. Read it instead of the
+checkpoints below, which record how the conclusions were reached in the order they
+were reached -- including several that were later retracted. Come back here for the
+in-game probe, the ASI, the packaging and the occlusion history.
+
+The short version, as of 2026-09-09:
+
+- Four scripts turn the 2.7 GB export into provable statements about the frame:
+  `Read-PixExportResource.py`, `Map-PixExportShaders.py`,
+  `Find-PixExportDispatches.py` (candidates only) and `Resolve-PixExportBindings.py`
+  (the one to trust). 117 unit tests.
+- The engine computes `saturate(1 - sample)` on the sky-visibility volume itself and
+  multiplies an environment cube by it. Our decode convention is the engine's.
+- The ambient light is a 1024-byte buffer of three colour channels times nine
+  coefficients, with the basis order proven from the producer's own constants.
+- The producer applies NO solid-angle weight, so those are moments against the L0-L2
+  basis rather than spherical harmonic coefficients.
+- Whether its six partial entries are cube faces or six frames is **open**, and the
+  capture in hand cannot settle it because that shader did not execute in it.
+- The bytes extracted from the export are a replay's serialised initial payload.
+  **Do not use them for semantic validation** until their position in the frame is
+  established.
+
 ## What changed since the old fire/console investigation
 
 - Product home is **C:\DEV\CrimsonDesertTelemetry**. Console/research capabilities,

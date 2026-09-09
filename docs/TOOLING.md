@@ -46,7 +46,9 @@ AccelStructureRecreation_*.cpp raytracing acceleration structures
 CapturedAssets.h               large embedded data
 ```
 
-**The chain from an export to a named binding is now complete**, and each link has a
+**`docs/GPU_CAPTURE_FORENSICS.md` is the self-contained guide to this chain**, with
+worked invocations, the identities found so far, and what each step does and does not
+prove. **The chain from an export to a named binding is complete**, and each link has a
 script: resource contents (`Read-PixExportResource.py`), pipeline state to shader name
 and container (`Map-PixExportShaders.py`), candidate dispatches
 (`Find-PixExportDispatches.py`), and the actual register-to-resource binding
