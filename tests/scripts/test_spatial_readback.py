@@ -59,6 +59,27 @@ def v3_report(from_srv=False):
     return r
 
 
+def v4_report(gi_at=4096, exposure_at=2048, copies=1):
+    """Whole-buffer, same-submission pairing: offsets are found, not bound."""
+    r = v3_report()
+    r['format'] = 'private-spatial-readback-v4'
+    t = r['textureReadback']
+    pair = t['bufferPair']
+    cpu_gi = bytes.fromhex(t['context']['giBeforeHex'])
+    whole_gi = bytearray(65536)
+    for n in range(copies):
+        whole_gi[gi_at+n*8192:gi_at+n*8192+768] = cpu_gi
+    lanes = bytes.fromhex(pair['exposureHex'])
+    whole_exposure = bytearray(65536)
+    if exposure_at is not None:
+        whole_exposure[exposure_at:exposure_at+128] = lanes
+    t['context']['exposureCacheHex'] = lanes[:64].hex()
+    pair.update(giHex=bytes(whole_gi).hex(), exposureHex=bytes(whole_exposure).hex(),
+                giBytes=65536, exposureBytes=65536, giBindingHits=0, exposureBindingHits=0,
+                tableSets=98, heapSets=6, pairing='same-submission-not-binding-proven')
+    return r
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -174,6 +195,44 @@ class SpatialReadbackTests(unittest.TestCase):
 
     def test_v2_still_accepted(self):
         self.assertTrue(decoder.decode(paired_report(), True)['giGpuFramePaired'])
+
+    def test_v4_finds_the_window(self):
+        d = decoder.decode(v4_report(), True)
+        self.assertEqual(d['giWindowOffset'], 4096)
+        self.assertEqual(d['exposureWindowOffset'], 2048)
+        self.assertFalse(d['bindingProven'])
+        self.assertEqual(d['status'], 'same-submission-texture-and-buffers')
+        self.assertEqual(d['rootCorroboration']['tableSets'], 98)
+        # The located window must reproduce the v3 result exactly.
+        self.assertEqual(d['skyVisibilityCandidate'], decoder.decode(v3_report(), True)['skyVisibilityCandidate'])
+        self.assertEqual(d['gpuExposureInverse'], decoder.decode(v3_report(), True)['gpuExposureInverse'])
+
+    def test_v4_absent_and_ambiguous_gi_window(self):
+        r = v4_report()
+        r['textureReadback']['bufferPair']['giHex'] = ('00'*65536)
+        with self.assertRaises(ValueError):
+            decoder.decode(r, True)
+        with self.assertRaises(ValueError):
+            decoder.decode(v4_report(copies=2), True)
+
+    def test_v4_exposure_window_absent_is_reported_not_guessed(self):
+        d = decoder.decode(v4_report(exposure_at=None), True)
+        self.assertEqual(d['gpuExposureInverseUnavailable'], 'exposure-window-absent')
+        self.assertNotIn('gpuExposureInverse', d)
+        self.assertEqual(d['giWindowOffset'], 4096)
+
+    def test_v4_requires_the_pairing_label_and_sizes(self):
+        for key, value in (('pairing', 'binding-proven'), ('giBytes', 1024), ('exposureBytes', 99)):
+            r = v4_report()
+            r['textureReadback']['bufferPair'][key] = value
+            with self.assertRaises(ValueError):
+                decoder.decode(r, True)
+
+    def test_v4_still_checks_resource_identity(self):
+        r = v4_report()
+        r['textureReadback']['bufferPair']['giResource'] = 888
+        with self.assertRaises(ValueError):
+            decoder.decode(r, True)
 
     def test_pair_no_layout(self):
         d = decoder.decode(paired_report(), False)

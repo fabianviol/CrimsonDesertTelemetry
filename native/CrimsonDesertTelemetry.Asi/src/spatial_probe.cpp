@@ -324,7 +324,7 @@ void Save(const char* reason)
     if(directReadback)readback->Cancel("capture-window-ended");
     const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v3":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v4":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
         {"reason",reason},{"complete",!incomplete&&count==Limit&&(!directReadback||copy.phase==CopyPhase::Complete)},
         {"controlProgressed",progressing},{"gpuCopyIssued",directReadback&&copy.issued},
@@ -354,6 +354,14 @@ void Save(const char* reason)
             {"nativeTable",copy.nativeTable},{"descriptorHeaps",copy.descriptorHeaps},{"giFromSrv",copy.giFromSrv},
             {"rootThreadConflict",copy.rootThreadConflict},{"tableSets",copy.tableSets},{"heapSets",copy.heapSets},
             {"rootSetsBeforeExposure",copy.rootSetsBeforeExposure},{"rootSetsInsideExposure",copy.rootSetsInsideExposure},
+            {"giBindingHits",copy.giBindingHits},{"exposureBindingHits",copy.exposureBindingHits},
+            {"giBytes",copy.giBytes},{"exposureBytes",copy.exposureBytes},
+            {"pairing","same-submission-not-binding-proven"},
+            {"pairingCaveat","Whole pinned buffers copied on the same list and submission immediately "
+                "after the selected native dispatch, under one fence. Resource identity comes from the "
+                "validated native producer/consumer path, NOT from an observed root binding: this shader "
+                "binds through descriptor tables. Window offsets are resolved offline against the CPU "
+                "copies and are not read from any binding. Root fields are corroboration only."},
             {"giHex",copy.buffersGpuPaired?Hex(copy.gpuGi.data(),copy.gpuGi.size()):""},
             {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
     }
@@ -391,7 +399,7 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
     enabled=true;
     render::submissionObserver=Submission;
     ch::Log(directReadback?
-        "Spatial readback v3 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; root arguments observed from list reset, tables recorded only.":
+        "Spatial readback v4 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; same-submission pairing, whole buffers, offsets resolved offline.":
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }

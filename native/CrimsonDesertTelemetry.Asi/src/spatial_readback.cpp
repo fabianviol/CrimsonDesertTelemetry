@@ -115,39 +115,37 @@ void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,
     if(result_.phase!=CopyPhase::InExposure||!result_.buffersRequested)return;
     if(list!=list_.Get()||x!=2||y!=1||z!=1||!original||GetCurrentThreadId()!=result_.recordingThread||++result_.nativeDispatches!=1)
     {Fail("native-dispatch-context");return;}
-    unsigned cbHits{},uavHits{},srvHits{};
+    // Measured in PID4340: this dispatch binds GI and exposure through descriptor
+    // tables, so no root scan can ever prove the binding. Resource IDENTITY comes
+    // from the validated native producer/consumer path instead, and this copy
+    // establishes TIMING only: same recording, same submission, one fence,
+    // immediately after the original dispatch. Root state is kept as evidence.
     result_.nativeCbv=cbv_;result_.nativeUav=uav_;result_.nativeSrv=srv_;result_.nativeTable=table_;
     for(UINT i=0;i<64;++i)
     {
-        if(cbv_[i]>=result_.giBase&&cbv_[i]-result_.giBase<=giBytes_-768)
-        {++cbHits;result_.giOffset=cbv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=false;}
-        // The same pinned buffer can legally be bound as a root SRV instead.
-        if(srv_[i]>=result_.giBase&&srv_[i]-result_.giBase<=giBytes_-768)
-        {++srvHits;result_.giOffset=srv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=true;}
-        if(uav_[i]>=result_.exposureBase&&uav_[i]-result_.exposureBase<=exposureBytes_-128)
-        {++uavHits;result_.exposureOffset=uav_[i]-result_.exposureBase;result_.exposureRootIndex=i;}
+        if(cbv_[i]>=result_.giBase&&cbv_[i]-result_.giBase<giBytes_)
+        {++result_.giBindingHits;result_.giOffset=cbv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=false;}
+        if(srv_[i]>=result_.giBase&&srv_[i]-result_.giBase<giBytes_)
+        {++result_.giBindingHits;result_.giOffset=srv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=true;}
+        if(uav_[i]>=result_.exposureBase&&uav_[i]-result_.exposureBase<exposureBytes_)
+        {++result_.exposureBindingHits;result_.exposureOffset=uav_[i]-result_.exposureBase;result_.exposureRootIndex=i;}
     }
-    const bool giAligned=result_.giFromSrv?result_.giOffset%4==0:result_.giOffset%256==0;
-    if(cbHits+srvHits!=1||uavHits!=1||!giAligned||result_.exposureOffset%4)
-    {Fail("required-native-root-bindings-not-unique");return;}
-    // Every recorded root argument must come from this recording thread.
-    if(result_.rootThreadConflict||(rootThread_&&rootThread_!=result_.recordingThread))
-    {Fail("native-root-context");return;}
     result_.nativeDispatchSeen=true;
-    // The original native Dispatch just consumed these actual CBV/UAV addresses.
-    // Buffers have no texture layout; synchronize their shader accesses explicitly.
+    // Buffers have no texture layout. The read path may be a CBV or an SRV, so
+    // cover both; the output is an ALLOW_UNORDERED_ACCESS resource by validation.
     D3D12_BUFFER_BARRIER barriers[2]{};
     for(auto& b:barriers)
     {b.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;b.SyncAfter=D3D12_BARRIER_SYNC_COPY;
      b.AccessAfter=D3D12_BARRIER_ACCESS_COPY_SOURCE;b.Size=UINT64_MAX;}
     barriers[0].pResource=gi_.Get();
-    barriers[0].AccessBefore=result_.giFromSrv?D3D12_BARRIER_ACCESS_SHADER_RESOURCE:D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
+    barriers[0].AccessBefore=D3D12_BARRIER_ACCESS_CONSTANT_BUFFER|D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
     barriers[1].pResource=exposure_.Get();barriers[1].AccessBefore=D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
     D3D12_BARRIER_GROUP group{};group.Type=D3D12_BARRIER_TYPE_BUFFER;group.NumBarriers=2;group.pBufferBarriers=barriers;
     original(list,1,&group);
     result_.issued=true; // Even a later texture guard failure must retain this destination.
-    list->CopyBufferRegion(readback_.Get(),result_.pairReadbackOffset,gi_.Get(),result_.giOffset,768);
-    list->CopyBufferRegion(readback_.Get(),result_.pairReadbackOffset+768,exposure_.Get(),result_.exposureOffset,128);
+    // Whole buffers: the decoder locates the window, this code never guesses one.
+    list->CopyBufferRegion(readback_.Get(),result_.pairReadbackOffset,gi_.Get(),0,giBytes_);
+    list->CopyBufferRegion(readback_.Get(),result_.pairReadbackOffset+giBytes_,exposure_.Get(),0,exposureBytes_);
     for(auto& b:barriers)
     {b.SyncBefore=D3D12_BARRIER_SYNC_COPY;b.SyncAfter=D3D12_BARRIER_SYNC_COMPUTE_SHADING;
      b.AccessAfter=b.AccessBefore;b.AccessBefore=D3D12_BARRIER_ACCESS_COPY_SOURCE;}
@@ -303,7 +301,7 @@ void SpatialReadback::Poll()
         ComPtr<ID3D12Device> device,listDevice;ComPtr<IUnknown> identity,listIdentity;
         ComPtr<ID3D12Resource> buffer;ComPtr<ID3D12Fence> fence;
         D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};HRESULT hr=S_OK;
-        UINT rows{};UINT64 rowBytes{},bytes{};auto desc=source->GetDesc();
+        UINT rows{};UINT64 rowBytes{},bytes{},giWidth{},exposureWidth{};auto desc=source->GetDesc();
         const bool shape=desc.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE3D&&desc.Width==64&&desc.Height==32&&
             desc.DepthOrArraySize==264&&desc.MipLevels==1&&desc.Format==DXGI_FORMAT_R8_TYPELESS&&
             desc.SampleDesc.Count==1&&desc.SampleDesc.Quality==0;
@@ -336,13 +334,14 @@ void SpatialReadback::Poll()
                         FAILED(input->GetHeapProperties(&hp,&flags))||hp.Type!=D3D12_HEAP_TYPE_DEFAULT||!input->GetGPUVirtualAddress())
                     {hr=E_INVALIDARG;break;}
                     if(input==exposure_.Get()&&!(d.Flags&D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS))hr=E_INVALIDARG;
+                    (input==gi_.Get()?giWidth:exposureWidth)=d.Width;
                 }
             }
         }
         if(SUCCEEDED(hr))
         {
             // Dedicated tails do not overlap the placed texture footprint.
-            if(result_.buffersRequested)bytes=((bytes+511)&~UINT64{511})+768+128;
+            if(result_.buffersRequested)bytes=((bytes+511)&~UINT64{511})+giWidth+exposureWidth;
             D3D12_RESOURCE_DESC bufferDesc{};bufferDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;
             bufferDesc.Width=bytes;bufferDesc.Height=1;bufferDesc.DepthOrArraySize=1;bufferDesc.MipLevels=1;
             bufferDesc.SampleDesc.Count=1;bufferDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -360,10 +359,11 @@ void SpatialReadback::Poll()
                 result_.footprint=footprint;result_.allocationBytes=bytes;
                 if(result_.buffersRequested)
                 {
-                    giBytes_=gi_->GetDesc().Width;exposureBytes_=exposure_->GetDesc().Width;
+                    giBytes_=giWidth;exposureBytes_=exposureWidth;
+                    result_.giBytes=giWidth;result_.exposureBytes=exposureWidth;
                     result_.giResource=reinterpret_cast<uint64_t>(gi_.Get());result_.exposureResource=reinterpret_cast<uint64_t>(exposure_.Get());
                     result_.giBase=gi_->GetGPUVirtualAddress();result_.exposureBase=exposure_->GetGPUVirtualAddress();
-                    result_.pairReadbackOffset=bytes-768-128;
+                    result_.pairReadbackOffset=bytes-giWidth-exposureWidth;
                 }
                 result_.phase=CopyPhase::Ready;result_.reason="awaiting-known-reset-and-exposure";
             }
@@ -373,8 +373,7 @@ void SpatialReadback::Poll()
     {
         void* pointer{};D3D12_RANGE range{0,static_cast<SIZE_T>(readback->GetDesc().Width)};
         const auto hr=readback->Map(0,&range,&pointer);
-        std::vector<uint8_t> packed;
-        std::array<uint8_t,768> gpuGi{};std::array<uint8_t,128> gpuExposure{};
+        std::vector<uint8_t> packed,gpuGi,gpuExposure;
         if(SUCCEEDED(hr))
         {
             packed.resize(64*32*264);
@@ -384,7 +383,8 @@ void SpatialReadback::Poll()
             if(result_.buffersCopied)
             {
                 const auto* tail=static_cast<const uint8_t*>(pointer)+result_.pairReadbackOffset;
-                std::memcpy(gpuGi.data(),tail,gpuGi.size());std::memcpy(gpuExposure.data(),tail+768,gpuExposure.size());
+                gpuGi.assign(tail,tail+result_.giBytes);
+                gpuExposure.assign(tail+result_.giBytes,tail+result_.giBytes+result_.exposureBytes);
             }
             D3D12_RANGE empty{};readback->Unmap(0,&empty);
         }
@@ -394,7 +394,7 @@ void SpatialReadback::Poll()
             if(FAILED(hr))Fail("readback-map-failed",hr);
             else
             {
-                result_.packed=std::move(packed);result_.gpuGi=gpuGi;result_.gpuExposure=gpuExposure;
+                result_.packed=std::move(packed);result_.gpuGi=std::move(gpuGi);result_.gpuExposure=std::move(gpuExposure);
                 result_.buffersGpuPaired=result_.buffersCopied;result_.phase=CopyPhase::Complete;
                 result_.reason=result_.buffersGpuPaired?"gpu-complete-texture-and-buffers":"gpu-complete-texture-only";
                 observedList_=nullptr;

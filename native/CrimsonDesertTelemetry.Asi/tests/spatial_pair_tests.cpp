@@ -125,56 +125,68 @@ int main()
         Hr(gate->Signal(1),"open gate");const auto deadline=GetTickCount64()+5000;
         while(readback->Snapshot().phase==CopyPhase::WaitingGpu&&GetTickCount64()<deadline){readback->Poll();Sleep(1);}
         const auto r=readback->Snapshot();Check(r.phase==CopyPhase::Complete&&r.buffersGpuPaired,"all copies completed");
-        Check(r.giOffset==256&&r.exposureOffset==1024&&r.giRootIndex==0&&r.exposureRootIndex==1,"actual nonzero offsets");
-        Check(!r.giFromSrv&&!r.rootThreadConflict,"GI paired from the actual CBV binding");
-        Check(std::memcmp(r.gpuGi.data(),giData.data(),768)==0,"all 768 actual GPU GI bytes");
-        for(unsigned i=0;i<32;++i){uint32_t value{};std::memcpy(&value,r.gpuExposure.data()+4*i,4);Check(value==(giData[i]^0xabc00000),"GPU output from SAME constants");}
+        Check(r.giOffset==256&&r.exposureOffset==1024&&r.giRootIndex==0&&r.exposureRootIndex==1,"root corroboration recorded");
+        Check(r.giBindingHits==1&&r.exposureBindingHits==1&&!r.giFromSrv&&!r.rootThreadConflict,"root hits counted, not required");
+        // Whole buffers are copied; the window is found offline, never assumed here.
+        Check(r.gpuGi.size()==65536&&r.giBytes==65536&&r.gpuExposure.size()==65536&&r.exposureBytes==65536,"whole pinned buffers copied");
+        Check(std::memcmp(r.gpuGi.data()+256,giData.data(),768)==0,"all 768 actual GPU GI bytes at their real place");
+        for(unsigned i=0;i<32;++i){uint32_t value{};std::memcpy(&value,r.gpuExposure.data()+1024+4*i,4);Check(value==(giData[i]^0xabc00000),"GPU output from SAME constants");}
         Check(r.packed.size()==540672&&std::all_of(r.packed.begin(),r.packed.end(),[](uint8_t b){return b==7;}),"texture in same transaction");
         for(auto t:targets){Check(MH_DisableHook(t)==MH_OK,"disable");Check(MH_RemoveHook(t)==MH_OK,"remove");}
-        // Missing bindings and root-signature invalidation must not issue copies.
+        // The dispatch context itself must still fail closed. Absent root bindings
+        // must NOT: the live shader binds through descriptor tables, and identity
+        // comes from the validated native path rather than from a root argument.
         for(unsigned negative=0;negative<4;++negative)
         {
             SpatialReadback reject;Check(reject.Begin(),"negative begin");reject.Discover(list.Get(),texture.Get(),gi.Get(),output.Get());reject.Poll();
             reject.Reset(list.Get(),false);reject.Reset(list.Get(),true,S_OK);
-            // Bindings before Arm are now the realistic order for the negatives too.
-            reject.RootBuffer(RootKind::Cbv,0,gi->GetGPUVirtualAddress()+256);
-            if(negative!=0)reject.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
-            if(negative==2)reject.RootBuffer(RootKind::Cbv,2,gi->GetGPUVirtualAddress()+512);
-            // A table at the GI index replaces that root argument. It is recorded as
-            // evidence and must never be resolved into a copy source.
-            if(negative==3)reject.RootTable(0,gi->GetGPUVirtualAddress()+256);
             Check(reject.Arm(list.Get(),texture.Get(),124,gi.Get(),output.Get()),"negative arm");
-            if(negative==1)reject.RootSignature();
-            reject.NativeDispatchEnd(list.Get(),2,1,1,ForwardBarrier);
-            Check(reject.Snapshot().phase==CopyPhase::Failed&&!reject.Snapshot().issued,"unseen/reset/ambiguous/table root bindings add no copy");
-            if(negative==3)Check(reject.Snapshot().tableSets==1&&reject.Snapshot().nativeTable[0]!=0,"descriptor table recorded as evidence");
+            if(negative==0)reject.NativeDispatchEnd(list.Get(),1,1,1,ForwardBarrier);        // wrong thread group
+            if(negative==1)reject.NativeDispatchEnd(list.Get(),2,2,1,ForwardBarrier);        // wrong dimensions
+            if(negative==2)reject.NativeDispatchEnd(nullptr,2,1,1,ForwardBarrier);           // another list
+            if(negative==3){reject.NativeDispatchEnd(list.Get(),2,1,1,nullptr);}             // no forwardable barrier
+            Check(reject.Snapshot().phase==CopyPhase::Failed&&!reject.Snapshot().issued,"wrong dispatch context adds no copy");
         }
-        // A list reset clears the recording; stale roots must not survive it.
+        // Two dispatches inside one exposure are ambiguous and must fail closed.
+        {
+            ComPtr<ID3D12CommandAllocator> twiceAlloc;Hr(device->CreateCommandAllocator(type,IID_PPV_ARGS(&twiceAlloc)),"twice allocator");
+            ComPtr<ID3D12GraphicsCommandList7> twiceList;Hr(device->CreateCommandList(0,type,twiceAlloc.Get(),nullptr,IID_PPV_ARGS(&twiceList)),"twice list");
+            SpatialReadback twice;Check(twice.Begin(),"twice begin");twice.Discover(twiceList.Get(),texture.Get(),gi.Get(),output.Get());twice.Poll();
+            twice.Reset(twiceList.Get(),false);twice.Reset(twiceList.Get(),true,S_OK);
+            Check(twice.Arm(twiceList.Get(),texture.Get(),127,gi.Get(),output.Get()),"twice arm");
+            twice.NativeDispatchEnd(twiceList.Get(),2,1,1,ForwardBarrier);
+            Check(twice.Snapshot().buffersCopied,"first dispatch copies");
+            twice.NativeDispatchEnd(twiceList.Get(),2,1,1,ForwardBarrier);
+            Check(twice.Snapshot().phase==CopyPhase::Failed,"a second dispatch invalidates the transaction");
+            twice.Cancel("test-only");Hr(twiceList->Close(),"twice close");
+        }
+        // The live case: descriptor tables only, no usable root argument at all.
+        // This MUST still copy, with the binding fields reporting zero hits.
+        {
+            ComPtr<ID3D12CommandAllocator> tableAlloc;Hr(device->CreateCommandAllocator(type,IID_PPV_ARGS(&tableAlloc)),"table allocator");
+            ComPtr<ID3D12GraphicsCommandList7> tableList;Hr(device->CreateCommandList(0,type,tableAlloc.Get(),nullptr,IID_PPV_ARGS(&tableList)),"table list");
+            SpatialReadback tables;Check(tables.Begin(),"table begin");tables.Discover(tableList.Get(),texture.Get(),gi.Get(),output.Get());tables.Poll();
+            tables.Reset(tableList.Get(),false);tables.Reset(tableList.Get(),true,S_OK);
+            for(UINT i=5;i<10;++i)tables.RootTable(i,0xb5678a00e55ac0ull+i*0x600);
+            tables.RootBuffer(RootKind::Cbv,1,0x1036631400ull);   // unrelated upload-ring constant
+            Check(tables.Arm(tableList.Get(),texture.Get(),128,gi.Get(),output.Get()),"table arm");
+            tables.NativeDispatchEnd(tableList.Get(),2,1,1,ForwardBarrier);
+            const auto tr=tables.Snapshot();
+            Check(tr.buffersCopied&&tr.issued,"descriptor-table dispatch still pairs by submission");
+            Check(tr.giBindingHits==0&&tr.exposureBindingHits==0,"no root corroboration is reported honestly");
+            Check(tr.tableSets==5&&tr.nativeTable[5]!=0&&tr.nativeCbv[1]==0x1036631400ull,"table and unrelated CBV recorded");
+            tables.Cancel("test-only");Hr(tableList->Close(),"table close");
+        }
+        // A list reset clears the recorded root evidence.
         {
             SpatialReadback stale;Check(stale.Begin(),"stale begin");stale.Discover(list.Get(),texture.Get(),gi.Get(),output.Get());stale.Poll();
             stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
             stale.RootBuffer(RootKind::Cbv,0,gi->GetGPUVirtualAddress()+256);
             stale.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
+            Check(stale.Snapshot().rootSetsBeforeExposure==2,"roots recorded");
             stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
             Check(stale.Snapshot().rootSetsBeforeExposure==0,"reset clears recorded roots");
-            Check(stale.Arm(list.Get(),texture.Get(),126,gi.Get(),output.Get()),"stale arm");
-            stale.NativeDispatchEnd(list.Get(),2,1,1,ForwardBarrier);
-            Check(stale.Snapshot().phase==CopyPhase::Failed&&!stale.Snapshot().issued,"roots from a previous recording add no copy");
-        }
-        // A root SRV into the same pinned GI buffer is a legal alternative binding.
-        // It records real copies, so it needs its own OPEN list; never submitted.
-        {
-            ComPtr<ID3D12CommandAllocator> srvAlloc;Hr(device->CreateCommandAllocator(type,IID_PPV_ARGS(&srvAlloc)),"srv allocator");
-            ComPtr<ID3D12GraphicsCommandList7> srvList;Hr(device->CreateCommandList(0,type,srvAlloc.Get(),nullptr,IID_PPV_ARGS(&srvList)),"srv list");
-            SpatialReadback viaSrv;Check(viaSrv.Begin(),"srv begin");viaSrv.Discover(srvList.Get(),texture.Get(),gi.Get(),output.Get());viaSrv.Poll();
-            viaSrv.Reset(srvList.Get(),false);viaSrv.Reset(srvList.Get(),true,S_OK);
-            viaSrv.RootBuffer(RootKind::Srv,0,gi->GetGPUVirtualAddress()+260);
-            viaSrv.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
-            Check(viaSrv.Arm(srvList.Get(),texture.Get(),125,gi.Get(),output.Get()),"srv arm");
-            viaSrv.NativeDispatchEnd(srvList.Get(),2,1,1,ForwardBarrier);
-            const auto sr=viaSrv.Snapshot();
-            Check(sr.giFromSrv&&sr.giOffset==260&&sr.buffersCopied,"root SRV pairs with 4-byte alignment");
-            viaSrv.Cancel("test-only");Hr(srvList->Close(),"srv close");
+            stale.Cancel("test-only");
         }
         delete readback;readback=nullptr;
     }

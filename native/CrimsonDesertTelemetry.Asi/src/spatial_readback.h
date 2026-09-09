@@ -29,11 +29,16 @@ struct CopyResult
     bool buffersRequested{}, nativeDispatchSeen{}, buffersCopied{}, buffersGpuPaired{};
     uint64_t giResource{}, exposureResource{}, giBase{}, exposureBase{}, giOffset{}, exposureOffset{}, pairReadbackOffset{};
     uint32_t giRootIndex{}, exposureRootIndex{}, nativeDispatches{};
-    std::array<uint8_t,768> gpuGi{};
-    std::array<uint8_t,128> gpuExposure{};
+    // Whole pinned buffers: without a resolvable binding there is no trustworthy
+    // offset, so the offline decoder locates the window instead of guessing here.
+    std::vector<uint8_t> gpuGi, gpuExposure;
+    uint64_t giBytes{}, exposureBytes{};
     std::array<uint64_t,64> nativeCbv{},nativeUav{};
     // Diagnostics only: descriptor tables and heaps are recorded, never copied from.
     bool giFromSrv{}, rootThreadConflict{};
+    // Corroboration only. The live game binds through descriptor tables, so a
+    // root hit is a bonus, never a precondition for the same-submission copy.
+    uint32_t giBindingHits{}, exposureBindingHits{};
     uint32_t rootSetsBeforeExposure{}, rootSetsInsideExposure{}, tableSets{}, heapSets{};
     std::array<uint64_t,64> nativeSrv{},nativeTable{};
     std::array<uint64_t,4> descriptorHeaps{};
@@ -79,6 +84,7 @@ private:
     uint64_t giBytes_{},exposureBytes_{};
     std::array<uint64_t,64> cbv_{},uav_{},srv_{},table_{};
     uint32_t rootThread_{};
+    uint64_t giWidth_{},exposureWidth_{};
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<IUnknown> deviceIdentity_;
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;

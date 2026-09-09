@@ -1,11 +1,12 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
 The user requested a handover for Claude after a long absence; Claude has since
-live-tested readback.2 and readback.3. **Current state: the binding path is
-IDENTIFIED — the selected exposure dispatch reads GI and writes exposure through
-DESCRIPTOR TABLES, not root descriptors** (current checkpoint below). readback.3
-is installed in the game folder and its one-shot is consumed in the tested
-process. No publication or push was performed for any package.
+live-tested readback.2 and readback.3, identified descriptor tables as the actual
+binding path, and built readback.4 on the user's chosen evidence standard.
+**Current state: readback.4 is built and host-tested but NOT installed or
+game-tested** (current checkpoint below). readback.3 is still the ASI in the game
+folder and its one-shot is consumed, so the next live run needs the new ZIP.
+No publication or push was performed for any package.
 
 ## What changed since the old fire/console investigation
 
@@ -56,6 +57,8 @@ live-tested: it saw 20 root sets before the exposure and 98 descriptor-table
 bindings, with seven tables live at the dispatch and still no root UAV or SRV.
 The binding path is therefore descriptor tables, which no root-descriptor guard
 can ever accept. Do not run a fourth capture of the same kind.
+**Built/tested, NOT measured in game:** readback.4 drops the root requirement and
+pairs by submission instead, copying whole buffers and resolving windows offline.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
 ## Short reading route — do not read all historical checkpoints
@@ -111,7 +114,63 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — binding path identified as descriptor tables, 2026-09-09
+## Current checkpoint — readback.4 pairs by submission, 2026-09-09
+
+PRIVATE **2.0.1-spatial-readback.4** built and host-tested, NOT installed or
+game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.4-ModManagers.zip
+SHA256 6EA36715767C134F86E9B7BB249F5798235312AAB37192CBC65A3CF9BE293F8E.
+Expanded v2.0.1-spatial-readback.4-20260909-104838-829-2fb5e1d9/CrimsonDesertTelemetry;
+ASI SHA256 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E.
+Spatial defaults in the ZIP remain OFF. All earlier packages preserved unchanged.
+The game folder still holds readback.3; replacing it requires a shutdown.
+
+CHOSEN EVIDENCE STANDARD (the user picked this over resolving the tables): the two
+claims are now separated instead of proven at once. Resource IDENTITY rests on the
+existing validated native producer/consumer path documented in "Native spatial
+provenance". TEMPORAL pairing rests on copying within the same recording and
+submission, immediately after the selected native dispatch, under one fence.
+The dropped requirement is ONLY "a root descriptor must point into the pinned
+buffers" — impossible here, because the shader binds through descriptor tables.
+
+CHANGES: the root scan no longer gates the copy; its hits are recorded as
+corroboration (`giBindingHits`, `exposureBindingHits`) and were zero in the live
+game. Whole pinned buffers are copied from offset0 instead of 768/128 bytes at a
+binding-derived offset, so no offset is ever guessed in the plugin; the readback
+allocation grows by giBytes+exposureBytes (each bounded to 65536 by the existing
+validation). The GI buffer barrier now covers CONSTANT_BUFFER|SHADER_RESOURCE,
+since the read path is not observable. Format is private-spatial-readback-v4 with
+`pairing: same-submission-not-binding-proven` and an explicit pairingCaveat.
+Everything else still fails closed: same list, source, generation and recording
+thread, exactly ONE direct Dispatch(2,1,1), device/heap/UAV/width validation,
+the validated release barrier for the texture, one fence, no Map before it.
+
+The decoder finds the window instead of reading it: it locates the 768-byte CPU GI
+copy inside the whole GI buffer at 256-byte alignment and the 64-byte CPU exposure
+cache inside the exposure buffer, and reports `giWindowOffset` and
+`exposureWindowOffset` with `bindingProven: false`. An absent or ambiguous match
+raises `gi-window-absent`/`gi-window-ambiguous` rather than picking one; a missing
+exposure window yields `gpuExposureInverseUnavailable` and no inverse at all.
+
+TESTS: 23/23 native CTests, 239 WARP/detour checks with zero debug-layer warnings.
+The pair test now asserts whole-buffer copies with the GI block found at its real
+offset256 and the output at1024, plus a new control that mirrors the live game —
+descriptor tables only, an unrelated upload-ring CBV, zero root hits — and still
+pairs. Dispatch-context negatives (wrong dimensions, wrong list, missing barrier,
+a second dispatch) still fail closed. 37 Python tests: window found, absent,
+ambiguous, missing pairing label, wrong sizes, resource-identity mismatch, and
+unchanged v1/v2/v3 handling. All synthetic; no game evidence.
+
+**ONE next step:** after shutdown install the whole readback.4 ZIP with DMM, keep
+Research/SpatialProbe=1, SpatialReadback=1, AmbientProbe=0 with Lights/ManyLights
+and Ambient enabled, and SAVE the INI before starting the game. Verify ASI hash,
+health and a native log line reading "Spatial readback v4 IDLE", then run ONE
+stationary capture. If the GI window is found, this is the first same-frame GPU
+GI/exposure snapshot and the roof/outside control can finally be designed — as a
+bounded repeatable pair of captures, never as a single number. Report it as
+same-submission pairing, never as binding-proven. Independent hiZ per-source
+visibility remains pending and required.
+
+## Previous checkpoint — binding path identified as descriptor tables, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.3** installed via DMM and LIVE-TESTED in PID4340.
 Installed ASI SHA256 9B35DEC7A0960A0FC94B3146B9104ECA3F930344A1947467CC5FEF7E4ED66352

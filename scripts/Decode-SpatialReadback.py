@@ -39,9 +39,26 @@ def linear_wrap(data, coordinates, dims=DIMS):
     return value, neighbors
 
 
+def find_window(buffer, needle, align=4):
+    """Locate a known CPU block inside a whole copied buffer.
+
+    The live shader binds through descriptor tables, so no offset can be read
+    from a root argument. The window is therefore found by content, and an
+    ambiguous or absent match is reported rather than guessed.
+    """
+    hits, at = [], buffer.find(needle)
+    while at != -1 and len(hits) <= 8:
+        if at % align == 0:
+            hits.append(at)
+        at = buffer.find(needle, at+1)
+    return hits
+
+
 def decode(source, assume_layout=False):
-    formats = ('private-spatial-readback-v1', 'private-spatial-readback-v2', 'private-spatial-readback-v3')
+    formats = ('private-spatial-readback-v1', 'private-spatial-readback-v2',
+               'private-spatial-readback-v3', 'private-spatial-readback-v4')
     paired = source.get('format') in formats[1:]
+    whole = source.get('format') == 'private-spatial-readback-v4'
     if source.get('format') not in formats or source.get('executableSha256') != EXE:
         raise ValueError('wrong-format-or-build')
     if source.get('controlProgressed') is not True:
@@ -78,18 +95,45 @@ def decode(source, assume_layout=False):
             raise ValueError('no-proven-buffer-pair')
         gpu_gi = bytes.fromhex(pair['giHex'])
         gpu_exposure = bytes.fromhex(pair['exposureHex'])
-        if len(gpu_gi) != 768 or len(gpu_exposure) != 128:
-            raise ValueError('wrong-gpu-buffer-sizes')
         if pair['giResource'] != o['giGpuResource'] or pair['exposureResource'] != o['exposureGpuResource']:
             raise ValueError('paired-resource-context-mismatch')
-        # v3 may pair GI through a root SRV; v2 files have no such field.
         if source.get('format') == 'private-spatial-readback-v3' and pair.get('rootThreadConflict') is not False:
             raise ValueError('root-thread-conflict')
-        for name, binding in (('gi', 'nativeSrv' if pair.get('giFromSrv') else 'nativeCbv'), ('exposure', 'nativeUav')):
-            root = pair[name+'RootIndex']
-            if (not isinstance(root, int) or not 0 <= root < 64 or len(pair[binding]) != 64 or
-                    pair[binding][root] != pair[name+'Base']+pair[name+'Offset']):
-                raise ValueError('native-root-address-mismatch')
+        if not whole:
+            if len(gpu_gi) != 768 or len(gpu_exposure) != 128:
+                raise ValueError('wrong-gpu-buffer-sizes')
+            for name, binding in (('gi', 'nativeSrv' if pair.get('giFromSrv') else 'nativeCbv'), ('exposure', 'nativeUav')):
+                root = pair[name+'RootIndex']
+                if (not isinstance(root, int) or not 0 <= root < 64 or len(pair[binding]) != 64 or
+                        pair[binding][root] != pair[name+'Base']+pair[name+'Offset']):
+                    raise ValueError('native-root-address-mismatch')
+            windows = None
+        else:
+            # Same-submission pairing: whole buffers, offsets resolved here.
+            if pair.get('pairing') != 'same-submission-not-binding-proven':
+                raise ValueError('missing-pairing-label')
+            if (len(gpu_gi) != pair.get('giBytes') or len(gpu_exposure) != pair.get('exposureBytes') or
+                    not 768 <= len(gpu_gi) <= 65536 or not 128 <= len(gpu_exposure) <= 65536):
+                raise ValueError('wrong-gpu-buffer-sizes')
+            cpu_gi = bytes.fromhex(o['giBeforeHex'])
+            gi_hits = find_window(gpu_gi, cpu_gi, 256)
+            if len(gi_hits) != 1:
+                raise ValueError('gi-window-absent' if not gi_hits else 'gi-window-ambiguous')
+            windows = dict(giWindowOffset=gi_hits[0], giWindowSource='matched-cpu-gi-copy',
+                           bindingProven=False, rootCorroboration=dict(
+                               giBindingHits=pair.get('giBindingHits'),
+                               exposureBindingHits=pair.get('exposureBindingHits'),
+                               tableSets=pair.get('tableSets'), heapSets=pair.get('heapSets')))
+            gpu_gi = gpu_gi[gi_hits[0]:gi_hits[0]+768]
+            cpu_exposure = bytes.fromhex(o['exposureCacheHex'])
+            exposure_hits = find_window(gpu_exposure, cpu_exposure, 4)
+            if len(exposure_hits) == 1 and exposure_hits[0]+128 <= len(gpu_exposure):
+                windows['exposureWindowOffset'] = exposure_hits[0]
+                gpu_exposure = gpu_exposure[exposure_hits[0]:exposure_hits[0]+128]
+            else:
+                windows['exposureWindowUnavailable'] = (
+                    'exposure-window-ambiguous' if exposure_hits else 'exposure-window-absent')
+                gpu_exposure = None
         cpu_context = context
         context = model.decode_spatial(dict(source='paired-gpu-voxel-gi', status='fenced-gpu-readback',
             rawHex=gpu_gi.hex(), textureCpuDimensions=list(DIMS), textureResource=o['resource'],
@@ -118,6 +162,17 @@ def decode(source, assume_layout=False):
                    'CPU scene frame/cache remains unpaired. Sky factor is NOT irradiance or source occlusion.',
             cpuReference=cpu_context, gpuReference=context,
             cpuGiEqualsGpu=gpu_gi == bytes.fromhex(o['giBeforeHex']))
+        if windows is not None:
+            result.update(windows, status='same-submission-texture-and-buffers'
+                          if context['status'] == 'candidate' else 'same-submission-reference-unavailable',
+                caveat='Texture, GI buffer and exposure output share one recording, one submission and one '
+                       'fence with the selected native dispatch. Resource identity comes from the validated '
+                       'native producer/consumer path, NOT from an observed root binding: this shader binds '
+                       'through descriptor tables. Window offsets were matched against the CPU copies. '
+                       'Sky factor is NOT irradiance, room brightness or source occlusion.')
+        if gpu_exposure is None:
+            result['gpuExposureInverseUnavailable'] = windows['exposureWindowUnavailable']
+            return result
         # Interpret GPU stores as GPU stores, not by fabricating CPU-cache flags.
         lanes = struct.unpack('<32f', gpu_exposure)
         try:

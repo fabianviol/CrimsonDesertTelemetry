@@ -5,11 +5,77 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. The latest LIVE
-result is "Descriptor tables identified" immediately below, which settles how the
-selected dispatch binds GI and exposure. The last successful GPU copy is still
-"First direct live texture readback" further down.
+not a new public local-illumination or source-visibility API. The newest build is
+"Same-submission pairing" immediately below; the latest LIVE result is "Descriptor
+tables identified" after it, which settles how the selected dispatch binds GI and
+exposure. The last successful GPU copy is still "First direct live texture
+readback" further down.
 Older sections preserve prior evidence, not current instructions.
+
+## Same-submission pairing — 2026-09-09, readback.4 NOT live-tested
+
+The user chose this route over resolving the descriptor tables. It is deliberately
+a weaker evidence standard than readback.2 aimed at, and the report, the decoder
+and this section all have to say so wherever a number appears.
+
+**The two claims, separated.** readback.2 tried to prove identity and timing with
+one mechanism: a root descriptor pointing into the pinned buffer proved both which
+resource the dispatch used and that the copy belonged to it. The live measurement
+showed that mechanism cannot exist for this shader. readback.4 therefore proves
+them separately:
+
+- *Identity* comes from the validated native producer/consumer path already
+  documented in "Native spatial provenance" — the exposure consumer's owner chain
+  to the GI and exposure resources, checked every observation, with device, heap
+  type, UAV flag, width bounds and nonzero GPU addresses re-validated at arming.
+- *Timing* comes from copying inside the same recording and the same submission,
+  immediately after the observed original dispatch, under one fence, with no Map
+  before that fence completes. This is what the CPU exposure cache never had.
+
+What is genuinely lost is per-dispatch binding proof: nothing in this design shows
+that *this* dispatch read *that* buffer. It shows that the buffer identified by the
+validated path held those bytes at that point in that submission.
+
+**Consequences in the plugin.**
+
+- The root scan no longer gates anything. Its hits become `giBindingHits` and
+  `exposureBindingHits`, alongside the table/heap evidence; in the live game they
+  are zero and that is reported rather than hidden.
+- Whole pinned buffers are copied from offset0, not 768/128 bytes at a
+  binding-derived offset, so the plugin never guesses a window. Each buffer is
+  bounded to 65536 bytes by the existing validation, so the readback allocation
+  grows by at most 128KiB beyond the texture.
+- The GI buffer barrier covers `CONSTANT_BUFFER|SHADER_RESOURCE`, because the read
+  path is not observable when the descriptor lives in a table. The exposure buffer
+  keeps `UNORDERED_ACCESS`; the resource is validated as ALLOW_UNORDERED_ACCESS.
+- Format `private-spatial-readback-v4` carries `pairing:
+  same-submission-not-binding-proven` plus a `pairingCaveat` string stating the
+  identity source, the table binding and the offline window resolution.
+- Unchanged and still failing closed: same list, source, reset generation and
+  recording thread; exactly one direct `Dispatch(2,1,1)`; the validated post-exposure
+  release barrier for the texture; one queue, one fence, one Map.
+
+**Consequences in the decoder.** It locates the 768-byte CPU GI copy inside the
+whole GI buffer at 256-byte alignment and the 64-byte CPU exposure cache inside the
+exposure buffer, reporting `giWindowOffset`, `exposureWindowOffset` and
+`bindingProven: false`. Absent or ambiguous GI matches raise `gi-window-absent` or
+`gi-window-ambiguous` instead of choosing one. A missing exposure window sets
+`gpuExposureInverseUnavailable` and produces no inverse. Note what a GI match does
+and does not mean: it locates the window, and the fence establishes freshness. It
+is not itself proof that the CPU copy and the GPU bytes are from the same frame —
+if they were not, the match would simply fail.
+
+**Host verification.** 23/23 native CTests. 239 WARP and native-detour checks with
+zero debug-layer warnings, now asserting whole-buffer copies with the GI block at
+its real offset256 and the shader output at1024. A new control mirrors the live
+game directly: descriptor tables at five root indices, one unrelated upload-ring
+CBV at index1, zero root hits into the pinned buffers — and the transaction still
+pairs and copies. Dispatch-context negatives still fail closed: wrong thread group,
+wrong dimensions, another list, a missing forwardable barrier, and a second
+dispatch inside one exposure. 37 Python tests cover the found, absent and ambiguous
+windows, the required pairing label, wrong buffer sizes, resource-identity
+mismatch and unchanged v1/v2/v3 behaviour. All synthetic. Package identity and the
+one next live step are in the current HANDOVER checkpoint.
 
 ## Descriptor tables identified — 2026-09-09, PID4340, readback.3
 
