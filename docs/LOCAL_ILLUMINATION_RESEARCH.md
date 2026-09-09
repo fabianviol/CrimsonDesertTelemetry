@@ -2537,3 +2537,42 @@ screen, projecting a light position and comparing against scene depth yields
 hundreds of visible/occluded labels without ever deriving truth from the volume
 being tested. That remains the right way to compare variants A through E on error
 rates rather than on single cases.
+
+## Do not mix ground-truth coordinates across captures — 2026-09-09
+
+This withdraws the remaining claim that validation points already exist, and it is
+the most important caution recorded before opening a capture.
+
+**The volumes are camera-centred and amortised, so a world point is only a valid
+test point for the capture it came from.** A coordinate taken from today's lantern
+session is not a valid probe into t224 or t233 as they appear in the 2026-09-05
+capture: the clipmap is centred on that frame's camera, the point may fall outside
+it entirely, and the stored content belongs to a different spatial and temporal
+state. Both points previously kept as sound — the outdoor viewpoint and the
+under-roof camera — are therefore unusable against that capture. They remain valid
+for a LIVE readback taken in a session where the camera is actually there.
+
+Rule: every validation point must come from the SAME frame whose volume is being
+decoded. Mixing sessions during a careful validation is exactly how a wrong
+conclusion gets manufactured.
+
+For the capture at hand this means obtaining, from that frame only: free air, a
+confirmed surface, a point just short of it, and an enclosed free-air point if the
+frame happens to contain one.
+
+**"Last writer" is too coarse for an amortised clipmap.** If writer A updates
+z-slices 0..15, B updates 16..31 and C updates 32..47 before the dispatch, C is
+formally the last writer while A and B produced parts of the volume actually read.
+The question to ask is which writers modified the SUBRESOURCES OR REGIONS visible
+through the SRV since the last full initialisation, so mip and slice-range updates
+matter, not just the final line of a resource history.
+
+**Shader LOD 0 is not necessarily resource mip 0.** `SampleLevel(..., 0)` addresses
+mip 0 relative to the VIEW. With `MostDetailedMip = 2` it reads resource mip 2. So
+record, for both resources: resource identity, SRV format, MostDetailedMip,
+MipLevels, and FirstWSlice/WSize where they apply.
+
+**Depth reconstruction has its own traps.** Reverse-Z, D3D NDC with z in 0..1, TAA
+jitter in the projection, dynamic resolution and viewport scaling, and which depth
+buffer that particular pass used. Taking a point from the draw's geometry directly
+is cleaner where the capture exposes it.
