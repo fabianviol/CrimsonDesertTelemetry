@@ -2382,3 +2382,65 @@ evidence E is the most likely final shape, but nothing here decides it.
 If t224's producer carries a name suggesting voxelisation or occupancy injection,
 it may sit upstream of the distance field, which would make it closer to the
 original scene geometry than the SDF is.
+
+## Validation protocol before any algorithm — 2026-09-09
+
+A semantic caution and a protocol, recorded so the next step measures instead of
+theorising.
+
+**The caution.** `t224.w != 0` establishes that a cell has content relevant to this
+raymarch. It does NOT establish that the cell contains blocking geometry. Plausible
+meanings still include cell validity, presence of injected scene data, presence of
+material information, or relevance to this GI path. The previous entry treated
+presence and occupancy as interchangeable; they are not, and the difference decides
+whether variants D and E are viable at all.
+
+**The protocol, for t224 first.** Sample `w` at four world points of known
+character before drawing any conclusion:
+
+```
+free air outdoors            expect 0 if w means occupancy
+free air deep in an enclosure expect 0
+inside a wall                 expect != 0
+just outside a wall           expect 0
+```
+
+Only if that pattern holds may the field be described as occupancy or geometry
+presence. Then decode the `xyz` nibbles at the same four points; if they turn out to
+carry direction, normal, material or coverage information, that could matter for
+grazing edges.
+
+**The same for t233, by measurement rather than argument.** Read the value at
+free air, one metre from a wall, ten centimetres from a wall, at the surface, and
+inside the wall. That single table yields the world scale, the zero point, the sign
+convention, whether the field is conservative, and its quantisation — all of which
+have been open questions here for hours.
+
+**The four world points already exist.** They do not need a new capture, only the
+ability to read the new resources, because preserved captures with confirmed
+ground truth already supply them: the visible lantern viewpoint is free air
+outdoors, the under-roof camera is free air inside an enclosure, and the interior
+and end of the occluded lantern segment give a point inside a wall and a point just
+outside one. The user confirmed the occlusion in that case, so these are labelled
+rather than assumed.
+
+**Variant matrix, renamed.**
+
+```
+A  SDF surface hit
+B  engine-inspired unweighted coverage      reference only
+C  length-weighted coverage                 experimental LOS score
+D  t224 voxel traversal
+E  SDF-accelerated t224 traversal
+```
+
+B is now reference only, since the engine's arrangement is tuned to a screen-space
+cone. If t224 does carry geometry occupancy, D and E answer the actual question —
+is there geometry between these two world points — rather than the question the GI
+raymarcher answers, which is how a widening pixel cone would be shaded.
+
+**In a capture, do provenance only.** For both t233 and t224: resource, format,
+dimensions, mips, last writer before the dispatch, that writer's name and its
+inputs. Then one step further upstream if needed. The goal is the dependency graph
+between them, not a pretty resource name, and specifically whether one is derived
+from the other or they come from separate branches.
