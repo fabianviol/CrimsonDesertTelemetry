@@ -5,9 +5,78 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. Latest package is
-described immediately below; latest LIVE result is "Live interval result".
+not a new public local-illumination or source-visibility API. Latest LIVE result
+is "First direct live texture readback" immediately below.
 Older sections preserve prior evidence, not current instructions.
+
+## First direct live texture readback — 2026-09-09, PID8772
+
+Installed2.0.1-spatial-readback.1 ASI verified against immutable package:
+SHA256686BFA08BF49F9AFD3F78936B9BCB7966445B0372AB2DECD955307A5852FE666.
+PID8772 started08:42:40.8526107 CEST; native log opened08:42:42, IDLE instrument
+and normal ManyLights/global sky active. INI SpatialProbe1/SpatialReadback1/
+AmbientProbe0, Lights and ManyLights and Ambient enabled. Exact supported EXE
+hash4D99C15C.../build25116796; health playing, no error. Git initially clean.
+
+User stood between the four lamps at NIGHT and reports indoors brighter than
+outside. Prior location is the partly open roofed stall. This run is ONE stationary
+location, not a doorway/light-toggle comparison and not an untouched baseline.
+No need to darken lamps: candidate sky visibility is distinct from total lighting.
+Started once through Start-SpatialProbe.ps1; released user immediately afterward.
+
+Native report complete=true,20/20 valid CPU observations, frame17704..18195;
+all GI before/after copies equal, exactly one selected exposure at frame17730.
+Texture source5140177008, native list/list75135413632, Reset generation9.
+Recording thread4212, submitting thread27240, actual queue5156726752.
+Matched full release Sync128->0,Access128->NO_ACCESS0x80000000,Layout6->1,
+flags0, ALL subresources (FFFFFFFF/0/0/0/0/0). Issued one copy, Close/Execute
+guards accepted, own fence value1. Release/submit tick1289546; worker completion
+1289562,16ms later. HRESULT0, Map calls1. No GPU layout/completion inferred from
+passive history. Health sequence12556 before ->13858 after, playing/error=null.
+
+Readback allocation2162496 bytes; footprint0,Texture3D64x32x264,R8_TYPELESS60,
+rowPitch256. Padding stripped ->540672 bytes, range0..255,33 distinct values.
+Texture bytes SHA256
+04c89b9be9a120646e246b161af7c222df951d5992c331d937dcce6d342e8726.
+This is the first actual fenced game-texture readback for this spatial route.
+
+Offline decoder accepted build, control, texture/fence, sampler and view settings.
+CPU GI model selects clipmap1 (NO fallback), world reference
+(-10537.6552734375,613.0991821289062,-4415.5927734375), normalized pre-wrap UV
+(-164.65086364746094,19.15934944152832,0.2553304135799408).
+Eight sampled neighbors are x21/22,y4/5,z66/67; seven255, one247 at(22,4,66)
+with weight0.031410481889722064. R8_UNORM linear-WRAP gives0.9990145731171852,
+thus candidate saturate(1-sample)=0.0009854268828147772.
+
+Independent sanity check, explicitly NOT decode_cache validation: unpack each
+single exposureCacheHex with struct.unpack('<16f',...) and pass lanes[8],lanes[5]
+to the existing infer_visibility(). At selected frame17730 its algebraic value
+is0.000976572812038453: absolute difference0.0000088540707763242. Across20
+single CPU reads, candidate range0.00024414009722536798..0.010666289564135754.
+Never fabricate flags31 or double-read stability for those single reads. GPU
+cache age remains unknown; close agreement is encouraging, not proven same-frame
+pairing or a physical percentage of sky/roof coverage. Earlier inverse results
+are NOT invalidated by a different night/place/time value.
+
+**Important next-binding evidence:** selected GI resource5140272224, and all20
+GI metadata entries, report BUFFER dimension1,width65536,heapType1 DEFAULT,
+CPUPageProperty0/MemoryPool0,GetHeapProperties S_OK. CPU source is768bytes, so
+do not assume it starts at resource offset0 or is a directly mappable UPLOAD
+resource. Resolve actual CBV GPU address/offset from the known binding path
+(consumer143544CD6, selected wrapper+18; producer1432A3150), then legal buffer
+copy state/boundary and paired exposure output. No fresh broad scan needed.
+Reference CPU constants are NOT a GPU CB snapshot. Nested cpuReference metadata
+in derived.json describes the reused CPU-only model; top-level GPU texture
+completion describes the separate actual copy, not a contradiction.
+
+Preserved raw JSON/native log/INI plus derived.json in
+artifacts/light-research/spatial-readback-live-20260909-pid8772-stall-night/.
+Raw spatial-binding-8772-1289031-1.json size1303461, saved08:48:41 CEST, SHA256
+A58BC2AE2CBB7B2E30B9B44829243A5C88C75AE52E2C2AD462FD7AF14AF6460E.
+Derived command: Decode-SpatialReadback.py --input RAW --out FRESH-derived.json
+--assume-adapt-exposure-layout. No plugin/config/API edits or second capture;
+one-shot remains consumed in PID8772. Next step is binding/output pairing, then
+bounded repeatable direct control. Separate per-source hiZ route still pending.
 
 ## Direct texture readback implementation — 2026-09-08, NOT game-tested
 

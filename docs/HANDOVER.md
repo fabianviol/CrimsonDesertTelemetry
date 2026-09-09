@@ -1,4 +1,52 @@
-# Current checkpoint — direct texture readback package ready, 2026-09-08, Codex/Astra
+# Current checkpoint — FIRST live direct texture readback succeeded, 2026-09-09, Codex/Astra
+
+ONE requested capture in PID8772 (start08:42:40), installed private
+2.0.1-spatial-readback.1 ASI SHA256 matched
+686BFA08BF49F9AFD3F78936B9BCB7966445B0372AB2DECD955307A5852FE666.
+SpatialProbe=1/SpatialReadback=1/AmbientProbe=0; ManyLights and Ambient enabled.
+User: between four lamps, NIGHT, indoors brighter than outside. Same partly
+open roofed stall context, not an indoor/outdoor comparison. Released from
+standing still immediately after recording. No second request or light toggle.
+
+SUCCESS:20/20 error0 stable CPU controls, frames17704..18195. One direct texture
+copy at frame17730, Reset generation9, queue5156726752. Exact release tuple
+matched. Copy/submit tick1289546, fence completed1289562, exactly ONE Map.
+540672 packed bytes, range0..255,33 distinct levels. Full shape64x32x264,
+R8_TYPELESS60, footprint rowPitch256, allocation2162496 bytes.
+Health playing/error=null, sequence12556 before ->13858 after.
+
+Existing offline decoder: clipmap1, no fallback; CPU reference world
+(-10537.655273,613.099182,-4415.592773). Linear-WRAP texture sample
+0.999014573117 -> candidate sky visibility0.000985426883.
+Independent algebra on SAME selected observation's single CPU cache read gives
+0.000976572812 (absolute gap0.000008854071). Promising numerical agreement,
+NOT a paired GPU proof. Do not invent cache stability flags: cache was ONE read
+of unknown age, unlike the validated double-read recorder. GI CPU copies match,
+but selected GPU CB content/offset was not copied. Not a physical roof percentage,
+room brightness, light visibility or reason to discard prior inverse findings.
+
+New CB metadata: all20 observations report BUFFER,65536 bytes, DEFAULT heap1,
+GetHeapProperties S_OK. It is NOT an UPLOAD resource; do not Map it, assume offset0
+or copy it using guessed state. Next pairing requires actual bound CBV GPU address/
+offset and legal buffer-copy boundary. Existing owner/binding/producer route in
+LOCAL_ILLUMINATION_RESEARCH is the anchor, not a new heap scan.
+
+Raw/log/INI preserved under artifacts/light-research/
+spatial-readback-live-20260909-pid8772-stall-night/;
+raw spatial-binding-8772-1289031-1.json SHA256
+A58BC2AE2CBB7B2E30B9B44829243A5C88C75AE52E2C2AD462FD7AF14AF6460E.
+derived.json from Decode-SpatialReadback.py --assume-adapt-exposure-layout;
+packed texture SHA25604c89b9be9a120646e246b161af7c222df951d5992c331d937dcce6d342e8726.
+Detailed result/provenance in LOCAL_ILLUMINATION_RESEARCH, latest section.
+
+**Next bounded step:** establish selected768-byte GPU CB binding/offset and
+same-frame exposure-output pairing using the known consumer. Then enable a
+bounded repeated direct comparison before a roof/outside control. Current
+readback remains ONE request per process; no further run requested today yet.
+Independent hiZ per-light visibility remains required. No plugin/config/source
+or API changes this live-test turn; no installation/publish/push.
+
+## Previous checkpoint — direct texture readback package ready, 2026-09-08
 
 USER STOPPED FOR TODAY after package build. No further live run, switch or restart
 requested. PRIVATE **2.0.1-spatial-readback.1** built, NOT installed/live-tested/
