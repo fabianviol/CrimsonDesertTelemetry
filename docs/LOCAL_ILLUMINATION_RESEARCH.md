@@ -2089,3 +2089,42 @@ Still unknown: which resource this is (t233/space36 at the bind site, against
 t66/space36 for PropagateSignedDistanceCS), its x and y dimensions, the sign
 convention, the world scale of a unit, and whether it can be copied with the
 existing fenced machinery.
+
+## RaymarchLocalLightsCS step logic — 2026-09-09
+
+Read offline. The marching loop confirms sphere tracing and gives the engine's own
+step conventions, but it does NOT give a hit threshold, because this pass gathers
+light rather than answering visibility.
+
+Loop termination:
+
+```
+iteration + 1 < 256          hard cap of 256 steps
+t + step < maxDistance       accumulated distance bound
+```
+
+Step selection each iteration, where the sampled distance is the volume value:
+
+```
+if (sample <= cellSize && param <= 64)
+        step = FMin(analyticStep, sample)     sphere tracing proper
+else    step = analyticStep                    coarse step when far from geometry
+step = FMax(step, minimumStep)                 floor, so it cannot stall at a surface
+```
+
+So the engine steps by the distance to the nearest surface, clamped below by a
+minimum, and falls back to a coarser analytic step when the sample exceeds the
+current cell size. That is the classic sphere-tracing arrangement and it is
+directly reusable for a line-of-sight trace.
+
+**What is NOT here.** No hit test and no visibility output. The loop accumulates
+lighting and uses the distance field only to choose step sizes, so nothing in it
+defines when a surface counts as struck. The earlier framing that "the engine
+already raymarches local lights against this structure" is therefore too strong: it
+marches through the structure, it does not answer our query.
+
+The threshold question points at `RaymarchDiffuseHitDistanceCS`, whose name states
+it returns a hit distance. That shader has not been read.
+
+Also unresolved and needed before any of this can be used: the sign convention of
+the field, its x and y mapping, and the identity of the live resource.
