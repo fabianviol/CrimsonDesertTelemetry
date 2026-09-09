@@ -71,9 +71,18 @@ python scripts/Read-PixExportResource.py $export --resource 15739 --out out.bin
 
 `--list-cbv SIZE` finds every constant buffer view of exactly that size and resolves
 each to a resource; a CBV names the HEAP for placed resources, so the resource is
-whichever one covers that heap offset. The walk is self-checking -- a wrong order
-makes XPRESS fail rather than return plausible bytes. Alternatively, buffer contents
-can be exported by hand through the export button in PIX's own buffer view.
+whichever one covers that heap offset. Note that this searches DESCRIPTOR CREATIONS
+only -- D3D12 also binds constant buffers as root CBVs by address, with no descriptor
+to find, so a listing is not an inventory of every buffer of that size.
+
+The walk is self-checking: a wrong order makes XPRESS fail rather than return
+plausible bytes.
+
+**Scope.** This solves access to the compressed payload, which is what buffers need.
+It is NOT a general texture decoder: a texture also needs its footprint, row pitch,
+subresource layout, format and any tiled or swizzled arrangement before the bytes
+mean anything. Buffer contents can also be exported by hand through the export button
+in PIX's own buffer view.
 
 ## Shader extraction and lookup — existing Codex tools
 

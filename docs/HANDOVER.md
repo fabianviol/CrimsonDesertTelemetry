@@ -254,15 +254,49 @@ the generated source and decompresses one block. The capture holds exactly THREE
 world-space pairs, and the third, resource 15739, is the ambient.
 
 Its bytes fall into three channels of nine exactly as DXC's array sizes predicted
-before anything was read, and coefficient 0 is measurably the largest in every
-channel, so the DC term is pinned. Slot 56 -- the slot the atmospheric renderers
-read -- holds a bare RGB triple whose hue MATCHES the DC term (1.000:0.776:0.352
-against 1.000:0.721:0.271), two code paths agreeing on a warm ambient. Indices 1..8
-stay unordered; nothing local reads slots 0..6. Slot 7 is unexplained and huge
-(16366681.0, 1115.56, 1673.45, 0.111556). Sets 1..6 are all zero in this frame.
+before anything was read.
 
-**Falsifiable next step: a DAYTIME capture must invert the ratio, B above R.** If a
-midday sky also reads warm, the layout is wrong. 68 script tests pass.
+**THE BASIS ORDER IS SETTLED FROM THE PRODUCER, no consumer needed.** Each lane is
+multiplied by a literal constant and all six distinct constants are the textbook real
+SH normalisations to float32 precision (worst deviation 1.2e-06):
+
+```
+lane 0  0.2820950                          Y00   (= 0.5*sqrt(1/pi))
+lane 1  -0.4886030 * d.y                   Y1,-1
+lane 2  +0.4886030 * d.z                   Y1,0
+lane 3  -0.4886030 * d.x                   Y1,1
+lane 4  +1.0925480 * d.x * d.y             Y2,-2
+lane 5  -1.0925480 * d.y * d.z             Y2,-1
+lane 6  0.9461759 * d.z^2 - 0.3153920      Y2,0     polar axis is z
+lane 7  -1.0925480 * d.x * d.z             Y2,1
+lane 8  0.5462740 * (d.x^2 - d.y^2)        Y2,2
+```
+
+Lane 0 is Y00 because it carries Y00's own constant -- an identification, not the
+weaker "it is the largest". With the order known, the first moment `(-L11, -L1m1,
++L10)` of the red channel is `(-0.000601, +0.005414, +0.000620)`: **dominated by +y
+by an order of magnitude, so the environment radiance points up**, as a sky must.
+
+**The projection covers the VIEW FRUSTUM, not the sphere.** Directions come from
+unprojecting a 64x64 NDC grid at the far plane through rows 30..33 of the 2768-byte
+SceneConstantBuffer; radiance is `g_texSkyInscatter` by textureLoad, clamped
+non-negative. Whether that matrix is the player camera's or a wide sky projection is
+open.
+
+Slot 7 is unexplained and huge (16366681.0, 1115.56, 1673.45, 0.111556). Slot 56
+holds a bare RGB triple, warm like the direct term but not proof of anything -- both
+plausibly derive from the same environment state. Sets 1..6 are all zero here.
+
+**Falsifiable next step: at a deliberately chosen CLEAR MIDDAY state the
+chromaticity must move markedly toward blue** relative to this capture. (Not the
+harder `B > R`: sun elevation, cloud, ground and the covered frustum all move it.)
+73 script tests pass.
+
+**The strongest remaining validation, and it needs no new capture:** extract
+`g_texSkyInscatter` from this same frame, reproduce the 64x64 projection offline with
+the constants above, and compare all 27 coefficients against the buffer bytes. That
+requires the texture footprint work the buffer path did not -- row pitch,
+subresources, format -- so the reader is not yet a general texture decoder.
 
 **The ambient half, in detail: 1024 bytes.**
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (in

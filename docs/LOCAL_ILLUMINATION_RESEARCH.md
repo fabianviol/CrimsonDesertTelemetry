@@ -31,8 +31,11 @@ rather than return plausible bytes. Summing the reconstructed sequence accounts 
 2,705,577,794 of the file's 2,707,270,671 bytes, the remainder being the later
 render-phase reads.
 
-**Finding the buffer.** The whole capture contains exactly THREE constant buffer
-views of 1024 bytes. All three resolve through their heaps to offset 0 of a placed
+**Finding the buffer.** Searching the descriptor-creation path — `Descriptors_*.cpp`
+and `ModifyDescriptors_*.cpp` — the capture creates exactly THREE constant buffer
+views of 1024 bytes. That is a count over descriptor creations only: D3D12 also binds
+constant buffers as root CBVs by address, with no descriptor to find, so this is not
+a count of every 1024-byte constant buffer in the frame. All three resolve through their heaps to offset 0 of a placed
 resource, and all three decompressed cleanly to 65536-byte resources:
 
 | view | resource | contents |
@@ -56,12 +59,51 @@ channel, and slot 6 supplies each channel's ninth value in x/y/z — exactly the
 `SHColor2` split the producer's groupshared memory implied, with slot 6's w spare.
 This was predicted from DXC's array sizes before any byte was read.
 
-**Coefficient 0 is the DC term, and this is measured, not assumed.** It is the
-largest by magnitude in all three channels. For a smooth environment the direct term
-must dominate, so index 0 is pinned. Indices 1..8 remain unordered: no shader in the
-local listings reads slots 0..6, so nothing available pins the basis convention.
+**The basis order is settled from the producer, not from magnitudes.** The review
+was right that "largest coefficient" only shows index 0 BEHAVES like a direct term,
+and right that the producer answers it outright without any consumer. It does: each
+lane is multiplied by a literal constant, and all six distinct constants are the
+textbook real spherical harmonic normalisations to float32 precision.
 
-**A second, independent value agrees on the colour.** Slot 56 — the one the two
+| lane | the producer's expression | constant | textbook | basis |
+|---|---|---|---|---|
+| 0 | `0.2820950` | 0.2820950 | 0.2820948 = ½√(1/π) | Y00 |
+| 1 | `-0.4886030 * d.y` | 0.4886030 | 0.4886025 = ½√(3/π) | Y1,-1 |
+| 2 | `+0.4886030 * d.z` | | | Y1,0 |
+| 3 | `-0.4886030 * d.x` | | | Y1,1 |
+| 4 | `+1.0925480 * d.x * d.y` | 1.0925480 | 1.0925484 = ½√(15/π) | Y2,-2 |
+| 5 | `-1.0925480 * d.y * d.z` | | | Y2,-1 |
+| 6 | `0.9461759 * d.z² - 0.3153920` | 0.9461759 / 0.3153920 | ¾√(5/π) / ¼√(5/π) | Y2,0 |
+| 7 | `-1.0925480 * d.x * d.z` | | | Y2,1 |
+| 8 | `0.5462740 * (d.x² - d.y²)` | 0.5462740 | 0.5462742 = ¼√(15/π) | Y2,2 |
+
+Largest deviation from the textbook value: 1.2e-06. **Lane 0 is Y00 because it
+carries Y00's own constant**, which is an identification rather than a behavioural
+argument, and the whole order follows with it: the polar axis is z and the odd bands
+carry the usual negated signs.
+
+**With the order known, a physical check becomes possible and passes.** The first
+moment of the radiance is `(-L11, -L1,-1, +L10)`, and for the red channel of the
+lantern capture that is `(-0.000601, +0.005414, +0.000620)` — dominated by **+y**,
+by an order of magnitude over the other two axes. y is the vertical axis in this
+engine's world space, so the environment radiance points up. That is what a sky
+must do, and it could not have been checked before the order was established.
+
+**The projection is over the view frustum, not the whole sphere.** The direction
+for each sample is built by unprojecting an NDC grid point — `u = (x+0.5)/32 - 1`,
+`v = 1 - (y+0.5)/32`, `z ≈ 1e-07`, so the far plane under reversed-Z — through
+matrix rows 30..33 of the 2768-byte `SceneConstantBuffer`, then normalising. The
+grid is 64x64: 16x16 threads, each covering a 4x4 block through a 4-iteration outer
+and 4-iteration inner loop, with 27 accumulators live across both. Radiance comes
+from `g_texSkyInscatter` by `textureLoad` at mip 0, clamped to non-negative.
+
+So this is the sky WITHIN A PROJECTION, not an integral over the full sphere. That
+matters for interpretation and it explains the otherwise odd second band. Whether
+that matrix is the player camera's or a dedicated wide sky projection is not
+established here; `CSRenderAtmosphericScatteringOffscreenSky` exists and would be
+the place to look.
+
+**A second value is consistent on colour, which is corroboration, not proof.** Slot 56 — the one the two
 atmospheric-scattering renderers read — holds a bare RGB triple, not a set of
 harmonics: `(0.022237, 0.016027, 0.006020)`. Its hue matches the DC term derived
 from the SH split:
@@ -71,15 +113,21 @@ DC term   R:G:B = 1.000 : 0.776 : 0.352
 slot 56   R:G:B = 1.000 : 0.721 : 0.271
 ```
 
-Two different regions of the buffer, produced by different code paths, agree on a
-warm ambient. That agreement is the strongest evidence yet that the split is read
-correctly — a mis-framed layout would not produce a matching hue by chance.
+Two different regions of the buffer agree that the ambient is warm. But both plausibly
+derive from the same warm environment state, so several unrelated quantities in this
+buffer could share a hue; the agreement is consistent with a correct split without
+establishing one. What actually establishes the split is the producer's constants
+above. What slot 56 represents is still unknown.
 
-**The magnitudes are small: a DC term around 0.014.** Whether a warm tint is correct
-for that scene is not something the shader can tell us; the file name records the
-wall clock, not the in-game hour. It does give a falsifiable prediction for the
-next capture: **a daytime sky must invert the ratio, with B above R.** If a midday
-capture also reads warm, the layout is wrong.
+**The magnitudes are small: a direct term around 0.014.** Whether a warm tint is
+correct for that scene is not something the shader can tell us; the file name records
+the wall clock, not the in-game hour.
+
+The falsifiable prediction should be stated as a shift, not an inequality. `B > R` is
+too hard: sun elevation, cloud, ground contribution, the frustum the projection
+actually covers and any pre-exposure all move the result. **At a deliberately chosen
+clear midday state, the chromaticity must move markedly toward blue relative to this
+capture.** If a clear midday sky reads as warm as this one, something is wrong.
 
 **Slot 7 is not harmonics** and is unexplained: `(16366681.0, 1115.56, 1673.45,
 0.111556)`. It is the slot every consumer in the local listings reads. The 16.4

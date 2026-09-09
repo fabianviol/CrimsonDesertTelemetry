@@ -10,13 +10,12 @@ That gives three channels of nine coefficients, matching the producer's
 groupshared `SHColor2`, which DXC split into two vector members and one scalar
 member per channel.
 
-WHAT IS ESTABLISHED: the split into 3 x 9, and that coefficient 0 is the DC
-term -- it is the largest by magnitude in every channel of every populated set
-measured so far, as it must be for a smooth environment.
-
-WHAT IS NOT: the order of coefficients 1..8. No shader in the local listings
-reads slots 0..6, so nothing here pins the basis convention. Do not evaluate a
-direction from this until that is settled.
+The basis order is not inferred: the producer multiplies each lane by a literal
+constant, and all six distinct constants match the textbook real spherical
+harmonic normalisations to float32 precision. Lane 0 carries 0.2820948, which is
+Y00 itself, so the direct term is identified by its own constant rather than by
+being the largest. The polar axis is z and the odd bands carry the usual negated
+signs.
 
   python scripts/Decode-AmbientSH.py BUFFER.bin
 """
@@ -26,6 +25,19 @@ import sys
 SET_STRIDE = 8          # float4 per set
 SETS = 8
 CHANNELS = 'RGB'
+
+# Lane -> (name, the producer's own expression in the sampled direction d).
+BASIS = [
+    ('Y00  ', '0.2820948'),
+    ('Y1-1 ', '-0.4886025 * d.y'),
+    ('Y10  ', '+0.4886025 * d.z'),
+    ('Y11  ', '-0.4886025 * d.x'),
+    ('Y2-2 ', '+1.0925484 * d.x * d.y'),
+    ('Y2-1 ', '-1.0925484 * d.y * d.z'),
+    ('Y20  ', '0.9461747 * d.z * d.z - 0.3153916'),
+    ('Y21  ', '-1.0925484 * d.x * d.z'),
+    ('Y22  ', '0.5462742 * (d.x * d.x - d.y * d.y)'),
+]
 
 
 def sets_from_buffer(data):
@@ -54,6 +66,15 @@ def carries_harmonics(one_set):
     """A set holds harmonics only if every channel's own pair carries something."""
     return all(any(v != 0.0 for v in one_set[channel * 2] + one_set[channel * 2 + 1])
                for channel in range(3))
+
+
+def mean_direction(channel):
+    """Where a channel's radiance sits, from its L1 band.
+
+    The producer weights lane 1 by -0.4886*y, lane 2 by +0.4886*z and lane 3 by
+    -0.4886*x, so the first moment of the radiance is (-L11, -L1m1, +L10).
+    """
+    return (-channel[3], -channel[1], channel[2])
 
 
 def describe(one_set):
@@ -85,14 +106,16 @@ def main():
             print()
             continue
         coefficients, direct, peak = describe(one_set)
-        for channel in range(3):
-            print('  %s %s' % (CHANNELS[channel],
-                               ' '.join('%10.6f' % v for v in coefficients[channel])))
-        print('  largest coefficient per channel at index %s%s'
-              % (peak, '' if peak == [0, 0, 0] else '   <-- NOT the DC term, check the layout'))
-        print('  DC  R=%.6f G=%.6f B=%.6f   relative to R: %s'
+        for lane, (name, expression) in enumerate(BASIS):
+            print('  %s %s   %s' % (name,
+                                    ' '.join('%10.6f' % channel[lane] for channel in coefficients),
+                                    expression))
+        print('  largest coefficient per channel at index %s' % peak)
+        print('  Y00 R=%.6f G=%.6f B=%.6f   relative to R: %s'
               % (direct[0], direct[1], direct[2],
                  ' '.join('%.3f' % (v / direct[0]) for v in direct)))
+        print('  mean radiance direction, red L1 band (x, y, z): %.6f %.6f %.6f'
+              % mean_direction(coefficients[0]))
         print('  slot 7 (not harmonics): %s'
               % ' '.join('%.6f' % v for v in one_set[7]))
         print()
