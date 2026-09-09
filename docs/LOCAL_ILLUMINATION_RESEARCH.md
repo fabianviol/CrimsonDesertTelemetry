@@ -6,10 +6,70 @@ existing raw/smoothed sources without a new visibility filter. These are differe
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
 not a new public local-illumination or source-visibility API. The latest LIVE
-result is "First paired GI and texture capture" immediately below: the mechanism
-now works end to end. "Same-submission pairing" after it explains the design and
-its deliberately limited evidence standard.
+result is "Occlusion series" immediately below: the sample responds to local
+enclosure across about four orders of magnitude, and its reference is proven to be
+the camera position exactly. "First paired GI and texture capture" after it records
+the first working transaction, and "Same-submission pairing" explains the design
+and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
+
+## Occlusion series — 2026-09-09, five captures, readback.4
+
+Five paired captures, one transaction per process, each preceded by a recorded
+`/v1/snapshot`. This is the first series rather than a lone number, and it answers
+the question the whole spatial line was opened for: does this engine quantity
+respond to local enclosure?
+
+All five decoded identically in form: `texture-sample`, no fallback, GI window at
+offset0, `cpuGiEqualsGpu` true, `exposure-window-absent`.
+
+| capture | game time | camera yaw | sky-vis candidate | measurement point (= camera) |
+|---|---|---|---|---|
+| readback.4 open | ~22:32 | — | 0.457548 | -10526.5 / 613.4 / -4408.5 |
+| run1 open | 22:32 | 180 | 0.386534 | -10530.6 / 611.3 / -4407.5 |
+| run2 at the wall | 20:41 | 0 | 0.117666 | -10530.1 / 610.9 / -4415.2 |
+| readback.1 deep in stall | ~22:32 | — | 0.000985 | -10537.7 / 613.1 / -4415.6 |
+| run3 under the roof | 20:37 | 0 | **0.000031** | -10532.0 / 611.5 / -4422.8 |
+
+**The ordering is monotonic in enclosure and spans roughly15000x.** Open sky sits
+at0.39-0.46, pressed against a wall at0.12, deep inside a partly open stall at
+0.00099, and fully under a roof at0.000031.
+
+**The controlled pair.** run2 and run3 were captured at the same game time (20:41
+and20:37, both after the same save reload), at the same camera yaw0, in the same
+session, differing essentially only in how deep the camera stood under the
+structure. They differ by a factor of about3800. The game-time difference against
+the earlier night captures therefore cannot be what produces the effect — and it
+pointed the wrong way anyway, since run2 and run3 were captured under a brighter
+dusk sky than the higher-reading night captures.
+
+**Reference identity, proven three times.** In every run with a recorded snapshot
+the decoded `referenceWorldCandidate` equalled the API camera position to **0.00
+game units**. The reference is the camera position exactly — not the player root,
+and not merely "view context" as the earlier native provenance work could only
+establish. This is also an independent corroboration of the assumed GI layout: the
+reference is decoded from GI constants under `--assume-adapt-exposure-layout`,
+while the camera position is read through a completely separate memory path, and
+they agree to two decimals.
+
+**Practical consequence of that identity.** The measured player-to-camera boom was
+6.48gu, collapsing to2.16gu when a wall stands behind the camera. A capture must
+therefore place the CAMERA under cover, not the player; at yaw180 the boom swings
+the sample point out from under a roof while the player still stands beneath it.
+Turning the camera in place is a cleaner experimental move than walking, because
+it changes the sample point by up to two boom lengths without moving the player.
+
+**Limits.** No point has been captured twice, so repeat spread at a fixed point is
+still unmeasured; the two open points, 4.7gu apart, differ by0.07, which is a proxy
+and not a substitute. The pairing remains same-submission and is not
+binding-proven. The quantity is a candidate sky-visibility term: it is NOT room
+brightness, irradiance, lux, a physical roof percentage, or per-source occlusion,
+and none of these numbers may be published as a local-illumination field. The
+exposure window remained absent in every capture and still wants a separate look.
+
+Evidence artifacts/light-research/roof-control-20260909/ holds run1, run2 and run3,
+each with raw JSON, derived.json, pre- and post-capture snapshots, native log, INI
+and notes; the two earlier captures keep their own directories.
 
 ## First paired GI and texture capture — 2026-09-09, PID25944, readback.4
 

@@ -1,12 +1,12 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
-The user requested a handover for Claude after a long absence. Claude live-tested
-readback.2 and readback.3, identified descriptor tables as the binding path, built
-readback.4 on the user's chosen evidence standard and **live-tested it
-successfully: the FIRST same-submission GPU GI plus fenced texture capture now
-exists** (current checkpoint below). readback.4 is the ASI in the game folder and
-its one-shot is consumed. readback.5 fixes a diagnostic counter defect found in
-that run and is built but not installed. No publication or push was performed.
+The user requested a handover for Claude after a long absence. Claude built the
+pairing path up to readback.4 and then ran a five-point occlusion series with it.
+**Current state: the spatial sample is confirmed to respond to local enclosure,
+across roughly four orders of magnitude, and its reference is confirmed to be
+exactly the camera position** (current checkpoint below). readback.4 is the ASI in
+the game folder; readback.5 fixes a diagnostic counter defect and is built but not
+installed. No publication or push was performed for any package.
 
 ## What changed since the old fire/console investigation
 
@@ -117,7 +117,59 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — FIRST paired GI/texture capture, 2026-09-09
+## Current checkpoint — occlusion series measured, 2026-09-09
+
+Five paired captures with the installed 2.0.1-spatial-readback.4
+(ASI 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E), one
+transaction per process, each with a `/v1/snapshot` recorded immediately before
+firing. All five decoded as `texture-sample`, no fallback, GI window at offset0,
+`cpuGiEqualsGpu` true. Every capture reports `exposure-window-absent`.
+
+| capture | game time | sky-vis candidate | measurement point (= camera) |
+|---|---|---|---|
+| readback.4 open | ~22:32 | 0.457548 | -10526.5 / 613.4 / -4408.5 |
+| run1 open, yaw180 | 22:32 | 0.386534 | -10530.6 / 611.3 / -4407.5 |
+| run2 at the wall, yaw0 | 20:41 | 0.117666 | -10530.1 / 610.9 / -4415.2 |
+| readback.1 deep in stall | ~22:32 | 0.000985 | -10537.7 / 613.1 / -4415.6 |
+| run3 under the roof, yaw0 | 20:37 | **0.000031** | -10532.0 / 611.5 / -4422.8 |
+
+RESULT: the values order monotonically by degree of enclosure and span a factor of
+about15000. The cleanest pair is run2 versus run3: same game time (20:41/20:37),
+same camera yaw0, same session, differing essentially only in depth under the
+structure, and they differ by a factor of about3800. The earlier game-time
+difference therefore cannot carry the effect. Two open points4.7gu apart differ by
+only0.07, so the within-region spread is small against the effect — but note that
+no point has yet been captured twice, so true repeat spread is still unmeasured.
+
+REFERENCE IDENTITY PROVEN: in all three runs with a recorded snapshot, the decoded
+`referenceWorldCandidate` equalled the API camera position to **0.00gu**. The
+reference is the camera position exactly, not the player root and not merely
+"view context". This also independently corroborates the assumed GI layout, since
+the reference is decoded from GI constants while the camera comes from a separate
+memory path. Player-to-camera boom measured6.48gu, collapsing to2.16gu when a wall
+is behind the camera, so a capture must place the CAMERA under cover, not the player.
+
+WHAT THIS DOES AND DOES NOT ESTABLISH. It establishes that this engine quantity
+responds strongly and monotonically to local geometric enclosure — it behaves like
+a sky-visibility term and detects a roof. It does NOT establish room brightness,
+irradiance, lux, a physical roof percentage, per-source occlusion or anything about
+light actually reaching the player. Pairing remains same-submission, never
+binding-proven. No public API, stream or schema was changed.
+
+Evidence artifacts/light-research/roof-control-20260909/ with run1/run2/run3
+directories, each holding the raw JSON, derived.json, pre- and post-capture
+snapshots, native log, INI and notes. Earlier captures remain in their own
+directories. Raw captures stay out of Git.
+
+**ONE next step:** capture the same point twice to measure repeat spread — the
+only remaining gap in the series. run2's point at -10530.1/610.9/-4415.2 is a good
+candidate because it sits mid-range where a spread would matter most. After that,
+the exposure-window absence is worth a separate look, and independent hiZ
+per-source visibility remains pending and required. Do not turn these numbers into
+a public local-illumination field: the schema question is untouched and the
+quantity is not room brightness.
+
+## Previous checkpoint — FIRST paired GI/texture capture, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.4** installed via DMM and LIVE-TESTED in PID25944.
 ASI SHA256 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E
