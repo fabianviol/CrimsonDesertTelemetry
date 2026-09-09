@@ -107,6 +107,43 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Sampler wired into the probe — 2026-09-09, sampler.1 NOT live-tested
+
+Each transaction now records natively sampled values beside the volume, and the
+offline decoder recomputes them. This is what a feed would carry instead of
+540672 bytes, and it makes the native and offline paths check each other on every
+capture from here on.
+
+**In the plugin.** After the fenced copy, the probe locates the 768-byte constant
+window inside the whole GPU GI buffer exactly as the decoder does — by matching the
+CPU copy of the same constants, at 256-byte alignment, and only when the match is
+unique. An ambiguous or absent match is reported as `gi-window-ambiguous` or
+`gi-window-absent` and nothing is sampled. With the window found it samples the
+reference plus a fixed pattern of twelve offsets: six axes at 2 gu and the same six
+at 5 gu. The payload is a few hundred bytes.
+
+**In the decoder.** `verify_native` recomputes every one of those thirteen values
+from the same volume and constants and compares them exactly, reporting
+`nativeSampler: {checked, agrees, disagreements}`. A disagreement is listed with
+the native value, the recomputed value and its offset — never smoothed over. When
+the plugin reports `available: false`, no agreement is claimed at all.
+
+**What this does and does not prove.** It proves the native and offline evaluations
+agree on real data, which is what allows the volume to be dropped from a future
+payload. It does not change the quantity, its meaning or any of its limits: the
+offsets still reuse the reference clipmap, still may read voxels of differing age
+because the volume refreshes in amortised blocks, and the result remains a
+candidate engine sky-visibility factor rather than irradiance, room brightness or
+per-source occlusion. The caveat travels inside the JSON so it cannot be lost.
+
+**Verification.** 24/24 native CTests. 46 Python tests, four of them new: agreement
+recomputed and confirmed, a broken reference caught, a broken offset caught with
+its delta identified, and no agreement claimed when the plugin reports the samples
+unavailable. `scripts/Verify-NativeSampler.py` still reports 56 comparisons across
+seven captures with zero mismatches. Package 2.0.1-spatial-sampler.1 is built with
+spatial defaults off and has not been installed, so the loop is not yet closed in
+game.
+
 ## Native sampler — 2026-09-09, bit-exact against seven captures
 
 The evaluation now exists in C++ as well as Python. This is the step that lets the

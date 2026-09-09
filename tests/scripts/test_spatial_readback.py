@@ -99,6 +99,29 @@ def v5_report(count=3, broken=None):
                 textureReadback=base['textureReadback'])
 
 
+def with_native(offsets=((2, 0, 0), (0, -5, 0)), break_reference=False, break_offset=None):
+    """A v4 report carrying natively sampled values the decoder must recompute."""
+    r = v4_report()
+    t = r['textureReadback']
+    decoded = decoder.decode(v4_report(), True)
+    volume = bytes.fromhex(t['packedTextureHex'])
+    constants = bytes.fromhex(t['bufferPair']['giHex'])[decoded['giWindowOffset']:][:768]
+    world = decoded['gpuReference']['referenceWorldCandidate']
+    clip = decoded['gpuReference']['selectedClipmap']
+    entries = []
+    for index, delta in enumerate(offsets):
+        at = [world[j]+delta[j] for j in range(3)]
+        value = decoder.sample_world(volume, constants, clip, at)
+        if break_offset == index:
+            value += 0.25
+        entries.append(dict(delta=list(delta), status=0, skyVisibility=value))
+    reference = decoded['skyVisibilityCandidate'] + (0.5 if break_reference else 0)
+    t['nativeSamples'] = dict(available=True, giWindowOffset=decoded['giWindowOffset'],
+                              status=0, clipmap=clip, world=world, reference=reference,
+                              offsets=entries)
+    return r
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -285,6 +308,30 @@ class SpatialReadbackTests(unittest.TestCase):
     def test_series_helper_ignores_older_formats(self):
         self.assertIsNone(decoder.decode_series(v4_report(), True))
         self.assertIsNone(decoder.decode_series(paired_report(), True))
+
+    def test_native_sampler_agreement_is_recomputed(self):
+        d = decoder.decode(with_native(), True)
+        self.assertEqual(d['nativeSampler']['checked'], 3)
+        self.assertTrue(d['nativeSampler']['agrees'])
+        self.assertEqual(d['nativeSampler']['disagreements'], [])
+
+    def test_native_sampler_reference_disagreement_is_reported(self):
+        d = decoder.decode(with_native(break_reference=True), True)
+        self.assertFalse(d['nativeSampler']['agrees'])
+        self.assertEqual(d['nativeSampler']['disagreements'][0]['delta'], [0, 0, 0])
+
+    def test_native_sampler_offset_disagreement_is_reported(self):
+        d = decoder.decode(with_native(break_offset=1), True)
+        self.assertFalse(d['nativeSampler']['agrees'])
+        bad = d['nativeSampler']['disagreements'][0]
+        self.assertEqual(bad['delta'], [0, -5, 0])
+        self.assertAlmostEqual(bad['native'] - bad['recomputed'], 0.25)
+
+    def test_native_sampler_absent_or_unavailable_is_not_claimed(self):
+        self.assertNotIn('nativeSampler', decoder.decode(v4_report(), True))
+        r = with_native()
+        r['textureReadback']['nativeSamples']['available'] = False
+        self.assertNotIn('nativeSampler', decoder.decode(r, True))
 
     def test_pair_no_layout(self):
         d = decoder.decode(paired_report(), False)

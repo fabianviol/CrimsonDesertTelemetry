@@ -71,7 +71,8 @@ set(CDT_CONSOLE_SOURCES
 set_source_files_properties(${CDT_CONSOLE_SOURCES} PROPERTIES COMPILE_OPTIONS "/WX-;/wd4996")
 add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
     src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm
-    src/spatial_probe.cpp src/spatial_readback.cpp src/spatial_thunk.asm ${CDT_CONSOLE_SOURCES})
+    src/spatial_probe.cpp src/spatial_readback.cpp src/spatial_sample.cpp
+    src/spatial_thunk.asm ${CDT_CONSOLE_SOURCES})
 target_compile_features(cdt_instruments PUBLIC cxx_std_20)
 target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
@@ -105,7 +106,8 @@ target_link_libraries(CrimsonDesertTelemetryBootstrapSmoke PRIVATE ws2_32)
 
 enable_testing()
 add_executable(CrimsonDesertTelemetrySpatialProbeTests tests/spatial_probe_tests.cpp tests/spatial_barrier_abi.cpp
-    src/spatial_thunk.asm src/spatial_readback.cpp src/console/mem.cpp src/console/util.cpp)
+    src/spatial_thunk.asm src/spatial_readback.cpp src/spatial_sample.cpp
+    src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetrySpatialProbeTests PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetrySpatialProbeTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetrySpatialProbeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -122,6 +124,7 @@ target_link_libraries(CrimsonDesertTelemetrySpatialReadbackTests PRIVATE d3d12 d
 add_test(NAME spatial-texture-readback COMMAND CrimsonDesertTelemetrySpatialReadbackTests)
 set_tests_properties(spatial-texture-readback PROPERTIES TIMEOUT 30)
 add_executable(CrimsonDesertTelemetrySpatialPairTests tests/spatial_pair_tests.cpp src/spatial_readback.cpp
+    src/spatial_sample.cpp
     src/spatial_thunk.asm src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetrySpatialPairTests PRIVATE cxx_std_20)
 target_include_directories(CrimsonDesertTelemetrySpatialPairTests PRIVATE src)

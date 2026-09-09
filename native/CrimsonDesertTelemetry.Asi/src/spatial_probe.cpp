@@ -1,6 +1,7 @@
 #include "spatial_probe.h"
 #include "spatial_trace.h"
 #include "spatial_readback.h"
+#include "spatial_sample.h"
 #include "submission_observer.h"
 #include "console/mem.h"
 #include "console/common.h"
@@ -322,6 +323,67 @@ nlohmann::json TraceJson()
     ReleaseSRWLockExclusive(&trace.mutex);
     return result;
 }
+// The GPU GI buffer is copied whole because no binding gives us an offset. The
+// window is located the same way the offline decoder does it: by matching the CPU
+// copy of the same constants, at 256-byte alignment, and only when it is unique.
+long long FindGiWindow(const std::vector<uint8_t>& gpu,const std::array<uint8_t,768>& cpu)
+{
+    if(gpu.size()<cpu.size())return -1;
+    long long found=-1;
+    for(size_t at=0;at+cpu.size()<=gpu.size();at+=256)
+        if(std::memcmp(gpu.data()+at,cpu.data(),cpu.size())==0)
+        {
+            if(found>=0)return -2; // ambiguous; never pick one
+            found=static_cast<long long>(at);
+        }
+    return found;
+}
+// Fixed pattern for a directional read: the reference plus six axes at two ranges.
+// Entries are NOT necessarily the same age; neighbouring offsets can lie in
+// different amortised update blocks of the volume.
+constexpr double SampleOffsets[][3]={
+    {2,0,0},{-2,0,0},{0,2,0},{0,-2,0},{0,0,2},{0,0,-2},
+    {5,0,0},{-5,0,0},{0,5,0},{0,-5,0},{0,0,5},{0,0,-5}};
+nlohmann::json NativeSamplesJson(const cdt::spatial::CopyResult& copy,const Observation& observation)
+{
+    using namespace cdt::spatial;
+    nlohmann::json out={{"available",false}};
+    if(copy.packed.size()!=VolumeBytes||copy.gpuGi.empty())return out;
+    const auto window=FindGiWindow(copy.gpuGi,observation.gi);
+    out["giWindowOffset"]=window;
+    if(window<0)
+    {
+        out["reason"]=window==-2?"gi-window-ambiguous":"gi-window-absent";
+        return out;
+    }
+    const uint8_t* constants=copy.gpuGi.data()+window;
+    const auto reference=SampleAtReference(constants,copy.packed.data());
+    out["status"]=static_cast<int>(reference.status);
+    out["clipmap"]=reference.clipmap;
+    out["world"]={reference.world[0],reference.world[1],reference.world[2]};
+    if(reference.status!=SampleStatus::Ok)
+    {
+        out["reason"]=reference.status==SampleStatus::Fallback?"fallback-one-without-coverage":"constants-rejected";
+        return out;
+    }
+    out["available"]=true;
+    out["reference"]=reference.skyVisibility;
+    nlohmann::json offsets=nlohmann::json::array();
+    for(const auto& delta:SampleOffsets)
+    {
+        const double world[3]={reference.world[0]+delta[0],reference.world[1]+delta[1],
+            reference.world[2]+delta[2]};
+        const auto at=SampleAtWorld(constants,copy.packed.data(),world);
+        offsets.push_back({{"delta",{delta[0],delta[1],delta[2]}},
+            {"status",static_cast<int>(at.status)},{"skyVisibility",at.skyVisibility}});
+    }
+    out["offsets"]=offsets;
+    out["caveat"]="Candidate engine sky-visibility factor computed natively from the same fenced "
+        "volume, for comparison against the offline decoder. NOT irradiance, room brightness, a "
+        "fraction of visible sky or per-source occlusion. Offsets reuse the reference clipmap and "
+        "may read voxels of differing age because the volume refreshes in amortised blocks.";
+    return out;
+}
 nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy)
 {
     const auto& f=copy.footprint;
@@ -378,7 +440,11 @@ void Save(const char* reason)
         {
             auto row=TransactionJson(records[i]);
             // Each transaction carries the CPU observation of ITS OWN exposure.
-            if(i<copyObservations.size())row["context"]=Json(copyObservations[i]);
+            if(i<copyObservations.size())
+            {
+                row["context"]=Json(copyObservations[i]);
+                row["nativeSamples"]=NativeSamplesJson(records[i],copyObservations[i]);
+            }
             transactions.push_back(std::move(row));
         }
         report["transactions"]=transactions;
@@ -388,6 +454,7 @@ void Save(const char* reason)
         // Latest transaction repeated at the v4 location so existing readers keep working.
         report["textureReadback"]=TransactionJson(copy);
         report["textureReadback"]["context"]=Json(copyObservation);
+        report["textureReadback"]["nativeSamples"]=NativeSamplesJson(copy,copyObservation);
     }
     if(traceResource){traceResource->Release();traceResource=nullptr;}
     const auto file=outputDirectory/(L"spatial-binding-"+std::to_wstring(GetCurrentProcessId())+L"-"+

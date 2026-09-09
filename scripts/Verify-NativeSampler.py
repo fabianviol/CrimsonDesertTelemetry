@@ -42,20 +42,6 @@ def captures():
         yield derived.parent.relative_to(base), entry, decoded
 
 
-def python_sample(volume, constants, clipmap, world):
-    """The same maths the published results came from, at an arbitrary position."""
-    inverse = struct.unpack_from('<4f', constants, 0x10)[:3]
-    uv = [world[j]*inverse[j] for j in range(3)]
-    scale = 1.0/(1 << clipmap)
-    z = f32(uv[2]*scale)
-    fraction = f32(z - math.floor(z))
-    if fraction < 0:
-        fraction = f32(1+fraction)
-    tex_z = f32(f32(float(clipmap*66+1) + f32(fraction*64)) * rb.model.ir_float('3F6F07C200000000'))
-    value, _ = rb.linear_wrap(volume, [f32(uv[0]*scale), f32(uv[1]*scale), tex_z])
-    return max(0.0, min(1.0, 1-value))
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--exe', type=Path,
@@ -103,7 +89,7 @@ def main():
 
         for line, world in zip(lines[1:], worlds):
             native = float(line.split()[-1])
-            expected = python_sample(volume, constants, clipmap, world)
+            expected = rb.sample_world(volume, constants, clipmap, world)
             total += 1
             flag = '' if native == expected else '   <-- MISMATCH'
             if flag:

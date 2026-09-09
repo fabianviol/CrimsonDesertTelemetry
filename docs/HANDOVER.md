@@ -6,7 +6,7 @@ pairing path up to readback.4 and then ran a five-point occlusion series with it
 across roughly four orders of magnitude, its reference is exactly the camera
 position, the cheap CPU shortcut is proven ill-conditioned, and the plateaus are amortised block refresh of the voxel
 volume, and a native sampler now reproduces the offline model bit-exactly on seven
-real captures** (current checkpoint below). readback.4 is the ASI in
+real captures and is wired into the probe** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,50 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — native sampler built and verified, 2026-09-09
+## Current checkpoint — sampler wired into the probe, 2026-09-09
+
+PRIVATE **2.0.1-spatial-sampler.1** built and host-tested, NOT installed or
+game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-sampler.1-ModManagers.zip
+SHA256 402B038A50FB8D8A4B9597BEA716C444485029D0F0DAD5ED10EFBF54A20E20A8;
+ASI SHA256 DB90212BF66A91EA1ADFBD4690F57608E53998DF541CEDD0A61BE340E90E81B9.
+Spatial defaults OFF. Earlier packages preserved. The game folder still holds
+spatial-series.1, so a live run needs a shutdown and this ZIP.
+
+Each transaction now records natively sampled values beside the volume, and the
+decoder recomputes them. This is the payload shape a feed would carry instead of
+540672 bytes.
+
+**In the plugin.** After the fenced copy the probe locates the 768-byte constant
+window inside the whole GPU GI buffer exactly as the decoder does: matching the CPU
+copy of the same constants, 256-byte aligned, only when unique. Ambiguous or absent
+is reported as such and nothing is sampled. With the window found it samples the
+reference plus twelve offsets — six axes at 2gu and the same six at 5gu — for a few
+hundred bytes of payload.
+
+**In the decoder.** `verify_native` recomputes all thirteen values from the same
+volume and constants, compares exactly, and reports
+`nativeSampler: {checked, agrees, disagreements}`, listing any disagreement with
+its offset and both values. No agreement is claimed when the plugin says the
+samples are unavailable.
+
+**Limits unchanged.** Offsets still reuse the reference clipmap and may read voxels
+of differing age because the volume refreshes in amortised blocks. The value stays
+a candidate engine sky-visibility factor, not irradiance, room brightness or
+per-source occlusion; the caveat travels inside the JSON.
+
+24/24 native CTests. 46 Python tests, four new: agreement confirmed, a broken
+reference caught, a broken offset caught with its delta identified, and no
+agreement claimed when unavailable. Verify-NativeSampler.py still reports 56
+comparisons across seven captures with zero mismatches.
+
+**ONE next step:** install this ZIP and take ONE series, then check that
+`nativeSampler.agrees` is true for every transaction. That closes the loop in game
+and is the last verification before the payload can shrink to the samples alone.
+After that, design the public contract, stating the clipmap reuse, the mixed-age
+offsets and the amortisation freshness bound. Independent hiZ per-source
+visibility remains pending and required.
+
+## Previous checkpoint — native sampler built and verified, 2026-09-09
 
 The evaluation now exists in C++ as well as Python, which is what lets the plugin
 turn a volume into a few numbers instead of shipping 540672 bytes. No package built

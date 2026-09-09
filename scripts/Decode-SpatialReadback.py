@@ -54,6 +54,47 @@ def find_window(buffer, needle, align=4):
     return hits
 
 
+def sample_world(volume, constants, clipmap, world):
+    """Sky-visibility candidate at an arbitrary world position.
+
+    Mirrors the shader-derived mapping used for the reference, with the clipmap
+    selection REUSED rather than recomputed, so it is valid for small offsets
+    well inside the clipmap and not for arbitrary distances.
+    """
+    inverse = struct.unpack_from('<4f', constants, 0x10)[:3]
+    uv = [world[j]*inverse[j] for j in range(3)]
+    scale = 1.0/(1 << clipmap)
+    z = model.f32(uv[2]*scale)
+    fraction = model.f32(z - math.floor(z))
+    if fraction < 0:
+        fraction = model.f32(1+fraction)
+    tex_z = model.f32(model.f32(float(clipmap*66+1) + model.f32(fraction*64)) *
+                      model.ir_float('3F6F07C200000000'))
+    value, _ = linear_wrap(volume, [model.f32(uv[0]*scale), model.f32(uv[1]*scale), tex_z])
+    return max(0.0, min(1.0, 1-value))
+
+
+def verify_native(native, volume, constants, clipmap, reference_world, reference_value):
+    """Recompute what the plugin sampled natively. Disagreement is reported, never hidden."""
+    if not isinstance(native, dict) or not native.get('available'):
+        return None
+    disagreements = []
+    if native.get('reference') != reference_value:
+        disagreements.append(dict(delta=[0, 0, 0], native=native.get('reference'),
+                                  recomputed=reference_value))
+    for entry in native.get('offsets', []):
+        delta = entry.get('delta')
+        if not isinstance(delta, list) or len(delta) != 3:
+            disagreements.append(dict(delta=delta, native=entry.get('skyVisibility'), recomputed=None))
+            continue
+        world = [reference_world[j]+delta[j] for j in range(3)]
+        expected = sample_world(volume, constants, clipmap, world)
+        if entry.get('skyVisibility') != expected:
+            disagreements.append(dict(delta=delta, native=entry.get('skyVisibility'), recomputed=expected))
+    return dict(checked=1+len(native.get('offsets', [])), agrees=not disagreements,
+                disagreements=disagreements)
+
+
 def decode(source, assume_layout=False):
     formats = ('private-spatial-readback-v1', 'private-spatial-readback-v2',
                'private-spatial-readback-v3', 'private-spatial-readback-v4',
@@ -171,6 +212,11 @@ def decode(source, assume_layout=False):
                        'native producer/consumer path, NOT from an observed root binding: this shader binds '
                        'through descriptor tables. Window offsets were matched against the CPU copies. '
                        'Sky factor is NOT irradiance, room brightness or source occlusion.')
+        native = verify_native(r.get('nativeSamples'), raw, gpu_gi, context.get('selectedClipmap'),
+                               context.get('referenceWorldCandidate'),
+                               result.get('skyVisibilityCandidate'))
+        if native is not None:
+            result['nativeSampler'] = native
         if gpu_exposure is None:
             result['gpuExposureInverseUnavailable'] = windows['exposureWindowUnavailable']
             return result
