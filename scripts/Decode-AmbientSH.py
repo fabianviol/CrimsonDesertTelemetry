@@ -6,6 +6,16 @@ eight `float4`. Within a set, slots 0..5 are three channels of two `float4`,
 slot 6 holds each channel's ninth coefficient in x/y/z, and slot 7 is a
 separately computed summary that is not part of the harmonics.
 
+The sets are not eight of the same thing. The shader writes this frame's
+projection, scaled by 1/6144, into `_renderFlags.x * 8 + 8`, then sums SIX ring
+entries at `i * 8 + 8` for i in 0..5 and stores that sum unscaled into slots
+0..6. So sets 1..6 are a six-frame ring, set 0 is their sum, and set 7 lies
+outside the ring with unknown contents.
+
+The stored values are moments against the L0-L2 basis, NOT canonical spherical
+harmonic coefficients: the producer samples a uniform grid in projected space
+and applies no solid-angle weight, so the integration measure is missing.
+
 That gives three channels of nine coefficients, matching the producer's
 groupshared `SHColor2`, which DXC split into two vector members and one scalar
 member per channel.
@@ -14,8 +24,9 @@ The basis order is not inferred: the producer multiplies each lane by a literal
 constant, and all six distinct constants match the textbook real spherical
 harmonic normalisations to float32 precision. Lane 0 carries 0.2820948, which is
 Y00 itself, so the direct term is identified by its own constant rather than by
-being the largest. The polar axis is z and the odd bands carry the usual negated
-signs.
+being the largest. Several sign conventions for real SH are in use, so rather than
+appealing to a textbook: this engine's convention is the one listed in BASIS below,
+with z as the polar axis.
 
   python scripts/Decode-AmbientSH.py BUFFER.bin
 """
@@ -25,6 +36,16 @@ import sys
 SET_STRIDE = 8          # float4 per set
 SETS = 8
 CHANNELS = 'RGB'
+RING = range(1, 7)      # sets 1..6, the six-frame ring the shader sums
+
+
+def role(index):
+    if index == 0:
+        return 'the sum of the six ring entries, unscaled'
+    if index in RING:
+        return 'ring entry %d of 6' % index
+    return 'outside the ring, contents unknown'
+
 
 # Lane -> (name, the producer's own expression in the sampled direction d).
 BASIS = [
@@ -68,11 +89,13 @@ def carries_harmonics(one_set):
                for channel in range(3))
 
 
-def mean_direction(channel):
-    """Where a channel's radiance sits, from its L1 band.
+def l1_orientation(channel):
+    """Which way a channel's L1 band points.
 
     The producer weights lane 1 by -0.4886*y, lane 2 by +0.4886*z and lane 3 by
-    -0.4886*x, so the first moment of the radiance is (-L11, -L1m1, +L10).
+    -0.4886*x, so the band maps to (-L11, -L1m1, +L10). This is the ORIENTATION of
+    the L1 band, not the physical first moment of the radiance: that would need the
+    solid-angle measure the producer does not apply.
     """
     return (-channel[3], -channel[1], channel[2])
 
@@ -93,11 +116,11 @@ def main():
     for index, one_set in enumerate(sets_from_buffer(data)):
         if not is_populated(one_set):
             continue
-        print('=== set %d  (slots %d..%d) ===' % (index, index * SET_STRIDE,
-                                                  index * SET_STRIDE + 7))
+        print('=== set %d  (slots %d..%d) - %s ===' % (index, index * SET_STRIDE,
+                                                      index * SET_STRIDE + 7,
+                                                      role(index)))
         if not carries_harmonics(one_set):
-            # A set whose harmonic slots are empty is carrying something else;
-            # slot 56 in the lantern capture holds a bare RGB triple.
+            # Not every channel's pair is populated, so do not force the split.
             for slot, values in enumerate(one_set):
                 if any(v != 0.0 for v in values):
                     print('  slot %-2d %s' % (index * SET_STRIDE + slot,
@@ -114,8 +137,8 @@ def main():
         print('  Y00 R=%.6f G=%.6f B=%.6f   relative to R: %s'
               % (direct[0], direct[1], direct[2],
                  ' '.join('%.3f' % (v / direct[0]) for v in direct)))
-        print('  mean radiance direction, red L1 band (x, y, z): %.6f %.6f %.6f'
-              % mean_direction(coefficients[0]))
+        print('  L1 band orientation, red channel (x, y, z): %.6f %.6f %.6f'
+              % l1_orientation(coefficients[0]))
         print('  slot 7 (not harmonics): %s'
               % ' '.join('%.6f' % v for v in one_set[7]))
         print()

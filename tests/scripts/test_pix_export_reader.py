@@ -177,16 +177,16 @@ class AmbientBasisTests(unittest.TestCase):
     def test_the_polar_axis_is_z(self):
         self.assertIn('d.z * d.z', ambient.BASIS[6][1])
 
-    def test_the_first_moment_reads_the_l1_band_with_the_producer_signs(self):
+    def test_the_l1_orientation_uses_the_producer_signs(self):
         channel = [0.0, -2.0, 3.0, -5.0, 0, 0, 0, 0, 0]     # L1-1, L10, L11
-        self.assertEqual(ambient.mean_direction(channel), (5.0, 2.0, 3.0))
+        self.assertEqual(ambient.l1_orientation(channel), (5.0, 2.0, 3.0))
 
     def test_a_sky_above_the_camera_reads_as_positive_y(self):
         data = ambient_buffer()
         sets = ambient.sets_from_buffer(data)
         coefficients = ambient.harmonics(sets[0])
         coefficients[0][1] = -0.005414        # the measured red L1-1 of the lantern capture
-        x, y, z = ambient.mean_direction(coefficients[0])
+        x, y, z = ambient.l1_orientation(coefficients[0])
         self.assertGreater(y, 0.0)
         self.assertGreater(abs(y), abs(x))
         self.assertGreater(abs(y), abs(z))

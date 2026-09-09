@@ -14,6 +14,75 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## No solid-angle weight, and the buffer is a ring — 2026-09-09
+
+A review asked the one question that separates "the engine uses the SH basis" from
+"we understand this as radiance harmonics": what weights each of the 4096 samples,
+and how is the reduction normalised? Tracing it answered that and overturned part of
+the moment test's reading.
+
+**There is no solid-angle weight. None.** The inner loop, in full: build an NDC point
+from the loop indices, transform by matrix rows 30..33 with a perspective divide,
+normalise, `textureLoad` from `g_texSkyInscatter` at mip 0, clamp to non-negative,
+multiply by the nine basis functions, add. Between the normalise and the accumulate
+there is nothing else. No Jacobian, no per-pixel solid angle, no cosine.
+
+So a uniform grid in projected space is NOT uniform in solid angle, and the stored
+nine values per channel are **projection-weighted moments of the sampled radiance
+against the L0-L2 basis, not canonical spherical harmonic coefficients of a
+spherical radiance field.** The basis functions are exactly the real SH basis — that
+part is settled by their constants. What is missing is the measure.
+
+This weakens the physical reading of the first moment accordingly. Correct
+statement: the L1 band is strongly oriented toward +y, by an order of magnitude over
+the other axes. The stronger claim, that the physical first moment of the sky
+radiance points up, needs the integration measure to be right, and it is not.
+
+**The normalisation is a flat 1/6144 per frame**, applied identically to all 27
+reduced values (float32 of 1/6144 exactly). 4096 samples, so this is not `4*pi/N`
+(which would be 0.00307, not 0.00016). Note 6144 = 6 x 1024 and also 1.5 x 4096;
+which factorisation is meant is not established.
+
+**And the buffer is a six-entry ring, not eight sets of the same thing.** The tail of
+the shader was misread earlier. Its real shape:
+
+```
+block 2681   thread 0 reads the 27 reduced values, scales each by 1/6144,
+             and stores them as 7 float4 at  _renderFlags.x * 8 + 8 .. +14
+loop 3072    six iterations, i = 0..5, rawBufferLoad from i * 8 + 8 .. +14,
+             summing all 27 coefficients across the six entries
+block 2803   stores that sum, UNSCALED, to slots 0..6
+```
+
+So:
+
+| slots | contents |
+|---|---|
+| 0..6 | the sum of the six ring entries, unscaled |
+| 7 | a separately computed summary, not harmonics |
+| 8..55 | a **six-frame ring**, `_renderFlags.x` selecting the write slot |
+| 56..63 | outside the ring; written by something else, contents unknown |
+
+Each ring entry is packed exactly like set 0: `R.v0, R.v1, G.v0, G.v1, B.v0, B.v1,
+(R.c, G.c, B.c, 0)`. That is where the `{ 8 x float4, [56 x float4] }` declaration
+comes from — the result, then seven further sets of which six are the ring.
+
+**Two things this retracts from the moment test.**
+
+Slot 56 is not "a bare RGB triple whose hue corroborates the direct term". It sits
+outside the ring, and what it is remains unknown. The corroboration argument is
+withdrawn entirely; it was built on a misreading, not merely overstated.
+
+And the extracted bytes are not a self-consistent single frame. Set 0 is the sum of
+sets 1..6, but sets 1..6 read as all-zero while set 0 is populated. A live frame
+cannot look like that. What was extracted is the resource's contents as PIX recorded
+them for replay, and where in the frame that state comes from is not established.
+The numbers in set 0 are real engine values, but which frames they sum over is
+unknown.
+
+**What survives untouched,** because it comes from the shader rather than the bytes:
+the 3 x 9 split, the basis order proven by its own constants, and the packing.
+
 ## The moment test, run offline from the capture — 2026-09-09
 
 The review asked for a static moment test before any day/night comparison: read
@@ -79,17 +148,23 @@ textbook real spherical harmonic normalisations to float32 precision.
 
 Largest deviation from the textbook value: 1.2e-06. **Lane 0 is Y00 because it
 carries Y00's own constant**, which is an identification rather than a behavioural
-argument, and the whole order follows with it: the polar axis is z and the odd bands
-carry the usual negated signs.
+argument, and the whole order follows with it. Several sign and phase conventions for
+real SH are in use, so rather than calling these "the usual" signs: the engine's
+convention is the one reconstructed literally above, `Y1,-1 = -k*y`, `Y1,1 = -k*x`,
+`Y1,0 = +k*z`, with z as the polar axis. That is unambiguous without appeal to any
+textbook.
 
-**With the order known, a physical check becomes possible and passes.** The first
-moment of the radiance is `(-L11, -L1,-1, +L10)`, and for the red channel of the
-lantern capture that is `(-0.000601, +0.005414, +0.000620)` — dominated by **+y**,
-by an order of magnitude over the other two axes. y is the vertical axis in this
-engine's world space, so the environment radiance points up. That is what a sky
-must do, and it could not have been checked before the order was established.
+**With the order known, a directional check becomes possible.** The L1 band maps to
+`(-L11, -L1,-1, +L10)`, and for the red channel of the lantern capture that is
+`(-0.000601, +0.005414, +0.000620)` — **strongly oriented toward +y**, by an order of
+magnitude over the other two axes, y being the vertical axis in this engine's world
+space. Stated as the orientation of the L1 band this is measured. Calling it the
+physical first moment of the sky radiance would require the integration measure to be
+correct, and it is not; see the section above on the missing solid-angle weight.
 
-**The projection is over the view frustum, not the whole sphere.** The direction
+**The projection covers a matrix-defined domain, not the whole sphere.** Whether
+that domain is the player's view frustum is NOT established — the matrix could be a
+dedicated wide sky projection chosen so the distribution suits this pass. The direction
 for each sample is built by unprojecting an NDC grid point — `u = (x+0.5)/32 - 1`,
 `v = 1 - (y+0.5)/32`, `z ≈ 1e-07`, so the far plane under reversed-Z — through
 matrix rows 30..33 of the 2768-byte `SceneConstantBuffer`, then normalising. The
@@ -103,31 +178,23 @@ that matrix is the player camera's or a dedicated wide sky projection is not
 established here; `CSRenderAtmosphericScatteringOffscreenSky` exists and would be
 the place to look.
 
-**A second value is consistent on colour, which is corroboration, not proof.** Slot 56 — the one the two
-atmospheric-scattering renderers read — holds a bare RGB triple, not a set of
-harmonics: `(0.022237, 0.016027, 0.006020)`. Its hue matches the DC term derived
-from the SH split:
-
-```
-DC term   R:G:B = 1.000 : 0.776 : 0.352
-slot 56   R:G:B = 1.000 : 0.721 : 0.271
-```
-
-Two different regions of the buffer agree that the ambient is warm. But both plausibly
-derive from the same warm environment state, so several unrelated quantities in this
-buffer could share a hue; the agreement is consistent with a correct split without
-establishing one. What actually establishes the split is the producer's constants
-above. What slot 56 represents is still unknown.
+**WITHDRAWN: slot 56 is not an RGB triple.** This section originally read the
+values `(0.022237, 0.016027, 0.006020, 0.0)` at slot 56 as a colour whose warm hue
+corroborated the direct term. Tracing the producer's tail showed slot 56 lies outside
+the six-entry ring and is not a colour at all. The corroboration is withdrawn; see
+the ring section above. What establishes the split is the producer's basis constants,
+and nothing else was needed.
 
 **The magnitudes are small: a direct term around 0.014.** Whether a warm tint is
 correct for that scene is not something the shader can tell us; the file name records
 the wall clock, not the in-game hour.
 
-The falsifiable prediction should be stated as a shift, not an inequality. `B > R` is
-too hard: sun elevation, cloud, ground contribution, the frustum the projection
-actually covers and any pre-exposure all move the result. **At a deliberately chosen
-clear midday state, the chromaticity must move markedly toward blue relative to this
-capture.** If a clear midday sky reads as warm as this one, something is wrong.
+The falsifiable prediction should be stated as a shift, not an inequality, and even
+then only as an expectation: sun elevation, cloud, ground contribution, the domain the
+projection actually covers and any pre-exposure all move the result. **Under
+controlled clear-midday conditions the chromaticity should move markedly toward blue
+relative to this capture.** It is the weaker test either way. The hard test is the
+offline replay below.
 
 **Slot 7 is not harmonics** and is unexplained: `(16366681.0, 1115.56, 1673.45,
 0.111556)`. It is the slot every consumer in the local listings reads. The 16.4

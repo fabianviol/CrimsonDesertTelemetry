@@ -273,30 +273,50 @@ lane 8  0.5462740 * (d.x^2 - d.y^2)        Y2,2
 ```
 
 Lane 0 is Y00 because it carries Y00's own constant -- an identification, not the
-weaker "it is the largest". With the order known, the first moment `(-L11, -L1m1,
-+L10)` of the red channel is `(-0.000601, +0.005414, +0.000620)`: **dominated by +y
-by an order of magnitude, so the environment radiance points up**, as a sky must.
+weaker "it is the largest". Several real-SH sign conventions exist, so the engine's
+is simply the one listed above rather than "the usual" one.
 
-**The projection covers the VIEW FRUSTUM, not the sphere.** Directions come from
-unprojecting a 64x64 NDC grid at the far plane through rows 30..33 of the 2768-byte
-SceneConstantBuffer; radiance is `g_texSkyInscatter` by textureLoad, clamped
-non-negative. Whether that matrix is the player camera's or a wide sky projection is
-open.
+**BUT THERE IS NO SOLID-ANGLE WEIGHT.** A review asked what weights each of the 4096
+samples. Nothing does. The inner loop is: NDC point -> matrix rows 30..33 with a
+perspective divide -> normalise -> textureLoad `g_texSkyInscatter` mip 0 -> clamp
+non-negative -> multiply by the nine basis functions -> add. No Jacobian, no per-pixel
+solid angle, no cosine. A uniform grid in projected space is not uniform in solid
+angle, so these are **projection-weighted moments against the L0-L2 basis, not
+canonical SH coefficients of a spherical radiance field.** The basis is exactly real
+SH; the measure is missing. Normalisation is a flat 1/6144 per frame (6144 = 6*1024
+= 1.5*4096; which is meant is unknown). The sampling domain is matrix-defined --
+whether it is the player frustum or a dedicated sky projection is open.
 
-Slot 7 is unexplained and huge (16366681.0, 1115.56, 1673.45, 0.111556). Slot 56
-holds a bare RGB triple, warm like the direct term but not proof of anything -- both
-plausibly derive from the same environment state. Sets 1..6 are all zero here.
+Accordingly the directional result is stated as: the red L1 band is strongly oriented
+toward +y (`(-0.000601, +0.005414, +0.000620)`), by an order of magnitude. Calling it
+the physical first moment of the sky radiance needs the measure to be right.
 
-**Falsifiable next step: at a deliberately chosen CLEAR MIDDAY state the
-chromaticity must move markedly toward blue** relative to this capture. (Not the
-harder `B > R`: sun elevation, cloud, ground and the covered frustum all move it.)
-73 script tests pass.
+**AND THE BUFFER IS A SIX-ENTRY RING.** The shader's tail was misread before. Thread 0
+scales the 27 reduced values by 1/6144 and stores them at `_renderFlags.x * 8 + 8`;
+then a six-iteration loop rawBufferLoads `i*8 + 8` for i in 0..5, sums all 27, and
+stores that sum UNSCALED to slots 0..6.
 
-**The strongest remaining validation, and it needs no new capture:** extract
-`g_texSkyInscatter` from this same frame, reproduce the 64x64 projection offline with
-the constants above, and compare all 27 coefficients against the buffer bytes. That
-requires the texture footprint work the buffer path did not -- row pitch,
-subresources, format -- so the reader is not yet a general texture decoder.
+```
+slots  0..6   the sum of the six ring entries, unscaled
+slot   7      a separate summary, huge and unexplained (16366681.0, ...)
+slots  8..55  a SIX-FRAME RING, _renderFlags.x selecting the write slot
+slots 56..63  outside the ring, contents unknown
+```
+
+**Two retractions.** Slot 56 is NOT "a bare RGB triple corroborating the hue" -- it
+lies outside the ring and its meaning is unknown; that corroboration is withdrawn as
+a misreading. And the extracted bytes are not a self-consistent frame: set 0 is the
+sum of sets 1..6, yet those read all-zero while set 0 is populated. What was
+extracted is the state PIX recorded for replay; where in the frame it comes from is
+not established. Untouched, because they come from the shader and not the bytes: the
+3 x 9 split, the basis order, the packing.
+
+**The hard test, needing no new capture:** extract `g_texSkyInscatter` from this same
+frame, reproduce the 4096-sample projection offline with the constants above and the
+same 1/6144, and compare all 27 values. Expect close numerical agreement, not bit
+equality -- a parallel reduction sums in a different order. That needs texture
+footprint work (row pitch, subresources, format) which the buffer path did not, so
+the reader is NOT yet a general texture decoder. 73 script tests pass.
 
 **The ambient half, in detail: 1024 bytes.**
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (in
