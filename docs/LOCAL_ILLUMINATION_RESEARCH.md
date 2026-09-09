@@ -6,7 +6,7 @@ existing raw/smoothed sources without a new visibility filter. These are differe
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
 not a new public local-illumination or source-visibility API. Latest LIVE result
-is "First direct live texture readback" immediately below.
+is "First direct live texture readback" below the newer, host-tested implementation.
 Older sections preserve prior evidence, not current instructions.
 
 ## GPU pairing implementation — 2026-09-09, readback.2 NOT live-tested

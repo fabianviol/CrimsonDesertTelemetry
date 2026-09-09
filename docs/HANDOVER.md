@@ -1,12 +1,117 @@
-# Current checkpoint — GPU-paired diagnostic ready, 2026-09-09, Codex/Astra
+# Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
+
+The user explicitly requested a handover for Claude after a long absence.
+**Work is PAUSED because the user's usage window is exhausted.** This handover
+is not a request to start another experiment. Resume only when the user returns.
+Implementation is committed as `914e658`; package is already built and preserved.
+No installation, publication or push was performed for this diagnostic package.
+
+## What changed since the old fire/console investigation
+
+- Product home is **C:\DEV\CrimsonDesertTelemetry**. Console/research capabilities,
+  telemetry, camera, ManyLights capture and overlays now live in ONE ASI package.
+  Do not restore the archived standalone console ASI or install two old plugins.
+  `C:\DEV\CrimsonHue` is now the separate working Hue consumer (own repository),
+  not the lighting research workspace. It uses only the neutral telemetry API.
+- Public baseline is **2.0.0**, released on GitHub/Nexus and user-tested from the
+  GitHub ZIP. All `2.0.1-*` packages discussed here are private development builds.
+  The local-light path is no longer blocked on the old sound/emitter pool search.
+- Existing API provides player/camera, authored lights and current filtered
+  ManyLights contributions, including position, linear RGB/luminance and decoded
+  point/spot direction/cone where present. HTTP AND WebSocket still exist. The
+  fullscreen markers and larger 3D mini-radar work; they do NOT perform depth tests.
+- Subsequent private builds add spatially grouped, temporally smoothed local
+  lights for Hue, keeping raw contributions, and a separate global sky SH stream.
+  The latest diagnostic ZIP includes these feeds; no second preview ASI is needed.
+  Grouping is approximate, not engine object identity; rendered sample indices
+  are not stable IDs. ManyLights is view-filtered, not a complete 360-degree census.
+
+## What the user now needs / what is NOT solved
+
+Keep raw and smoothed lights, but ALSO provide (1) local environmental illumination
+under roofs/in caves and (2) a separately visibility-filtered light stream.
+Global sky does not include local roof occlusion or separately measured direct
+sun/moon lighting. Source visibility, light reaching the player, and brightness
+of visible surfaces are different quantities. Missing/culled is not proven OFF.
+Do not invent a local-ambient schema or make global sky times one scalar into a
+validated room-brightness measurement. Do not silently filter existing streams.
+
+Current bounded research is on the game's **spatial sky-visibility sample**:
+AdaptExposureCS samples a voxel texture and uses `saturate(1 - sample)`; a GI
+consumer also uses that quantity for an environment contribution. Native producer
+and CPU controls identify its reference as view/camera context, NOT player root.
+Fallback can yield 1 without texture coverage. This is not total local lighting
+and not camera-to-lamp occlusion. The separate hiZ route is documented, not built.
+
+**Measured in game:** readback.1 copied the actual voxel texture after a validated
+release barrier and completed queue fence. A direct sample closely matched the
+inverse of a CPU exposure-cache value, but that cache had unknown GPU age.
+**Built/tested, NOT measured in game:** readback.2 additionally copies the actually
+bound GPU GI constants and exposure output for the same selected native dispatch.
+This tests provenance/temporal pairing before any new indoor/outdoor conclusions.
+Do not restart the old emitter, generic heap scan, broad GI or PIX search.
+
+## Short reading route — do not read all historical checkpoints
+
+1. Read the current package checkpoint immediately below (hashes, safety, tests).
+2. [LOCAL_ILLUMINATION_RESEARCH.md](LOCAL_ILLUMINATION_RESEARCH.md): first two
+   sections, "GPU pairing implementation" and "First direct live texture readback".
+   They contain code/native anchors, raw evidence paths and interpretation limits.
+   If needed, follow "New result: an existing spatial sky-visibility sample is
+   recoverable" / "Native spatial provenance" for the shader/math and CPU source;
+   "Separate depth-resource route" is the deferred per-source visibility lead.
+3. Only when changing public consumers, use [API.md](API.md),
+   [SMOOTHED_LIGHTS.md](SMOOTHED_LIGHTS.md) and [AMBIENT_STREAM.md](AMBIENT_STREAM.md).
+   Older first-package instructions are historical; use the current ZIP below.
+
+Implementation entry points: `native/CrimsonDesertTelemetry.Asi/src/spatial_probe.cpp`
+(selection, native binding observers, private report), `spatial_readback.cpp/.h`
+(resource lifetime, copies/fence), `tests/spatial_pair_tests.cpp` under that native
+project (real WARP/COM-detour controls), and `scripts/Decode-SpatialReadback.py`
+plus `Decode-ExposureContext.py` (existing shader model). Existing public readers
+are in `src/CrimsonDesertTelemetry.Core`: RenderLightReader, SmoothedLights,
+SkyAmbientReader. Do not replace those feeds to add this diagnostic.
+
+## Resume recipe — ONE test, only after the user resumes
+
+Have the user close the game and install the WHOLE ready ZIP via DMM. Never replace
+an active ASI. Verify the installed ASI hash against the checkpoint, actual new PID,
+native log and `http://127.0.0.1:27311/v1/health` (playing, supported, progressing).
+All old process/resource addresses below are historical, not reusable pointers.
+Exact supported EXE SHA256:
+`4D99C15C58BD20A94D354D10AE395D1FAC777D59EF52CBA8080DC3FC8DC6F454`
+(Steam build25116796). Instrumentation must fail closed on another build.
+
+Use `[Research] SpatialProbe=1, SpatialReadback=1, AmbientProbe=0`, with existing
+`[Lights] Enabled=1, ManyLights=1` and `[Ambient] Enabled=1`. Spatial defaults in
+the ZIP are OFF. Request a short standstill, then run in PowerShell7.4+:
+`& C:\DEV\CrimsonDesertTelemetry\scripts\Start-SpatialProbe.ps1 -ProcessId ACTUAL_PID`
+Replace ACTUAL_PID with the verified PID; this signals the existing plugin event.
+ONE GPU transaction per process, INCLUDING failure; repeated signals cannot retry.
+Expect 20 CPU controls at up to2Hz, bounded by30s. Release the user after recording.
+Last location was the partly open roofed stall between four fire lamps, at NIGHT,
+with user-reported indoors brighter than outside. No toggle or movement needed
+for this pairing test; it is not yet an indoor/outdoor comparison.
+
+Preserve the NEW `spatial-binding-PID-*.json`, native log and INI from the game's
+bin64 folder under a fresh `artifacts/light-research/` directory. Decode using
+`scripts/Decode-SpatialReadback.py --input RAW --out DERIVED --assume-adapt-exposure-layout`.
+Real Python here is
+`C:\Users\fabia\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`.
+Check native completion/fence, root bindings, paired flags and progressing CPU
+controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
+not zero light. Exact pass/reject follow-up and package identities are below.
+
+## Current checkpoint — GPU-paired diagnostic ready, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.2** built/tested, NOT installed or game-tested.
 ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.2-ModManagers.zip
 SHA256 B721CBF0460AC6E32FF9864DB95F7D6B9626115E5E735D2543F6375A2B0BCBCB.
 Expanded v2.0.1-spatial-readback.2-20260909-090652-602-084cc472/CrimsonDesertTelemetry;
 ASI SHA256941C9DDBC215F56676570376630D6C0A71277513E4B5B1824167DA95342529FD.
-Previous immutable packages preserved. PID8772 still readback.1, latest health
-playing/error=null/sequence81700. No new live capture, toggle, install or config edit.
+Previous immutable packages preserved. LAST OBSERVED: PID8772 using readback.1,
+health playing/error=null/sequence81700; recheck on resume, not a live guarantee.
+No new live capture, toggle, install or config edit.
 User STOPPED due to exhausted usage window; requested only finishing the ZIP.
 No further live run or shutdown requested. Package ready for a later DMM install.
 
@@ -45,6 +150,12 @@ gpu-paired status, direct/inverse error, and progressing control. If binding gua
 rejects, use its saved addresses (do not guess offset/state or report zero light).
 If positive, design bounded repeatable paired capture for roof/outside control.
 Independent hiZ per-source visibility remains pending and required.
+
+---
+
+**Historical checkpoints below.** Preserved evidence, not an instruction queue.
+Their "next step", PID, package and "not tested" statements describe their dates;
+the current checkpoint above takes precedence. No need to read them all on takeover.
 
 ## Previous checkpoint — FIRST live direct texture readback succeeded, 2026-09-09
 
