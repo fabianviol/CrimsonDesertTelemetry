@@ -5,8 +5,8 @@ pairing path up to readback.4 and then ran a five-point occlusion series with it
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
 position, the cheap CPU shortcut is proven ill-conditioned, and three live
-series show the instrument repeats to 0.05..0.3% within a plateau while the
-quantity itself drifts about 14% over twelve seconds at a fixed position** (current checkpoint below). readback.4 is the ASI in
+series plus offline analysis show the plateaus are amortised block refresh of the
+voxel volume, which caps how responsive any feed built on it can be** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,49 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — drift dominates the day/night test, 2026-09-09
+## Current checkpoint — the drift is amortised block refresh, 2026-09-09
+
+Offline analysis of the eight volumes in each series, no new capture. The drift
+that dominated the day/night test now has a mechanism, and it explains every
+plateau observed all day.
+
+**Clipmap re-centring ruled out.** Origin, scale, relative and inverse extent are
+byte-identical across all eight transactions in both series.
+
+**The volume is continuously rewritten.** Between consecutive transactions ~1.5s
+apart, about 25% of all 540672 voxels differ, mean absolute deviation ~5.4/255.
+The rate is 24.7..25.8% in every step and identical by day and night. Differences
+against transaction0 grow 25.7 → 51.1 → 71.7% and saturate: repeated churn, not
+convergence after arrival.
+
+**The update is amortised in blocks of 16 z-slices and rotates.** Within clipmap1's
+slab (z=67..130), in every one of the seven consecutive pairs at least one 16-slice
+block is BYTE-IDENTICAL while others change 11..73%, and which block is untouched
+rotates. A spot-checked untouched slice has all 32 y-rows unchanged.
+
+**This is the single cause of the plateaus.** A point's value can only change when
+its block is swept, which is why every series showed stable plateaus with occasional
+steps and 0.03..0.3% agreement inside a plateau. Spread and drift were never
+scatter; they are one phenomenon. It also settles the day/night question
+mechanically: identical churn statistics by day and night mean the wider daylight
+range was more refresh events sampled, not a time-of-day effect. The cloud
+hypothesis is not needed and is not supported.
+
+**HARD CONSTRAINT FOR THE FEED.** A reading at a point can be several seconds
+stale depending on its block and the sweep phase. Sub-second responsiveness at a
+single point is not obtainable from this field however fast the readback runs.
+Worse for the directional plan: neighbouring offsets can lie in DIFFERENT blocks,
+so a multi-offset directional sample mixes voxels of differing age. The contract
+must state this rather than pretend the samples are simultaneous.
+
+**ONE next step:** measure the sweep period directly, since it sets the feed's
+real latency. A series with SpatialReadbackIntervalMs at its 250ms floor and
+Count=8 gives eight snapshots ~2s apart at best; better, take two series at
+different intervals and compare how often a fixed block repeats. Until the period
+is known, do not promise any refresh rate in a consumer contract. Independent hiZ
+per-source visibility remains pending and required.
+
+## Previous checkpoint — drift dominates the day/night test, 2026-09-09
 
 Third live series in PID33700, same open-sky Abyss spot as the dusk run but in full
 daylight (Day40 Fri 9:15AM against Day58 Tue 8:29PM), sky stream confirming real

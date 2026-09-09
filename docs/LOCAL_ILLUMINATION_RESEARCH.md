@@ -107,6 +107,61 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## The drift explained: amortised block updates — 2026-09-09, analysis
+
+Offline analysis of the eight volumes in each series. No new capture. This retires
+the drift as a mystery and replaces it with a mechanism that explains every plateau
+seen all day.
+
+**The clipmap does not move.** Origin (-21352, 3592, -7376), scale 2.0, relative
+(-21360, 3584, -7376) and inverse extent 0.03125 are byte-identical across all
+eight transactions in both series. Re-centring is ruled out as a cause.
+
+**The volume is continuously rewritten.** Between consecutive transactions about
+1.5 s apart, ~25% of all 540672 voxels differ, with mean absolute deviation ~5.4
+out of 255. That rate is the same in every step and, importantly, the same by day
+and by night: 24.7..25.8% throughout. Differences against transaction 0 grow
+25.7% → 51.1% → 71.7% and then saturate, which is repeated churn, not convergence
+after arrival.
+
+**The update is spatially amortised in blocks of 16 z-slices, and it rotates.**
+Within clipmap 1's slab (z = 67..130), grouping into four 16-slice blocks:
+
+| pair | z67-82 | z83-98 | z99-114 | z115-130 |
+|---|---|---|---|---|
+| 0→1 | 0.63 | 0.22 | **0.00** | 0.14 |
+| 1→2 | **0.00** | 0.46 | 0.52 | **0.00** |
+| 2→3 | 0.06 | **0.00** | 0.32 | 0.72 |
+| 3→4 | 0.57 | 0.35 | **0.00** | **0.00** |
+| 4→5 | **0.00** | 0.33 | 0.73 | **0.00** |
+| 5→6 | 0.22 | **0.00** | 0.11 | 0.72 |
+| 6→7 | 0.41 | 0.48 | **0.00** | **0.00** |
+
+In every observed step at least one block is byte-identical while others change by
+11..73%, and which block is untouched rotates. Spot-checking a single untouched
+slice (z=100 in pair 0→1) shows every one of its 32 y-rows unchanged.
+
+**This is what produced the plateaus.** A given point's value can only change when
+the block containing its voxels is refreshed. That is why every series all day
+showed stable plateaus with occasional steps, why values repeated to 0.03..0.3%
+inside a plateau, and why the "spread" and the "drift" were never scatter. It is
+one phenomenon: amortised refresh.
+
+**It also settles the day/night question mechanically.** The churn statistics are
+identical by day and night, so the larger daylight range was the same amortisation
+sampled across more refresh events, not a time-of-day effect on the quantity. The
+earlier cloud hypothesis is not needed to explain the drift and is not supported by
+this analysis; dynamic geometry may still be among what gets written INTO the
+voxels, but it is not what makes the readings step.
+
+**Hard consequence for any consumer.** A reading at a point can be several seconds
+stale, depending on which block it falls in and when that block was last swept.
+Sub-second responsiveness at a single point is not available from this field at
+all, no matter how fast the readback is made. Smoothing is mandatory, and a
+directional design that samples several offsets will mix voxels of differing age,
+because neighbouring offsets can lie in different blocks. That last point is new
+and must be respected by the feed contract.
+
 ## Day versus night, and a drift that dominates — 2026-09-09, PID33700
 
 Third live series, deliberately at the same open-sky Abyss spot as the dusk run, in
