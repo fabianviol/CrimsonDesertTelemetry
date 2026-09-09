@@ -234,6 +234,7 @@ requires 7.4 or newer.
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
 | `Read-PixExportResource.py` | reads a resource's captured bytes out of a pixtool export without building it |
 | `Map-PixExportShaders.py` | names the pipeline states in a pixtool export, so a dispatch can be attributed to a shader |
+| `Find-PixExportDispatches.py` | names the dispatches in an export that can reach a given resource |
 | `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
 
 All the Python tools read only preserved artifacts and never touch the game.

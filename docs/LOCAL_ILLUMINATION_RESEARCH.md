@@ -60,8 +60,24 @@ the shader's constant      1.627604215e-04     (float32)
 canonical / shader         3.14159256          against pi = 3.14159265
 ```
 
-So the factor equals the canonical uniform-solid-angle weight for 24576 directions
-over a sphere, divided by pi, both to float32 precision.
+**The best reading of the constant is far more mundane than anything with pi.**
+Suggested by the same review, and it fits everything measured:
+
+```
+1/6144 = (4 / 4096) / 6
+```
+
+The NDC square [-1, +1]^2 has area 4. A uniform 64x64 grid over it gives each sample
+an area of 4/4096. Averaging six such faces adds the 1/6. That is a plain Riemann
+weight in the projection's own parameter space — no sphere, no Lambert, nothing to
+interpret. And it explains the absence of a Jacobian directly: **the engine integrates
+in the cube-face parameter space rather than in the spherical measure.** If the six
+are faces, that is the interesting engine property here, and it is a much better
+explanation than the identity below.
+
+The pi identity, kept for the record: the factor also equals the canonical
+uniform-solid-angle weight for 24576 directions over a sphere divided by pi, both to
+float32 precision. Numerically true, semantically unsupported — see the retraction.
 
 **The Lambertian reading of that 1/pi is WITHDRAWN.** It was invented rationale. A
 cosine convolution of SH is band-dependent — the irradiance factors are `pi`,
@@ -76,9 +92,12 @@ those factors and for the Ramamoorthi constants finds none of them:
 | 0.886227, 1.023328, 0.247708 | absent from all 79 |
 | 0.429043, 0.511664, 0.743125 | absent from all 79 |
 
-(`1/4` does occur, but 0.25 is too common to mean anything.) So no cosine convolution
-is visible anywhere in what we hold, and the 1/pi has no demonstrated Lambertian
-meaning. It is, for now, an engine-specific projection normalisation.
+(`1/4` does occur, but 0.25 is too common to mean anything.) The correct scope for
+that search is narrow: **no literally encoded standard SH cosine convolution appears
+in the 79 listings we hold.** It could still live upstream, be folded into combined
+constants, arrive from a buffer, or sit in a shader we do not have. The retraction
+itself does not depend on the search — the producer's own arithmetic is enough, since
+one scalar applied to all 27 accumulators cannot be a band-dependent convolution.
 
 **And 6 x 64 x 64 must not be over-read either.** 1/6144 also factors as `(2/3)/4096`
 and `1/(1.5 * 4096)`; the constant alone cannot prove six faces over a sphere. The
@@ -157,11 +176,28 @@ blobs finds nothing, while its siblings are all present:
 | `EvaluateDiffuseRadianceCS` | 22408, 22409 |
 | `RenderDiffuseTiledCS` | 22565, 22566 |
 
-So the SH producer runs on a different cadence from the rest of the atmospheric
-chain, and **this capture cannot settle cube faces against frames**: it contains no
-dispatch of the shader that writes the six entries. That also closes the idea of
-reconstructing a consistent buffer state by replaying this export — nothing in it
-writes slots 8..55. It explains the zeros too.
+What is proven is narrow: **the producer was not executed in this capture.** That is
+consistent with a rarer or dirty-state-driven update, but it could equally mean it ran
+before the capture began, or on a queue or region the capture does not cover. Either
+way **this capture cannot settle cube faces against frames**, since it contains no
+dispatch of the shader that writes the six entries.
+
+**It does NOT explain the zeros, and checking that produced a name.** The reviewer's
+objection was right: absence of the producer does not mean nothing else touches the
+buffer. The capture creates **14 UAV descriptors over resource 15739**, each declared
+`FirstElement 0, NumElements 64, StructureByteStride 16` — the whole 1024 bytes,
+slots 8..55 included. Attributing the dispatches that bind them (via
+`scripts/Find-PixExportDispatches.py`, using the PSO map) gives exactly one:
+
+```
+CommandLists_000.cpp   Dispatch   pso 22274   ClearVoxelsBufferCS
+```
+
+So a clear pass does have the whole buffer bound writable in this frame, which is a
+concrete candidate for how the six entries come to be zero while their sum is not. It
+is not proof that it wrote them: a descriptor table covers a range from its base, and
+this shows the resource sits at that base. But "no runtime state could look like that"
+was wrong and is withdrawn.
 
 **What a capture would need in order to settle it:** it must contain a dispatch of
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS`. Then, per dispatch, resolve

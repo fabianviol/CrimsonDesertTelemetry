@@ -288,8 +288,14 @@ SH; the measure is missing.
 **The 1/6144 is not arbitrary, and it points at cube faces.** Each entry samples
 4096 directions -- proven twice: 16x16 threads with `threadId << 2` and 4x4 loops, and
 the NDC scale 1/32 needing 64 steps to span [-1,1]. Six entries is therefore
-N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map, and 1/6144 = 4/24576 =
-(4*pi/24576)/pi to float32 precision. **The Lambertian reading of that 1/pi is
+N = 24576 = 6 * 64 * 64, the count of a 64x64 cube map. **The best reading of the
+constant has no pi in it at all: `1/6144 = (4/4096)/6`.** The NDC square [-1,+1]^2 has
+area 4, a uniform 64x64 grid gives each sample 4/4096, and averaging six faces adds
+the 1/6 -- a plain Riemann weight in the projection's own parameter space. That also
+explains the missing Jacobian outright: **the engine integrates in the cube-face
+parameter space, not in the spherical measure.** If the six are faces, that is the
+engine property worth naming. (The factor also equals (4*pi/24576)/pi, numerically
+true but semantically unsupported.) **The Lambertian reading of that 1/pi is
 WITHDRAWN** -- a cosine convolution is band-dependent (1, 2/3, 1/4 after dividing by
 pi), so one global scalar cannot be it, and searching all 79 listings finds NO band
 factors and none of the Ramamoorthi constants. Nor does the constant prove a sphere:
@@ -331,10 +337,19 @@ atmospheric family.)
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS`**, while every sibling is
 there: csPrecomputeAmbient 22283, csRenderAtmosphericScattering 22314 and 22337,
 GenerateAtmosphericScatteringDispatchIndirectArgumentsCS 22313, SkyMaterialCS 22306,
-EvaluateDiffuseRadianceCS 22408/22409, RenderDiffuseTiledCS 22565/22566. So the SH
-producer runs on a different cadence, nothing in this export writes slots 8..55 --
-which explains the zeros and also closes the idea of replaying the export to
-reconstruct a consistent state.
+EvaluateDiffuseRadianceCS 22408/22409, RenderDiffuseTiledCS 22565/22566. Proven
+narrowly: **the producer was not executed in this capture** -- consistent with a rarer
+or dirty-driven update, but it could also have run before the capture or on a region
+it does not cover.
+
+**It does NOT explain the zeros, and checking that produced a name.** The capture
+creates **14 UAV descriptors over resource 15739**, each `FirstElement 0, NumElements
+64, StructureByteStride 16` -- the whole 1024 bytes. Attributing the dispatches that
+bind them (`scripts/Find-PixExportDispatches.py` plus the PSO map) gives exactly one:
+**ClearVoxelsBufferCS, pso 22274**. A clear pass has the whole buffer bound writable
+in this frame, which is a concrete candidate for the zeros. Not proof it wrote them --
+a table covers a range from its base -- but "no runtime state could look like that" is
+withdrawn.
 
 **What the next capture must contain:** a dispatch of the ambient producer. Then per
 dispatch resolve the root CBV holding GlobalPushConstants for `_renderFlags.x`, and

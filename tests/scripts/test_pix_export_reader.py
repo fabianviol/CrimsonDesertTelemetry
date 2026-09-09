@@ -18,6 +18,7 @@ def _load(name, filename):
 reader = _load('pixreader', 'Read-PixExportResource.py')
 ambient = _load('ambientsh', 'Decode-AmbientSH.py')
 shadermap = _load('shadermap', 'Map-PixExportShaders.py')
+dispatches = _load('dispatches', 'Find-PixExportDispatches.py')
 
 
 CREATE_RESOURCES = '''#include "pch.h"
