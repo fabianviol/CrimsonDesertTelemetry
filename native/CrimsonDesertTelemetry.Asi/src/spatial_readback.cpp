@@ -69,7 +69,7 @@ void SpatialReadback::NoteRootThread()
 {
     const auto thread=GetCurrentThreadId();
     if(!rootThread_)rootThread_=thread;
-    else if(rootThread_!=thread)result_.rootThreadConflict=true;
+    else if(rootThread_!=thread)threadConflict_=true;
 }
 void SpatialReadback::RootSignature()
 {
@@ -90,7 +90,7 @@ void SpatialReadback::RootBuffer(RootKind kind,UINT index,D3D12_GPU_VIRTUAL_ADDR
     uav_[index]=kind==RootKind::Uav?address:0;
     srv_[index]=kind==RootKind::Srv?address:0;
     table_[index]=0;
-    if(inExposure)++result_.rootSetsInsideExposure;else ++result_.rootSetsBeforeExposure;
+    if(inExposure)++rootsInside_;else ++rootsBefore_;
 }
 void SpatialReadback::RootTable(UINT index,uint64_t handle)
 {
@@ -100,14 +100,14 @@ void SpatialReadback::RootTable(UINT index,uint64_t handle)
     // Recorded to distinguish "bound through a table" from "not bound at all".
     // A descriptor handle is never resolved to a resource and never copied from.
     cbv_[index]=uav_[index]=srv_[index]=0;table_[index]=handle;
-    ++result_.tableSets;
+    ++tables_;
 }
 void SpatialReadback::DescriptorHeaps(UINT count,const uint64_t* heaps)
 {
     Guard g(mutex_);
     if(!Recording()||!heaps)return;
-    for(UINT i=0;i<count&&i<result_.descriptorHeaps.size();++i)result_.descriptorHeaps[i]=heaps[i];
-    ++result_.heapSets;
+    for(UINT i=0;i<count&&i<heapPtrs_.size();++i)heapPtrs_[i]=heaps[i];
+    ++heaps_;
 }
 void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,UINT y,UINT z,NativeBarrier original)
 {
@@ -121,6 +121,9 @@ void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,
     // establishes TIMING only: same recording, same submission, one fence,
     // immediately after the original dispatch. Root state is kept as evidence.
     result_.nativeCbv=cbv_;result_.nativeUav=uav_;result_.nativeSrv=srv_;result_.nativeTable=table_;
+    result_.descriptorHeaps=heapPtrs_;result_.rootSetsBeforeExposure=rootsBefore_;
+    result_.rootSetsInsideExposure=rootsInside_;result_.tableSets=tables_;result_.heapSets=heaps_;
+    result_.rootThreadConflict=threadConflict_;
     for(UINT i=0;i<64;++i)
     {
         if(cbv_[i]>=result_.giBase&&cbv_[i]-result_.giBase<giBytes_)
@@ -223,9 +226,7 @@ void SpatialReadback::Reset(ID3D12GraphicsCommandList* list,bool after,HRESULT h
     {
         generationKnown_=resetPending_&&SUCCEEDED(hr);resetPending_=false;++generation_;
         cbv_.fill(0);uav_.fill(0);srv_.fill(0);table_.fill(0);rootThread_=0;
-        result_.rootSetsBeforeExposure=result_.rootSetsInsideExposure=0;
-        result_.tableSets=result_.heapSets=0;result_.rootThreadConflict=false;
-        result_.descriptorHeaps.fill(0);
+        heapPtrs_.fill(0);rootsBefore_=rootsInside_=tables_=heaps_=0;threadConflict_=false;
     }
 }
 void SpatialReadback::Close(ID3D12GraphicsCommandList* list,bool after,HRESULT hr)

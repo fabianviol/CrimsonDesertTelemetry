@@ -5,14 +5,76 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. The newest build is
-"Same-submission pairing" immediately below; the latest LIVE result is "Descriptor
-tables identified" after it, which settles how the selected dispatch binds GI and
-exposure. The last successful GPU copy is still "First direct live texture
-readback" further down.
+not a new public local-illumination or source-visibility API. The latest LIVE
+result is "First paired GI and texture capture" immediately below: the mechanism
+now works end to end. "Same-submission pairing" after it explains the design and
+its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
-## Same-submission pairing — 2026-09-09, readback.4 NOT live-tested
+## First paired GI and texture capture — 2026-09-09, PID25944, readback.4
+
+The mechanism works. This section records the first complete transaction and,
+just as importantly, what it does and does not license anyone to say.
+
+Installed ASI verified as 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E.
+INI saved12:55:40 with SpatialProbe1/SpatialReadback1/AmbientProbe0, native log
+opened12:56:16 carrying "Spatial readback v4 IDLE", health playing and supported
+build. One stationary capture, user standing OUTSIDE the barn with the four lamps,
+at NIGHT — the same area as the earlier runs, but not under the roof.
+
+Transaction: `gpu-complete-texture-and-buffers`. Texture540672 bytes, whole GI
+buffer65536, whole exposure buffer65536, one queue, fence value1, exactly one Map,
+`giGpuFramePaired` and `exposureGpuFramePaired` true. CPU controls 20/20 at error0,
+frames10319..10802 progressing, `giCopiesMatch` true throughout, one selected
+exposure at frame10395, reset generation34. Raw report1570839 bytes.
+
+Decode: the GI window was located by content at offset **0**, and `cpuGiEqualsGpu`
+is true — the fenced GPU bytes are byte-identical to the CPU read of the same
+constants. Shader branch `texture-sample`, no fallback, clipmap selected without
+fallback. Sampled R8_UNORM **0.5424523291287616**, candidate sky visibility
+**0.4575476708712384**, from a linear-WRAP sample at
+(-164.4762725830078, 19.167692184448242, 0.28228759765625). Interpolation neighbors
+are x33/34, y4/5, z74/75 with bytes135..207, so this is an ordinary interior sample
+of the volume, not a boundary or fallback artefact.
+
+The exposure window was NOT found. The CPU exposure cache does not appear anywhere
+in the copied output buffer, so the decoder reports `exposure-window-absent` and
+produces no inverse and no direct-vs-inverse difference. That is a missing
+corroboration, not a failure of the GI pairing, and it wants a separate look:
+plausible causes are a different output layout, a cache written from elsewhere, or
+values that changed between the GPU write and the later CPU read.
+
+**What may and may not be said about the number.** readback.1 measured a candidate
+of0.000985 inside the roofed stall at night; this run measures0.4576 outside the
+barn at night, and the two sample coordinates are close. The direction is what a
+sky-visibility quantity should do. It is nevertheless NOT an indoor/outdoor result:
+two single samples, different processes, different frames, different game times,
+one computed from CPU constants and one from paired GPU constants, with no repeat
+and no controlled movement between them. It is also not a roof percentage, not room
+brightness, not irradiance and not per-source occlusion. What it does establish is
+that the paired path produces a plausible, non-degenerate value at all.
+
+**Defect found in this run.** The report's `rootSetsBeforeExposure`,
+`rootSetsInsideExposure`, `tableSets`, `heapSets`, `rootThreadConflict` and
+`descriptorHeaps` all read zero here, while the arrays correctly show the same
+seven descriptor tables at root indices5,6,7,8,9,12,14 and the unrelated
+upload-ring CBV at index1 (0x10CA1F1700, again a new address). The counters lived
+in the reported struct and were cleared by the next list Reset. readback.5
+snapshots them with the arrays and adds a control proving a later Reset cannot
+rewrite a dispatch snapshot. Reports from readback.3 and .4 must be read with the
+arrays, never the counters. No copy or fence was affected.
+
+Evidence artifacts/light-research/spatial-readback4-live-20260909-pid25944-outside-barn-night/
+holds the raw JSON (SHA256 6C4DF3191EFA18108F136F606D2354F60F0D9C16B121DA3D4A6D0FE79FC54D5E),
+derived.json, the native log and the INI actually used.
+
+**Next.** The mechanism is no longer the question, so the next step is a controlled
+experiment rather than another lone number: a bounded repeatable pair of captures
+under the roof and outside, in one session at the same game time, reported as a
+spread and still labelled same-submission. One transaction per process means one
+restart per capture, so the count must be agreed with the user first.
+
+## Same-submission pairing — 2026-09-09, readback.4 design
 
 The user chose this route over resolving the descriptor tables. It is deliberately
 a weaker evidence standard than readback.2 aimed at, and the report, the decoder
@@ -99,13 +161,22 @@ Binding state at the selected `Dispatch(2,1,1)`:
 |---|---|
 | `rootSetsBeforeExposure` | 20 |
 | `rootSetsInsideExposure` | 1 |
-| `tableSets` | 98 |
-| `heapSets` | 6, heaps 0xC92DE6A0 and 0xC92DEE20 |
+| `tableSets` | 98 — see the correction below, NOT a dispatch-time value |
+| `heapSets` | 6, heaps 0xC92DE6A0 and 0xC92DEE20 — same correction |
 | `rootThreadConflict` | false |
 | live root CBV | one, index1 = 0x1036631400 |
 | live root UAV | none |
 | live root SRV | none |
 | live descriptor tables | root indices 5, 6, 7, 8, 9, 12, 14 |
+
+**Correction, made after the readback.4 run.** The counter and heap fields above
+lived in the reported struct and were cleared by the NEXT list Reset, so what a
+report file shows for `tableSets`, `heapSets`, `descriptorHeaps` and the root-set
+counts is whatever survived until the file was written, not the state at the
+dispatch. The ARRAYS are snapshotted at the dispatch and are authoritative; the
+seven live table indices above therefore stand, and the readback.4 run reproduced
+exactly the same seven. Do not quote 98 or 6 as dispatch-time counts. readback.5
+snapshots the counters alongside the arrays. No copy was ever affected.
 
 The twenty root sets before the exposure are exactly what readback.2 could not
 see, so the window fix is confirmed by measurement rather than by argument. The

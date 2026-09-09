@@ -107,11 +107,9 @@ int main()
         list->SetComputeRootSignature(signature.Get());
         list->SetComputeRootConstantBufferView(0,gi->GetGPUVirtualAddress()+256);
         list->SetComputeRootUnorderedAccessView(1,output->GetGPUVirtualAddress()+1024);
-        Check(readback->Snapshot().rootSetsBeforeExposure==2,"roots recorded before exposure");
         Observation o{};o.selectedForReadback=true;o.nativeList7=reinterpret_cast<uint64_t>(list.Get());active=&o;
         Check(readback->Arm(list.Get(),texture.Get(),123,gi.Get(),output.Get()),"arm pair");
         list->Dispatch(2,1,1);readback->ExposureEnd(true);active=nullptr;
-        Check(readback->Snapshot().rootSetsInsideExposure==0,"no further roots inside exposure");
         Check(readback->Snapshot().buffersCopied,"immediate CB/output copies");
         tb.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;tb.SyncAfter=D3D12_BARRIER_SYNC_NONE;
         tb.AccessBefore=D3D12_BARRIER_ACCESS_SHADER_RESOURCE;tb.AccessAfter=D3D12_BARRIER_ACCESS_NO_ACCESS;
@@ -127,6 +125,8 @@ int main()
         const auto r=readback->Snapshot();Check(r.phase==CopyPhase::Complete&&r.buffersGpuPaired,"all copies completed");
         Check(r.giOffset==256&&r.exposureOffset==1024&&r.giRootIndex==0&&r.exposureRootIndex==1,"root corroboration recorded");
         Check(r.giBindingHits==1&&r.exposureBindingHits==1&&!r.giFromSrv&&!r.rootThreadConflict,"root hits counted, not required");
+        // Counters are snapshotted with the arrays; a later Reset must not rewrite them.
+        Check(r.rootSetsBeforeExposure==2&&r.rootSetsInsideExposure==0,"roots counted at the dispatch, before the exposure");
         // Whole buffers are copied; the window is found offline, never assumed here.
         Check(r.gpuGi.size()==65536&&r.giBytes==65536&&r.gpuExposure.size()==65536&&r.exposureBytes==65536,"whole pinned buffers copied");
         Check(std::memcmp(r.gpuGi.data()+256,giData.data(),768)==0,"all 768 actual GPU GI bytes at their real place");
@@ -177,16 +177,28 @@ int main()
             Check(tr.tableSets==5&&tr.nativeTable[5]!=0&&tr.nativeCbv[1]==0x1036631400ull,"table and unrelated CBV recorded");
             tables.Cancel("test-only");Hr(tableList->Close(),"table close");
         }
-        // A list reset clears the recorded root evidence.
+        // A list reset clears the recorded root evidence, and a reset AFTER the
+        // dispatch must never rewrite what the dispatch already snapshotted.
         {
-            SpatialReadback stale;Check(stale.Begin(),"stale begin");stale.Discover(list.Get(),texture.Get(),gi.Get(),output.Get());stale.Poll();
-            stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
+            ComPtr<ID3D12CommandAllocator> staleAlloc;Hr(device->CreateCommandAllocator(type,IID_PPV_ARGS(&staleAlloc)),"stale allocator");
+            ComPtr<ID3D12GraphicsCommandList7> staleList;Hr(device->CreateCommandList(0,type,staleAlloc.Get(),nullptr,IID_PPV_ARGS(&staleList)),"stale list");
+            SpatialReadback stale;Check(stale.Begin(),"stale begin");stale.Discover(staleList.Get(),texture.Get(),gi.Get(),output.Get());stale.Poll();
+            stale.Reset(staleList.Get(),false);stale.Reset(staleList.Get(),true,S_OK);
             stale.RootBuffer(RootKind::Cbv,0,gi->GetGPUVirtualAddress()+256);
             stale.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
-            Check(stale.Snapshot().rootSetsBeforeExposure==2,"roots recorded");
-            stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
-            Check(stale.Snapshot().rootSetsBeforeExposure==0,"reset clears recorded roots");
-            stale.Cancel("test-only");
+            stale.RootTable(7,0x95678a00e6d420ull);
+            stale.Reset(staleList.Get(),false);stale.Reset(staleList.Get(),true,S_OK);
+            stale.RootBuffer(RootKind::Cbv,3,gi->GetGPUVirtualAddress()+512);
+            Check(stale.Arm(staleList.Get(),texture.Get(),129,gi.Get(),output.Get()),"stale arm");
+            stale.NativeDispatchEnd(staleList.Get(),2,1,1,ForwardBarrier);
+            auto sn=stale.Snapshot();
+            Check(sn.rootSetsBeforeExposure==1&&sn.tableSets==0&&sn.nativeTable[7]==0,"reset cleared the previous recording");
+            Check(sn.giRootIndex==3&&sn.giOffset==512,"only the surviving root is reported");
+            // The next frame's reset must leave the snapshot untouched.
+            stale.Reset(staleList.Get(),false);
+            sn=stale.Snapshot();
+            Check(sn.rootSetsBeforeExposure==1&&sn.giOffset==512,"a later reset does not rewrite the snapshot");
+            stale.Cancel("test-only");Hr(staleList->Close(),"stale close");
         }
         delete readback;readback=nullptr;
     }

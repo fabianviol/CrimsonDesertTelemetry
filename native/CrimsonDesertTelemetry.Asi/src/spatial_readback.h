@@ -83,6 +83,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> gi_,exposure_;
     uint64_t giBytes_{},exposureBytes_{};
     std::array<uint64_t,64> cbv_{},uav_{},srv_{},table_{};
+    // Live counters. They keep changing after the dispatch, so they are snapshotted
+    // into result_ beside the arrays instead of being reported straight from here.
+    std::array<uint64_t,4> heapPtrs_{};
+    uint32_t rootsBefore_{},rootsInside_{},tables_{},heaps_{};
+    bool threadConflict_{};
     uint32_t rootThread_{};
     uint64_t giWidth_{},exposureWidth_{};
     Microsoft::WRL::ComPtr<ID3D12Device> device_;

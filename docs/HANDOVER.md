@@ -1,12 +1,12 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
-The user requested a handover for Claude after a long absence; Claude has since
-live-tested readback.2 and readback.3, identified descriptor tables as the actual
-binding path, and built readback.4 on the user's chosen evidence standard.
-**Current state: readback.4 is built and host-tested but NOT installed or
-game-tested** (current checkpoint below). readback.3 is still the ASI in the game
-folder and its one-shot is consumed, so the next live run needs the new ZIP.
-No publication or push was performed for any package.
+The user requested a handover for Claude after a long absence. Claude live-tested
+readback.2 and readback.3, identified descriptor tables as the binding path, built
+readback.4 on the user's chosen evidence standard and **live-tested it
+successfully: the FIRST same-submission GPU GI plus fenced texture capture now
+exists** (current checkpoint below). readback.4 is the ASI in the game folder and
+its one-shot is consumed. readback.5 fixes a diagnostic counter defect found in
+that run and is built but not installed. No publication or push was performed.
 
 ## What changed since the old fire/console investigation
 
@@ -57,8 +57,11 @@ live-tested: it saw 20 root sets before the exposure and 98 descriptor-table
 bindings, with seven tables live at the dispatch and still no root UAV or SRV.
 The binding path is therefore descriptor tables, which no root-descriptor guard
 can ever accept. Do not run a fourth capture of the same kind.
-**Built/tested, NOT measured in game:** readback.4 drops the root requirement and
-pairs by submission instead, copying whole buffers and resolving windows offline.
+readback.4 dropped the root requirement, paired by submission instead, copied
+whole buffers and WAS live-tested successfully: texture, GI and exposure in one
+fenced transaction, with the GI window located offline at offset0 and the GPU
+bytes equal to the CPU copy. The exposure window was not found, so that run has
+no inverse. One outdoor night sample exists; it is not yet a controlled result.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
 ## Short reading route — do not read all historical checkpoints
@@ -114,7 +117,68 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — readback.4 pairs by submission, 2026-09-09
+## Current checkpoint — FIRST paired GI/texture capture, 2026-09-09
+
+PRIVATE **2.0.1-spatial-readback.4** installed via DMM and LIVE-TESTED in PID25944.
+ASI SHA256 3F93F2568184011A3A7BE1FF1390DFC6A99AF1D87F872AFF31233180C64F508E
+verified; INI saved12:55:40, log opened12:56:16 with "Spatial readback v4 IDLE",
+health playing/error=null, supported build. ONE stationary capture, user standing
+OUTSIDE the barn with the four lamps, at NIGHT.
+
+SUCCESS. Complete transaction: texture540672 bytes, whole GI buffer65536 and whole
+exposure buffer65536, status `gpu-complete-texture-and-buffers`, one queue, fence1,
+exactly one Map, `giGpuFramePaired` and `exposureGpuFramePaired` true. 20/20 CPU
+controls, error0, frames10319..10802, all GI copies equal, one selected exposure at
+frame10395, reset generation34. Raw1570839 bytes.
+
+Decoded: `giWindowOffset`0, found by matching the CPU GI copy inside the whole
+buffer; `cpuGiEqualsGpu` true, so the fenced GPU bytes are identical to the CPU
+read. Shader branch `texture-sample`, no fallback. Sampled R8_UNORM0.5424523291,
+**candidate sky visibility0.4575476709** from the paired GPU GI constants.
+Sample coordinates(-164.4762725830078,19.167692184448242,0.28228759765625).
+The exposure window was NOT found: `gpuExposureInverseUnavailable:
+exposure-window-absent`, so this run has no inverse and none may be invented.
+`bindingProven` false, root corroboration zero, exactly as designed.
+
+INTERPRETATION LIMITS. readback.1 measured0.000985 inside the roofed stall at
+night; this measures0.4576 outside the barn at night. The direction matches what a
+sky-visibility quantity should do, and the two sample coordinates are close, but
+these are two SINGLE samples from different processes, frames and game times, one
+using CPU constants and one paired GPU constants. That is not a controlled
+comparison and must not be reported as an indoor/outdoor result, a roof
+percentage, room brightness or per-source occlusion.
+
+DEFECT FOUND AND FIXED: `rootSetsBeforeExposure`, `rootSetsInsideExposure`,
+`tableSets`, `heapSets`, `rootThreadConflict` and `descriptorHeaps` lived in the
+reported struct and were cleared by the NEXT list Reset, so this run reports zeros
+while its arrays correctly show the same seven descriptor tables at root indices
+5,6,7,8,9,12,14 and the unrelated upload-ring CBV at index1 (0x10CA1F1700).
+readback.5 snapshots them with the arrays. In readback.3/.4 reports the counters
+must be ignored; the arrays are authoritative. This never affected any copy.
+
+PRIVATE **2.0.1-spatial-readback.5** built, NOT installed. ZIP
+artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.5-ModManagers.zip
+SHA256 66072F10E3DBD9AB10299B5D891596D69DB2B326103901FA6FAA22A09190989F;
+ASI SHA256 909CB22F7BA37F9BB380339152D92CB4CE98A5B8514482BFAED154253F09D304.
+Spatial defaults OFF. 23/23 CTests, 247 WARP/detour checks, zero debug warnings,
+including a new control that a later Reset cannot rewrite a dispatch snapshot.
+37 Python tests. Earlier packages preserved.
+
+Evidence artifacts/light-research/spatial-readback4-live-20260909-pid25944-outside-barn-night/
+with raw JSON, derived.json, native log and INI. Raw SHA256
+6C4DF3191EFA18108F136F606D2354F60F0D9C16B121DA3D4A6D0FE79FC54D5E.
+
+**ONE next step:** the mechanism works, so the question becomes a controlled
+experiment rather than another lone number. Install readback.5, then take a
+BOUNDED REPEATABLE PAIR: several captures outside and several under the roof, in
+the same session, at the same game time, ideally without moving between them more
+than the comparison requires. One capture per process means one game restart per
+capture, so agree the count with the user before starting. Report spread, not a
+single value, and keep the same-submission label. Investigate the absent exposure
+window separately; it is not needed for the sky-visibility comparison.
+Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — readback.4 pairs by submission, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.4** built and host-tested, NOT installed or
 game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.4-ModManagers.zip
@@ -186,8 +250,12 @@ rejection is now informative instead of blank. 20/20 CPU controls, error0, frame
 
 Binding evidence at the selected Dispatch(2,1,1):
 `rootSetsBeforeExposure`20 — the widened window works, readback.2 saw none of
-these — `rootSetsInsideExposure`1, `tableSets`98, `heapSets`6 with two heaps
-(0xC92DE6A0, 0xC92DEE20), `rootThreadConflict` false. Live root descriptors: ONE
+these — and `rootSetsInsideExposure`1. CORRECTION: the counter and heap fields in
+readback.3/.4 reports keep changing after the dispatch, because a later list Reset
+cleared them while the arrays stayed snapshotted; the `tableSets`98 and `heapSets`6
+figures first recorded here are therefore NOT dispatch-time values and must not be
+quoted. The ARRAYS are authoritative, and they show the seven live tables below.
+readback.5 snapshots the counters with the arrays. `rootThreadConflict` false. Live root descriptors: ONE
 CBV at index1 =0x1036631400, ~53GB outside the pinned GI buffer, matching the
 unrelated per-dispatch constant seen in PID2652 at a different address, which is
 consistent with an upload ring. ZERO root UAVs and ZERO root SRVs. SEVEN live
