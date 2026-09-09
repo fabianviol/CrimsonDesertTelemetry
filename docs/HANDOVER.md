@@ -1,10 +1,11 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
-The user explicitly requested a handover for Claude after a long absence.
-**Work is PAUSED because the user's usage window is exhausted.** This handover
-is not a request to start another experiment. Resume only when the user returns.
-Implementation is committed as `914e658`; package is already built and preserved.
-No installation, publication or push was performed for this diagnostic package.
+The user requested a handover for Claude after a long absence; Claude has since
+installed and live-tested readback.2. **Current state: readback.2 was measured in
+game and its binding guard rejected it** (current checkpoint below). The next step
+is an implementation change, NOT another capture with the installed package.
+readback.2 stays installed in the game folder and its one-shot is consumed in the
+tested process. No publication or push was performed for any diagnostic package.
 
 ## What changed since the old fire/console investigation
 
@@ -46,9 +47,10 @@ and not camera-to-lamp occlusion. The separate hiZ route is documented, not buil
 **Measured in game:** readback.1 copied the actual voxel texture after a validated
 release barrier and completed queue fence. A direct sample closely matched the
 inverse of a CPU exposure-cache value, but that cache had unknown GPU age.
-**Built/tested, NOT measured in game:** readback.2 additionally copies the actually
-bound GPU GI constants and exposure output for the same selected native dispatch.
-This tests provenance/temporal pairing before any new indoor/outdoor conclusions.
+readback.2 then added GPU GI/exposure copies for the same selected native dispatch
+and WAS live-tested: the selected dispatch was observed, but the required root
+CBV/UAV bindings were absent inside its window, so it copied nothing. That valid
+negative disproves the root-descriptor assumption, not the texture result.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
 ## Short reading route — do not read all historical checkpoints
@@ -72,9 +74,11 @@ plus `Decode-ExposureContext.py` (existing shader model). Existing public reader
 are in `src/CrimsonDesertTelemetry.Core`: RenderLightReader, SmoothedLights,
 SkyAmbientReader. Do not replace those feeds to add this diagnostic.
 
-## Resume recipe — ONE test, only after the user resumes
+## Test recipe — reusable, but the next step is implementation
 
-Have the user close the game and install the WHOLE ready ZIP via DMM. Never replace
+This recipe is preserved for the NEXT package; readback.2's one-shot is already
+consumed and re-running it would reject identically. Have the user close the game
+and install the WHOLE ready ZIP via DMM. Never replace
 an active ASI. Verify the installed ASI hash against the checkpoint, actual new PID,
 native log and `http://127.0.0.1:27311/v1/health` (playing, supported, progressing).
 All old process/resource addresses below are historical, not reusable pointers.
@@ -102,7 +106,49 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — GPU-paired diagnostic ready, 2026-09-09
+## Current checkpoint — readback.2 measured live, bindings rejected, 2026-09-09
+
+PRIVATE **2.0.1-spatial-readback.2** installed via DMM and LIVE-TESTED in PID2652.
+Installed ASI SHA256 941C9DDBC215F56676570376630D6C0A71277513E4B5B1824167DA95342529FD
+verified against the immutable package before the run; exact supported EXE hash
+4D99C15C..., build25116796, health playing/error=null. Config Research/SpatialProbe=1,
+SpatialReadback=1, AmbientProbe=0 with Lights/ManyLights and Ambient enabled.
+The INI was saved BEFORE the game start that mattered: an earlier PID29052 launch
+read the package defaults0, never armed the probe and consumed no one-shot.
+
+RESULT: a valid negative. The instrument worked; its binding hypothesis did not.
+20/20 CPU controls, error0, frames12772..13266, all GI before/after copies equal,
+exactly ONE selected exposure at frame12824, single bank0 and stable GI/exposure
+resource identity. The selected native Dispatch(2,1,1) WAS observed on the pinned
+list and recording thread (nativeDispatches1), so selection and detours are correct.
+
+The guard then rejected with `required-native-root-bindings-not-unique`, HRESULT
+0x80004005: gpuCopyIssued false, buffersCopied false, mapCalls0, fenceValue0 and
+no texture copy. Inside the exposure wrapper exactly ONE root CBV was set, index1
+=0x1039FF1700, and ZERO root UAVs. giBase0x2F7ED0000, exposureBase0x2F5820000;
+the observed address is53GB away, so cbHits0 and uavHits0. Decode-SpatialReadback.py
+correctly refuses with `no-completed-gpu-copy`; this run has NO derived numbers.
+
+INTERPRETATION: the GI constant buffer and exposure output are NOT bound through
+compute root descriptors inside the game's exposure dispatch wrapper. They are
+bound either earlier on the same list — recording currently starts only at Arm(),
+gated by thread_local `active` in `SelectedNative` — or through descriptor tables,
+which this build does not observe at all. This is NOT zero light, NOT a hook
+failure and NOT evidence about roofs. readback.1's texture result is unaffected.
+
+Evidence artifacts/light-research/spatial-readback2-live-20260909-pid2652-bindings-rejected/
+(raw JSON, native log, INI). Raw spatial-binding-2652-4706421-1.json SHA256
+03C94ED43A2FEA71C14FA6A3BDEB02CA815D740BCFBABBAC281659978F7E2287.
+
+**ONE next step:** do NOT recapture with this build; the guard would reject
+identically and a restart alone changes nothing. Implement readback.3: open the
+root-recording window at command-list Reset instead of Arm(), and ADD diagnostic
+observers for SetComputeRootDescriptorTable(vtable31), SetComputeRootShaderResourceView(39)
+and SetDescriptorHeaps(28) — record only; never copy from a guessed table. Then
+ONE restart and ONE capture decides which path actually binds GI and exposure.
+Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — GPU-paired diagnostic ready, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.2** built/tested, NOT installed or game-tested.
 ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.2-ModManagers.zip

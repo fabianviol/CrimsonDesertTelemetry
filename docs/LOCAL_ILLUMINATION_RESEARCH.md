@@ -5,9 +5,66 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. Latest LIVE result
-is "First direct live texture readback" below the newer, host-tested implementation.
+not a new public local-illumination or source-visibility API. Latest LIVE result is
+"Live binding rejection" immediately below; the last successful GPU copy is
+"First direct live texture readback" further down.
 Older sections preserve prior evidence, not current instructions.
+
+## Live binding rejection — 2026-09-09, PID2652, readback.2
+
+The implementation described in the next section was installed and run once. It
+rejected before copying anything. This section records that measured negative;
+the next section's "NOT live-tested" title now describes only its build state.
+
+Installed ASI verified as 941C9DDBC215F56676570376630D6C0A71277513E4B5B1824167DA95342529FD.
+An earlier launch (PID29052, 09:38:02) started with the package's default
+SpatialProbe=0/SpatialReadback=0 because the INI edit had not been saved; its
+native log shows no "Spatial readback v2 IDLE" line and no one-shot was spent.
+The INI was then saved at09:41:07, the game restarted09:41:18 as PID2652, and the
+log confirmed the armed v2 instrument before the single event was signalled.
+
+CPU side healthy: complete=false only because reason=`sample-limit`; 20/20
+observations, error0 throughout, frames12772..13266 progressing, giCopiesMatch
+true for all twenty, one `selectedForTextureReadback` at frame12824 (tick4707437),
+bankFlag0 and one stable identity each for GI (5279847184) and exposure
+(5264622496). enhancedBarriers true. giResourceMetadata unchanged from readback.1:
+BUFFER, width65536, DEFAULT heap1, GetHeapProperties S_OK.
+
+The native `Dispatch(2,1,1)` reached `NativeDispatchEnd` on the pinned list and
+recording thread — `nativeDispatches` incremented to1 and the context guard passed,
+so the failure is NOT dispatch selection. The binding scan then found:
+
+- `nativeCbv`: exactly one nonzero slot, root index1 = `0x1039FF1700`
+- `nativeUav`: entirely zero
+- `giBase` = `0x2F7ED0000`, `exposureBase` = `0x2F5820000`
+- the observed CBV lies ~53GB outside the pinned GI buffer, so cbHits=0, uavHits=0
+
+`spatial_readback.cpp:87` therefore failed closed with
+`required-native-root-bindings-not-unique`, HRESULT0x80004005. No barrier group,
+no `CopyBufferRegion`, no texture copy, `issued` false, `mapCalls`0, `fenceValue`0,
+`queue`0. `Decode-SpatialReadback.py` refuses the file with `no-completed-gpu-copy`,
+so no derived value exists and none may be quoted for this run.
+
+**What this rules out and what it does not.** It disproves the readback.2 premise
+that the selected exposure dispatch binds GI constants and the exposure output
+through compute root descriptors *within the game's dispatch wrapper*. It does not
+show absence of light, a broken detour (one root CBV was captured, so the CBV hook
+fires), or anything about roof occlusion. readback.1's fenced texture copy and its
+0.999014 sample remain valid and untouched.
+
+**Two remaining candidates, both testable in one further capture.** First, the
+recording window: `SelectedNative` in `spatial_probe.cpp:88` gates on the
+thread_local `active` observation, which `Dispatch` sets only around
+`originalDispatch`, and `Arm` clears `cbv_`/`uav_` on entry — bindings issued
+earlier on the same command list are invisible. Second, descriptor tables: the
+build has no `SetComputeRootDescriptorTable` observer at all, so "bound via table"
+and "not bound" are indistinguishable in this data. A root SRV binding for the GI
+data would likewise be unseen.
+
+Evidence artifacts/light-research/spatial-readback2-live-20260909-pid2652-bindings-rejected/
+holds the raw JSON (SHA256 03C94ED43A2FEA71C14FA6A3BDEB02CA815D740BCFBABBAC281659978F7E2287),
+the native log and the INI actually used. No source, package, config or API change
+was made during the live-test turn itself.
 
 ## GPU pairing implementation — 2026-09-09, readback.2 NOT live-tested
 
