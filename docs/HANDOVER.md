@@ -67,6 +67,14 @@ bytes equal to the CPU copy. The exposure window was not found, so that run has
 no inverse. One outdoor night sample exists; it is not yet a controlled result.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
+## Tooling
+
+Read [TOOLING.md](TOOLING.md) before reaching for a GPU capture, a native build or
+a repository script. The single highest-leverage entry there:
+`pixtool open-capture <wpix> export-to-cpp <dir>` reconstructs a whole capture as
+greppable C++ including every resource description and view, and answered in
+minutes what shader disassembly had spent hours narrowing down.
+
 ## Short reading route — do not read all historical checkpoints
 
 1. Read the current package checkpoint immediately below (hashes, safety, tests).

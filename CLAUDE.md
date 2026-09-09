@@ -17,4 +17,5 @@ Documentation is for the assistants, not homework for the user.
 - Research entry points: `research/light-source-tests/CODEX_HANDOVER_FIRE.md` and `research/console-enabler/HANDOVER.md`; historical checkpoints remain, latest overrides stale claims.
 - Captures: `artifacts/`; third-party checkouts: `external/`; obsolete copies: `archive/crimsonhue-workspace-20260906/`. Never develop the archived standalone copy.
 - Future Philips Hue consumer: `C:\DEV\CrimsonHue`; it consumes the telemetry API and contains no telemetry implementation.
+- Tooling: read [docs/TOOLING.md](docs/TOOLING.md) before reaching for a GPU capture, a native build or a repository script. pixtool export-to-cpp answers resource identity and provenance far faster than shader disassembly, and cmake/ctest are not on PATH.
 - Old research paths under `C:\DEV\CrimsonHue` map to this repository after the 2026-09-06 migration.
