@@ -2495,3 +2495,45 @@ structural justification instead of merely an appealing shape. Finding that they
 come from separate branches is equally informative and would weaken it.
 
 No variant should be implemented before this provenance exists.
+
+## Ground truth without a new session, and surface before interior — 2026-09-09
+
+Two additions that close the gap left by withdrawing the two labels.
+
+**A confirmed solid point can come from the capture itself.** Reconstructing a
+world position from the depth buffer and the inverse view-projection depends on
+neither t224, nor t233, nor the refuted sky-visibility field, so it breaks the
+circularity that made the withdrawn labels unusable:
+
+```
+pick a pixel on a visible wall
+read scene depth there
+reconstruct the world position through InvViewProjection
+optionally take the GBuffer normal
+```
+
+Better still, if the capture exposes the wall's actual geometry at the draw, take a
+point from the triangle directly. Either way the label comes from the render, not
+from the field under test.
+
+**Prefer a SURFACE point over a deep interior one.** Whether the engine voxelises
+the inside of a solid at all is unknown; a surface voxelisation would leave a point
+deep in a wall empty, and reading that as a failure would condemn a correct field.
+The informative set is therefore:
+
+```
+free air outdoors
+free air indoors or under a roof
+confirmed wall surface
+just short of that surface
+```
+
+For a distance field that ordering should show a clear approach toward zero. For a
+packed attribute volume it shows whether the surface voxel carries content at all.
+Neither requires any claim about solid interiors.
+
+**And the eventual bulk ground truth stays the depth buffer.** For sources on
+screen, projecting a light position and comparing against scene depth yields
+hundreds of visible/occluded labels without ever deriving truth from the volume
+being tested. That remains the right way to compare variants A through E on error
+rates rather than on single cases.
