@@ -61,7 +61,14 @@ pso 22283   UAV register 2 space 39   csPrecomputeAmbient
 `u2, space39` is precisely where the SH producer declares
 `g_texPrecomputedAmbientUAV`. Extracting pso 22283's container from the capture and
 disassembling it confirms the same name at the same register, alongside a second
-`g_precomputedAmbientCacheUAV` at u3. **Two different shaders share this buffer.**
+`g_precomputedAmbientCacheUAV` at u3.
+
+**Stated exactly:** `csPrecomputeAmbient` is proven against resource 15739 by this
+capture. `GenerateAmbientFromEnvironmentAtmosphericScatteringCS` declares the same
+logical UAV name, register and buffer layout, but it did not execute here, so its
+binding to that particular resource is not proven from this capture. Very probably
+the same logical buffer — and the method now allows that last uncertainty to be left
+standing rather than papered over.
 
 **And `csPrecomputeAmbient` writes exactly one float4, at index 56:**
 
@@ -74,25 +81,72 @@ That is the slot which was populated in the extracted bytes. So slot 56 IS a bar
 RGB triple after all — my description was right, and only the corroboration argument
 built on it was wrong. It is the sky's Mie scattering, reduced across 256 threads.
 
-**The scale factor is the canonical one, and that is the interesting part.**
-`0.049087386` is `4*pi/256` to float32 precision: the uniform-sphere weight for 256
-samples, with no missing pi. A sibling in the same system therefore does apply the
-canonical measure, while the SH producer applies `4/24576` — the same weight divided
-by pi. Not proof of intent, but the SH producer's factor is now harder to read as
-accident.
+**The scale factor is `4*pi/256` to float32, and the sampler matches it.** The
+review's standing warning applies — a constant alone says nothing about how the
+directions are distributed — so the directions were traced. They are a **Hammersley
+point set**:
 
-**The "impossible" state is fully explained.** Slots 0..6 are written by the SH
-producer, which did not run in this capture, so they carry values from before it.
-Slots 8..55 are the same producer's six entries, hence zero. Slot 56 is written by
-`csPrecomputeAmbient`, which did run, hence non-zero. Nothing inconsistent — two
-writers on different cadences. The warning against using these bytes for semantic
-validation stands, but the reason is now known rather than mysterious.
+```
+z    = 1 - i/256                                      i = SV_DispatchThreadID.x
+phi  = bitReverse32(i) * 1.4629e-09                   = 2*pi / 2^32
+r    = sqrt(1 - z*z)
+dir  = (r*cos(phi), r*sin(phi), z)
+```
 
-**One thread left open:** `csPrecomputeAmbient` carries the same groupshared shape as
-the SH producer — six `[1024 x float]` and three `[256 x float]`, the `SHColor2`
-split — plus a `[768 x float]` Mie array. It has three stores into
-`g_precomputedAmbientCacheUAV` at u3. So it very likely computes harmonics of its own
-into a different resource. That resource has not been identified.
+The bit reversal is the classic radix-2 swap chain over 1, 2, 4, 8 and 16 bit groups.
+`z` uniform in (0, 1] is uniform-AREA sampling, so this is a low-discrepancy uniform
+hemisphere sampler, and no Jacobian is missing. `4*pi/256` is twice the hemisphere
+weight `2*pi/256`, consistent with taking the hemisphere result as a full sphere by
+symmetry — standard, though the doubling was not separately verified. A six-way
+branch on `cb[2].x % 6` sits just after the direction is built and was not traced.
+
+**The contrast with the SH producer is the finding.** Two shaders in the same system
+integrate the sky in different ways:
+
+| | `csPrecomputeAmbient` | the SH producer |
+|---|---|---|
+| directions | Hammersley, uniform area | uniform grid in a projection |
+| per sample | `4*pi/256` | `4/24576` |
+| total weight | `4*pi` | `4` |
+| measure | spherical | parameter space |
+
+The total weights differ by pi and the sampling domains are not the same, so this is
+NOT "the same integration with one extra division". What it does show is that this
+engine applies canonical spherical quadrature where it wants one, which makes the SH
+producer's parameter-space weight look deliberate rather than mistaken.
+
+**The state that looked impossible now has a plausible account, which is not the
+same as being explained.** Slot 56 is demonstrably written in this capture by
+`csPrecomputeAmbient` as Mie RGB, and slots 0..6 and 8..55 belong to a producer that
+did not execute here. But the extracted bytes are the replay's serialised payload,
+whose position relative to that store is exactly what is unknown: if the payload
+precedes the capture's commands, this store cannot have produced the bytes, only
+rewrite the same slot later. Tying the two together needs either the resource state
+after that dispatch or a numeric comparison of the computed store value against the
+four extracted floats.
+
+The account is also incomplete for slots 0..6. What is shown is that they are present
+in the payload and that their known producer does not appear among the captured
+compute dispatches. Copy operations, CPU uploads and graphics-stage UAV writes were
+not searched, so "from before the capture" remains the likely reading rather than the
+established one. A full write history for resource 15739 — shader writes, copy
+destinations, clears, creation, aliasing — would settle it.
+
+**The cache is not a second SH buffer.** `csPrecomputeAmbient` carries the same
+groupshared shape as the SH producer, which invited the guess that it writes harmonics
+of its own. Resolving `u3, space39` and reading the stores refutes it. The resource is
+**15741**, a structured buffer of `NumElements 1024, StructureByteStride 16` — 16 KB,
+placed in the same heap 15728, 64 KB past the ambient buffer. Its stores are:
+
+```
+index = threadId.x * 4        -> (a.r, a.g, a.b, w)
+index | 2                     -> (b.r, b.g, b.b, flag)      flag = (n != 0) ? 0 : 1
+index | 3                     -> (c.r, c.g, c.b, w2)
+```
+
+A stride of four `float4` per entry, 256 entries — one per thread — with three of the
+four written. Colour triples with flags, not a 7+1 harmonic packing. The guess is
+withdrawn.
 
 ## No solid-angle weight, and the buffer is a ring — 2026-09-09
 

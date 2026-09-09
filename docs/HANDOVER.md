@@ -370,25 +370,33 @@ u15 -> 15787, none of them 15739, and at slots far from the table bases the old
 heuristic matched. Inverting it over all 994 dispatches gives exactly one UAV hit on
 15739: **pso 22283, UAV register 2 space 39, `csPrecomputeAmbient`** -- precisely
 where the SH producer declares `g_texPrecomputedAmbientUAV`. Extracting and
-disassembling pso 22283 confirms the same name at the same register. **Two shaders
-share this buffer.**
+disassembling pso 22283 confirms the same name at the same register. Stated exactly:
+**csPrecomputeAmbient is proven against resource 15739 here; the SH producer declares
+the same logical UAV name, register and layout but did not execute, so ITS binding to
+that resource is not proven from this capture.**
 
 `csPrecomputeAmbient` writes ONE float4, at **index 56**: the sky's Mie scattering
-reduced over 256 threads, scaled by `0.049087386` = **4*pi/256 to float32, the
-canonical uniform-sphere weight with no missing pi**. So a sibling in the same system
-does apply the canonical measure while the SH producer applies 4/24576, the same
-weight over pi -- which makes the SH producer's factor harder to read as accident.
+reduced over 256 threads, scaled by `4*pi/256`. **The sampler was traced rather than
+assumed** -- a Hammersley set, `z = 1 - i/256`, azimuth from `bitReverse32(i) *
+2*pi/2^32`, `dir = (r cos, r sin, z)`. Uniform AREA, low discrepancy, no Jacobian
+missing; `4*pi/256` is twice the hemisphere weight, consistent with doubling by
+symmetry. So two shaders integrate the sky differently: Hammersley with total weight
+`4*pi` here, a projected grid with total weight `4` in the SH producer. **Not "the
+same integration over pi"** -- different domains -- but it shows the engine does apply
+canonical spherical quadrature where it wants one.
 
-**The "impossible" state is fully explained**: slots 0..6 hold values from before the
-capture (their producer did not run), slots 8..55 are that producer's six entries and
-so zero, slot 56 was written this frame by csPrecomputeAmbient. Two writers, two
-cadences. Slot 56 IS a bare RGB triple after all -- the description was right, only
-the corroboration argument built on it was wrong.
+**The state that looked impossible has a plausible account, not an explanation.** Slot
+56 is written here by csPrecomputeAmbient as Mie RGB, and slots 0..6 / 8..55 belong to
+the absent producer. But the extracted bytes are the replay payload whose position
+relative to that store is exactly what is unknown -- if it precedes the capture's
+commands, the store cannot have produced them. And "slots 0..6 predate the capture"
+searched compute dispatches only; copies, CPU uploads and graphics-stage writes were
+not. A full write history for 15739 would settle both.
 
-Open: csPrecomputeAmbient carries the same groupshared SHColor2 shape as the SH
-producer plus a [768 x float] Mie array, and makes three stores into
-`g_precomputedAmbientCacheUAV` at u3. It probably computes harmonics of its own into
-a resource not yet identified.
+**The cache is NOT a second SH buffer** -- guess withdrawn. `u3, space39` resolves to
+resource 15741, `NumElements 1024, StructureByteStride 16`, 16 KB in the same heap.
+Its stores go to `threadId.x * 4`, `|2` and `|3`: a 4-float4 stride, 256 entries, one
+per thread, colour triples with flags. Not a 7+1 harmonic packing.
 
 **What the next capture must contain:** a dispatch of the ambient producer. Then per
 dispatch resolve the root CBV holding GlobalPushConstants for `_renderFlags.x`, and
