@@ -107,6 +107,67 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Day versus night, and a drift that dominates — 2026-09-09, PID33700
+
+Third live series, deliberately at the same open-sky Abyss spot as the dusk run, in
+full daylight (Day 40 Fri 9:15 AM against Day 58 Tue 8:29 PM). Camera 1.22 gu from
+the earlier reference and IDENTICAL across all eight transactions — the player did
+not move at all. The sky stream confirmed real daylight, mean radiance
+[19.03, 23.90, 38.37]. 8 of 8 completed, no fallback.
+
+Day values in order: 0.5968498114, 0.5972106568, 0.5819191259, 0.5820355312,
+0.5818474919, 0.5106919785, 0.5105419812, 0.5105419812.
+
+| | min | median | max | spread |
+|---|---|---|---|---|
+| dusk 20:29 | 0.527982 | 0.533635 | 0.543546 | 0.015564 |
+| day 09:15 | 0.510542 | 0.581883 | 0.597211 | 0.086669 |
+
+**The quantity is not static at a fixed position.** Three plateaus, drifting
+monotonically DOWNWARD over twelve seconds — 0.597, then 0.582, then 0.511 — while
+the camera stayed at the same coordinates to two decimals. Within each plateau the
+values agree to 0.03..0.07%, so this is the instrument reporting a changing world,
+not noise. Total drift 0.087, about 14%.
+
+**Position is not the explanation.** Sampling the stored volumes offline at both
+camera positions separates the terms over that 1.22 gu:
+
+| sampled at | night volume | day volume |
+|---|---|---|
+| night camera | 0.543546 | 0.561349 |
+| day camera | 0.549273 | 0.596850 |
+
+Pure position costs only 0.0058 on the night volume and 0.0356 on the day volume,
+confirming that the field really is flat in open sky, which is why this location
+was chosen for the comparison.
+
+**No time-of-day dependence can be claimed — and none can be excluded either.**
+At a fixed position the day/night difference is 0.018 to 0.048 depending on which
+position is used, while the drift WITHIN the single stationary daylight window is
+0.087. The difference we are trying to measure is smaller than the quantity's own
+movement over twelve seconds, and the day range 0.5105..0.5972 contains the whole
+dusk range 0.5280..0.5436. The test therefore neither detects nor rules out a time
+effect of this size, and the model that geometry and sky brightness separate
+cleanly remains an assumption.
+
+**What the drift probably is, stated as a hypothesis and not a finding.** The
+screenshot shows a moving cloud layer below the platform, and the daylight run
+drifts far more than the dusk run. If dynamic sky occluders such as clouds enter
+this voxel field, the drift is real occlusion changing rather than instability, and
+the user's earlier suggestion that wind-moved geometry could move the value would
+be right in kind. This is untested. A capture during visibly still weather, or two
+captures minutes apart at one spot, would separate cloud motion from a slow
+systematic drift.
+
+**Consequence for a consumer.** An ambient term built on this will move by roughly
+ten percent over seconds even standing still under open sky. Smoothing is not
+optional. It also means any future day/night claim needs repeated captures at one
+position across a longer baseline, not one series per condition.
+
+Evidence artifacts/light-research/series-20260909/run3-abyss-DAY-pid33700/ with
+raw JSON, derived.json, pre/post snapshots, the pre-capture ambient sample, native
+log, INI and notes.
+
 ## Precision, plateaus and a steep field — 2026-09-09, PID31352, series.1
 
 Second live series, eight transactions standing under the barn roof, camera at

@@ -4,9 +4,9 @@ The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
-position, the cheap CPU shortcut is proven ill-conditioned, and two live
-series show the instrument repeats to 0.05..0.3% within a plateau, with an
-open-sky anchor near 0.53 rather than 1.0** (current checkpoint below). readback.4 is the ASI in
+position, the cheap CPU shortcut is proven ill-conditioned, and three live
+series show the instrument repeats to 0.05..0.3% within a plateau while the
+quantity itself drifts about 14% over twelve seconds at a fixed position** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,50 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — precision established, method cross-validated, 2026-09-09
+## Current checkpoint — drift dominates the day/night test, 2026-09-09
+
+Third live series in PID33700, same open-sky Abyss spot as the dusk run but in full
+daylight (Day40 Fri 9:15AM against Day58 Tue 8:29PM), sky stream confirming real
+daylight at mean radiance [19.03,23.90,38.37]. Camera 1.22gu from the earlier
+reference and identical across all eight transactions — the player did not move.
+8 of 8 completed, no fallback.
+
+| | min | median | max | spread |
+|---|---|---|---|---|
+| dusk | 0.527982 | 0.533635 | 0.543546 | 0.015564 |
+| day | 0.510542 | 0.581883 | 0.597211 | 0.086669 |
+
+**THE QUANTITY DRIFTS AT A FIXED POSITION.** The daylight series steps downward
+through three plateaus — 0.597, 0.582, 0.511 — over twelve seconds at unchanged
+coordinates, with 0.03..0.07% agreement inside each plateau. Total drift 0.087,
+about 14%. The instrument is reporting a changing world, not noise.
+
+**POSITION IS NOT THE EXPLANATION.** Sampling the stored volumes offline at both
+camera positions costs only 0.0058 on the night volume and 0.0356 on the day volume
+across that 1.22gu, confirming the field is flat in open sky as intended.
+
+**NO TIME DEPENDENCE CAN BE CLAIMED OR EXCLUDED.** The day/night difference at a
+fixed position is 0.018..0.048, smaller than the 0.087 drift within one stationary
+daylight window, and the day range contains the entire dusk range. The assumption
+that geometry and sky brightness separate cleanly therefore remains untested.
+
+Hypothesis, not a finding: a moving cloud layer is visible below the platform and
+the daylight run drifts far more than the dusk one, so dynamic sky occluders may
+enter this voxel field. That would make the drift real occlusion rather than
+instability, and would vindicate the earlier suggestion that wind-moved geometry
+can move the value. Untested.
+
+Evidence artifacts/light-research/series-20260909/run3-abyss-DAY-pid33700/.
+
+**ONE next step:** separate drift from a systematic time effect before designing
+any feed. Two or three series minutes apart at ONE unchanged position, ideally in
+visibly still weather, establish the drift's timescale and amplitude; only against
+that baseline can a day/night difference of 0.02..0.05 mean anything. Until then do
+not build a consumer that assumes a stable ambient value: it moves about ten
+percent over seconds even standing still under open sky, so smoothing is mandatory.
+Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — precision established, method cross-validated, 2026-09-09
 
 Second live series with 2.0.1-spatial-series.1 in PID31352, eight transactions
 standing under the barn roof at -10531.94/611.35/-4424.06, 1.27 gu from the point
