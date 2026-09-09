@@ -2223,3 +2223,55 @@ of another value), the exact composition of the width, whether `t233` is the sam
 resource as the `t66` that PropagateSignedDistanceCS writes, and the field's world
 scale and sign. None of these blocks designing our own accumulation, but all of
 them block copying the engine's constants verbatim.
+
+## Gate, bias and width resolved — 2026-09-09
+
+Three of the four remaining unknowns are answered offline; the fourth needs the
+live game.
+
+**Gate.** `%830 = fcmp ogt float %773, 0.0`, widened to 0.0 or 1.0. A sample
+contributes its coverage only when some per-iteration quantity is strictly
+positive. What `%773` is has not been traced, so whether this rejects invalid
+clipmap cells, samples outside the volume, back faces or exhausted distance is
+unknown. For our own implementation the gate matters: it is likely the difference
+between "usually works" and "robust".
+
+**Bias.** `bias = 0.0002 * x^2`, the constant being float32 0.0002 and `x` a value
+squared before scaling. It is POSITIVE, so `(d + bias)` makes the sampled distance
+slightly larger, which thins geometry rather than inflating it — the direction the
+outside review flagged as significant. The magnitude is small and grows
+quadratically with whatever `x` is, which is untraced.
+
+**Width, and it is definitively a cone.**
+
+```
+coneTerm = t * (k + 0.01)                              grows linearly with distance
+cellTerm = cellSize * 1.0606600 * saturate(t*0.5 + 0.5)
+width    = lerp(coneTerm, FMax(cellTerm, coneTerm), blend)
+cellSize = level * (constant buffer value)
+```
+
+1.0606600 is 1.5 * sqrt(2)/2, a conservative cell radius. The width therefore never
+falls below a cell-sized floor and otherwise opens linearly with distance
+travelled. This settles the question raised earlier: the 0.5 threshold is defined
+against a widening footprint and cannot be carried into a thin point-to-point ray
+without re-derivation.
+
+**t233 provenance is NOT resolvable offline.** Whether it is the resource
+`PropagateSignedDistanceCS` writes at u5/space38, a different clipmap level, or a
+separate field requires observing the live bindings or a frame capture. The shader
+dumps give register slots, not resource identity.
+
+**Recommendation: stop reverse-engineering here and start testing.** Enough is
+known to build an offline prototype and calibrate it against ground truth rather
+than against assumptions. The engine's own constants should NOT be copied: the
+bias, the width and the 0.5 all belong to a widening screen-space cone, while our
+query is a thin segment between two points. What transfers is the SHAPE of the
+method — distance to coverage, gated accumulation, threshold, with the step limited
+by the distance itself — and that shape is what should be calibrated.
+
+Two variants are worth comparing on the same ground truth: a plain sphere-traced
+hit test on `d < epsilon`, which is geometrically cleaner, against coverage
+accumulation, which should degrade more gracefully at voxel resolution and on
+grazing or thin geometry. The lantern case already provides one labelled example,
+and the depth-buffer labeller would provide many.
