@@ -91,7 +91,16 @@ $shaderMap | Where-Object Shader -eq 'RaymarchLocalLightsCS' | Format-List
 | RaymarchDiffuseHitDistanceCS | gi-entry-864eec9d.ll |
 
 Multiple results can be different variants. Ad-hoc listings without inspector
-metadata will not appear in this map. `<stem>.padxil.json` separately preserves
+metadata will not appear in this map: 16 of the 79 listings, all
+`ambient-check-*-sky*.ll`. For those the entry name is still recoverable from the
+listing itself, which closes the gap to all 79:
+
+```bash
+grep -oh '^define [^@]*@[A-Za-z0-9_]*' artifacts/light-research/*.ll | sed 's/.*@//'
+```
+
+Verified against all 16. The metadata route stays preferable because it also
+carries the archive variant, which the listing does not. `<stem>.padxil.json` separately preserves
 the exact archive variant in `entry.path`, PAZ filename/offset and content hashes.
 
 ### Extraction order and exact calls
@@ -141,7 +150,10 @@ needed; the earlier first-field source-identity control failed.
 
 Entry key = CrimsonForge `core.crypto_engine.hashlittle(name.encode('utf-8'),
 0xC5EDE)`, formatted as eight lowercase hex digits; the NAME is case-sensitive.
-Verified: RaymarchLocalLightsCS ->52c33a4a; RaymarchDiffuseHitDistanceCS ->864eec9d.
+Verified: RaymarchLocalLightsCS ->52c33a4a; RaymarchDiffuseHitDistanceCS ->864eec9d;
+independently re-checked here on two shaders not used to derive it,
+PropagateSignedDistanceCS ->71fe2870 and GenerateHiZLevel0FromSDF_CS ->ddce827c,
+both matching the suffix of their local listing.
 Use this to select archive candidates; confirm the decoded entry afterward.
 
 Local prefixes and dates are human research labels, not engine IDs. In
