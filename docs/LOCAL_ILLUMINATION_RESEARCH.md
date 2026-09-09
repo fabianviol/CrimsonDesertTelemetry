@@ -2023,3 +2023,29 @@ source `ambient-live-20260908-pid4208-doorway-control/ambient-readback.json`
 and its immutable v2 binary SHA B2FB28F90308807B96443BF0C39B9063640C05A1E7EAE75620ED573576F2B315.
 Live raw/derived: `local-illumination-live-20260908-pid22128-check*.json`.
 Final smoke: `local-illumination-live-20260908-pid22128-final-check*.json`.
+
+## RaymarchLocalLightsCS — first look, 2026-09-09
+
+Read offline from `artifacts/light-research/filtered-count-1322f152-20260906-2111-52c33a4a.ll`,
+no capture needed. Bindings:
+
+| binding | resource |
+|---|---|
+| SRV t233, space36 | `Texture3D<float>` |
+| SRV t224, space36 | `Texture3D<uint4>` |
+| UAV u1, space38 | `RWTexture2D<uint2>` |
+| UAV u4, space38 | `RWTexture2D<uint>` |
+| samplers s3, s12 | |
+
+Thread group 8x8x1, so this is a screen-space pass writing 2D targets, not a
+volume pass. It marches a `Texture3D<float>` — plausibly the finished distance
+field — alongside a `Texture3D<uint4>` that is likely a voxel light index.
+
+Note the register differs from `PropagateSignedDistanceCS`, which used t66/space36
+for its input and u5/space38 for its output. Both are `Texture3D<float>` in space36.
+Whether t66 and t233 are the same resource at different bind points, different
+clipmap levels, or different fields entirely is UNKNOWN and must not be assumed.
+
+Not yet read: the step logic, hit threshold and how visibility is derived. That is
+the part worth having, since it would remove the guesswork from sphere-tracing
+parameters. The file is 1850 lines and available offline.
