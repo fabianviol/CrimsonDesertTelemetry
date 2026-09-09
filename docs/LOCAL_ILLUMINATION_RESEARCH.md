@@ -107,6 +107,65 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Occlusion validated against ground truth — 2026-09-09, PID29632
+
+First occlusion result with a known answer. A lantern on the player home wall, the
+user stepping out of and back into its line of sight during one capture, and the
+user afterwards confirming which position was blocked.
+
+**Setup.** Lantern at (-10403.243, 613.836, -4419.101), identified in the RENDERED
+ManyLights feed rather than the authored array. A 5 Hz position track ran alongside
+the capture, 127 rows, so every transaction could be placed on the walk by matching
+its own camera position. Eight transactions over about 20 seconds.
+
+**The walk was smaller than intended** — 3.7 gu in z, with the third leg falling
+outside the capture window — so only one transaction landed at the far position and
+seven at the near one. That is too thin on its own, so the volumes were used
+cross-wise instead: march from BOTH camera positions through EVERY volume.
+
+| volume | from A, camera z -4420.99 | from B, camera z -4416.38 |
+|---|---|---|
+| 0 | 0.108369 | 0.000000 |
+| 1..5 | 0.110426 | 0.000000 |
+| 6..7 | 0.120829 | 0.000000 |
+
+The positions are 4.67 gu apart and both about 17 gu from the lantern. The segment
+from B is fully blocked in **all eight** volumes; the segment from A is blocked in
+none. Because the volume refreshes in amortised blocks between transactions, the
+distinction surviving all eight is evidence that it is geometric rather than a
+temporal artefact.
+
+**Ground truth: the user confirmed the middle position, B, was the occluded one.**
+So min 0.000000 corresponds to "lantern hidden" and 0.108..0.121 to "lantern
+visible", on this case. That is the first occlusion result with an answer rather
+than an inference.
+
+**ManyLights inclusion is confirmed useless as a visibility signal.** The lantern
+stayed in the rendered feed for 126 of the track's 127 rows, including the whole
+period when the user could not see it. The standing warning that an included source
+is not a visible source now has a direct measurement behind it, and a consumer must
+not treat feed membership as visibility.
+
+**What this does and does not establish.** It establishes that the segment minimum
+separated visible from occluded on one real case, consistently across eight
+refreshes, with a gap of more than five orders of magnitude between the two states.
+It does not establish a threshold, a false-positive or false-negative rate, or
+behaviour under partial occlusion, in a doorway, through foliage, past a thin wall,
+or at a grazing angle where a visible source might still read low. It covers one
+geometry at 16..17 gu, entirely within clipmap 1, so nothing here speaks to the
+coarser levels a distant source would use. The two flaws recorded with the survey
+— silently skipped uncovered points and resolution changing mid-segment — are still
+unfixed.
+
+**Correction to the 100-segment survey.** That survey marched to
+`lights.sources`, the authored engine array, not to `lights.rendered.sources`,
+which is the filtered ManyLights feed the HUD shows and the one this lantern
+appears in. The segments it measured were real, but the light set was the wrong
+one; a re-run should use the rendered feed.
+
+Evidence artifacts/light-research/occlusion-aba-20260909/pid29632-lantern-playerhome/
+with the raw capture, the 5 Hz track, the tracker used, the native log and the INI.
+
 ## Per-point clipmap selection, and a 100-segment survey — 2026-09-09
 
 Two steps toward occlusion, both offline on preserved captures.

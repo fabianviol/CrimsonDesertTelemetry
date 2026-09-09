@@ -198,10 +198,32 @@ Two flaws to fix before any threshold: the march silently skips points no clipma
 covers, so a segment can be judged on partial coverage, and long segments change
 resolution partway as they cross levels.
 
-**ONE next step: the A-B-A control**, because ground truth is what is missing, not
-more statistics. One place, one session: a source in clear view, the same source
-with a wall interposed, then clear view again, recording the segment profile each
-time. One series per process means one restart per leg. It must state the camera reference, the candidate-not-measurement
+**THE A-B-A RAN AND THE TEST HELD.** A lantern on the player home wall, the user
+stepping out of and back into its line of sight inside one capture, with a 5 Hz
+position track alongside. The walk was smaller than intended (3.7 gu, third leg
+outside the window), so the volumes were used cross-wise: march from BOTH camera
+positions through EVERY volume. From camera A the segment reads 0.108..0.121; from
+camera B, 4.67 gu away, it reads **0.000000 in all eight volumes**. Since the volume
+refreshes between transactions, holding across all eight makes the difference
+geometric rather than temporal. **The user confirmed B was the occluded position**,
+so this is the first occlusion result with ground truth rather than inference.
+
+Also measured: the lantern stayed in the RENDERED ManyLights feed for 126 of 127
+track rows, including the whole time it was hidden. Feed membership is therefore
+confirmed useless as a visibility signal, which the research had warned about
+without a measurement behind it until now.
+
+Not established: any threshold, false-positive or false-negative rates, partial
+occlusion, doorways, foliage, thin walls, grazing angles, or anything at the
+coarser clipmap levels a distant source would use — this case sat at 16..17 gu,
+entirely in clipmap 1. The two survey flaws are still unfixed: uncovered points are
+silently skipped and resolution changes mid-segment. The survey also used the
+authored light array rather than the rendered feed and should be re-run.
+
+**ONE next step:** fix those two flaws, then repeat the A-B-A at a geometry that
+probes the hard cases — a doorway rather than a wall corner, and a source far
+enough away to cross into clipmap 2 or 3. A threshold may only be proposed once
+visible cases at grazing angles have been seen to stay above it. It must state the camera reference, the candidate-not-measurement
 framing, the amortisation freshness bound, the clipmap reuse for offsets, the
 mixed-age offsets, the toroidal offset bound above, and that the value does not
 reach 1 under open sky (~0.53) BY DESIGN rather than by defect. Decide the offset
