@@ -1,6 +1,7 @@
 # Private observer:20 CPU controls at up to2Hz. With SpatialReadback=0 it is passive.
-# SpatialReadback=1 separately opts into ONE fenced texture copy per process.
-# Neither mode changes the API or establishes GPU-paired GI/exposure constants.
+# SpatialReadback=1 opts into ONE fenced texture/GI/exposure transaction per process.
+# v2 requires observed native root bindings/Dispatch; failure never becomes paired data.
+# Neither mode changes the API; CPU scene/cache data still has no GPU pairing.
 #requires -Version 7.4
 [CmdletBinding()]
 param([Parameter(Mandatory)][ValidateRange(1,2147483647)][int]$ProcessId)

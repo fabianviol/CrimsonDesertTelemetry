@@ -26,6 +26,25 @@ def report():
                 samplerHex=struct.pack('<13I', 0x14, 1, 1, 1, 0, 1, 8, 0, 0, 0x7f7fffff, 12, 4, 0).hex())))
 
 
+def paired_report():
+    r = report()
+    r['format'] = 'private-spatial-readback-v2'
+    t = r['textureReadback']
+    t.update(status='gpu-complete-texture-and-buffers', giGpuFramePaired=True, exposureGpuFramePaired=True)
+    t['context'].update(giGpuResource=456, exposureGpuResource=789)
+    cbv, uav = [0]*64, [0]*64
+    cbv[2], uav[3] = 4096+256, 65536+1024
+    lanes = [1.0]*32
+    lanes[8] = lanes[15] = .0002
+    lanes[5] = decoder.model.forward_ev(.0002, 1-64/255)
+    lanes[6] = float('nan')  # packed non-float field is deliberately tolerated
+    t['bufferPair'] = dict(requested=True, copied=True, nativeDispatchSeen=True, nativeDispatches=1,
+        giHex=t['context']['giBeforeHex'], exposureHex=struct.pack('<32f', *lanes).hex(),
+        giResource=456, exposureResource=789, giBase=4096, exposureBase=65536, giOffset=256,
+        exposureOffset=1024, giRootIndex=2, exposureRootIndex=3, nativeCbv=cbv, nativeUav=uav)
+    return r
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -79,6 +98,47 @@ class SpatialReadbackTests(unittest.TestCase):
         r = report()
         r['textureReadback']['context']['giCopiesMatch'] = False
         self.assertNotIn('skyVisibilityCandidate', decoder.decode(r, True))
+
+    def test_gpu_pair_inverse(self):
+        r = decoder.decode(paired_report(), True)
+        self.assertTrue(r['giGpuFramePaired'] and r['exposureGpuFramePaired'])
+        self.assertTrue(r['cpuGiEqualsGpu'])
+        self.assertLess(r['directInverseAbsoluteDifference'], .00001)
+        self.assertAlmostEqual(r['skyVisibilityCandidate'], 1-64/255)
+
+    def test_gpu_reference_not_cpu(self):
+        r = paired_report()
+        r['textureReadback']['context']['giBeforeHex'] = '00'*768
+        r['textureReadback']['context']['giCopiesMatch'] = False
+        d = decoder.decode(r, True)
+        self.assertFalse(d['cpuGiEqualsGpu'])
+        self.assertEqual(d['gpuReference']['status'], 'candidate')
+        self.assertAlmostEqual(d['skyVisibilityCandidate'], 1-64/255)
+
+    def test_pair_flags(self):
+        for k, v in (('copied', False), ('nativeDispatchSeen', False), ('nativeDispatches', 2)):
+            r = paired_report()
+            r['textureReadback']['bufferPair'][k] = v
+            with self.assertRaises(ValueError):
+                decoder.decode(r, True)
+
+    def test_pair_binding_and_resource(self):
+        for k, v in (('giOffset', 0), ('giRootIndex', 64), ('giResource', 888), ('exposureHex', '00'*64)):
+            r = paired_report()
+            r['textureReadback']['bufferPair'][k] = v
+            with self.assertRaises(ValueError):
+                decoder.decode(r, True)
+
+    def test_gpu_store_guard(self):
+        r = paired_report()
+        r['textureReadback']['bufferPair']['exposureHex'] = '00'*128
+        self.assertEqual(decoder.decode(r, True)['gpuExposureInverseUnavailable'], 'gpu-exposure-store-control-mismatch')
+
+    def test_pair_no_layout(self):
+        d = decoder.decode(paired_report(), False)
+        self.assertTrue(d['giGpuFramePaired'])
+        self.assertNotIn('skyVisibilityCandidate', d)
+        self.assertIsNone(d['gpuExposureInverse'])
 
 
 if __name__ == '__main__':

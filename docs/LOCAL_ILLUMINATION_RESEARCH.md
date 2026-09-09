@@ -9,6 +9,89 @@ not a new public local-illumination or source-visibility API. Latest LIVE result
 is "First direct live texture readback" immediately below.
 Older sections preserve prior evidence, not current instructions.
 
+## GPU pairing implementation — 2026-09-09, readback.2 NOT live-tested
+
+Reused exposure consumer, actual live wrappers and existing byte dumps; no heap
+scan or additional stationary experiment. PID8772/readback.1 remained unchanged.
+Bounded read-only native-code/resource inspections carry full SHA/process controls.
+
+**CBV route:** consumer143544BFF selects filter+560/+568; wrapper+18 is R8 at
+143544CD6, R9d=0. Command vtable+438 ->1437DA550 calls outer.vtable+88 to select
+view0; actual outer vtable145BD0960 ->142DEB870. That getter returns
+storage+140[index], bounded by +148 count1. 1437DA583 reads the view pointer;
+1437DA5A1 queues it via1437DA350 into command+638 (64-byte pending entry).
+Within original Dispatch,1437B439B ->1437B5CD0 applies pending bindings through
+143759990. Root-binding path1437B5EB7..5F9E reads view+50 GPU VA, passes it in
+R8, root indexEDI, to native SetComputeRootConstantBufferView slot37/+128 when
+compute flag command+136 nonzero. Equivalent second path1437B6100..618D.
+Native root UAV method is slot41/+148. SDK C-interface offsetof independently
+asserts CBV37,UAV41,RootSignature29,Dispatch14 (plus existing Barrier80/Reset10).
+Descriptor-table paths exist: new diagnostic must reject missing direct roots,
+not pretend every binding uses the root descriptor branch.
+
+Live GI0 resource132625460, view21D3674F780, GPU VA2F80D0000;
+GI1 resource131E0F7D0, view21D3674F5A0, GPU VA2F80E0000;
+exposure resource132CCBAF0, view21D3664B4C0, GPU VA2F5A20000.
+In all three instances view+50 equaled resource base VA (offset0). Independently
+inspected actual D3D12Core GetGPUVirtualAddress getter7FFDE4498760:
+48 8B 81 10 01 00 00 C3 -> mov rax,[rcx+110];ret. This read-only driver-field
+cross-check is NOT a product anchor; native code calls official GetGPUVirtualAddress
+and derives actual offsets from observed native bindings. Never carry these heap
+addresses or D3D12Core+110 across restarts/updates as application assumptions.
+
+**Exposure copy provenance:** consumer1435450CC takes ExposureOwner+C0. After
+Dispatch it invokes1437DD810 at14354510D, with source offset0/size from helper+48.
+Non-type5 helper branch1437DDDA2 -> command.vtable+650=1437B6A40. This helper
+requests copy source/dest engine states and applies barriers via+1B0; native
+CopyBufferRegion at1437B6C82 uses outer+30/storage+168 and actual passed offsets.
+Existing engine cache is still read later at14354511E and copied into owner+D8;
+it does not guarantee current GPU completion. New diagnostic avoids that cache:
+captures source output immediately after the observed original native Dispatch.
+
+**Implementation readback.2:** selected GI and exposure resources pinned beside
+the known texture. Worker verifies DEFAULT buffers, width768..65536, same canonical
+device, output UAV flag and nonzero GPU VAs. Arming requires same selected resource
+bank as preparation (another bank is skipped, not silently substituted).
+While the selected exact exposure invocation is active, observe native root CBV,
+root UAV, root signature and Dispatch. Signature invalidates saved roots. Require
+one matching root per resource, correct offsets/bounds/alignment, same list/thread
+and one direct Dispatch(2,1,1). Actual native Dispatch is forwarded FIRST; then
+buffer barriers synchronize COMPUTE/CONSTANT_BUFFER and COMPUTE/UAV to COPY_SOURCE,
+copy768 GI +128 output bytes to separate readback tails, restore original access.
+Whole-buffer enhanced barriers use Offset0/SizeUINT64_MAX per SDK contract:
+https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_buffer_barrier
+Texture copy still occurs at validated post-exposure release packet. If any later
+guard fails, already-issued work retains COM objects, never maps on guessed time.
+One actual list/queue/fence covers ALL copies, not merely adjacent CPU observations.
+
+New private-spatial-readback-v2 stores requested/copied/nativeDispatch counts,
+all64 observed CBV/UAV root slots, source base VAs/offsets/root indices, GPU GI and
+output bytes, plus prior texture/control evidence. Paired flags require successful
+fence and readback; CPU scene/frame/cache remain unpaired. No public API change.
+Decoder v1 retains CPU-only semantics. v2 uses explicit paired-GPU model input,
+compares GPU-derived direct visibility with inverse from GPU output stores and
+reports CPU GI equality. Does not fabricate flags31 or double CPU cache reads.
+Logical meaning/coverage still requires controlled live roof/outside evidence.
+
+23/23 CTests, including new165 checks using actual WARP shader + all four native
+COM detours on DIRECT and COMPUTE. GI offset256 and output1024 are deliberately
+different/nonzero. Shader writes output from that same CB; readback byte-exact,
+texture byte-exact, gated GPU proves no early Map/paired flag. Missing roots,
+root-signature invalidation and duplicate source binding reject without copies.
+187 existing texture/lifecycle/fence controls also pass. Initial test setup used
+legacy COPY_DEST creation; corrected to COMMON + explicit enhanced transition
+after debug-layer warning. Final zero debug warnings/errors.14+13 Python tests
+validate old/new modes, independent GPU reference, inverse/store/binding guards.
+No new native hooks were injected into current game; new ZIP installation pending.
+
+Evidence artifacts/light-research/rawpages/ (all .bin plus .meta.json):
+spatial-cb-pairing-code-pid8772 SHA510EE049236B93C2DEE34BA5CB9E06E6DA1BBE3AC4F4480FCBAEC7F0088821F1;
+spatial-cb-root-binding-pid8772 SHA73D023F382AF07B639F7D93F6538A3676D973FCA09610B6E2205EB19D0FC5367;
+spatial-cb-address-proof-pid8772 SHAD66AED1A99E75740ED054A7C4A3356F3D67B80DA65799B30E2DBBA5400A0B78F;
+also spatial-cb-view-code-pid8772,spatial-cb-copy-helper-pid8772,
+spatial-native-bind-emitter-pid8772 (additional bounded intermediate call paths).
+Package/hash/config and ONE next live test in current HANDOVER checkpoint.
+
 ## First direct live texture readback — 2026-09-09, PID8772
 
 Installed2.0.1-spatial-readback.1 ASI verified against immutable package:

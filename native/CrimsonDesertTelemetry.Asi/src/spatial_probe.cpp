@@ -32,6 +32,13 @@ DispatchFn originalDispatch{};
 BarrierFn originalBarrier{};
 ResetFn originalReset{};
 CloseFn originalClose{};
+using RootBufferFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,D3D12_GPU_VIRTUAL_ADDRESS);
+using RootSignatureFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,ID3D12RootSignature*);
+using NativeDispatchFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,UINT,UINT);
+RootBufferFn originalCbv{},originalUav{};
+RootSignatureFn originalSignature{};
+NativeDispatchFn originalNativeDispatch{};
+std::array<void*,4> bindingTargets{};
 void* resetTarget{};
 void* closeTarget{};
 SpatialTrace trace;
@@ -54,6 +61,7 @@ nlohmann::json samples;
 struct Observation
 {
     uint64_t tick{}, owner{}, command{}, resource{}, nativeList{}, nativeList7{}, giGpuResource{};
+    uint64_t exposureGpuResource{};
     uint32_t frame{}, bank{}, error{}, barrierCount{};
     bool giStable{}, barrierOverflow{}, enhanced{};
     bool selectedForReadback{};
@@ -72,10 +80,26 @@ struct Observation
     void* barrierFunction{};
     void* resetFunction{};
     void* closeFunction{};
+    std::array<void*,4> bindingFunctions{};
 };
 Observation pending;
 Observation copyObservation;
 thread_local Observation* active{};
+bool SelectedNative(ID3D12GraphicsCommandList* list)
+{
+    return directReadback&&active&&active->selectedForReadback&&active->nativeList7==reinterpret_cast<uint64_t>(list);
+}
+void STDMETHODCALLTYPE CbvHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
+{originalCbv(list,index,address);if(SelectedNative(list))readback->RootBuffer(true,index,address);}
+void STDMETHODCALLTYPE UavHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
+{originalUav(list,index,address);if(SelectedNative(list))readback->RootBuffer(false,index,address);}
+void STDMETHODCALLTYPE SignatureHook(ID3D12GraphicsCommandList* list,ID3D12RootSignature* signature)
+{originalSignature(list,signature);if(SelectedNative(list))readback->RootSignature();}
+void STDMETHODCALLTYPE NativeDispatchHook(ID3D12GraphicsCommandList* list,UINT x,UINT y,UINT z)
+{
+    originalNativeDispatch(list,x,y,z);
+    if(SelectedNative(list))readback->NativeDispatchEnd(reinterpret_cast<ID3D12GraphicsCommandList7*>(list),x,y,z,originalBarrier);
+}
 template<class T> bool Read(uint64_t address,T& value)
 {
     return address>=0x10000 && ch::mem::SafeRead(reinterpret_cast<void*>(address),&value,sizeof(value));
@@ -174,6 +198,15 @@ bool Resolve(Observation& o)
     }
     std::memcpy(&o.frame,o.scene.data()+0x20,4);
     if(Read(renderer+0x690,exposureOwner)) Read(exposureOwner+0xD8,o.exposure);
+    if(directReadback)
+    {
+        uint64_t exposureOuter{},exposureStorage{},exposureBack{};uint32_t stride{},elements{};
+        if(!Read(exposureOwner+0x10,exposureBack)||exposureBack!=renderer||
+            !Read(exposureOwner+0xC0,exposureOuter)||!Read(exposureOuter+0x30,exposureStorage)||
+            !Read(exposureStorage+0x10,exposureBack)||exposureBack!=exposureOuter||
+            !Read(exposureStorage+0xC0,stride)||stride!=4||!Read(exposureStorage+0xC4,elements)||elements!=32||
+            !Read(exposureStorage+0x168,o.exposureGpuResource)||!o.exposureGpuResource)return false;
+    }
     // Valid engine-owned objects are still alive inside their consuming call.
     auto* resource=reinterpret_cast<ID3D12Resource*>(o.resource);
     auto* list=reinterpret_cast<ID3D12GraphicsCommandList*>(o.nativeList);
@@ -189,6 +222,8 @@ bool Resolve(Observation& o)
     o.barrierFunction=(*reinterpret_cast<void***>(list7))[80];
     o.closeFunction=(*reinterpret_cast<void***>(list7))[9];
     o.resetFunction=(*reinterpret_cast<void***>(list7))[10];
+    const auto vtable=*reinterpret_cast<void***>(list7);
+    o.bindingFunctions={vtable[37],vtable[41],vtable[29],vtable[14]};
     list7->Release();
     return o.barrierFunction!=nullptr;
 }
@@ -209,6 +244,7 @@ nlohmann::json Json(const Observation& o)
     return {{"capturedTick",o.tick},{"frame",o.frame},{"error",o.error},{"owner",o.owner},
         {"command",o.command},{"resource",o.resource},{"nativeList",o.nativeList},{"nativeList7",o.nativeList7},
         {"enhancedBarriers",o.enhanced},{"bankFlag",o.bank},{"giGpuResource",o.giGpuResource},{"giCopiesMatch",o.giStable},
+        {"exposureGpuResource",o.exposureGpuResource},
         {"gpuCopyIssued",false},{"gpuFramePaired",false},{"barrierHookInstalled",barrierInstalled},
         {"selectedForTextureReadback",o.selectedForReadback},
         {"giResourceMetadata",{{"dimension",o.giDesc.Dimension},{"width",o.giDesc.Width},
@@ -264,20 +300,20 @@ void Save(const char* reason)
     if(directReadback)readback->Cancel("capture-window-ended");
     const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v1":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v2":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
         {"reason",reason},{"complete",!incomplete&&count==Limit&&(!directReadback||copy.phase==CopyPhase::Complete)},
         {"controlProgressed",progressing},{"gpuCopyIssued",directReadback&&copy.issued},
         {"caveat",directReadback?
-            "One instrumented texture copy, not untouched baseline. Fence confirms this texture copy only. CPU GI/scene/cache context is NOT GPU-frame paired; exposure-cache age unknown. No local brightness or source visibility API.":
+            "One instrumented transaction. Buffers are paired only if native bindings/Dispatch, copies and same-list fence succeeded. CPU scene/cache remains unpaired; no local brightness or source visibility API.":
             "Passive instrumented run, not untouched baseline. Per-sample barriers cover only Dispatch; intervalTrace covers discovered implementations across the requested interval, with explicit losses/unknown generations. Neither proves GPU completion/current layout. CPU constants/cache are NOT GPU-frame paired."},
         {"samples",samples},{"intervalTrace",directReadback?nlohmann::json(nullptr):TraceJson()}};
     if(directReadback)
     {
         const auto& f=copy.footprint;
         report["textureReadback"]={{"status",copy.reason},{"hresult",static_cast<uint32_t>(copy.error)},
-            {"gpuCopyIssued",copy.issued},{"gpuCompleted",copy.gpuCompleted},{"giGpuFramePaired",false},
-            {"exposureGpuFramePaired",false},{"frame",copy.frame},{"resetGeneration",copy.generation},
+            {"gpuCopyIssued",copy.issued},{"gpuCompleted",copy.gpuCompleted},{"giGpuFramePaired",copy.buffersGpuPaired},
+            {"exposureGpuFramePaired",copy.buffersGpuPaired},{"frame",copy.frame},{"resetGeneration",copy.generation},
             {"queue",copy.queue},{"recordingThread",copy.recordingThread},{"submissionThread",copy.submissionThread},
             {"releaseTick",copy.releaseTick},{"submitTick",copy.submitTick},{"completedTick",copy.completedTick},
             {"fenceValue",copy.fenceValue},{"mapCalls",copy.mapCalls},{"releaseBarrier",BarrierJson(copy.release)},
@@ -285,6 +321,14 @@ void Save(const char* reason)
                 {"width",f.Footprint.Width},{"height",f.Footprint.Height},{"depth",f.Footprint.Depth},{"rowPitch",f.Footprint.RowPitch}}},
             {"packing","uint8 x-fastest, then y, then z; row padding removed; resource R8_TYPELESS"},
             {"packedTextureHex",Hex(copy.packed.data(),copy.packed.size())},{"context",Json(copyObservation)}};
+        report["textureReadback"]["bufferPair"]={{"requested",copy.buffersRequested},{"nativeDispatchSeen",copy.nativeDispatchSeen},
+            {"nativeDispatches",copy.nativeDispatches},{"copied",copy.buffersCopied},{"giResource",copy.giResource},
+            {"exposureResource",copy.exposureResource},{"giBase",copy.giBase},{"exposureBase",copy.exposureBase},
+            {"giOffset",copy.giOffset},{"exposureOffset",copy.exposureOffset},{"giRootIndex",copy.giRootIndex},
+            {"exposureRootIndex",copy.exposureRootIndex},{"readbackOffset",copy.pairReadbackOffset},
+            {"nativeCbv",copy.nativeCbv},{"nativeUav",copy.nativeUav},
+            {"giHex",copy.buffersGpuPaired?Hex(copy.gpuGi.data(),copy.gpuGi.size()):""},
+            {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
     }
     if(traceResource){traceResource->Release();traceResource=nullptr;}
     const auto file=outputDirectory/(L"spatial-binding-"+std::to_wstring(GetCurrentProcessId())+L"-"+
@@ -320,7 +364,7 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
     enabled=true;
     render::submissionObserver=Submission;
     ch::Log(directReadback?
-        "Spatial readback v1 IDLE: explicit event starts20 CPU controls plus ONE guarded texture copy per process; no GPU-paired GI/cache or API change.":
+        "Spatial readback v2 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; actual native root bindings required, no API change.":
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }
@@ -338,11 +382,12 @@ void Poll()
     void* install{};
     void* installReset{};
     void* installClose{};
+    std::array<void*,4> installBindings{};
     if(phase==Phase::Pending)
     {
         samples.push_back(Json(pending));++count;
         if(!barrierInstalled&&!pending.error)
-        {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;}
+        {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;installBindings=pending.bindingFunctions;}
         phase=Phase::Ready;
         if(count==Limit) Save("sample-limit");
     }
@@ -357,11 +402,23 @@ void Poll()
         const bool madeBarrier=MH_CreateHook(install,BarrierHook,reinterpret_cast<void**>(&originalBarrier))==MH_OK;
         const bool madeReset=madeBarrier&&MH_CreateHook(reset,ResetHook,reinterpret_cast<void**>(&originalReset))==MH_OK;
         const bool madeClose=madeReset&&MH_CreateHook(close,CloseHook,reinterpret_cast<void**>(&originalClose))==MH_OK;
-        const bool ok=madeClose&&MH_EnableHook(install)==MH_OK&&MH_EnableHook(reset)==MH_OK&&MH_EnableHook(close)==MH_OK;
+        bool ok=madeClose&&MH_EnableHook(install)==MH_OK&&MH_EnableHook(reset)==MH_OK&&MH_EnableHook(close)==MH_OK;
+        std::array<bool,4> madeBindings{};
+        if(ok&&directReadback)
+        {
+            const std::array<void*,4> hooks={reinterpret_cast<void*>(CbvHook),reinterpret_cast<void*>(UavHook),
+                reinterpret_cast<void*>(SignatureHook),reinterpret_cast<void*>(NativeDispatchHook)};
+            const std::array<void**,4> originals={reinterpret_cast<void**>(&originalCbv),reinterpret_cast<void**>(&originalUav),
+                reinterpret_cast<void**>(&originalSignature),reinterpret_cast<void**>(&originalNativeDispatch)};
+            for(size_t i=0;i<4&&ok;++i)
+            {madeBindings[i]=MH_CreateHook(installBindings[i],hooks[i],originals[i])==MH_OK;ok=madeBindings[i]&&MH_EnableHook(installBindings[i])==MH_OK;}
+        }
         // Never disable somebody else's detour after MH_ERROR_ALREADY_CREATED.
-        if(!ok){if(madeBarrier)MH_DisableHook(install);if(madeReset)MH_DisableHook(reset);if(madeClose)MH_DisableHook(close);}
+        if(!ok){if(madeBarrier)MH_DisableHook(install);if(madeReset)MH_DisableHook(reset);if(madeClose)MH_DisableHook(close);
+            for(size_t i=0;i<4;++i)if(madeBindings[i])MH_DisableHook(installBindings[i]);}
         AcquireSRWLockExclusive(&lock);
         if(ok){barrierTarget=install;resetTarget=reset;closeTarget=close;barrierInstalled=true;
+            if(directReadback)bindingTargets=installBindings;
             if(!directReadback&&observing&&traceResource)trace.Begin(reinterpret_cast<uint64_t>(traceResource));}
         else {incomplete=true;Save("barrier-hook-failed");}
         ReleaseSRWLockExclusive(&lock);
@@ -376,6 +433,7 @@ void Stop()
     if(barrierTarget&&originalBarrier) MH_DisableHook(barrierTarget);
     if(resetTarget&&originalReset) MH_DisableHook(resetTarget);
     if(closeTarget&&originalClose) MH_DisableHook(closeTarget);
+    for(auto target:bindingTargets)if(target)MH_DisableHook(target);
     AcquireSRWLockExclusive(&lock);
     if(phase!=Phase::Idle){incomplete=true;Save("stopped");}
     if(requestEvent){CloseHandle(requestEvent);requestEvent=nullptr;}
@@ -400,6 +458,8 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     {valid=false;o.error=ERROR_REVISION_MISMATCH;incomplete=true;trace.target=0;}
     if(valid&&barrierInstalled&&(o.barrierFunction!=barrierTarget||o.resetFunction!=resetTarget||o.closeFunction!=closeTarget))
     {valid=false;o.error=ERROR_INVALID_FUNCTION;incomplete=true;trace.target=0;}
+    if(valid&&directReadback&&barrierInstalled&&o.bindingFunctions!=bindingTargets)
+    {valid=false;o.error=ERROR_INVALID_FUNCTION;incomplete=true;}
     if(valid&&!traceResource)
     {
         traceResource=reinterpret_cast<ID3D12Resource*>(o.resource);traceResource->AddRef();
@@ -413,8 +473,10 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
         {
             auto* list=reinterpret_cast<ID3D12GraphicsCommandList7*>(o.nativeList7);
             auto* source=reinterpret_cast<ID3D12Resource*>(o.resource);
-            readback->Discover(list,source);
-            if(barrierInstalled)o.selectedForReadback=readback->Arm(list,source,o.frame);
+            auto* gi=reinterpret_cast<ID3D12Resource*>(o.giGpuResource);
+            auto* exposure=reinterpret_cast<ID3D12Resource*>(o.exposureGpuResource);
+            readback->Discover(list,source,gi,exposure);
+            if(barrierInstalled)o.selectedForReadback=readback->Arm(list,source,o.frame,gi,exposure);
         }
     }
     auto* previous=active;

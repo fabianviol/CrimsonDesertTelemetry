@@ -128,12 +128,20 @@ def decode_spatial(context, assume_layout=False):
     if not isinstance(context, dict):
         return result
     try:
-        if (context.get('source') != 'inline-voxel-gi-upload-source' or
-                context.get('status') != 'stable-cpu-observation'):
-            raise ValueError('spatial-context-not-stable')
-        raw = bytes.fromhex(context['rawBeforeHex'])
-        if len(raw) != 768 or raw != bytes.fromhex(context['rawAfterHex']):
-            raise ValueError('spatial-size-or-copy-mismatch')
+        paired = context.get('source') == 'paired-gpu-voxel-gi'
+        if paired:
+            if context.get('status') != 'fenced-gpu-readback':
+                raise ValueError('spatial-gpu-copy-not-completed')
+            raw = bytes.fromhex(context['rawHex'])
+            if len(raw) != 768:
+                raise ValueError('spatial-gpu-size-mismatch')
+        else:
+            if (context.get('source') != 'inline-voxel-gi-upload-source' or
+                    context.get('status') != 'stable-cpu-observation'):
+                raise ValueError('spatial-context-not-stable')
+            raw = bytes.fromhex(context['rawBeforeHex'])
+            if len(raw) != 768 or raw != bytes.fromhex(context['rawAfterHex']):
+                raise ValueError('spatial-size-or-copy-mismatch')
         if context.get('textureCpuDimensions') != [64, 32, 264]:
             raise ValueError('spatial-texture-layout-mismatch')
         if not assume_layout:
@@ -162,10 +170,12 @@ def decode_spatial(context, assume_layout=False):
                 selected = i
                 break
         result.update(status='candidate', reason=None, layoutAssumption=LAYOUT,
+                      gpuFramePaired=paired,
                       referenceWorldCandidate=world, selectedClipmap=selected,
                       textureResource=context.get('textureResource'),
                       bankFlag=context.get('bankFlag'),
-                      referenceMeaning='view-context world position; CPU observation, not GPU-frame paired',
+                      referenceMeaning='view-context world position; paired GPU GI constants' if paired else
+                          'view-context world position; CPU observation, not GPU-frame paired',
                       samplerAddressing='unverified; X/Y coordinates left unwrapped',
                       shaderBranch='fallback-one' if selected is None or selected > 3 else 'texture-sample')
         if result['shaderBranch'] == 'texture-sample':

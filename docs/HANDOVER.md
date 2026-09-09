@@ -1,4 +1,52 @@
-# Current checkpoint — FIRST live direct texture readback succeeded, 2026-09-09, Codex/Astra
+# Current checkpoint — GPU-paired diagnostic ready, 2026-09-09, Codex/Astra
+
+PRIVATE **2.0.1-spatial-readback.2** built/tested, NOT installed or game-tested.
+ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.2-ModManagers.zip
+SHA256 B721CBF0460AC6E32FF9864DB95F7D6B9626115E5E735D2543F6375A2B0BCBCB.
+Expanded v2.0.1-spatial-readback.2-20260909-090652-602-084cc472/CrimsonDesertTelemetry;
+ASI SHA256941C9DDBC215F56676570376630D6C0A71277513E4B5B1824167DA95342529FD.
+Previous immutable packages preserved. PID8772 still readback.1, latest health
+playing/error=null/sequence81700. No new live capture, toggle, install or config edit.
+User STOPPED due to exhausted usage window; requested only finishing the ZIP.
+No further live run or shutdown requested. Package ready for a later DMM install.
+
+Resolved CB view: outer.vtable+88 ->142DEB870 -> storage+140 array,index0.
+View+50 is actual GPU VA passed to native root CBV by1437B5F9E (slot37).
+Both live GI banks and exposure view had offset0, but implementation DOES NOT
+assume0: it observes native SetComputeRootConstantBufferView/UAV addresses and
+subtracts actual resource.GetGPUVirtualAddress with bounds/alignment checks.
+Full native provenance and raw-page evidence in LOCAL_ILLUMINATION_RESEARCH.
+
+Readback v2 adds native root CBV/UAV/signature/Dispatch observers, only selected
+exposure/list/thread. Requires unique in-resource bindings and exactly one direct
+Dispatch(2,1,1). Immediately AFTER original native Dispatch, copies768 GPU GI bytes
+and128 exposure-output bytes with compute->copy->compute buffer barriers. Existing
+exact texture release copy follows; all share ONE destination/list/submission fence.
+Only completed transaction sets paired flags. Root tables/indirect dispatch or
+cached/unseen/replaced bindings fail closed, with observed root addresses in JSON.
+CPU scene/frame label/cache remain UNPAIRED; no public local-illumination API.
+
+Same config: Research/SpatialProbe=1,SpatialReadback=1,AmbientProbe=0;
+Lights/ManyLights=1 and existing Ambient enabled. Same event script,20 CPU controls,
+ONE transaction per process (including failure). Report private-spatial-readback-v2.
+Decoder supports v1 unchanged and v2 from actual GPU GI/output, no invented CPU
+cache flags; emits direct-vs-inverse difference and CPU-vs-GPU GI equality.
+
+23/23 native CTests;187 original copy checks +165 new actual WARP shader/native
+detour checks on DIRECT+COMPUTE. Nonzero GI256/output1024 offsets byte-exact,
+GPU output computed from same CB, gate proves no Map/paired flag before fence.
+Zero debug warnings/errors after correcting COMMON initialization in test setup.
+14 existing +13 readback Python tests pass; package/payload validation pass.
+These are synthetic/host controls, NOT evidence that game's roots will match.
+
+**ONE next step:** after shutdown install whole ZIP with DMM, same config, load
+and verify hash/health; run ONE stationary event capture. Inspect root bindings,
+gpu-paired status, direct/inverse error, and progressing control. If binding guard
+rejects, use its saved addresses (do not guess offset/state or report zero light).
+If positive, design bounded repeatable paired capture for roof/outside control.
+Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — FIRST live direct texture readback succeeded, 2026-09-09
 
 ONE requested capture in PID8772 (start08:42:40), installed private
 2.0.1-spatial-readback.1 ASI SHA256 matched

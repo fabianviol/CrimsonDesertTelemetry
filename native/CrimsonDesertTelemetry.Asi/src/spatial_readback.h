@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <atomic>
 #include <vector>
+#include <array>
 
 namespace cdt::spatial
 {
@@ -22,6 +23,12 @@ struct CopyResult
     uint64_t allocationBytes{};
     D3D12_TEXTURE_BARRIER release{};
     std::vector<uint8_t> packed;
+    bool buffersRequested{}, nativeDispatchSeen{}, buffersCopied{}, buffersGpuPaired{};
+    uint64_t giResource{}, exposureResource{}, giBase{}, exposureBase{}, giOffset{}, exposureOffset{}, pairReadbackOffset{};
+    uint32_t giRootIndex{}, exposureRootIndex{}, nativeDispatches{};
+    std::array<uint8_t,768> gpuGi{};
+    std::array<uint8_t,128> gpuExposure{};
+    std::array<uint64_t,64> nativeCbv{},nativeUav{};
 };
 
 // One in-flight transaction, independent of the lossy passive trace. Callback
@@ -31,8 +38,11 @@ class SpatialReadback
 public:
     ~SpatialReadback();
     bool Begin();
-    void Discover(ID3D12GraphicsCommandList7* list,ID3D12Resource* source);
-    bool Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,uint32_t frame);
+    void Discover(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
+    bool Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,uint32_t frame,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
+    void RootSignature();
+    void RootBuffer(bool cbv,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address);
+    void NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,UINT y,UINT z,NativeBarrier original);
     void ExposureEnd(bool stable);
     void Barrier(ID3D12GraphicsCommandList7* list,UINT count,const D3D12_BARRIER_GROUP* groups,NativeBarrier original);
     void Reset(ID3D12GraphicsCommandList* list,bool after,HRESULT hr=S_OK);
@@ -52,6 +62,9 @@ private:
     D3D12_COMMAND_LIST_TYPE type_{};
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList7> list_;
     Microsoft::WRL::ComPtr<ID3D12Resource> source_,readback_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> gi_,exposure_;
+    uint64_t giBytes_{},exposureBytes_{};
+    std::array<uint64_t,64> cbv_{},uav_{};
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<IUnknown> deviceIdentity_;
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
