@@ -14,6 +14,81 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## The engine's ambient light is 1024 bytes of spherical harmonics — 2026-09-09
+
+Read from `GenerateAmbientFromEnvironmentAtmosphericScatteringCS`
+(`artifacts/light-research/ambient-check-20260907-sky-ca7a87f5.ll`), a shader that
+had been sitting in the artifacts since 2026-09-07 without being opened. It answers
+the ambient half of this project without a volume, a clipmap or an interpolation.
+
+**Shape of the shader.** 16x16 threads, one dispatch. It reads
+`g_texSkyInscatter` (t38, 2D), `g_texNetDensity` (t37, 2D) and
+`g_texCloudVolumeShadow` (t76, 3D) with six `SampleLevel` calls, plus
+`SceneConstantBuffer` (b3, space35), `AtmosphereConstantBuffer` (b15, space35,
+240 bytes) and `GlobalPushConstants` (b0, space1: `_renderFlags`, `_skyColor`,
+`_volumeSize`).
+
+**It integrates the sky into spherical harmonics.** The groupshared variable is
+named `g_sharedEnvironmentSH` and typed `SHColor2`. DXC split it into per-channel
+arrays whose sizes settle the order: three channels, each with two `[1024 x float]`
+vector members and one `[256 x float]` scalar member. 1024/256 = 4, so per element
+per channel that is 4 + 4 + 1 = **nine coefficients — L2 spherical harmonics, RGB**,
+one per thread over 256 threads, reduced across five `Barrier` calls.
+
+**Output.** `RWStructuredBuffer<float4>` at u2, space39. Seven `float4` at fixed
+indices 0..6 — 28 floats, the standard packing of 27 SH coefficients with one spare
+lane — then an eighth `float4` at index 7 computed separately, and a second block of
+seven at `(_renderFlags.x) * 8 + 8..14`. Stride eight `float4` per set.
+
+**The same bytes are read back as a constant buffer.** Other shaders declare
+`PrecomputedAmbientConstantBuffer` as `{ 8 x float4, [56 x float4] }` — 64 float4,
+and DXC's own annotation on the handle says `ResourceProperties { 13, 1024 }`.
+**1024 bytes, eight sets of eight float4.** A CBV, in space35, the same space as the
+768-byte `VoxelGlobalIlluminationConstantBuffer` we already snapshot. Nothing about
+reaching it is new work.
+
+**Who consumes it,** across all 79 local listings:
+
+| shader | slots read |
+|---|---|
+| `csRenderAtmosphericScattering` | 7, 56 |
+| `CSRenderAtmosphericScatteringOffscreenSky` | 7, 56 |
+| `GenerateAtmosphericScatteringDispatchIndirectArgumentsCS` | 7 |
+| `RenderDiffuseCS` | 7 |
+| `RenderDiffuseTiledCS` | 7 |
+| `EvaluateDiffuseRadianceCS` (two variants) | 7 |
+
+The register number differs per shader (cb16 in the sky path, cb32 in the diffuse
+path); the 1024-byte layout does not. In `EvaluateDiffuseRadianceCS` slot 7 is used
+two ways: `.y` taken directly on one branch, and on the other
+`(0.5 - 0.5 * dot3(dir, v)) * .w` — a hemispherical weight. Its writer built `.w`
+from an `exp` extinction dotted with the Rec.601 luminance weights, so slot 7 is a
+scalar-plus-colour summary, not part of the SH.
+
+**Why this is the right quantity for the ambient feed.** It is what the engine
+itself calls ambient, in the engine's own units, already directional. Evaluating L2
+SH against an up vector is a few multiplies. There is no clipmap origin to resolve,
+no trilinear sampling, no amortised refresh to wait out, and no 1465-byte payload —
+1024 bytes covers the whole sky.
+
+**And it composes cleanly with the refuted occlusion work.** This is the ambient
+from the SKY, unoccluded: it says how bright and what colour the environment is,
+and nothing at all about standing in a cave. Sky visibility is the term that knows
+about the cave. The two multiply. That is a better division of labour than trying
+to make one scalar field answer both questions, which is exactly what failed.
+
+**Not established here.** The coefficient order inside the seven float4 is inferred
+from the shape, not verified lane by lane. What `_renderFlags.x` selects, and
+therefore what the other seven sets are for, is unknown. Whether the values are pre-
+or post-exposure is unknown and matters, because `ExposureConstantBuffer` (b*,
+space35, 5 float4 = 80 bytes) is read by nearly every lighting shader here including
+`ProcessManyLightsCS`, the one behind our own light readback. No shader in the local
+sample reads slots 0..6; 79 listings are not the engine.
+
+**Next step:** locate the live 1024-byte CBV, capture it with the machinery that
+already captures the 768-byte one, and check a night value against a day value
+before trusting any of it.
+
 ## Directional profile measured offline — 2026-09-09
 
 No new game capture. The three preserved volumes were re-sampled at offsets around

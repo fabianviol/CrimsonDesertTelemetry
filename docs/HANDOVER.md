@@ -245,7 +245,28 @@ feed (the earlier survey used the authored array), 302 segments give 119 blocked
 78 clear and 105 honestly unknown. The validated lantern still resolves correctly.
 52 Python tests, six new, one encoding the measured failure mode.
 
-**FOUND, WITHOUT A NEW CAPTURE: the engine has a signed distance field.** The
+**THE AMBIENT HALF MAY ALREADY BE SOLVED, and it is 1024 bytes.**
+`GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (in
+`artifacts/light-research/ambient-check-20260907-sky-ca7a87f5.ll`, unopened since
+2026-09-07) integrates the sky inscatter LUT into **L2 spherical harmonics, RGB** —
+the groupshared `g_sharedEnvironmentSH` is typed `SHColor2` and splits into 4+4+1
+floats per channel, nine coefficients. It writes seven `float4` plus an eighth
+summary slot into a `RWStructuredBuffer<float4>` (u2, space39). Other shaders read
+the SAME bytes as `PrecomputedAmbientConstantBuffer`, declared `{8 x float4,
+[56 x float4]}` with DXC annotating the handle `{13, 1024}` — **1024 bytes, eight
+sets of eight float4, a CBV in space35**, the same space as the 768-byte GI constants
+we already snapshot. Consumers across all 79 local listings: the two atmospheric
+scattering renderers (slots 7 and 56), the indirect-args shader, `RenderDiffuseCS`,
+`RenderDiffuseTiledCS` and `EvaluateDiffuseRadianceCS` (slot 7).
+
+This is ambient from the SKY, unoccluded — the colour term. Sky visibility is the
+occlusion term. They multiply, which is a cleaner split than forcing one scalar
+field to answer both, the thing that failed. Unknown: coefficient order within the
+seven float4, what `_renderFlags.x` selects among the eight sets, and whether the
+values are pre- or post-exposure (`ExposureConstantBuffer`, 80 bytes, is read by
+nearly every lighting shader here including `ProcessManyLightsCS`).
+
+**Also found without a new capture: the engine has a signed distance field.** The
 shaders extracted on 2026-09-06 were never mined for names. They contain
 `GenerateDistanceFieldsCS`, `PropagateSignedDistanceCS`,
 `GenerateAxisAlignedDistancePass0..2_CS`, `InitVoronoiSeedsCS`,
