@@ -93,17 +93,25 @@ int main()
         bg.Type=D3D12_BARRIER_TYPE_TEXTURE;bg.pTextureBarriers=&tb;list->Barrier(1,&bg);
         // Install the same four native methods as production and exercise their ABI.
         auto vt=*reinterpret_cast<void***>(list.Get());
-        std::array<void*,4> targets{vt[37],vt[41],vt[29],vt[14]};
-        std::array<void*,4> hooks{reinterpret_cast<void*>(CbvHook),reinterpret_cast<void*>(UavHook),reinterpret_cast<void*>(SignatureHook),reinterpret_cast<void*>(NativeDispatchHook)};
-        std::array<void**,4> originals{reinterpret_cast<void**>(&originalCbv),reinterpret_cast<void**>(&originalUav),reinterpret_cast<void**>(&originalSignature),reinterpret_cast<void**>(&originalNativeDispatch)};
-        for(size_t i=0;i<4;++i){Check(MH_CreateHook(targets[i],hooks[i],originals[i])==MH_OK,"create hook");Check(MH_EnableHook(targets[i])==MH_OK,"enable hook");}
+        std::array<void*,BindingHooks> targets{vt[37],vt[41],vt[29],vt[14],vt[39],vt[31],vt[28]};
+        std::array<void*,BindingHooks> hooks{reinterpret_cast<void*>(CbvHook),reinterpret_cast<void*>(UavHook),
+            reinterpret_cast<void*>(SignatureHook),reinterpret_cast<void*>(NativeDispatchHook),
+            reinterpret_cast<void*>(SrvHook),reinterpret_cast<void*>(TableHook),reinterpret_cast<void*>(HeapsHook)};
+        std::array<void**,BindingHooks> originals{reinterpret_cast<void**>(&originalCbv),reinterpret_cast<void**>(&originalUav),
+            reinterpret_cast<void**>(&originalSignature),reinterpret_cast<void**>(&originalNativeDispatch),
+            reinterpret_cast<void**>(&originalSrv),reinterpret_cast<void**>(&originalTable),reinterpret_cast<void**>(&originalHeaps)};
+        for(size_t i=0;i<BindingHooks;++i){Check(MH_CreateHook(targets[i],hooks[i],originals[i])==MH_OK,"create hook");Check(MH_EnableHook(targets[i])==MH_OK,"enable hook");}
         originalBarrier=ForwardBarrier;directReadback=true;
-        Observation o{};o.selectedForReadback=true;o.nativeList7=reinterpret_cast<uint64_t>(list.Get());active=&o;
-        Check(readback->Arm(list.Get(),texture.Get(),123,gi.Get(),output.Get()),"arm pair");
+        // The game binds its roots BEFORE the exposure wrapper runs. readback.2
+        // cleared them at Arm and rejected live; these sets must survive it.
         list->SetComputeRootSignature(signature.Get());
         list->SetComputeRootConstantBufferView(0,gi->GetGPUVirtualAddress()+256);
         list->SetComputeRootUnorderedAccessView(1,output->GetGPUVirtualAddress()+1024);
+        Check(readback->Snapshot().rootSetsBeforeExposure==2,"roots recorded before exposure");
+        Observation o{};o.selectedForReadback=true;o.nativeList7=reinterpret_cast<uint64_t>(list.Get());active=&o;
+        Check(readback->Arm(list.Get(),texture.Get(),123,gi.Get(),output.Get()),"arm pair");
         list->Dispatch(2,1,1);readback->ExposureEnd(true);active=nullptr;
+        Check(readback->Snapshot().rootSetsInsideExposure==0,"no further roots inside exposure");
         Check(readback->Snapshot().buffersCopied,"immediate CB/output copies");
         tb.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;tb.SyncAfter=D3D12_BARRIER_SYNC_NONE;
         tb.AccessBefore=D3D12_BARRIER_ACCESS_SHADER_RESOURCE;tb.AccessAfter=D3D12_BARRIER_ACCESS_NO_ACCESS;
@@ -118,22 +126,55 @@ int main()
         while(readback->Snapshot().phase==CopyPhase::WaitingGpu&&GetTickCount64()<deadline){readback->Poll();Sleep(1);}
         const auto r=readback->Snapshot();Check(r.phase==CopyPhase::Complete&&r.buffersGpuPaired,"all copies completed");
         Check(r.giOffset==256&&r.exposureOffset==1024&&r.giRootIndex==0&&r.exposureRootIndex==1,"actual nonzero offsets");
+        Check(!r.giFromSrv&&!r.rootThreadConflict,"GI paired from the actual CBV binding");
         Check(std::memcmp(r.gpuGi.data(),giData.data(),768)==0,"all 768 actual GPU GI bytes");
         for(unsigned i=0;i<32;++i){uint32_t value{};std::memcpy(&value,r.gpuExposure.data()+4*i,4);Check(value==(giData[i]^0xabc00000),"GPU output from SAME constants");}
         Check(r.packed.size()==540672&&std::all_of(r.packed.begin(),r.packed.end(),[](uint8_t b){return b==7;}),"texture in same transaction");
         for(auto t:targets){Check(MH_DisableHook(t)==MH_OK,"disable");Check(MH_RemoveHook(t)==MH_OK,"remove");}
         // Missing bindings and root-signature invalidation must not issue copies.
-        for(unsigned negative=0;negative<3;++negative)
+        for(unsigned negative=0;negative<4;++negative)
         {
             SpatialReadback reject;Check(reject.Begin(),"negative begin");reject.Discover(list.Get(),texture.Get(),gi.Get(),output.Get());reject.Poll();
             reject.Reset(list.Get(),false);reject.Reset(list.Get(),true,S_OK);
+            // Bindings before Arm are now the realistic order for the negatives too.
+            reject.RootBuffer(RootKind::Cbv,0,gi->GetGPUVirtualAddress()+256);
+            if(negative!=0)reject.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
+            if(negative==2)reject.RootBuffer(RootKind::Cbv,2,gi->GetGPUVirtualAddress()+512);
+            // A table at the GI index replaces that root argument. It is recorded as
+            // evidence and must never be resolved into a copy source.
+            if(negative==3)reject.RootTable(0,gi->GetGPUVirtualAddress()+256);
             Check(reject.Arm(list.Get(),texture.Get(),124,gi.Get(),output.Get()),"negative arm");
-            reject.RootBuffer(true,0,gi->GetGPUVirtualAddress()+256);
-            if(negative!=0)reject.RootBuffer(false,1,output->GetGPUVirtualAddress()+1024);
             if(negative==1)reject.RootSignature();
-            if(negative==2)reject.RootBuffer(true,2,gi->GetGPUVirtualAddress()+512);
             reject.NativeDispatchEnd(list.Get(),2,1,1,ForwardBarrier);
-            Check(reject.Snapshot().phase==CopyPhase::Failed&&!reject.Snapshot().issued,"unseen/reset/ambiguous root bindings add no copy");
+            Check(reject.Snapshot().phase==CopyPhase::Failed&&!reject.Snapshot().issued,"unseen/reset/ambiguous/table root bindings add no copy");
+            if(negative==3)Check(reject.Snapshot().tableSets==1&&reject.Snapshot().nativeTable[0]!=0,"descriptor table recorded as evidence");
+        }
+        // A list reset clears the recording; stale roots must not survive it.
+        {
+            SpatialReadback stale;Check(stale.Begin(),"stale begin");stale.Discover(list.Get(),texture.Get(),gi.Get(),output.Get());stale.Poll();
+            stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
+            stale.RootBuffer(RootKind::Cbv,0,gi->GetGPUVirtualAddress()+256);
+            stale.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
+            stale.Reset(list.Get(),false);stale.Reset(list.Get(),true,S_OK);
+            Check(stale.Snapshot().rootSetsBeforeExposure==0,"reset clears recorded roots");
+            Check(stale.Arm(list.Get(),texture.Get(),126,gi.Get(),output.Get()),"stale arm");
+            stale.NativeDispatchEnd(list.Get(),2,1,1,ForwardBarrier);
+            Check(stale.Snapshot().phase==CopyPhase::Failed&&!stale.Snapshot().issued,"roots from a previous recording add no copy");
+        }
+        // A root SRV into the same pinned GI buffer is a legal alternative binding.
+        // It records real copies, so it needs its own OPEN list; never submitted.
+        {
+            ComPtr<ID3D12CommandAllocator> srvAlloc;Hr(device->CreateCommandAllocator(type,IID_PPV_ARGS(&srvAlloc)),"srv allocator");
+            ComPtr<ID3D12GraphicsCommandList7> srvList;Hr(device->CreateCommandList(0,type,srvAlloc.Get(),nullptr,IID_PPV_ARGS(&srvList)),"srv list");
+            SpatialReadback viaSrv;Check(viaSrv.Begin(),"srv begin");viaSrv.Discover(srvList.Get(),texture.Get(),gi.Get(),output.Get());viaSrv.Poll();
+            viaSrv.Reset(srvList.Get(),false);viaSrv.Reset(srvList.Get(),true,S_OK);
+            viaSrv.RootBuffer(RootKind::Srv,0,gi->GetGPUVirtualAddress()+260);
+            viaSrv.RootBuffer(RootKind::Uav,1,output->GetGPUVirtualAddress()+1024);
+            Check(viaSrv.Arm(srvList.Get(),texture.Get(),125,gi.Get(),output.Get()),"srv arm");
+            viaSrv.NativeDispatchEnd(srvList.Get(),2,1,1,ForwardBarrier);
+            const auto sr=viaSrv.Snapshot();
+            Check(sr.giFromSrv&&sr.giOffset==260&&sr.buffersCopied,"root SRV pairs with 4-byte alignment");
+            viaSrv.Cancel("test-only");Hr(srvList->Close(),"srv close");
         }
         delete readback;readback=nullptr;
     }

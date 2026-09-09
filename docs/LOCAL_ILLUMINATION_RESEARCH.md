@@ -5,10 +5,67 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. Latest LIVE result is
-"Live binding rejection" immediately below; the last successful GPU copy is
-"First direct live texture readback" further down.
+not a new public local-illumination or source-visibility API. The newest build is
+"Widened root window" immediately below; the latest LIVE result is "Live binding
+rejection" after it, and the last successful GPU copy is "First direct live texture
+readback" further down.
 Older sections preserve prior evidence, not current instructions.
+
+## Widened root window — 2026-09-09, readback.3 NOT live-tested
+
+Direct answer to the rejection recorded below. No new game experiment, no heap
+scan and no change to any public stream, schema or HUD value.
+
+**The mistake being corrected.** A D3D12 root argument persists until it is
+overwritten or the root signature changes. readback.2 nevertheless treated the
+game's exposure dispatch wrapper as the binding window: `Arm` cleared `cbv_`/`uav_`
+on entry, and `SelectedNative` in `spatial_probe.cpp` gated every root observer on
+the thread_local `active` observation, which `Dispatch` sets only around
+`originalDispatch`. Roots issued earlier in the same recording were therefore
+invisible by construction. The live run saw exactly what that predicts: one root
+CBV belonging to some other resource, and no root UAV at all.
+
+**What readback.3 changes.**
+
+- Root observation is gated by command-list identity (`SpatialReadback::Observes`)
+  instead of the thread_local observation, so it covers the whole recording of the
+  pinned list. `Arm` no longer clears anything.
+- The recording is cleared where D3D12 actually invalidates root arguments: on the
+  observed `Reset` (after a successful reset) and on `SetComputeRootSignature`.
+- New observers: `SetComputeRootShaderResourceView` (vtable39),
+  `SetComputeRootDescriptorTable` (31) and `SetDescriptorHeaps` (28). The existing
+  slots stay CBV37, UAV41, RootSignature29, Dispatch14, and all seven must resolve
+  from the same live vtable or the probe refuses to install.
+- Descriptor tables and heaps are **recorded only**. A `D3D12_GPU_DESCRIPTOR_HANDLE`
+  is never resolved to a resource and never used as a copy source; a table written
+  at a root index clears that index's buffer address, exactly as the hardware does.
+  Their purpose is to make "bound through a table" distinguishable from "not bound".
+- GI may pair through a root CBV **or** a root SRV into the same pinned buffer, since
+  both are direct root descriptors with a checkable address, bound offset and size.
+  The buffer barrier uses CONSTANT_BUFFER or SHADER_RESOURCE accordingly, and the
+  alignment requirement follows the kind (256 for CBV, 4 for SRV). Exactly one GI
+  hit across both arrays and exactly one exposure UAV hit are still required.
+- Every recorded root argument must come from the recording thread; a conflict is
+  reported as `rootThreadConflict` and fails closed.
+
+**Report and decoder.** Format is now `private-spatial-readback-v3`, adding
+`nativeSrv`, `nativeTable`, `descriptorHeaps`, `giFromSrv`, `rootThreadConflict`,
+`tableSets`, `heapSets`, `rootSetsBeforeExposure` and `rootSetsInsideExposure`.
+`Decode-SpatialReadback.py` accepts v3, validates the GI root address against
+`nativeSrv` when `giFromSrv` is set and against `nativeCbv` otherwise, and rejects
+a thread conflict. v1 and v2 semantics are untouched: re-decoding the preserved
+readback.1 capture reproduces its `derived.json` byte-for-byte.
+
+**Host verification.** 23/23 native CTests. The pair test installs all seven
+production detours on DIRECT and COMPUTE, then sets the root signature, the GI CBV
+and the exposure UAV **before** `Arm` — the live failure order — and still reaches
+a fenced, byte-exact GI/output/texture pairing in one submission: 223 WARP and
+native-detour checks, zero debug-layer warnings or errors. New negatives cover a
+descriptor table replacing the GI root (recorded, no copy), roots left from a
+previous recording being cleared by Reset, and a root SRV pairing at offset260.
+32 Python tests pass. All of this is synthetic; it does not establish that the
+game binds GI or exposure this way. Package identity and the one next live step
+are in the current HANDOVER checkpoint.
 
 ## Live binding rejection — 2026-09-09, PID2652, readback.2
 

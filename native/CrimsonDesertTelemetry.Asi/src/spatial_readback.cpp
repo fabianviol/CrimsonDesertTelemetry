@@ -52,21 +52,62 @@ bool SpatialReadback::Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* sourc
         !generationKnown_||resetPending_||closed_||closePending_||gi!=gi_.Get()||exposure!=exposure_.Get())return false;
     result_.phase=CopyPhase::InExposure;result_.reason="inside-exposure";
     result_.generation=generation_;result_.frame=frame;result_.recordingThread=GetCurrentThreadId();
-    cbv_.fill(0);uav_.fill(0);
+    // Bindings issued earlier in THIS recording are still the live root arguments;
+    // discarding them here is what made readback.2 reject a valid dispatch.
     armedTick_=GetTickCount64();return true;
+}
+bool SpatialReadback::Observes(ID3D12GraphicsCommandList* list) const
+{
+    return list&&list==observedList_.load(std::memory_order_relaxed);
+}
+bool SpatialReadback::Recording() const
+{
+    return result_.buffersRequested&&(result_.phase==CopyPhase::Preparing||
+        result_.phase==CopyPhase::Ready||result_.phase==CopyPhase::InExposure);
+}
+void SpatialReadback::NoteRootThread()
+{
+    const auto thread=GetCurrentThreadId();
+    if(!rootThread_)rootThread_=thread;
+    else if(rootThread_!=thread)result_.rootThreadConflict=true;
 }
 void SpatialReadback::RootSignature()
 {
     Guard g(mutex_);
-    if(result_.phase==CopyPhase::InExposure&&result_.buffersRequested){cbv_.fill(0);uav_.fill(0);}
+    // A new signature invalidates every root argument, inside or outside exposure.
+    if(Recording()){cbv_.fill(0);uav_.fill(0);srv_.fill(0);table_.fill(0);}
 }
-void SpatialReadback::RootBuffer(bool cbv,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
+void SpatialReadback::RootBuffer(RootKind kind,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
 {
     Guard g(mutex_);
-    if(result_.phase!=CopyPhase::InExposure||!result_.buffersRequested)return;
-    if(index>=64||GetCurrentThreadId()!=result_.recordingThread){Fail("native-root-context");return;}
+    if(!Recording())return;
+    const bool inExposure=result_.phase==CopyPhase::InExposure;
+    if(index>=64){if(inExposure)Fail("native-root-context");return;}
+    if(inExposure&&GetCurrentThreadId()!=result_.recordingThread){Fail("native-root-context");return;}
+    NoteRootThread();
     // Setting another root kind at the same index cannot preserve the old binding.
-    cbv_[index]=cbv?address:0;uav_[index]=cbv?0:address;
+    cbv_[index]=kind==RootKind::Cbv?address:0;
+    uav_[index]=kind==RootKind::Uav?address:0;
+    srv_[index]=kind==RootKind::Srv?address:0;
+    table_[index]=0;
+    if(inExposure)++result_.rootSetsInsideExposure;else ++result_.rootSetsBeforeExposure;
+}
+void SpatialReadback::RootTable(UINT index,uint64_t handle)
+{
+    Guard g(mutex_);
+    if(!Recording()||index>=64)return;
+    NoteRootThread();
+    // Recorded to distinguish "bound through a table" from "not bound at all".
+    // A descriptor handle is never resolved to a resource and never copied from.
+    cbv_[index]=uav_[index]=srv_[index]=0;table_[index]=handle;
+    ++result_.tableSets;
+}
+void SpatialReadback::DescriptorHeaps(UINT count,const uint64_t* heaps)
+{
+    Guard g(mutex_);
+    if(!Recording()||!heaps)return;
+    for(UINT i=0;i<count&&i<result_.descriptorHeaps.size();++i)result_.descriptorHeaps[i]=heaps[i];
+    ++result_.heapSets;
 }
 void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,UINT y,UINT z,NativeBarrier original)
 {
@@ -74,17 +115,24 @@ void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,
     if(result_.phase!=CopyPhase::InExposure||!result_.buffersRequested)return;
     if(list!=list_.Get()||x!=2||y!=1||z!=1||!original||GetCurrentThreadId()!=result_.recordingThread||++result_.nativeDispatches!=1)
     {Fail("native-dispatch-context");return;}
-    unsigned cbHits{},uavHits{};
-    result_.nativeCbv=cbv_;result_.nativeUav=uav_;
+    unsigned cbHits{},uavHits{},srvHits{};
+    result_.nativeCbv=cbv_;result_.nativeUav=uav_;result_.nativeSrv=srv_;result_.nativeTable=table_;
     for(UINT i=0;i<64;++i)
     {
         if(cbv_[i]>=result_.giBase&&cbv_[i]-result_.giBase<=giBytes_-768)
-        {++cbHits;result_.giOffset=cbv_[i]-result_.giBase;result_.giRootIndex=i;}
+        {++cbHits;result_.giOffset=cbv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=false;}
+        // The same pinned buffer can legally be bound as a root SRV instead.
+        if(srv_[i]>=result_.giBase&&srv_[i]-result_.giBase<=giBytes_-768)
+        {++srvHits;result_.giOffset=srv_[i]-result_.giBase;result_.giRootIndex=i;result_.giFromSrv=true;}
         if(uav_[i]>=result_.exposureBase&&uav_[i]-result_.exposureBase<=exposureBytes_-128)
         {++uavHits;result_.exposureOffset=uav_[i]-result_.exposureBase;result_.exposureRootIndex=i;}
     }
-    if(cbHits!=1||uavHits!=1||result_.giOffset%256||result_.exposureOffset%4)
+    const bool giAligned=result_.giFromSrv?result_.giOffset%4==0:result_.giOffset%256==0;
+    if(cbHits+srvHits!=1||uavHits!=1||!giAligned||result_.exposureOffset%4)
     {Fail("required-native-root-bindings-not-unique");return;}
+    // Every recorded root argument must come from this recording thread.
+    if(result_.rootThreadConflict||(rootThread_&&rootThread_!=result_.recordingThread))
+    {Fail("native-root-context");return;}
     result_.nativeDispatchSeen=true;
     // The original native Dispatch just consumed these actual CBV/UAV addresses.
     // Buffers have no texture layout; synchronize their shader accesses explicitly.
@@ -92,7 +140,8 @@ void SpatialReadback::NativeDispatchEnd(ID3D12GraphicsCommandList7* list,UINT x,
     for(auto& b:barriers)
     {b.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;b.SyncAfter=D3D12_BARRIER_SYNC_COPY;
      b.AccessAfter=D3D12_BARRIER_ACCESS_COPY_SOURCE;b.Size=UINT64_MAX;}
-    barriers[0].pResource=gi_.Get();barriers[0].AccessBefore=D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
+    barriers[0].pResource=gi_.Get();
+    barriers[0].AccessBefore=result_.giFromSrv?D3D12_BARRIER_ACCESS_SHADER_RESOURCE:D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
     barriers[1].pResource=exposure_.Get();barriers[1].AccessBefore=D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
     D3D12_BARRIER_GROUP group{};group.Type=D3D12_BARRIER_TYPE_BUFFER;group.NumBarriers=2;group.pBufferBarriers=barriers;
     original(list,1,&group);
@@ -173,7 +222,13 @@ void SpatialReadback::Reset(ID3D12GraphicsCommandList* list,bool after,HRESULT h
         generationKnown_=false;resetPending_=true;closed_=false;closePending_=false;
     }
     else
-    {generationKnown_=resetPending_&&SUCCEEDED(hr);resetPending_=false;++generation_;}
+    {
+        generationKnown_=resetPending_&&SUCCEEDED(hr);resetPending_=false;++generation_;
+        cbv_.fill(0);uav_.fill(0);srv_.fill(0);table_.fill(0);rootThread_=0;
+        result_.rootSetsBeforeExposure=result_.rootSetsInsideExposure=0;
+        result_.tableSets=result_.heapSets=0;result_.rootThreadConflict=false;
+        result_.descriptorHeaps.fill(0);
+    }
 }
 void SpatialReadback::Close(ID3D12GraphicsCommandList* list,bool after,HRESULT hr)
 {

@@ -35,10 +35,15 @@ CloseFn originalClose{};
 using RootBufferFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,D3D12_GPU_VIRTUAL_ADDRESS);
 using RootSignatureFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,ID3D12RootSignature*);
 using NativeDispatchFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,UINT,UINT);
-RootBufferFn originalCbv{},originalUav{};
+using RootTableFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,D3D12_GPU_DESCRIPTOR_HANDLE);
+using DescriptorHeapsFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,ID3D12DescriptorHeap* const*);
+RootBufferFn originalCbv{},originalUav{},originalSrv{};
 RootSignatureFn originalSignature{};
 NativeDispatchFn originalNativeDispatch{};
-std::array<void*,4> bindingTargets{};
+RootTableFn originalTable{};
+DescriptorHeapsFn originalHeaps{};
+constexpr size_t BindingHooks=7;
+std::array<void*,BindingHooks> bindingTargets{};
 void* resetTarget{};
 void* closeTarget{};
 SpatialTrace trace;
@@ -80,7 +85,7 @@ struct Observation
     void* barrierFunction{};
     void* resetFunction{};
     void* closeFunction{};
-    std::array<void*,4> bindingFunctions{};
+    std::array<void*,BindingHooks> bindingFunctions{};
 };
 Observation pending;
 Observation copyObservation;
@@ -89,12 +94,31 @@ bool SelectedNative(ID3D12GraphicsCommandList* list)
 {
     return directReadback&&active&&active->selectedForReadback&&active->nativeList7==reinterpret_cast<uint64_t>(list);
 }
+// Root arguments outlive the exposure wrapper, so these observe the whole
+// recording of the pinned list. Only the dispatch itself stays exposure-scoped.
+bool ObservedNative(ID3D12GraphicsCommandList* list)
+{
+    return directReadback&&readback&&readback->Observes(list);
+}
 void STDMETHODCALLTYPE CbvHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
-{originalCbv(list,index,address);if(SelectedNative(list))readback->RootBuffer(true,index,address);}
+{originalCbv(list,index,address);if(ObservedNative(list))readback->RootBuffer(RootKind::Cbv,index,address);}
 void STDMETHODCALLTYPE UavHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
-{originalUav(list,index,address);if(SelectedNative(list))readback->RootBuffer(false,index,address);}
+{originalUav(list,index,address);if(ObservedNative(list))readback->RootBuffer(RootKind::Uav,index,address);}
+void STDMETHODCALLTYPE SrvHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_VIRTUAL_ADDRESS address)
+{originalSrv(list,index,address);if(ObservedNative(list))readback->RootBuffer(RootKind::Srv,index,address);}
+void STDMETHODCALLTYPE TableHook(ID3D12GraphicsCommandList* list,UINT index,D3D12_GPU_DESCRIPTOR_HANDLE handle)
+{originalTable(list,index,handle);if(ObservedNative(list))readback->RootTable(index,handle.ptr);}
+void STDMETHODCALLTYPE HeapsHook(ID3D12GraphicsCommandList* list,UINT heapCount,ID3D12DescriptorHeap* const* heaps)
+{
+    originalHeaps(list,heapCount,heaps);
+    if(!ObservedNative(list)||!heaps)return;
+    std::array<uint64_t,4> values{};
+    const UINT kept=heapCount<values.size()?heapCount:static_cast<UINT>(values.size());
+    for(UINT i=0;i<kept;++i)values[i]=reinterpret_cast<uint64_t>(heaps[i]);
+    readback->DescriptorHeaps(kept,values.data());
+}
 void STDMETHODCALLTYPE SignatureHook(ID3D12GraphicsCommandList* list,ID3D12RootSignature* signature)
-{originalSignature(list,signature);if(SelectedNative(list))readback->RootSignature();}
+{originalSignature(list,signature);if(ObservedNative(list))readback->RootSignature();}
 void STDMETHODCALLTYPE NativeDispatchHook(ID3D12GraphicsCommandList* list,UINT x,UINT y,UINT z)
 {
     originalNativeDispatch(list,x,y,z);
@@ -223,7 +247,7 @@ bool Resolve(Observation& o)
     o.closeFunction=(*reinterpret_cast<void***>(list7))[9];
     o.resetFunction=(*reinterpret_cast<void***>(list7))[10];
     const auto vtable=*reinterpret_cast<void***>(list7);
-    o.bindingFunctions={vtable[37],vtable[41],vtable[29],vtable[14]};
+    o.bindingFunctions={vtable[37],vtable[41],vtable[29],vtable[14],vtable[39],vtable[31],vtable[28]};
     list7->Release();
     return o.barrierFunction!=nullptr;
 }
@@ -300,7 +324,7 @@ void Save(const char* reason)
     if(directReadback)readback->Cancel("capture-window-ended");
     const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v2":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v3":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
         {"reason",reason},{"complete",!incomplete&&count==Limit&&(!directReadback||copy.phase==CopyPhase::Complete)},
         {"controlProgressed",progressing},{"gpuCopyIssued",directReadback&&copy.issued},
@@ -326,7 +350,10 @@ void Save(const char* reason)
             {"exposureResource",copy.exposureResource},{"giBase",copy.giBase},{"exposureBase",copy.exposureBase},
             {"giOffset",copy.giOffset},{"exposureOffset",copy.exposureOffset},{"giRootIndex",copy.giRootIndex},
             {"exposureRootIndex",copy.exposureRootIndex},{"readbackOffset",copy.pairReadbackOffset},
-            {"nativeCbv",copy.nativeCbv},{"nativeUav",copy.nativeUav},
+            {"nativeCbv",copy.nativeCbv},{"nativeUav",copy.nativeUav},{"nativeSrv",copy.nativeSrv},
+            {"nativeTable",copy.nativeTable},{"descriptorHeaps",copy.descriptorHeaps},{"giFromSrv",copy.giFromSrv},
+            {"rootThreadConflict",copy.rootThreadConflict},{"tableSets",copy.tableSets},{"heapSets",copy.heapSets},
+            {"rootSetsBeforeExposure",copy.rootSetsBeforeExposure},{"rootSetsInsideExposure",copy.rootSetsInsideExposure},
             {"giHex",copy.buffersGpuPaired?Hex(copy.gpuGi.data(),copy.gpuGi.size()):""},
             {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
     }
@@ -364,7 +391,7 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
     enabled=true;
     render::submissionObserver=Submission;
     ch::Log(directReadback?
-        "Spatial readback v2 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; actual native root bindings required, no API change.":
+        "Spatial readback v3 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; root arguments observed from list reset, tables recorded only.":
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }
@@ -382,7 +409,7 @@ void Poll()
     void* install{};
     void* installReset{};
     void* installClose{};
-    std::array<void*,4> installBindings{};
+    std::array<void*,BindingHooks> installBindings{};
     if(phase==Phase::Pending)
     {
         samples.push_back(Json(pending));++count;
@@ -403,19 +430,21 @@ void Poll()
         const bool madeReset=madeBarrier&&MH_CreateHook(reset,ResetHook,reinterpret_cast<void**>(&originalReset))==MH_OK;
         const bool madeClose=madeReset&&MH_CreateHook(close,CloseHook,reinterpret_cast<void**>(&originalClose))==MH_OK;
         bool ok=madeClose&&MH_EnableHook(install)==MH_OK&&MH_EnableHook(reset)==MH_OK&&MH_EnableHook(close)==MH_OK;
-        std::array<bool,4> madeBindings{};
+        std::array<bool,BindingHooks> madeBindings{};
         if(ok&&directReadback)
         {
-            const std::array<void*,4> hooks={reinterpret_cast<void*>(CbvHook),reinterpret_cast<void*>(UavHook),
-                reinterpret_cast<void*>(SignatureHook),reinterpret_cast<void*>(NativeDispatchHook)};
-            const std::array<void**,4> originals={reinterpret_cast<void**>(&originalCbv),reinterpret_cast<void**>(&originalUav),
-                reinterpret_cast<void**>(&originalSignature),reinterpret_cast<void**>(&originalNativeDispatch)};
-            for(size_t i=0;i<4&&ok;++i)
+            const std::array<void*,BindingHooks> hooks={reinterpret_cast<void*>(CbvHook),reinterpret_cast<void*>(UavHook),
+                reinterpret_cast<void*>(SignatureHook),reinterpret_cast<void*>(NativeDispatchHook),
+                reinterpret_cast<void*>(SrvHook),reinterpret_cast<void*>(TableHook),reinterpret_cast<void*>(HeapsHook)};
+            const std::array<void**,BindingHooks> originals={reinterpret_cast<void**>(&originalCbv),reinterpret_cast<void**>(&originalUav),
+                reinterpret_cast<void**>(&originalSignature),reinterpret_cast<void**>(&originalNativeDispatch),
+                reinterpret_cast<void**>(&originalSrv),reinterpret_cast<void**>(&originalTable),reinterpret_cast<void**>(&originalHeaps)};
+            for(size_t i=0;i<BindingHooks&&ok;++i)
             {madeBindings[i]=MH_CreateHook(installBindings[i],hooks[i],originals[i])==MH_OK;ok=madeBindings[i]&&MH_EnableHook(installBindings[i])==MH_OK;}
         }
         // Never disable somebody else's detour after MH_ERROR_ALREADY_CREATED.
         if(!ok){if(madeBarrier)MH_DisableHook(install);if(madeReset)MH_DisableHook(reset);if(madeClose)MH_DisableHook(close);
-            for(size_t i=0;i<4;++i)if(madeBindings[i])MH_DisableHook(installBindings[i]);}
+            for(size_t i=0;i<BindingHooks;++i)if(madeBindings[i])MH_DisableHook(installBindings[i]);}
         AcquireSRWLockExclusive(&lock);
         if(ok){barrierTarget=install;resetTarget=reset;closeTarget=close;barrierInstalled=true;
             if(directReadback)bindingTargets=installBindings;

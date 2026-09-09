@@ -45,6 +45,20 @@ def paired_report():
     return r
 
 
+def v3_report(from_srv=False):
+    r = paired_report()
+    r['format'] = 'private-spatial-readback-v3'
+    pair = r['textureReadback']['bufferPair']
+    srv, table = [0]*64, [0]*64
+    if from_srv:
+        srv[2] = pair['nativeCbv'][2]
+        pair['nativeCbv'] = [0]*64
+    pair.update(nativeSrv=srv, nativeTable=table, descriptorHeaps=[0]*4, giFromSrv=from_srv,
+                rootThreadConflict=False, tableSets=0, heapSets=1,
+                rootSetsBeforeExposure=2, rootSetsInsideExposure=0)
+    return r
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -133,6 +147,33 @@ class SpatialReadbackTests(unittest.TestCase):
         r = paired_report()
         r['textureReadback']['bufferPair']['exposureHex'] = '00'*128
         self.assertEqual(decoder.decode(r, True)['gpuExposureInverseUnavailable'], 'gpu-exposure-store-control-mismatch')
+
+    def test_v3_pairs_like_v2(self):
+        # The widened root window changes where bindings are seen, not the model.
+        d = decoder.decode(v3_report(), True)
+        self.assertTrue(d['giGpuFramePaired'] and d['exposureGpuFramePaired'])
+        self.assertEqual(d['skyVisibilityCandidate'], decoder.decode(paired_report(), True)['skyVisibilityCandidate'])
+
+    def test_v3_root_srv_binding(self):
+        # GI bound as a root SRV must validate against nativeSrv, not nativeCbv.
+        d = decoder.decode(v3_report(True), True)
+        self.assertTrue(d['giGpuFramePaired'])
+
+    def test_v3_root_srv_must_match_its_own_array(self):
+        r = v3_report(True)
+        r['textureReadback']['bufferPair']['nativeSrv'] = [0]*64
+        with self.assertRaises(ValueError):
+            decoder.decode(r, True)
+
+    def test_v3_root_thread_conflict_rejected(self):
+        for value in (True, None):
+            r = v3_report()
+            r['textureReadback']['bufferPair']['rootThreadConflict'] = value
+            with self.assertRaises(ValueError):
+                decoder.decode(r, True)
+
+    def test_v2_still_accepted(self):
+        self.assertTrue(decoder.decode(paired_report(), True)['giGpuFramePaired'])
 
     def test_pair_no_layout(self):
         d = decoder.decode(paired_report(), False)

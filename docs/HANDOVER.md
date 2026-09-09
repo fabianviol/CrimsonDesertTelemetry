@@ -1,11 +1,11 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
 The user requested a handover for Claude after a long absence; Claude has since
-installed and live-tested readback.2. **Current state: readback.2 was measured in
-game and its binding guard rejected it** (current checkpoint below). The next step
-is an implementation change, NOT another capture with the installed package.
-readback.2 stays installed in the game folder and its one-shot is consumed in the
-tested process. No publication or push was performed for any diagnostic package.
+live-tested readback.2, recorded its binding rejection and built readback.3 in
+response. **Current state: readback.3 is built and host-tested but NOT installed
+or game-tested** (current checkpoint below). readback.2 is still the ASI in the
+game folder and its one-shot is consumed in the tested process, so the next live
+run needs the new ZIP. No publication or push was performed for any package.
 
 ## What changed since the old fire/console investigation
 
@@ -51,6 +51,8 @@ readback.2 then added GPU GI/exposure copies for the same selected native dispat
 and WAS live-tested: the selected dispatch was observed, but the required root
 CBV/UAV bindings were absent inside its window, so it copied nothing. That valid
 negative disproves the root-descriptor assumption, not the texture result.
+**Built/tested, NOT measured in game:** readback.3 widens that window to the whole
+command-list recording and records descriptor tables, root SRVs and heaps.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
 ## Short reading route — do not read all historical checkpoints
@@ -74,11 +76,11 @@ plus `Decode-ExposureContext.py` (existing shader model). Existing public reader
 are in `src/CrimsonDesertTelemetry.Core`: RenderLightReader, SmoothedLights,
 SkyAmbientReader. Do not replace those feeds to add this diagnostic.
 
-## Test recipe — reusable, but the next step is implementation
+## Resume recipe — ONE test with the readback.3 ZIP
 
-This recipe is preserved for the NEXT package; readback.2's one-shot is already
-consumed and re-running it would reject identically. Have the user close the game
-and install the WHOLE ready ZIP via DMM. Never replace
+readback.2's one-shot is consumed and re-running it would reject identically, so
+this recipe now applies to the readback.3 package below. Have the user close the
+game and install the WHOLE ready ZIP via DMM. Never replace
 an active ASI. Verify the installed ASI hash against the checkpoint, actual new PID,
 native log and `http://127.0.0.1:27311/v1/health` (playing, supported, progressing).
 All old process/resource addresses below are historical, not reusable pointers.
@@ -106,7 +108,58 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — readback.2 measured live, bindings rejected, 2026-09-09
+## Current checkpoint — readback.3 built for the real binding order, 2026-09-09
+
+PRIVATE **2.0.1-spatial-readback.3** built and host-tested, NOT installed or
+game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.3-ModManagers.zip
+SHA256 1CA14A0ECB3D4A832D584C54562CF2E39B6D327279897CFA61A78B3080CCA547.
+Expanded v2.0.1-spatial-readback.3-20260909-101411-176-7bdb890a/CrimsonDesertTelemetry;
+ASI SHA256 9B35DEC7A0960A0FC94B3146B9104ECA3F930344A1947467CC5FEF7E4ED66352.
+Spatial defaults in the ZIP remain OFF. All earlier packages preserved unchanged.
+The game folder still holds readback.2 (941C9DDB...); replacing it needs a shutdown.
+
+WHY: the live rejection below proved readback.2 looked in the wrong window. A root
+argument persists until it is overwritten or the root signature changes, so the
+bindings for the selected dispatch are normally issued BEFORE the game's exposure
+wrapper runs. readback.2 cleared `cbv_`/`uav_` inside `Arm` and gated recording on
+the thread_local `active` observation, so it could only ever see roots set within
+that wrapper — one CBV, no UAV, in the measured run.
+
+CHANGES: root recording now runs for the whole recording of the pinned command
+list, opened by the observed Reset and cleared by Reset or a new root signature,
+not by `Arm`. New diagnostic observers cover SetComputeRootShaderResourceView
+(vtable39), SetComputeRootDescriptorTable(31) and SetDescriptorHeaps(28), so
+"bound through a table" is now distinguishable from "not bound". Tables and heaps
+are RECORDED ONLY; a descriptor handle is never resolved to a resource and never
+copied from. GI may now pair through a root CBV or a root SRV into the same pinned
+buffer, with the matching AccessBefore and 256/4-byte alignment respectively;
+everything else still fails closed. Report format is private-spatial-readback-v3
+with nativeSrv/nativeTable/descriptorHeaps, giFromSrv, rootThreadConflict and
+root-set counts before/inside the exposure. All root arguments must come from the
+recording thread. No public API, stream or schema change.
+
+TESTS: 23/23 native CTests. The pair test now installs all SEVEN production
+binding detours on DIRECT and COMPUTE, sets the roots BEFORE `Arm` — the exact
+live failure order — and still reaches a fenced, byte-exact GPU GI/output/texture
+pairing: 223 WARP/detour checks, zero debug-layer warnings or errors. New negative
+controls cover a descriptor table replacing the GI root, roots left over from a
+previous recording, and a root SRV pairing at a 4-byte offset. 32 Python tests
+pass, including v3 acceptance, root-SRV validation against its own array, a
+rejected root-thread conflict and unchanged v2 handling. Re-decoding the readback.1
+capture reproduces its preserved derived.json byte-for-byte. These are host
+controls, NOT evidence that the game binds its roots this way.
+
+**ONE next step:** after shutdown install the whole readback.3 ZIP with DMM, keep
+Research/SpatialProbe=1, SpatialReadback=1, AmbientProbe=0 with Lights/ManyLights
+and Ambient enabled, and SAVE the INI before starting the game — a start with the
+package defaults arms nothing. Verify ASI hash, health and a native log line
+reading "Spatial readback v3 IDLE", then run ONE stationary capture. If it pairs,
+design the bounded repeatable roof/outside control. If it rejects again, read
+rootSetsBeforeExposure, tableSets and nativeTable first: a table binding is now
+positive evidence about the path, not a dead end. Independent hiZ per-source
+visibility remains pending and required.
+
+## Previous checkpoint — readback.2 measured live, bindings rejected, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.2** installed via DMM and LIVE-TESTED in PID2652.
 Installed ASI SHA256 941C9DDBC215F56676570376630D6C0A71277513E4B5B1824167DA95342529FD

@@ -40,8 +40,9 @@ def linear_wrap(data, coordinates, dims=DIMS):
 
 
 def decode(source, assume_layout=False):
-    paired = source.get('format') == 'private-spatial-readback-v2'
-    if source.get('format') not in ('private-spatial-readback-v1', 'private-spatial-readback-v2') or source.get('executableSha256') != EXE:
+    formats = ('private-spatial-readback-v1', 'private-spatial-readback-v2', 'private-spatial-readback-v3')
+    paired = source.get('format') in formats[1:]
+    if source.get('format') not in formats or source.get('executableSha256') != EXE:
         raise ValueError('wrong-format-or-build')
     if source.get('controlProgressed') is not True:
         raise ValueError('no-progressing-control')
@@ -81,7 +82,10 @@ def decode(source, assume_layout=False):
             raise ValueError('wrong-gpu-buffer-sizes')
         if pair['giResource'] != o['giGpuResource'] or pair['exposureResource'] != o['exposureGpuResource']:
             raise ValueError('paired-resource-context-mismatch')
-        for name, binding in (('gi', 'nativeCbv'), ('exposure', 'nativeUav')):
+        # v3 may pair GI through a root SRV; v2 files have no such field.
+        if source.get('format') == 'private-spatial-readback-v3' and pair.get('rootThreadConflict') is not False:
+            raise ValueError('root-thread-conflict')
+        for name, binding in (('gi', 'nativeSrv' if pair.get('giFromSrv') else 'nativeCbv'), ('exposure', 'nativeUav')):
             root = pair[name+'RootIndex']
             if (not isinstance(root, int) or not 0 <= root < 64 or len(pair[binding]) != 64 or
                     pair[binding][root] != pair[name+'Base']+pair[name+'Offset']):
