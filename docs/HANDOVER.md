@@ -1,5 +1,16 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
+## Required read order
+
+1. `docs/GPU_CAPTURE_FORENSICS.md` — authoritative current GPU/PIX state.
+2. `docs/TOOLING.md` — use the existing tools; do not rediscover them.
+3. `docs/HANDOVER.md` — product/runtime context and current checkpoints.
+4. `docs/LOCAL_ILLUMINATION_RESEARCH.md` — deep evidence and history only;
+   later sections may preserve superseded conclusions.
+
+Do not continue from a historical claim when `GPU_CAPTURE_FORENSICS.md` marks it as
+hypothesis, withdrawn or superseded.
+
 The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure
