@@ -107,6 +107,51 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Repeated measurement — 2026-09-09, series.1 NOT live-tested
+
+The one-shot limit is lifted. This was the pivotal engineering risk: every planned
+use of the quantity depends on being able to read it more than once per process.
+
+Configuration is two new keys, `[Research] SpatialReadbackCount` (1..8, default1)
+and `SpatialReadbackIntervalMs` (250..10000, default1000). Out-of-range values fall
+back to the single transaction that is already proven. **The interval is a minimum,
+not a sample rate:** a transaction still only arms on a selected exposure dispatch,
+so the achieved cadence is whatever the game offers and must be read from the
+recorded ticks rather than assumed.
+
+The copy path is deliberately unchanged: same validated barriers, same whole-buffer
+GI and exposure copies, same texture copy at the validated release barrier. What is
+new is only the surrounding lifetime.
+
+**Safety properties, each covered by a control.** One readback destination is
+reused for the whole series and is re-armed only after the previous fence completed
+and its map finished, so the destination is never in flight. Each transaction
+signals its own increasing fence value. Any failure ends the series at once and is
+reported as the last record, because a series must never continue past a state the
+instrument cannot explain. A consumed series cannot restart in the same process.
+
+**Report and decoder.** `private-spatial-readback-v5` carries a `transactions`
+array, each entry with its own CPU observation, alongside the requested and
+completed counts and the interval. The newest transaction is repeated at the old
+`textureReadback` location so v4-era readers keep working. `decode_series` decodes
+each entry independently and reports min, median, max and spread. An entry that
+cannot be decoded appears as `undecodable` with its reason rather than vanishing,
+and identical inputs yield a spread of exactly zero instead of an average.
+
+**Host verification.** 23/23 CTests and 290 WARP/detour checks with zero
+debug-layer warnings. The new control runs three transactions on their own queue
+with different uploaded contents per pass and asserts that each record holds THAT
+pass's texture fill and GI bytes — the point being that a reused destination could
+silently return a stale copy, and it does not. It also asserts advancing fence
+values, that the series ends exactly at its budget, and that a consumed series
+refuses to restart. 42 Python tests. All synthetic; the series has not run in game.
+
+**Why this matters for the open questions.** Eight transactions standing still is
+eight measurements at one place, which is exactly the repeat-spread gap left open
+by the occlusion series. The spread also sets the bar for the directional work:
+a directional difference only means something once it exceeds the spread at a
+fixed point.
+
 ## Directional ambient — requirement and where the data already is
 
 Stated by the user as the product target, recorded here as a design note, not a

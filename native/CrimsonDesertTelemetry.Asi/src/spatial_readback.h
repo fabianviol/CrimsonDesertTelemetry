@@ -49,8 +49,15 @@ struct CopyResult
 class SpatialReadback
 {
 public:
+    static constexpr unsigned MaxTransactions=8;
     ~SpatialReadback();
-    bool Begin();
+    // count>1 repeats the SAME validated transaction, reusing one readback buffer
+    // and one fence sequence. A new copy is only ever armed after the previous
+    // fence completed and its map finished, so the destination is never in flight.
+    bool Begin(unsigned count=1,uint64_t intervalMilliseconds=1000);
+    bool SeriesFinished() const;
+    unsigned Completed() const;
+    std::vector<CopyResult> Records() const;
     void Discover(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
     bool Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,uint32_t frame,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
     void RootSignature();
@@ -72,10 +79,14 @@ private:
     void Fail(const char* reason,HRESULT hr=E_FAIL);
     bool Recording() const;
     void NoteRootThread();
+    void KeepRecordAndRearm();
     SRWLOCK mutex_=SRWLOCK_INIT;
     std::atomic<ID3D12GraphicsCommandList7*> observedList_{};
     CopyResult result_;
     bool requested_{}, resetPending_{}, generationKnown_{}, closed_{}, closePending_{}, mapping_{};
+    unsigned budget_{}, completed_{};
+    uint64_t intervalMs_{}, lastCompletedTick_{}, nextFence_{};
+    std::vector<CopyResult> records_;
     uint64_t generation_{}, armedTick_{};
     D3D12_COMMAND_LIST_TYPE type_{};
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList7> list_;

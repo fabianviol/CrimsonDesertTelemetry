@@ -80,6 +80,25 @@ def v4_report(gi_at=4096, exposure_at=2048, copies=1):
     return r
 
 
+def v5_report(count=3, broken=None):
+    """A repeated series: one entry per transaction, each independently decodable."""
+    base = v4_report()
+    entries = []
+    for i in range(count):
+        single = v4_report()
+        t = single['textureReadback']
+        t['frame'] = 42+i
+        t['context']['frame'] = 42+i
+        t['fenceValue'] = i+1
+        if broken is not None and i == broken:
+            t['gpuCompleted'] = False
+        entries.append(t)
+    return dict(format='private-spatial-readback-v5', executableSha256=decoder.EXE,
+                controlProgressed=True, requestedTransactions=count, completedTransactions=count,
+                transactionIntervalMilliseconds=500, transactions=entries,
+                textureReadback=base['textureReadback'])
+
+
 class SpatialReadbackTests(unittest.TestCase):
     def test_centers(self):
         data = bytes(range(8))
@@ -233,6 +252,39 @@ class SpatialReadbackTests(unittest.TestCase):
         r['textureReadback']['bufferPair']['giResource'] = 888
         with self.assertRaises(ValueError):
             decoder.decode(r, True)
+
+    def test_v5_series_decodes_each_transaction(self):
+        d = decoder.decode_series(v5_report(3), True)
+        self.assertEqual(d['decodedTransactions'], 3)
+        self.assertEqual(len(d['transactions']), 3)
+        self.assertEqual([t['decoded']['frame'] for t in d['transactions']], [42, 43, 44])
+        # Identical inputs must produce zero spread, never an invented average.
+        self.assertEqual(d['skyVisibilitySpread'], 0.0)
+        self.assertEqual(d['skyVisibilityMin'], d['skyVisibilityMax'])
+        self.assertEqual(d['completedTransactions'], 3)
+
+    def test_v5_reports_an_undecodable_entry_instead_of_dropping_it(self):
+        d = decoder.decode_series(v5_report(3, broken=1), True)
+        self.assertEqual(d['decodedTransactions'], 2)
+        self.assertEqual(len(d['transactions']), 3)
+        self.assertEqual(d['transactions'][1]['status'], 'undecodable')
+        self.assertEqual(d['transactions'][1]['reason'], 'no-completed-gpu-copy')
+
+    def test_v5_requires_transactions(self):
+        r = v5_report(1)
+        r['transactions'] = []
+        with self.assertRaises(ValueError):
+            decoder.decode_series(r, True)
+
+    def test_v5_single_entry_matches_the_v4_result(self):
+        series = decoder.decode_series(v5_report(1), True)
+        single = decoder.decode(v4_report(), True)
+        self.assertEqual(series['transactions'][0]['decoded']['skyVisibilityCandidate'],
+                         single['skyVisibilityCandidate'])
+
+    def test_series_helper_ignores_older_formats(self):
+        self.assertIsNone(decoder.decode_series(v4_report(), True))
+        self.assertIsNone(decoder.decode_series(paired_report(), True))
 
     def test_pair_no_layout(self):
         d = decoder.decode(paired_report(), False)

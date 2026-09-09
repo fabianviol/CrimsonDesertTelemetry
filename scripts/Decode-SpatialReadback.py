@@ -56,9 +56,10 @@ def find_window(buffer, needle, align=4):
 
 def decode(source, assume_layout=False):
     formats = ('private-spatial-readback-v1', 'private-spatial-readback-v2',
-               'private-spatial-readback-v3', 'private-spatial-readback-v4')
+               'private-spatial-readback-v3', 'private-spatial-readback-v4',
+               'private-spatial-readback-v5')
     paired = source.get('format') in formats[1:]
-    whole = source.get('format') == 'private-spatial-readback-v4'
+    whole = source.get('format') in ('private-spatial-readback-v4', 'private-spatial-readback-v5')
     if source.get('format') not in formats or source.get('executableSha256') != EXE:
         raise ValueError('wrong-format-or-build')
     if source.get('controlProgressed') is not True:
@@ -188,6 +189,46 @@ def decode(source, assume_layout=False):
     return result
 
 
+def decode_series(source, assume_layout=False):
+    """v5 carries one entry per repeated transaction. Each is decoded on its own.
+
+    Repeats measure spread at one place. They are not an average, and a failed or
+    undecodable entry is reported as such instead of being dropped from the set.
+    """
+    if source.get('format') != 'private-spatial-readback-v5':
+        return None
+    entries = source.get('transactions')
+    if not isinstance(entries, list) or not entries:
+        raise ValueError('missing-transactions')
+    results, values = [], []
+    for index, entry in enumerate(entries):
+        single = dict(source)
+        single['textureReadback'] = entry
+        try:
+            decoded = decode(single, assume_layout)
+            results.append(dict(index=index, status=decoded['status'], decoded=decoded))
+            if 'skyVisibilityCandidate' in decoded:
+                values.append(decoded['skyVisibilityCandidate'])
+        except ValueError as exc:
+            results.append(dict(index=index, status='undecodable', reason=str(exc)))
+    summary = dict(format='private-spatial-readback-series-v1', publicTelemetry=False,
+                   requestedTransactions=source.get('requestedTransactions'),
+                   completedTransactions=source.get('completedTransactions'),
+                   intervalMilliseconds=source.get('transactionIntervalMilliseconds'),
+                   decodedTransactions=len(values), transactions=results,
+                   caveat='Repeated same-submission transactions at one place. Spread across entries '
+                          'is measurement spread plus real scene change; it is not an accuracy bound, '
+                          'not an average, and not room brightness or per-source occlusion.')
+    if values:
+        ordered = sorted(values)
+        middle = len(ordered)//2
+        summary.update(skyVisibilityMin=ordered[0], skyVisibilityMax=ordered[-1],
+                       skyVisibilityMedian=ordered[middle] if len(ordered) % 2 else
+                           (ordered[middle-1]+ordered[middle])/2,
+                       skyVisibilitySpread=ordered[-1]-ordered[0])
+    return summary
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--input', required=True, type=Path)
@@ -200,12 +241,17 @@ def main():
     if args.input.stat().st_size > 32*1024*1024:
         ap.error('Input exceeds 32 MiB bound')
     data = args.input.read_bytes()
-    result = decode(json.loads(data), args.assume_adapt_exposure_layout)
+    parsed = json.loads(data)
+    result = decode_series(parsed, args.assume_adapt_exposure_layout) or \
+        decode(parsed, args.assume_adapt_exposure_layout)
     result.update(source=str(args.input.resolve()), sourceSha256=hashlib.sha256(data).hexdigest())
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open('x', encoding='utf-8') as target:
         json.dump(result, target, indent=2, allow_nan=False)
-    print(json.dumps({k: result[k] for k in ('status', 'frame', 'byteRange', 'giGpuFramePaired')}))
+    keys = ('decodedTransactions', 'skyVisibilityMin', 'skyVisibilityMedian', 'skyVisibilityMax',
+            'skyVisibilitySpread') if 'transactions' in result else \
+           ('status', 'frame', 'byteRange', 'giGpuFramePaired')
+    print(json.dumps({k: result[k] for k in keys if k in result}))
 
 
 if __name__ == '__main__':

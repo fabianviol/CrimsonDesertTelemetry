@@ -202,11 +202,112 @@ int main()
         }
         delete readback;readback=nullptr;
     }
+    // A repeated series must refresh the reused destination every time and must
+    // never re-arm before the previous map finished. Own resources, own queue.
+    {
+        constexpr unsigned kRuns=3;
+        D3D12_COMMAND_QUEUE_DESC qd{};qd.Type=D3D12_COMMAND_LIST_TYPE_DIRECT;
+        ComPtr<ID3D12CommandQueue> queue;Hr(device->CreateCommandQueue(&qd,IID_PPV_ARGS(&queue)),"series queue");
+        ComPtr<ID3D12CommandAllocator> alloc;Hr(device->CreateCommandAllocator(qd.Type,IID_PPV_ARGS(&alloc)),"series allocator");
+        ComPtr<ID3D12GraphicsCommandList7> list;Hr(device->CreateCommandList(0,qd.Type,alloc.Get(),nullptr,IID_PPV_ARGS(&list)),"series list");
+        Hr(list->Close(),"series initial close");
+        auto seriesGi=buffer(D3D12_HEAP_TYPE_DEFAULT,65536,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_FLAG_NONE);
+        auto seriesOut=buffer(D3D12_HEAP_TYPE_DEFAULT,65536,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        ComPtr<ID3D12Resource> seriesTexture;
+        Hr(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&td,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&seriesTexture)),"series texture");
+        SpatialReadback series;
+        Check(!series.Begin(0),"zero transactions refused");
+        Check(!series.Begin(SpatialReadback::MaxTransactions+1),"too many transactions refused");
+        Check(series.Begin(kRuns,0),"series begin");
+        series.Discover(list.Get(),seriesTexture.Get(),seriesGi.Get(),seriesOut.Get());series.Poll();
+        Check(series.Snapshot().phase==CopyPhase::Ready,"series prepared once");
+        for(unsigned pass_=0;pass_<kRuns;++pass_)
+        {
+            const uint8_t fill=static_cast<uint8_t>(11+pass_*29);
+            std::array<uint32_t,192> data{};for(unsigned i=0;i<192;++i)data[i]=i+1000u*pass_;
+            void* mapped{};D3D12_RANGE none{};Hr(upload->Map(0,&none,&mapped),"series upload map");
+            std::memset(mapped,fill,3*1024*1024);
+            std::memcpy(static_cast<uint8_t*>(mapped)+2500000,data.data(),768);
+            upload->Unmap(0,nullptr);
+            series.Reset(list.Get(),false);Hr(list->Reset(alloc.Get(),pipeline.Get()),"series reset");series.Reset(list.Get(),true,S_OK);
+            const bool first=pass_==0;
+            // Only the GI buffer is re-uploaded. The output is brought into UAV
+            // access once and then left there; NativeDispatchEnd restores it.
+            D3D12_BUFFER_BARRIER pre{};
+            pre.pResource=seriesGi.Get();
+            pre.AccessBefore=first?D3D12_BARRIER_ACCESS_NO_ACCESS:D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
+            pre.SyncBefore=first?D3D12_BARRIER_SYNC_NONE:D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+            pre.SyncAfter=D3D12_BARRIER_SYNC_COPY;pre.AccessAfter=D3D12_BARRIER_ACCESS_COPY_DEST;pre.Size=UINT64_MAX;
+            D3D12_BARRIER_GROUP g{};g.Type=D3D12_BARRIER_TYPE_BUFFER;g.NumBarriers=1;g.pBufferBarriers=&pre;list->Barrier(1,&g);
+            if(first)
+            {
+                D3D12_BUFFER_BARRIER out{};out.pResource=seriesOut.Get();
+                out.SyncBefore=D3D12_BARRIER_SYNC_NONE;out.AccessBefore=D3D12_BARRIER_ACCESS_NO_ACCESS;
+                out.SyncAfter=D3D12_BARRIER_SYNC_COMPUTE_SHADING;out.AccessAfter=D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+                out.Size=UINT64_MAX;g.pBufferBarriers=&out;list->Barrier(1,&g);
+            }
+            D3D12_TEXTURE_BARRIER t{};t.pResource=seriesTexture.Get();t.SyncBefore=first?D3D12_BARRIER_SYNC_NONE:D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+            t.SyncAfter=D3D12_BARRIER_SYNC_COPY;t.AccessBefore=first?D3D12_BARRIER_ACCESS_NO_ACCESS:D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+            t.AccessAfter=D3D12_BARRIER_ACCESS_COPY_DEST;t.LayoutBefore=first?D3D12_BARRIER_LAYOUT_COMMON:D3D12_BARRIER_LAYOUT_GENERIC_READ;
+            t.LayoutAfter=D3D12_BARRIER_LAYOUT_COPY_DEST;t.Subresources.IndexOrFirstMipLevel=UINT_MAX;
+            g.Type=D3D12_BARRIER_TYPE_TEXTURE;g.NumBarriers=1;g.pTextureBarriers=&t;list->Barrier(1,&g);
+            list->CopyBufferRegion(seriesGi.Get(),256,upload.Get(),2500000,768);
+            D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=seriesTexture.Get();dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=fp;
+            list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
+            D3D12_BUFFER_BARRIER post{};post.pResource=seriesGi.Get();
+            post.SyncBefore=D3D12_BARRIER_SYNC_COPY;post.SyncAfter=D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+            post.AccessBefore=D3D12_BARRIER_ACCESS_COPY_DEST;post.AccessAfter=D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
+            post.Size=UINT64_MAX;
+            g.Type=D3D12_BARRIER_TYPE_BUFFER;g.NumBarriers=1;g.pBufferBarriers=&post;list->Barrier(1,&g);
+            t.SyncBefore=D3D12_BARRIER_SYNC_COPY;t.SyncAfter=D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+            t.AccessBefore=D3D12_BARRIER_ACCESS_COPY_DEST;t.AccessAfter=D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+            t.LayoutBefore=D3D12_BARRIER_LAYOUT_COPY_DEST;t.LayoutAfter=D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
+            g.Type=D3D12_BARRIER_TYPE_TEXTURE;g.NumBarriers=1;g.pTextureBarriers=&t;list->Barrier(1,&g);
+            list->SetComputeRootSignature(signature.Get());
+            list->SetComputeRootConstantBufferView(0,seriesGi->GetGPUVirtualAddress()+256);
+            list->SetComputeRootUnorderedAccessView(1,seriesOut->GetGPUVirtualAddress()+1024);
+            series.RootBuffer(RootKind::Cbv,0,seriesGi->GetGPUVirtualAddress()+256);
+            series.RootBuffer(RootKind::Uav,1,seriesOut->GetGPUVirtualAddress()+1024);
+            Check(series.Arm(list.Get(),seriesTexture.Get(),200+pass_,seriesGi.Get(),seriesOut.Get()),"series arm");
+            list->Dispatch(2,1,1);
+            series.NativeDispatchEnd(list.Get(),2,1,1,ForwardBarrier);
+            series.ExposureEnd(true);
+            t.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;t.SyncAfter=D3D12_BARRIER_SYNC_NONE;
+            t.AccessBefore=D3D12_BARRIER_ACCESS_SHADER_RESOURCE;t.AccessAfter=D3D12_BARRIER_ACCESS_NO_ACCESS;
+            t.LayoutBefore=D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;t.LayoutAfter=D3D12_BARRIER_LAYOUT_GENERIC_READ;
+            g.Type=D3D12_BARRIER_TYPE_TEXTURE;g.NumBarriers=1;g.pTextureBarriers=&t;
+            series.Barrier(list.Get(),1,&g,ForwardBarrier);list->Barrier(1,&g);
+            series.Close(list.Get(),false);Hr(list->Close(),"series close");series.Close(list.Get(),true,S_OK);
+            ID3D12CommandList* submitted[]{list.Get()};
+            series.Submit(queue.Get(),1,submitted,false);
+            queue->ExecuteCommandLists(1,submitted);
+            series.Submit(queue.Get(),1,submitted,true);
+            Check(series.Snapshot().fenceValue==pass_+1,"fence value advances per transaction");
+            const auto deadline=GetTickCount64()+5000;
+            while(series.Snapshot().phase==CopyPhase::WaitingGpu&&GetTickCount64()<deadline){series.Poll();Sleep(1);}
+            Check(series.Completed()==pass_+1,"transaction recorded");
+            Check(series.SeriesFinished()==(pass_+1==kRuns),"series ends exactly at the budget");
+        }
+        const auto records=series.Records();
+        Check(records.size()==kRuns,"one record per transaction");
+        for(unsigned pass_=0;pass_<kRuns;++pass_)
+        {
+            const auto& r=records[pass_];
+            const uint8_t fill=static_cast<uint8_t>(11+pass_*29);
+            Check(r.phase==CopyPhase::Complete&&r.buffersGpuPaired&&r.fenceValue==pass_+1,"each transaction completed under its own fence");
+            Check(r.packed.size()==540672&&std::all_of(r.packed.begin(),r.packed.end(),[fill](uint8_t b){return b==fill;}),
+                  "reused destination holds THIS transaction's texture, not a stale copy");
+            uint32_t first{};std::memcpy(&first,r.gpuGi.data()+256,4);
+            Check(first==1000u*pass_,"reused destination holds THIS transaction's GI bytes");
+        }
+        Check(!series.Begin(2),"a consumed series cannot restart in the same process");
+    }
     for(UINT64 i=0;i<info->GetNumStoredMessagesAllowedByRetrievalFilter();++i)
     {
         SIZE_T n{};info->GetMessage(i,nullptr,&n);std::vector<uint8_t> bytes(n);auto* m=reinterpret_cast<D3D12_MESSAGE*>(bytes.data());Hr(info->GetMessage(i,m,&n),"message");
         if(m->Severity<=D3D12_MESSAGE_SEVERITY_WARNING)std::cerr<<m->pDescription<<'\n';
         Check(m->Severity>D3D12_MESSAGE_SEVERITY_WARNING,"zero debug warnings/errors");
     }
-    std::cout<<"PASS "<<checks<<" actual WARP shader/native hook/GPU CB+output+texture pairing controls. Synthetic, no game proof.\n";
+    std::cout<<"PASS "<<checks<<" actual WARP shader/native hook/GPU CB+output+texture pairing and repeated-series controls. Synthetic, no game proof.\n";
 }

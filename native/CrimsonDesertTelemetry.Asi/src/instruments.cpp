@@ -188,8 +188,12 @@ void RunImpl(HANDLE stopEvent)
     const bool spatialReadback = GetPrivateProfileIntW(L"Research", L"SpatialReadback", 0, iniPath.c_str()) != 0;
     const bool readbackAllowed = !spatialReadback || (capturing&&
         GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) == 0);
+    const unsigned spatialTransactions =
+        GetPrivateProfileIntW(L"Research", L"SpatialReadbackCount", 1, iniPath.c_str());
+    const unsigned spatialInterval =
+        GetPrivateProfileIntW(L"Research", L"SpatialReadbackIntervalMs", 1000, iniPath.c_str());
     const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
-        std::filesystem::path(moduleDirectory).c_str(),spatialReadback);
+        std::filesystem::path(moduleDirectory).c_str(),spatialReadback,spatialTransactions,spatialInterval);
     if(spatialProbe && !spatialStarted)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;

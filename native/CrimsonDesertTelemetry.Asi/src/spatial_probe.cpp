@@ -60,6 +60,8 @@ enum class Phase { Idle, Ready, Pending, Failed };
 Phase phase=Phase::Idle;
 bool barrierInstalled{}, incomplete{};
 bool directReadback{};
+unsigned readbackCount{1};
+uint64_t readbackIntervalMs{1000};
 // Module is process-pinned; unresolved GPU work retains its bounded allocation.
 SpatialReadback* readback=new SpatialReadback;
 nlohmann::json samples;
@@ -89,6 +91,7 @@ struct Observation
 };
 Observation pending;
 Observation copyObservation;
+std::vector<Observation> copyObservations;
 thread_local Observation* active{};
 bool SelectedNative(ID3D12GraphicsCommandList* list)
 {
@@ -319,51 +322,72 @@ nlohmann::json TraceJson()
     ReleaseSRWLockExclusive(&trace.mutex);
     return result;
 }
+nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy)
+{
+    const auto& f=copy.footprint;
+    nlohmann::json row={{"status",copy.reason},{"hresult",static_cast<uint32_t>(copy.error)},
+        {"gpuCopyIssued",copy.issued},{"gpuCompleted",copy.gpuCompleted},{"giGpuFramePaired",copy.buffersGpuPaired},
+        {"exposureGpuFramePaired",copy.buffersGpuPaired},{"frame",copy.frame},{"resetGeneration",copy.generation},
+        {"queue",copy.queue},{"recordingThread",copy.recordingThread},{"submissionThread",copy.submissionThread},
+        {"releaseTick",copy.releaseTick},{"submitTick",copy.submitTick},{"completedTick",copy.completedTick},
+        {"fenceValue",copy.fenceValue},{"mapCalls",copy.mapCalls},{"releaseBarrier",BarrierJson(copy.release)},
+        {"allocationBytes",copy.allocationBytes},{"footprint",{{"offset",f.Offset},{"format",f.Footprint.Format},
+            {"width",f.Footprint.Width},{"height",f.Footprint.Height},{"depth",f.Footprint.Depth},{"rowPitch",f.Footprint.RowPitch}}},
+        {"packing","uint8 x-fastest, then y, then z; row padding removed; resource R8_TYPELESS"},
+        {"packedTextureHex",Hex(copy.packed.data(),copy.packed.size())}};
+    row["bufferPair"]={{"requested",copy.buffersRequested},{"nativeDispatchSeen",copy.nativeDispatchSeen},
+        {"nativeDispatches",copy.nativeDispatches},{"copied",copy.buffersCopied},{"giResource",copy.giResource},
+        {"exposureResource",copy.exposureResource},{"giBase",copy.giBase},{"exposureBase",copy.exposureBase},
+        {"giOffset",copy.giOffset},{"exposureOffset",copy.exposureOffset},{"giRootIndex",copy.giRootIndex},
+        {"exposureRootIndex",copy.exposureRootIndex},{"readbackOffset",copy.pairReadbackOffset},
+        {"nativeCbv",copy.nativeCbv},{"nativeUav",copy.nativeUav},{"nativeSrv",copy.nativeSrv},
+        {"nativeTable",copy.nativeTable},{"descriptorHeaps",copy.descriptorHeaps},{"giFromSrv",copy.giFromSrv},
+        {"rootThreadConflict",copy.rootThreadConflict},{"tableSets",copy.tableSets},{"heapSets",copy.heapSets},
+        {"rootSetsBeforeExposure",copy.rootSetsBeforeExposure},{"rootSetsInsideExposure",copy.rootSetsInsideExposure},
+        {"giBindingHits",copy.giBindingHits},{"exposureBindingHits",copy.exposureBindingHits},
+        {"giBytes",copy.giBytes},{"exposureBytes",copy.exposureBytes},
+        {"pairing","same-submission-not-binding-proven"},
+        {"pairingCaveat","Whole pinned buffers copied on the same list and submission immediately "
+            "after the selected native dispatch, under one fence. Resource identity comes from the "
+            "validated native producer/consumer path, NOT from an observed root binding: this shader "
+            "binds through descriptor tables. Window offsets are resolved offline against the CPU "
+            "copies and are not read from any binding. Root fields are corroboration only."},
+        {"giHex",copy.buffersGpuPaired?Hex(copy.gpuGi.data(),copy.gpuGi.size()):""},
+        {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
+    return row;
+}
 void Save(const char* reason)
 {
     if(directReadback)readback->Cancel("capture-window-ended");
     const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
-    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v4":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
+    nlohmann::json report={{"format",directReadback?"private-spatial-readback-v5":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
         {"executableSha256",Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size())},
-        {"reason",reason},{"complete",!incomplete&&count==Limit&&(!directReadback||copy.phase==CopyPhase::Complete)},
+        {"reason",reason},{"complete",!incomplete&&count>=Limit&&(!directReadback||
+            (copy.phase==CopyPhase::Complete&&readback->Completed()==readbackCount))},
         {"controlProgressed",progressing},{"gpuCopyIssued",directReadback&&copy.issued},
         {"caveat",directReadback?
-            "One instrumented transaction. Buffers are paired only if native bindings/Dispatch, copies and same-list fence succeeded. CPU scene/cache remains unpaired; no local brightness or source visibility API.":
+            "Instrumented transaction series. Each entry is an independent same-submission copy under its own fence value, reusing one readback destination that is never re-armed before the previous map finished. Repeats measure spread at one place; they are NOT a longer exposure or an average. CPU scene/cache remains unpaired; no local brightness or source visibility API.":
             "Passive instrumented run, not untouched baseline. Per-sample barriers cover only Dispatch; intervalTrace covers discovered implementations across the requested interval, with explicit losses/unknown generations. Neither proves GPU completion/current layout. CPU constants/cache are NOT GPU-frame paired."},
         {"samples",samples},{"intervalTrace",directReadback?nlohmann::json(nullptr):TraceJson()}};
     if(directReadback)
     {
-        const auto& f=copy.footprint;
-        report["textureReadback"]={{"status",copy.reason},{"hresult",static_cast<uint32_t>(copy.error)},
-            {"gpuCopyIssued",copy.issued},{"gpuCompleted",copy.gpuCompleted},{"giGpuFramePaired",copy.buffersGpuPaired},
-            {"exposureGpuFramePaired",copy.buffersGpuPaired},{"frame",copy.frame},{"resetGeneration",copy.generation},
-            {"queue",copy.queue},{"recordingThread",copy.recordingThread},{"submissionThread",copy.submissionThread},
-            {"releaseTick",copy.releaseTick},{"submitTick",copy.submitTick},{"completedTick",copy.completedTick},
-            {"fenceValue",copy.fenceValue},{"mapCalls",copy.mapCalls},{"releaseBarrier",BarrierJson(copy.release)},
-            {"allocationBytes",copy.allocationBytes},{"footprint",{{"offset",f.Offset},{"format",f.Footprint.Format},
-                {"width",f.Footprint.Width},{"height",f.Footprint.Height},{"depth",f.Footprint.Depth},{"rowPitch",f.Footprint.RowPitch}}},
-            {"packing","uint8 x-fastest, then y, then z; row padding removed; resource R8_TYPELESS"},
-            {"packedTextureHex",Hex(copy.packed.data(),copy.packed.size())},{"context",Json(copyObservation)}};
-        report["textureReadback"]["bufferPair"]={{"requested",copy.buffersRequested},{"nativeDispatchSeen",copy.nativeDispatchSeen},
-            {"nativeDispatches",copy.nativeDispatches},{"copied",copy.buffersCopied},{"giResource",copy.giResource},
-            {"exposureResource",copy.exposureResource},{"giBase",copy.giBase},{"exposureBase",copy.exposureBase},
-            {"giOffset",copy.giOffset},{"exposureOffset",copy.exposureOffset},{"giRootIndex",copy.giRootIndex},
-            {"exposureRootIndex",copy.exposureRootIndex},{"readbackOffset",copy.pairReadbackOffset},
-            {"nativeCbv",copy.nativeCbv},{"nativeUav",copy.nativeUav},{"nativeSrv",copy.nativeSrv},
-            {"nativeTable",copy.nativeTable},{"descriptorHeaps",copy.descriptorHeaps},{"giFromSrv",copy.giFromSrv},
-            {"rootThreadConflict",copy.rootThreadConflict},{"tableSets",copy.tableSets},{"heapSets",copy.heapSets},
-            {"rootSetsBeforeExposure",copy.rootSetsBeforeExposure},{"rootSetsInsideExposure",copy.rootSetsInsideExposure},
-            {"giBindingHits",copy.giBindingHits},{"exposureBindingHits",copy.exposureBindingHits},
-            {"giBytes",copy.giBytes},{"exposureBytes",copy.exposureBytes},
-            {"pairing","same-submission-not-binding-proven"},
-            {"pairingCaveat","Whole pinned buffers copied on the same list and submission immediately "
-                "after the selected native dispatch, under one fence. Resource identity comes from the "
-                "validated native producer/consumer path, NOT from an observed root binding: this shader "
-                "binds through descriptor tables. Window offsets are resolved offline against the CPU "
-                "copies and are not read from any binding. Root fields are corroboration only."},
-            {"giHex",copy.buffersGpuPaired?Hex(copy.gpuGi.data(),copy.gpuGi.size()):""},
-            {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
+        const auto records=readback->Records();
+        nlohmann::json transactions=nlohmann::json::array();
+        for(size_t i=0;i<records.size();++i)
+        {
+            auto row=TransactionJson(records[i]);
+            // Each transaction carries the CPU observation of ITS OWN exposure.
+            if(i<copyObservations.size())row["context"]=Json(copyObservations[i]);
+            transactions.push_back(std::move(row));
+        }
+        report["transactions"]=transactions;
+        report["requestedTransactions"]=readbackCount;
+        report["completedTransactions"]=readback->Completed();
+        report["transactionIntervalMilliseconds"]=readbackIntervalMs;
+        // Latest transaction repeated at the v4 location so existing readers keep working.
+        report["textureReadback"]=TransactionJson(copy);
+        report["textureReadback"]["context"]=Json(copyObservation);
     }
     if(traceResource){traceResource->Release();traceResource=nullptr;}
     const auto file=outputDirectory/(L"spatial-binding-"+std::to_wstring(GetCurrentProcessId())+L"-"+
@@ -380,12 +404,20 @@ void Save(const char* reason)
 }
 }
 
-bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
+bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
+    unsigned transactions,unsigned intervalMilliseconds)
 {
     if(enabled) return false;
     std::array<uint8_t,Signature.size()> bytes{};
     if(!Read(moduleBase+DispatchRva,bytes)||bytes!=Signature) return false;
     base=moduleBase;outputDirectory=directory;directReadback=enableReadback;
+    // Out-of-range configuration falls back to the proven single transaction.
+    readbackCount=(transactions>=1&&transactions<=cdt::spatial::SpatialReadback::MaxTransactions)?transactions:1;
+    readbackIntervalMs=(intervalMilliseconds>=250&&intervalMilliseconds<=10000)?intervalMilliseconds:1000;
+    const std::string readbackSeriesMessage="Spatial readback v5 IDLE: explicit event starts"+
+        std::to_string(Limit)+" CPU controls plus "+std::to_string(readbackCount)+
+        " texture/GI/exposure transaction(s) at >="+std::to_string(readbackIntervalMs)+
+        "ms; same-submission pairing, whole buffers, offsets resolved offline.";
     dispatchTarget=reinterpret_cast<void*>(base+DispatchRva);
     const auto name=L"Local\\CrimsonDesertTelemetry.SpatialProbe."+std::to_wstring(GetCurrentProcessId());
     requestEvent=CreateEventW(nullptr,FALSE,FALSE,name.c_str());
@@ -399,7 +431,7 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback)
     enabled=true;
     render::submissionObserver=Submission;
     ch::Log(directReadback?
-        "Spatial readback v4 IDLE: explicit event starts20 CPU controls plus ONE texture/GI/exposure transaction; same-submission pairing, whole buffers, offsets resolved offline.":
+        readbackSeriesMessage.c_str():
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
 }
@@ -410,8 +442,8 @@ void Poll()
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
     {
-        if(!directReadback||readback->Begin())
-        {samples=nlohmann::json::array();copyObservation={};count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
+        if(!directReadback||readback->Begin(readbackCount,readbackIntervalMs))
+        {samples=nlohmann::json::array();copyObservation={};copyObservations.clear();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
         else ch::Log("Spatial direct readback already requested in this process; restart required for another run.");
     }
     void* install{};
@@ -420,11 +452,12 @@ void Poll()
     std::array<void*,BindingHooks> installBindings{};
     if(phase==Phase::Pending)
     {
-        samples.push_back(Json(pending));++count;
+        if(count<Limit)samples.push_back(Json(pending));
+        ++count;
         if(!barrierInstalled&&!pending.error)
         {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;installBindings=pending.bindingFunctions;}
         phase=Phase::Ready;
-        if(count==Limit) Save("sample-limit");
+        if(count>=Limit&&(!directReadback||readback->SeriesFinished())) Save("sample-limit");
     }
     if(observing&&GetTickCount64()-started>30000){incomplete=true;Save("timeout");}
     ReleaseSRWLockExclusive(&lock);
@@ -523,7 +556,11 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     if(valid)trace.Lifecycle(o.nativeList7,TraceKind::ExposureEnd);
     active=previous;
     if(valid){o.giStable=Read(owner+0x20,o.giAfter)&&o.gi==o.giAfter;}
-    if(o.selectedForReadback){readback->ExposureEnd(o.giStable);copyObservation=o;}
+    if(o.selectedForReadback)
+    {
+        readback->ExposureEnd(o.giStable);copyObservation=o;
+        if(copyObservations.size()<cdt::spatial::SpatialReadback::MaxTransactions)copyObservations.push_back(o);
+    }
     pending=o;phase=Phase::Pending;
     ReleaseSRWLockExclusive(&lock);
     return result;

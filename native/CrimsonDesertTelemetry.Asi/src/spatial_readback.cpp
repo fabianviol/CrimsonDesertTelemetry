@@ -25,17 +25,61 @@ SpatialReadback::~SpatialReadback()
     if(result_.issued&&!result_.gpuCompleted)
     {list_.Detach();source_.Detach();readback_.Detach();gi_.Detach();exposure_.Detach();device_.Detach();deviceIdentity_.Detach();fence_.Detach();queue_.Detach();}
 }
-bool SpatialReadback::Begin()
+bool SpatialReadback::Begin(unsigned count,uint64_t intervalMilliseconds)
 {
     Guard g(mutex_);
-    if(requested_) return false; // One direct readback per plugin process, including failures.
+    if(requested_) return false; // One SERIES per plugin process, including failures.
+    if(!count||count>MaxTransactions) return false;
     requested_=true;result_={};result_.reason="awaiting-source";
+    budget_=count;completed_=0;nextFence_=0;lastCompletedTick_=0;
+    intervalMs_=intervalMilliseconds;records_.clear();
     return true;
+}
+bool SpatialReadback::SeriesFinished() const
+{
+    Guard g(const_cast<SRWLOCK&>(mutex_));
+    return requested_&&(budget_==0||result_.phase==CopyPhase::Failed);
+}
+unsigned SpatialReadback::Completed() const
+{
+    Guard g(const_cast<SRWLOCK&>(mutex_));
+    return completed_;
+}
+std::vector<CopyResult> SpatialReadback::Records() const
+{
+    Guard g(const_cast<SRWLOCK&>(mutex_));
+    auto copy=records_;
+    // A failed or in-flight transaction is reported too; it is never silently dropped.
+    if(result_.phase==CopyPhase::Failed||(!records_.empty()&&result_.phase!=CopyPhase::Complete&&
+        result_.phase!=CopyPhase::Idle&&result_.phase!=CopyPhase::Ready))
+        copy.push_back(result_);
+    else if(records_.empty())copy.push_back(result_);
+    return copy;
+}
+void SpatialReadback::KeepRecordAndRearm()
+{
+    // Caller holds the lock and has finished mapping this transaction.
+    records_.push_back(result_);
+    ++completed_;
+    if(budget_)--budget_;
+    lastCompletedTick_=GetTickCount64();
+    if(!budget_)return;
+    // Preserve everything established at preparation; clear only per-transaction state.
+    CopyResult next{};
+    next.footprint=result_.footprint;next.allocationBytes=result_.allocationBytes;
+    next.buffersRequested=result_.buffersRequested;next.pairReadbackOffset=result_.pairReadbackOffset;
+    next.giResource=result_.giResource;next.exposureResource=result_.exposureResource;
+    next.giBase=result_.giBase;next.exposureBase=result_.exposureBase;
+    next.giBytes=result_.giBytes;next.exposureBytes=result_.exposureBytes;
+    next.phase=CopyPhase::Ready;next.reason="awaiting-known-reset-and-exposure";
+    result_=next;
+    observedList_=list_.Get();
 }
 void SpatialReadback::Fail(const char* reason,HRESULT hr)
 {
     result_.phase=CopyPhase::Failed;result_.reason=reason;result_.error=hr;
     observedList_=nullptr;
+    budget_=0; // A series never continues past an unexplained state.
 }
 void SpatialReadback::Discover(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,ID3D12Resource* gi,ID3D12Resource* exposure)
 {
@@ -50,6 +94,7 @@ bool SpatialReadback::Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* sourc
     Guard g(mutex_);
     if(result_.phase!=CopyPhase::Ready||list!=list_.Get()||source!=source_.Get()||
         !generationKnown_||resetPending_||closed_||closePending_||gi!=gi_.Get()||exposure!=exposure_.Get())return false;
+    if(lastCompletedTick_&&GetTickCount64()-lastCompletedTick_<intervalMs_)return false;
     result_.phase=CopyPhase::InExposure;result_.reason="inside-exposure";
     result_.generation=generation_;result_.frame=frame;result_.recordingThread=GetCurrentThreadId();
     // Bindings issued earlier in THIS recording are still the live root arguments;
@@ -270,7 +315,7 @@ void SpatialReadback::Submit(ID3D12CommandQueue* queue,UINT count,ID3D12CommandL
     {
         if(result_.phase!=CopyPhase::Submitting||queue!=queue_.Get()||result_.submissionThread!=GetCurrentThreadId())
         {Fail("submission-end-mismatch");return;}
-        result_.fenceValue=1;
+        result_.fenceValue=++nextFence_;
         const auto hr=queue->Signal(fence_.Get(),result_.fenceValue);
         if(FAILED(hr)){Fail("queue-signal-failed",hr);return;}
         result_.submitTick=GetTickCount64();result_.phase=CopyPhase::WaitingGpu;result_.reason="awaiting-gpu-fence";
@@ -399,6 +444,7 @@ void SpatialReadback::Poll()
                 result_.buffersGpuPaired=result_.buffersCopied;result_.phase=CopyPhase::Complete;
                 result_.reason=result_.buffersGpuPaired?"gpu-complete-texture-and-buffers":"gpu-complete-texture-only";
                 observedList_=nullptr;
+                KeepRecordAndRearm();
             }
         }
     }

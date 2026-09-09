@@ -2,10 +2,11 @@
 
 The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
-**Current state: the spatial sample is confirmed to respond to local enclosure,
-across roughly four orders of magnitude, its reference is confirmed to be exactly
-the camera position, and the cheap CPU shortcut to the same quantity is proven
-ill-conditioned and must not be used** (current checkpoint below). readback.4 is the ASI in
+**Current state: the spatial sample is confirmed to respond to local enclosure
+across roughly four orders of magnitude, its reference is exactly the camera
+position, the cheap CPU shortcut is proven ill-conditioned, and the one-shot limit
+is now lifted — a repeated series is built and host-tested but NOT game-tested**
+(current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -118,7 +119,58 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — CPU shortcut rejected, direction required, 2026-09-09
+## Current checkpoint — repeated measurement built, 2026-09-09
+
+PRIVATE **2.0.1-spatial-series.1** built and host-tested, NOT installed or
+game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-series.1-ModManagers.zip
+SHA256 BDE65E2F29C28F4A2B34BD1CE8E6E1DF7DD8AF9626610C267CD7D74988CA9439;
+ASI SHA256 51BFE1C97BAB646EDA2462189DEA04196DE8F07B7A96632583B7494C23921339.
+Spatial defaults remain OFF. Earlier packages preserved. The game folder still
+holds readback.4, so a live series needs a shutdown and this ZIP.
+
+WHAT CHANGED: the one transaction per process becomes 1..8, configured by two new
+keys, `[Research] SpatialReadbackCount` (default1) and `SpatialReadbackIntervalMs`
+(default1000, accepted250..10000). Out-of-range values fall back to the proven
+single transaction. The interval is a MINIMUM, not a sample rate: a transaction
+still only arms on a selected exposure dispatch, so the real cadence is whatever
+the game offers. The copy itself is unchanged — same validated barriers, same
+whole-buffer copies, same release-barrier texture copy.
+
+SAFETY. One readback destination is reused for the whole series and is never
+re-armed before the previous fence completed AND its map finished, so the
+destination is never in flight. Each transaction signals its own increasing fence
+value. Any failure ends the series immediately and is reported as the last record;
+a series never continues past an unexplained state. A consumed series cannot
+restart in the same process. Everything else still fails closed: same list, source,
+reset generation and recording thread, exactly one direct Dispatch(2,1,1), device
+and heap and width validation.
+
+REPORT AND DECODER. Format is `private-spatial-readback-v5` with a `transactions`
+array, each entry carrying its own CPU observation, plus `requestedTransactions`,
+`completedTransactions` and the interval. The latest transaction is also repeated
+at the old `textureReadback` location so existing readers keep working. The decoder
+gained `decode_series`, which decodes every entry independently and reports min,
+median, max and spread; an entry that cannot be decoded is reported as
+`undecodable` with its reason rather than dropped, and identical inputs produce a
+spread of exactly zero rather than an invented average.
+
+TESTS. 23/23 native CTests. 290 WARP and native-detour checks with zero
+debug-layer warnings, including a new three-transaction series on its own queue
+that proves each pass refreshes the reused destination with ITS OWN texture and GI
+bytes rather than a stale copy, that fence values advance per transaction, that the
+series ends exactly at its budget, and that a consumed series cannot restart.
+42 Python tests including the new series decoding, the undecodable-entry case and
+unchanged v1..v4 handling. All synthetic; no game evidence for the series yet.
+
+**ONE next step:** install this ZIP, set `SpatialReadbackCount=8` with
+`SpatialReadbackIntervalMs=1000`, and take ONE series standing still. That single
+run closes the repeat-spread gap that has been open since the occlusion series,
+because the eight transactions are eight measurements at one place. Only after the
+spread is known should the directional feed contract be designed, since the spread
+sets how large a directional difference has to be to mean anything. Independent
+hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — CPU shortcut rejected, direction required, 2026-09-09
 
 No new capture. This checkpoint records an analysis of the existing five captures
 and a product requirement that changes what the feed has to look like.
