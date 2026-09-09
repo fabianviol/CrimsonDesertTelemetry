@@ -5,8 +5,9 @@ pairing path up to readback.4 and then ran a five-point occlusion series with it
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
 position, the cheap CPU shortcut is proven ill-conditioned, and the plateaus are amortised block refresh of the voxel
-volume, and a native sampler now reproduces the offline model bit-exactly on seven
-real captures and is wired into the probe** (current checkpoint below). readback.4 is the ASI in
+volume, and a native sampler reproduces the offline model exactly in
+game, 104 of 104 values, in a 1465-byte payload that already shows the doorway
+effect** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +120,44 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — sampler wired into the probe, 2026-09-09
+## Current checkpoint — loop closed in game, doorway effect measured, 2026-09-09
+
+Live series in PID4760 with 2.0.1-spatial-sampler (ASI
+DB90212BF66A91EA1ADFBD4690F57608E53998DF541CEDD0A61BE340E90E81B9), standing at the
+player home door in a part of the world never sampled before (x about -10405
+against the barn's -10530), in daylight. 8 of 8 transactions, values 0.1587..0.2693
+— the mid range, where a comparison tests something.
+
+**EVERY NATIVE VALUE MATCHES THE OFFLINE RECOMPUTATION: 104 of 104.** Thirteen per
+transaction, recomputed by the decoder from the same volume and constants and
+compared without tolerance; `agrees: true` in all eight, no disagreements. The
+native and offline evaluations are the same computation on real data.
+
+**The payload is 1465 bytes against 540672 for the volume**, about 369x smaller.
+That is what the native sampler was for.
+
+**THE DOORWAY PROFILE IS THE EFFECT THE PRODUCT NEEDS.** From transaction 0 at
+reference 0.1587: into the building (+Z) 0.005212 at 2gu and 0.000661 at 5gu, the
+opposite direction (-Z) 0.374170 and 0.317952, upward 0.314600 and 0.465113, the
+ground below exactly 0.000000. A lamp mapped to +Z goes dark while one mapped to
+-Z or upward stays lit, from a single capture and with no new mechanism.
+
+Limits unchanged: offsets reuse the reference clipmap, may read voxels of differing
+age, and the value is a candidate sky-visibility factor, not irradiance or room
+brightness. Series spread 0.1107 against 0.0156 under open sky, consistent with a
+steeper field beside a building rather than worse precision.
+
+Evidence artifacts/light-research/series-20260909/run4-playerhome-door-pid4760/.
+
+**ONE next step: design the public contract**, because every prerequisite is now
+measured. It must state the camera reference, the candidate-not-measurement
+framing, the amortisation freshness bound, the clipmap reuse for offsets, the
+mixed-age offsets, and that the value does not reach 1 under open sky (~0.53
+observed). Decide the offset pattern a consumer receives and whether the plugin
+publishes it continuously rather than one series per process. Keep the API
+vendor-neutral. Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — sampler wired into the probe, 2026-09-09
 
 PRIVATE **2.0.1-spatial-sampler.2** built and host-tested, NOT game-tested.
 ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-sampler.2-ModManagers.zip

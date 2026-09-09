@@ -107,6 +107,50 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Loop closed in game, and the doorway effect measured — 2026-09-09, PID4760
+
+Live series with the sampler wired in, standing at the player home door in a part
+of the world never sampled before (x about -10405 against the barn's -10530), in
+daylight. 8 of 8 transactions completed, values in the mid range 0.1587..0.2693,
+which is where a comparison actually tests something rather than confirming zeros.
+
+**Every native value matches the offline recomputation exactly: 104 of 104.**
+Thirteen values per transaction — the reference plus twelve offsets — recomputed by
+the decoder from the same volume and constants and compared without tolerance,
+`agrees: true` in all eight, `disagreements: []` throughout. The native and offline
+evaluations are therefore the same computation on real data, which is what allows
+the volume to be dropped from a future payload.
+
+**The payload is 1465 bytes against 540672 for the volume**, a factor of about 369.
+That is the whole point of the native sampler.
+
+**The doorway profile is exactly the effect the user described.** From the camera
+beside the house door, one instant, transaction 0 at reference 0.1587:
+
+| offset | 2 gu | 5 gu |
+|---|---|---|
+| +X | 0.179158 | 0.175289 |
+| -X | 0.162635 | 0.387097 |
+| +Y (up) | 0.314600 | 0.465113 |
+| -Y (down) | 0.092391 | 0.000000 |
+| +Z | 0.005212 | 0.000661 |
+| -Z | 0.374170 | 0.317952 |
+
+Into the building (+Z) the field falls to 0.00066 while the opposite direction
+reads 0.318 and upward reaches 0.465, with the ground below at exactly zero. A lamp
+mapped to +Z would go dark while one mapped to -Z or upward stays lit, from a
+single capture, without any new mechanism. This is the cave-mouth behaviour the
+product needs, measured rather than argued.
+
+Nothing here changes the quantity's limits: offsets reuse the reference clipmap,
+may read voxels of differing age because the volume refreshes in amortised blocks,
+and the value remains a candidate engine sky-visibility factor rather than
+irradiance, room brightness or per-source occlusion. The spread across the series
+was 0.1107, larger than the 0.0156 measured under open sky, which is consistent
+with a steeper field beside a building rather than with worse precision.
+
+Evidence artifacts/light-research/series-20260909/run4-playerhome-door-pid4760/.
+
 ## Sampler wired into the probe — 2026-09-09, sampler.1 NOT live-tested
 
 Each transaction now records natively sampled values beside the volume, and the
