@@ -2334,3 +2334,51 @@ shows it is produced by `GenerateHiZLevel0FromSDF_CS` rather than by
 `PropagateSignedDistanceCS`, then it is a hierarchy built for cone tracing, and the
 raw field behind it may suit a thin segment better. Both should be secured if both
 exist.
+
+## The gate is a bare presence flag, and t224 splits in two — 2026-09-09
+
+A correction and a sharpening, both checkable and both checked.
+
+**The gate carries no magnitude.** `saturate(x/63) > 0` is equivalent to
+`(u.w >> 2) != 0` for a non-negative integer, so the division and the saturate are
+dead weight for the boolean. Verified: the normalised value is referenced exactly
+once in the whole shader, at the comparison itself. The previous entry's phrasing —
+"normalised to [0,1]" — read a 0..63 occupancy scale into something that is only
+ever tested against zero. Nothing here supports a graded occupancy in that field.
+
+**But t224 splits into two roles.** While the `w` component is used only as a
+presence flag, the nibbles unpacked from the other components ARE converted to
+float and feed the computation, with twelve uses across the shader. So:
+
+```
+t224.w      presence flag only, tested != 0
+t224.xyz    4-bit fields, decoded and used as data
+```
+
+What those nibbles mean is entirely open. That they are used numerically rather
+than as flags is the strongest available hint that `t224` carries real per-voxel
+attributes rather than a bitmask.
+
+**Two further variants to benchmark**, both from the outside review and both
+plausible enough to record before any is built:
+
+```
+D   traverse t224 directly, 3D-DDA over the crossed cells,
+    a relevant cell on the segment means blocked
+E   hybrid: t233 for large safe steps, t224 for the actual hit decision
+```
+
+D is attractive because it is independent of step size, needs no epsilon, no
+coverage budget and no cone, and because whatever occupancy t224 encodes should
+distinguish free cave air from a cave wall — precisely the distinction the
+sky-visibility field could not make, which is what refuted the first method.
+
+E takes from the engine only the parts that suit a point-to-point ray: the distance
+field as an accelerator for traversal, the voxel attributes for the decision, and
+leaves cone width, the 0.5 budget and the pixel footprint behind. On present
+evidence E is the most likely final shape, but nothing here decides it.
+
+**Both resources must be traced in PIX, not just t233**, each back to its producer.
+If t224's producer carries a name suggesting voxelisation or occupancy injection,
+it may sit upstream of the distance field, which would make it closer to the
+original scene geometry than the SDF is.
