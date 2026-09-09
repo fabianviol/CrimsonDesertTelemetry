@@ -46,6 +46,14 @@ AccelStructureRecreation_*.cpp raytracing acceleration structures
 CapturedAssets.h               large embedded data
 ```
 
+**The chain from an export to a named binding is now complete**, and each link has a
+script: resource contents (`Read-PixExportResource.py`), pipeline state to shader name
+and container (`Map-PixExportShaders.py`), candidate dispatches
+(`Find-PixExportDispatches.py`), and the actual register-to-resource binding
+(`Resolve-PixExportBindings.py`). Use the last one before claiming a shader touches a
+resource: a descriptor table's base viewing a resource does NOT mean the shader's
+registers land on it, and that mistake has already produced one false positive here.
+
 A worked example: to identify a 3D texture from its shader-side shape, grep
 `CreateAndInitResources_*.cpp` for `TEXTURE3D` and match the dimensions, read the
 `ApiObjectId` from the comment a few lines above, then grep the descriptor files
@@ -239,7 +247,8 @@ requires 7.4 or newer.
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
 | `Read-PixExportResource.py` | reads a resource's captured bytes out of a pixtool export without building it |
 | `Map-PixExportShaders.py` | names the pipeline states in a pixtool export, and `--extract` writes one's DXBC out for DXC |
-| `Find-PixExportDispatches.py` | names the dispatches in an export that can reach a given resource |
+| `Find-PixExportDispatches.py` | names the dispatches in an export that CAN REACH a resource -- a candidate filter, not a binding |
+| `Resolve-PixExportBindings.py` | resolves a shader register to the resource actually bound at a dispatch, time-accurately |
 | `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
 
 All the Python tools read only preserved artifacts and never touch the game.

@@ -358,9 +358,37 @@ but the shader's registers resolve elsewhere in the range -- a false positive, a
 "can reach" means in practice. Attributing a register to a descriptor needs the root
 signature's range mapping, which is not done.
 
-So **nothing in this capture is shown to write the ambient buffer and the zeros stay
-unexplained**; what is withdrawn is only the claim that no runtime state could look
-like that.
+**THEN ROOT SIGNATURE RESOLUTION FOUND THE WRITER, in this capture after all.**
+`scripts/Resolve-PixExportBindings.py` walks the real chain -- shader register ->
+root parameter and descriptor range -> OFFSET_APPEND resolved against the preceding
+ranges -> heap index -> the descriptor AS IT STOOD then -> resource. Time accuracy is
+required: RenderFrameWorker interleaves 10307 one-descriptor ModifyDescriptors calls
+with the command list population.
+
+Regression test, ClearVoxelsBufferCS pso 22274: u5 -> resource 15789, u6 -> 206,
+u15 -> 15787, none of them 15739, and at slots far from the table bases the old
+heuristic matched. Inverting it over all 994 dispatches gives exactly one UAV hit on
+15739: **pso 22283, UAV register 2 space 39, `csPrecomputeAmbient`** -- precisely
+where the SH producer declares `g_texPrecomputedAmbientUAV`. Extracting and
+disassembling pso 22283 confirms the same name at the same register. **Two shaders
+share this buffer.**
+
+`csPrecomputeAmbient` writes ONE float4, at **index 56**: the sky's Mie scattering
+reduced over 256 threads, scaled by `0.049087386` = **4*pi/256 to float32, the
+canonical uniform-sphere weight with no missing pi**. So a sibling in the same system
+does apply the canonical measure while the SH producer applies 4/24576, the same
+weight over pi -- which makes the SH producer's factor harder to read as accident.
+
+**The "impossible" state is fully explained**: slots 0..6 hold values from before the
+capture (their producer did not run), slots 8..55 are that producer's six entries and
+so zero, slot 56 was written this frame by csPrecomputeAmbient. Two writers, two
+cadences. Slot 56 IS a bare RGB triple after all -- the description was right, only
+the corroboration argument built on it was wrong.
+
+Open: csPrecomputeAmbient carries the same groupshared SHColor2 shape as the SH
+producer plus a [768 x float] Mie array, and makes three stores into
+`g_precomputedAmbientCacheUAV` at u3. It probably computes harmonics of its own into
+a resource not yet identified.
 
 **What the next capture must contain:** a dispatch of the ambient producer. Then per
 dispatch resolve the root CBV holding GlobalPushConstants for `_renderFlags.x`, and

@@ -14,6 +14,86 @@ the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
 
+## The second writer, and why the buffer looked inconsistent — 2026-09-09
+
+The review's prescription was to build root signature resolution before forcing a
+new capture, with the `ClearVoxelsBufferCS` false positive as the regression test.
+Both worked, and the answer to "who writes the ambient buffer" was in this capture
+after all.
+
+**`scripts/Resolve-PixExportBindings.py` closes the last heuristic gap.** A shader
+register becomes a resource only through the whole chain:
+
+```
+u15, space39
+  -> root parameter and descriptor range in the PSO's root signature
+  -> OffsetInDescriptorsFromTableStart, resolving OFFSET_APPEND against
+     the running end of the preceding ranges
+  -> descriptor heap index
+  -> the descriptor AS IT STOOD at that point in the frame
+  -> resource
+```
+
+The last step is not optional here. `RenderFrameWorker_000.cpp` interleaves 10307
+`ModifyDescriptors_*()` calls, one descriptor each, with the `PopulateCommandList_*()`
+calls, so a heap slot must be resolved to what it held at the time rather than to
+what it held last.
+
+**The regression test passes.** For `ClearVoxelsBufferCS`, pso 22274:
+
+```
+u5,space39   -> resource 15789   heap 494 slot 436378
+u6,space39   -> resource 206     heap 494 slot 436379
+u15,space39  -> resource 15787   heap 494 slot 436388
+```
+
+None is 15739, and the slots are nowhere near the table bases the old heuristic
+matched (436037, 436149, ...). The false positive is now demonstrated mechanically
+rather than argued.
+
+**Inverting the question found the writer.** Walking all 994 dispatches and asking
+which ranges actually cover resource 15739 gives one UAV hit, and it is exact:
+
+```
+pso 22283   UAV register 2 space 39   csPrecomputeAmbient
+```
+
+`u2, space39` is precisely where the SH producer declares
+`g_texPrecomputedAmbientUAV`. Extracting pso 22283's container from the capture and
+disassembling it confirms the same name at the same register, alongside a second
+`g_precomputedAmbientCacheUAV` at u3. **Two different shaders share this buffer.**
+
+**And `csPrecomputeAmbient` writes exactly one float4, at index 56:**
+
+```
+%18203 = g_sharedMieScattering[0..2] * 0.049087386
+rawBufferStore(u2, index 56, (%18203, %18204, %18205, 0.0))
+```
+
+That is the slot which was populated in the extracted bytes. So slot 56 IS a bare
+RGB triple after all — my description was right, and only the corroboration argument
+built on it was wrong. It is the sky's Mie scattering, reduced across 256 threads.
+
+**The scale factor is the canonical one, and that is the interesting part.**
+`0.049087386` is `4*pi/256` to float32 precision: the uniform-sphere weight for 256
+samples, with no missing pi. A sibling in the same system therefore does apply the
+canonical measure, while the SH producer applies `4/24576` — the same weight divided
+by pi. Not proof of intent, but the SH producer's factor is now harder to read as
+accident.
+
+**The "impossible" state is fully explained.** Slots 0..6 are written by the SH
+producer, which did not run in this capture, so they carry values from before it.
+Slots 8..55 are the same producer's six entries, hence zero. Slot 56 is written by
+`csPrecomputeAmbient`, which did run, hence non-zero. Nothing inconsistent — two
+writers on different cadences. The warning against using these bytes for semantic
+validation stands, but the reason is now known rather than mysterious.
+
+**One thread left open:** `csPrecomputeAmbient` carries the same groupshared shape as
+the SH producer — six `[1024 x float]` and three `[256 x float]`, the `SHColor2`
+split — plus a `[768 x float]` Mie array. It has three stores into
+`g_precomputedAmbientCacheUAV` at u3. So it very likely computes harmonics of its own
+into a different resource. That resource has not been identified.
+
 ## No solid-angle weight, and the buffer is a ring — 2026-09-09
 
 A review asked the one question that separates "the engine uses the SH basis" from
