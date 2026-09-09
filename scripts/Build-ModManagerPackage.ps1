@@ -1,6 +1,11 @@
 param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]*$')]
-    [string]$Version = '2.0.0'
+    [string]$Version = '2.0.0',
+    # Private diagnostic builds ship ready to run instead of forcing a hand edit
+    # after every install, which has already cost one wasted game start. Keys must
+    # already exist in the template. A version without a prerelease suffix is
+    # treated as a release and refuses overrides outright.
+    [hashtable]$IniOverrides
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,6 +72,21 @@ $files = @(
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $file.Source)) { throw "Missing package input: $($file.Source)" }
     Copy-Item -LiteralPath $file.Source -Destination (Join-Path $packageRoot $file.Name)
+}
+
+if ($IniOverrides -and $IniOverrides.Count -gt 0) {
+    if ($Version -notmatch '-') {
+        throw "Refusing INI overrides for release version '$Version'; a public package ships the clean template."
+    }
+    $iniPath = Join-Path $packageRoot 'CrimsonDesertTelemetry.ini'
+    $ini = Get-Content -LiteralPath $iniPath -Raw
+    foreach ($key in $IniOverrides.Keys) {
+        $pattern = "(?m)^$([regex]::Escape($key))=.*$"
+        if ($ini -notmatch $pattern) { throw "INI override key not present in the template: $key" }
+        $ini = [regex]::Replace($ini, $pattern, "$key=$($IniOverrides[$key])")
+    }
+    Set-Content -LiteralPath $iniPath -Value $ini -NoNewline
+    Write-Output "INI overrides applied (private build): $(($IniOverrides.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')"
 }
 
 # No -Force: also refuse a release created by another build while this one ran.

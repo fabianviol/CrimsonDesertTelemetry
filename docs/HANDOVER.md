@@ -121,12 +121,19 @@ not zero light. Exact pass/reject follow-up and package identities are below.
 
 ## Current checkpoint — sampler wired into the probe, 2026-09-09
 
-PRIVATE **2.0.1-spatial-sampler.1** built and host-tested, NOT installed or
-game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-sampler.1-ModManagers.zip
-SHA256 402B038A50FB8D8A4B9597BEA716C444485029D0F0DAD5ED10EFBF54A20E20A8;
-ASI SHA256 DB90212BF66A91EA1ADFBD4690F57608E53998DF541CEDD0A61BE340E90E81B9.
-Spatial defaults OFF. Earlier packages preserved. The game folder still holds
-spatial-series.1, so a live run needs a shutdown and this ZIP.
+PRIVATE **2.0.1-spatial-sampler.2** built and host-tested, NOT game-tested.
+ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-sampler.2-ModManagers.zip
+SHA256 3A8E08D077E3C9140A25AEFFAA8B500A1F80E655D5B3ED0FAAF738E4F30BDF7A;
+ASI SHA256 DB90212BF66A91EA1ADFBD4690F57608E53998DF541CEDD0A61BE340E90E81B9
+(identical binary to sampler.1; only the packaged INI differs).
+
+**Private packages now SHIP READY TO RUN.** Build-ModManagerPackage.ps1 gained
+an -IniOverrides parameter, so this ZIP carries SpatialProbe=1, SpatialReadback=1,
+AmbientProbe=0, SpatialReadbackCount=8 and SpatialReadbackIntervalMs=1000. A DMM
+install therefore no longer resets the switches, which had already cost one wasted
+game start. Two guards keep releases clean: overrides are refused for any version
+without a prerelease suffix, and an override key absent from the template throws.
+The repo template itself stays at 0. Earlier packages preserved.
 
 Each transaction now records natively sampled values beside the volume, and the
 decoder recomputes them. This is the payload shape a feed would carry instead of
