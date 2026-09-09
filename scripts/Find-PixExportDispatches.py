@@ -37,7 +37,7 @@ def descriptor_slots(export_dir, resource, view):
     creator = VIEWS.get(view, VIEWS['any'])
     descriptor = r'GetCpuDescriptor\(g_descriptorHeap_\d+\.Get\(\),\s*(\d+)\)'
     pattern = re.compile(
-        creator + r'[A-Za-z_]*\((?:' +
+        creator + r'[A-Za-z0-9_]*\((?:' +
         descriptor + r'[^;]*?GetResource\(' + str(resource) + r'\)' +
         r'|' +
         r'GetResource\(' + str(resource) + r'\)[^;]*?' + descriptor +

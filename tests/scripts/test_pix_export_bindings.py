@@ -38,13 +38,13 @@ CREATE_PSOS = '''void CreateComputePipelineState_900()
 
 # Slot 300 is written twice: once at init, then again mid-frame. A dispatch before
 # the rewrite must see the first resource, one after it the second.
-DESCRIPTORS = ('    CreateUnorderedAccessView_Buffer(GetResource(11).Get(), nullptr, '
+DESCRIPTORS = ('    CreateUnorderedAccessView_Tex3D(GetResource(11).Get(), nullptr, '
                'GetCpuDescriptor(g_descriptorHeap_9.Get(), 300), DXGI_FORMAT_UNKNOWN);\n'
-               '    CreateUnorderedAccessView_Buffer(GetResource(22).Get(), nullptr, '
+               '    CreateUnorderedAccessView_Tex3D(GetResource(22).Get(), nullptr, '
                'GetCpuDescriptor(g_descriptorHeap_9.Get(), 304), DXGI_FORMAT_UNKNOWN);\n')
 
 MODIFY = ('void ModifyDescriptors_9_0()\n{\n'
-          '    CreateUnorderedAccessView_Buffer(GetResource(33).Get(), nullptr, '
+          '    CreateUnorderedAccessView_Tex3D(GetResource(33).Get(), nullptr, '
           'GetCpuDescriptor(g_descriptorHeap_9.Get(), 300), DXGI_FORMAT_UNKNOWN);\n}\n')
 
 COMMANDS = ('void PopulateCommandList_1()\n{\n'
@@ -114,6 +114,18 @@ class RangeOffsetTests(unittest.TestCase):
 
     def test_append_at_the_start_means_zero(self):
         self.assertEqual(binds.range_offsets([{'count': 3, 'offset': binds.APPEND}]), [0])
+
+
+class DescriptorWriteParsingTests(unittest.TestCase):
+    def test_tex3d_uav_helper_names_are_parsed(self):
+        body = ('CreateUnorderedAccessView_Tex3D(GetResource(44).Get(), nullptr, '
+                'GetCpuDescriptor(g_descriptorHeap_9.Get(), 704), DXGI_FORMAT_UNKNOWN);')
+        self.assertEqual(binds.descriptor_writes(body), [('UAV', 9, 704, 44)])
+
+    def test_tex3d_srv_helper_names_are_parsed(self):
+        body = ('CreateShaderResourceView_Tex3D(GetResource(55).Get(), '
+                'GetCpuDescriptor(g_descriptorHeap_9.Get(), 705), DXGI_FORMAT_UNKNOWN);')
+        self.assertEqual(binds.descriptor_writes(body), [('SRV', 9, 705, 55)])
 
 
 class HeapIndexTests(unittest.TestCase):

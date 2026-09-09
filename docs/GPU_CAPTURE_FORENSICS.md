@@ -2,8 +2,8 @@
 
 Written so that someone with no memory of this session can continue. It covers the
 toolchain built for reading a PIX capture offline, and the ambient-light
-investigation that toolchain was built for. Read `docs/TOOLING.md` first for the
-machine's paths; read this instead of the layered checkpoints in `docs/HANDOVER.md`,
+investigation that toolchain was built for. Read this first, then use
+`docs/TOOLING.md` for the machine's paths; read this instead of the layered checkpoints in `docs/HANDOVER.md`,
 which record how the conclusions were reached, in the order they were reached,
 including the ones that were later withdrawn.
 
@@ -18,6 +18,12 @@ withdrawn before building on anything, and say which you are doing.
 The goal behind all of this is a lighting companion that dims ambient light under
 structures and occludes fires and lamps. The engine's own answers are being read out
 of the GPU rather than reinvented.
+
+Read order: this document for the authoritative GPU/PIX state; `docs/TOOLING.md` for
+the existing tools; `docs/HANDOVER.md` for product/runtime checkpoints; and
+`docs/LOCAL_ILLUMINATION_RESEARCH.md` only for deep evidence and history. Do not
+continue from a historical claim when this document marks it hypothesis, withdrawn
+or superseded.
 
 | what | where |
 |---|---|
@@ -37,7 +43,7 @@ only the latter prove what a frame executed.
 ## 2. The toolchain
 
 Four scripts, each solving one link in a chain that ends in a provable statement about
-a frame. 117 unit tests cover them: `python -m unittest discover -s tests/scripts`.
+a frame. 123 unit tests cover them: `python -m unittest discover -s tests/scripts`.
 
 ### `Read-PixExportResource.py` — bytes out of a capture
 
@@ -107,6 +113,11 @@ That is a candidate filter, nothing more. **It produced a false positive here** 
 `ClearVoxelsBufferCS` looked like the writer of the ambient buffer and was not. Never
 claim a shader touches a resource on this alone.
 
+The generated helper suffix is not restricted to letters: texture views use names
+such as `CreateShaderResourceView_Tex3D`. Both descriptor parsers accept digits in
+that suffix, with SRV and UAV `_Tex3D` regression tests. The older `[A-Za-z_]*`
+pattern silently hid these bindings and must not be restored.
+
 ### `Resolve-PixExportBindings.py` — the actual binding
 
 ```bash
@@ -161,6 +172,8 @@ t234, space36   g_environmentColor   (TextureCube)
 Pipeline states worth knowing:
 
 ```
+21565  GenerateAxisAlignedDistancePass0_CS
+21566  GenerateAxisAlignedDistancePass1_CS
 22274  ClearVoxelsBufferCS
 22283  csPrecomputeAmbient
 22306  SkyMaterialCS
@@ -179,6 +192,61 @@ did.
 ## 4. Findings ledger
 
 ### Established
+
+**The distance-resource dependency is now resolved at the actual dispatches.** The
+time-accurate binding resolver gives:
+
+```
+GenerateAxisAlignedDistancePass0_CS, pso 21565 (two dispatches)
+    t66, space36  -> resource 191
+    u14, space38  -> resource 211
+
+GenerateAxisAlignedDistancePass1_CS, pso 21566 (two dispatches)
+    u14, space38  -> resource 211, in place
+
+EvaluateDiffuseRadianceCS, pso 22408
+    t224, space36 -> resource 211
+    t232, space36 -> resource 190
+    t233, space36 -> resource 191
+    t234, space36 -> resource 14529
+```
+
+So t224/resource 211 is **derived from t233/resource 191**, not an independent
+occupancy truth. The captured Pass0 reads each 2x2x2 fine-SDF neighbourhood. With
+`cellSize = 0.25 * 2^level`, it sets the upper six bits of `w` to 63 when any sample
+is within about `1.05 * cellSize`, bit 0 for the looser `2.10 * cellSize` test, and
+bit 1 for overlap with one of the character-occlusion AABBs. Pass1 uses the low two
+bits as seeds, computes six axis-aligned run distances clamped to 15, and packs each
+plus/minus pair as two nibbles into x, y and z while preserving w.
+
+The reconstructed archive `RaymarchLocalLightsCS` therefore has this structure:
+
+```
+t233       distance / stepping / coverage
+t224.w>>2  gate derived from fine-SDF proximity
+t224.xyz   six coarse axis-aligned distances, used numerically
+```
+
+It does **not** use t224 as the final occupancy/hit decision. The shader name is
+absent from all 287 captured PSO blobs, so this is an archive-shader reconstruction
+combined with captured resource identities, not proof that this frame dispatched
+that raymarcher.
+
+**The consumer snapshot has one exact valid point.** Pass0 dispatches are GlobalIds
+743 and 745; Pass1 dispatches are 747 and 749. Evaluate follows at 13547. Resource
+191 is not written again until 13902 (`ClearInvalidSignedDistanceVoxelsCS`), then
+14058 (`AccumulateInjectDataSingedDistanceOnlyCS`) and 14137
+(`ClearIncompleteSignedDistanceVoxelsCS`). Therefore the paired state to validate is
+immediately after GlobalId 749, not an arbitrary point before Evaluate.
+
+`resources.bin` cannot provide that state: it contains the replay's serialised
+initial payload. The reproducible acquisition route is to instrument
+`PopulateCommandList_21556_1_2()` directly after the second Pass1 `Dispatch(4,2,4)`:
+transition resource 191 from shader-resource and 211 from unordered-access to
+`COPY_SOURCE`, use `GetCopyableFootprints` and `CopyTextureRegion` into dedicated
+readback buffers, then restore both layouts. After the existing queue fence completes,
+map and dump the two buffers. This plan names the precise event and command-list
+location; the event-state bytes have **not yet been acquired**.
 
 **The engine multiplies environment radiance by our own quantity.** In
 `EvaluateDiffuseRadianceCS`:
@@ -236,12 +304,15 @@ moments against the L0-L2 basis, not canonical spherical harmonic coefficients.
 reduced over 256 threads, scaled by `4*pi/256`. Its 256 directions are a **Hammersley
 point set** — `z = 1 - i/256`, azimuth `bitReverse32(i) * 2*pi/2^32`,
 `dir = (r cos, r sin, z)` — uniform in area, low discrepancy, no Jacobian missing.
-`4*pi/256` is twice the hemisphere weight, consistent with doubling by symmetry.
+The samples cover only the upper hemisphere, whose natural equal-area weight is
+`2*pi/256`. The reason this Mie-summary store uses the additional factor two is open;
+antipodal or symmetry handling has not been demonstrated.
 
-**Two shaders integrate the sky differently.** Hammersley with total weight `4*pi`
-against a projected grid with total weight `4`. Different domains, so NOT one
-integration with an extra division — but the engine plainly applies canonical
-spherical quadrature where it wants one.
+**Two shaders use different direction sets and stored scales.** The Mie summary uses
+an upper-hemisphere Hammersley set with applied total scale `4*pi`; the SH producer
+uses a projected grid with total scale `4`. They are different stores and domains,
+so neither establishes the other's integration measure. In particular, the Mie
+store does not prove canonical spherical quadrature for the Ambient/SH path.
 
 **The cache (resource 15741) is not harmonics.** Stores go to `threadId.x * 4`, `|2`
 and `|3`: a four-`float4` stride over 256 entries, one per thread, colour triples with
@@ -276,48 +347,43 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ---
 
-## 5. Open questions, in the order worth attacking
+## 5. Product decisions and next tests
 
-**1. A full write history for resource 15739.** The extracted payload has slots 0..6
-populated while their six summands read zero, which currently rests on "the producer
-did not execute". That searched **compute dispatches only**. Copy destinations, CPU
-uploads, graphics-stage UAV writes, clears, creation and aliasing were not searched. A
-complete history would settle both the zeros and whether the payload precedes or
-follows `csPrecomputeAmbient`'s store to slot 56.
+The product target is deliberately smaller than reconstructing the renderer: local
+environment ambient plus camera-to-light occlusion for fires and lamps.
 
-**2. Where the replay payload sits in the frame.** `resources.bin` yields the
-**serialised initial resource payload of a replay export**, not live buffer contents.
-Its position relative to any dispatch is unestablished. **Until it is, do not use these
-bytes for semantic validation.** Either recover the resource state after a dispatch, or
-compare a computed store value numerically against the extracted floats.
+**Local ambient working value.** The private diagnostic candidate is
+`localEnvironmentAmbientEstimateWorking = globalSkyWorking * cameraSkyVisibility`.
+That name is deliberate: it is an estimate for product use, not the exact renderer
+term. Preserve and expose in the diagnostic evidence the raw global sky RGB, raw
+`cameraSkyVisibility`, the derived RGB, source frame/timestamp/age and availability
+or staleness for both inputs. Do not divide by the observed open-sky value near 0.53,
+and do not copy the renderer's internal `0.03125` scale. No public API schema is
+approved by this note.
 
-**3. Cube faces or frames — needs a capture containing the producer.** Then, per
-dispatch: resolve the root CBV holding `GlobalPushConstants` for `_renderFlags.x`, and
-rows 30..33 of the bound `SceneConstantBuffer` to unproject. Six centre directions near
-the axes are suggestive but not sufficient — **unproject the four NDC corners too**,
-since a real `+X` face gives corner rays proportional to `(+1, ±1, ±1)`, with square
-aspect and a 90 degree opening following from the same rays. Note the two need not be
-exclusive: if `_renderFlags.x` cycles 0..5 across frames, the six could be spatially the
-faces and temporally amortised, one refreshed per update.
+**Occlusion variants, in test order.** Stop when the simplest robust answer works:
 
-**4. The end-to-end replay of the SH projection.** Extract `g_texSkyInscatter` from a
-frame that ran the producer, reproduce the 4096-sample projection offline with the
-basis table above and the same `1/6144`, and compare all 27 values. Expect close
-numerical agreement, not bit equality — a parallel reduction sums in a different order.
-This needs the texture footprint work item 5 describes.
+```
+A   t233 pure distance/sphere-tracing from camera to light
+B'  reconstructed engine structure: t233 stepping/coverage,
+    plus t224.w gate and t224.xyz axis-distance data
+C   length-weighted custom variant, only for a demonstrated A/B' weakness
+D   t224-only traversal, low-priority control
+E   t224 as final blocker decision: unsupported hypothesis, not engine structure
+```
 
-**5. Texture extraction.** The reader handles buffers. Textures need footprint, row
-pitch, subresource layout, format and possible tiling. Item 4 is blocked on this.
+The next concrete action is the paired event-state copy immediately after GlobalId
+749 described above, followed by A against labelled visible and occluded lamp
+segments. If A reliably disables lamps behind walls, stop; B' is then unnecessary.
+Use B' only to address a measured failure of A. Do not infer a blocker from t224.w
+alone.
 
-**6. Register-to-descriptor mapping is solved; resource-to-register is not.** The
-inverse scan (which dispatch has a resource inside a range it could index) currently
-samples the front of unbounded bindless ranges. Good enough for narrow UAV ranges,
-loose for wide SRV spaces.
-
-**7. Unresolved contents.** Slot 7 of the ambient buffer, read by every consumer in
-the archive listings, holds `(16366681.0, 1115.56, 1673.45, 0.111556)` and is
-unexplained. The six-way branch on `cb[2].x % 6` in `csPrecomputeAmbient`, immediately
-after the direction is built, was not traced.
+The broader Ambient/SH archaeology is parked behind that product test. Remaining
+questions include the full write history of ambient buffer resource 15739, whether
+the six SH partials are cube faces or frames, an end-to-end SH projection replay,
+slot 7, and the reason for the extra factor two in the Mie summary's `4*pi/256`.
+For the latter, trace the six-way branch after direction generation or evaluate a
+constant input before making any symmetry claim.
 
 ---
 

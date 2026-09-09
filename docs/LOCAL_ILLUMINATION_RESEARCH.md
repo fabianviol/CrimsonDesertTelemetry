@@ -6,13 +6,69 @@ existing raw/smoothed sources without a new visibility filter. These are differe
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
 not a new public local-illumination or source-visibility API. Read "Why the CPU
-exposure shortcut fails" first if you are tempted by the cheap route. The latest
-LIVE result is "Occlusion series" after it: the sample responds to local
+exposure shortcut fails" if you are tempted by the cheap route. Read the current
+product checkpoint immediately below before any historical section. The latest LIVE
+hardware result remains "Occlusion series": the sample responds to local
 enclosure across about four orders of magnitude, and its reference is proven to be
 the camera position exactly. "First paired GI and texture capture" after it records
 the first working transaction, and "Same-submission pairing" explains the design
 and its deliberately limited evidence standard.
 Older sections preserve prior evidence, not current instructions.
+
+## Current product boundary and occlusion checkpoint — 2026-09-09
+
+The product does not need a complete reconstruction of the renderer. The bounded
+targets are (1) a useful local environment-ambient estimate and (2) robust
+camera-to-fire/lamp occlusion. The private ambient candidate is
+`localEnvironmentAmbientEstimateWorking = globalSkyWorking * cameraSkyVisibility`.
+Keep the raw global-sky RGB and raw visibility beside the derived RGB, with each
+source's frame/timestamp/age and availability/staleness. Do not normalise by the
+observed open-sky value near 0.53 or import the renderer's `0.03125`; this is a
+working product estimate, not a claim of exact renderer equivalence or a public API
+schema.
+
+The time-accurate capture resolver now proves this dependency:
+
+```
+t233 / resource 191
+    -> GenerateAxisAlignedDistancePass0_CS, pso 21565
+    -> GenerateAxisAlignedDistancePass1_CS, pso 21566
+    -> t224 / resource 211
+```
+
+Pass0 reads 2x2x2 SDF neighbourhoods. It derives t224.w classification bits from
+fine-SDF proximity and character-occlusion AABBs. Pass1 uses the low two bits as
+seeds and packs six axis-aligned run distances, clamped to 15, into the x/y/z
+nibbles. Therefore t224 is a coarser acceleration/helper format derived from t233,
+not independent occupancy ground truth.
+
+The archive `RaymarchLocalLightsCS` uses t233 for distance, stepping and coverage;
+`t224.w >> 2` as a gate; and t224.xyz as numeric axis-distance data. It does not use
+t224 as the final occupancy hit test. That shader is absent from all 287 PSO blobs
+in this capture, so its arithmetic comes from the archive variant; the resource
+chain and Evaluate bindings come from the captured frame.
+
+Use this comparison order:
+
+```
+A   pure t233 distance/sphere tracing                 first baseline
+B'  t233 stepping/coverage + t224 gate/axis data      engine structure
+C   length-weighted custom variant                    only after a measured weakness
+D   t224 alone                                        low-priority control
+E   t224 as final blocker decision                    unsupported hypothesis
+```
+
+If A reliably disables lamps behind walls, stop. The product does not benefit from
+rebuilding the full BlackSpace raymarch without a demonstrated need.
+
+The snapshot must be one coherent event state. The second Pass1 ends at GlobalId
+749; later writes to resource 191 begin at 13902. Instrument the generated replay's
+`PopulateCommandList_21556_1_2()` immediately after GlobalId 749: transition resource
+191 from shader-resource and 211 from unordered-access to `COPY_SOURCE`, copy both
+textures via `GetCopyableFootprints`/`CopyTextureRegion` into dedicated readback
+buffers, restore the layouts, and map only after the queue fence. The event-state
+bytes have not yet been acquired. The initial payload in `resources.bin` must not be
+used as a substitute or paired across different temporal states.
 
 ## The second writer, and why the buffer looked inconsistent — 2026-09-09
 
@@ -95,10 +151,12 @@ dir  = (r*cos(phi), r*sin(phi), z)
 
 The bit reversal is the classic radix-2 swap chain over 1, 2, 4, 8 and 16 bit groups.
 `z` uniform in (0, 1] is uniform-AREA sampling, so this is a low-discrepancy uniform
-hemisphere sampler, and no Jacobian is missing. `4*pi/256` is twice the hemisphere
-weight `2*pi/256`, consistent with taking the hemisphere result as a full sphere by
-symmetry — standard, though the doubling was not separately verified. A six-way
-branch on `cb[2].x % 6` sits just after the direction is built and was not traced.
+hemisphere sampler, and no Jacobian is missing. Its natural equal-area weight is
+`2*pi/256`, while this Mie-summary store applies `4*pi/256`. The meaning of that
+additional factor two is **open**: no antipodal or symmetry operation has been
+demonstrated, and odd SH bands make simple mirroring/doubling invalid in general. A
+six-way branch on `cb[2].x % 6` sits just after the direction is built and was not
+traced.
 
 **The contrast with the SH producer is the finding.** Two shaders in the same system
 integrate the sky in different ways:
@@ -106,14 +164,14 @@ integrate the sky in different ways:
 | | `csPrecomputeAmbient` | the SH producer |
 |---|---|---|
 | directions | Hammersley, uniform area | uniform grid in a projection |
-| per sample | `4*pi/256` | `4/24576` |
-| total weight | `4*pi` | `4` |
-| measure | spherical | parameter space |
+| stored scale per sample | `4*pi/256` | `4/24576` |
+| applied total scale | `4*pi` | `4` |
+| proven sampling domain | upper hemisphere | projected parameter space |
 
-The total weights differ by pi and the sampling domains are not the same, so this is
-NOT "the same integration with one extra division". What it does show is that this
-engine applies canonical spherical quadrature where it wants one, which makes the SH
-producer's parameter-space weight look deliberate rather than mistaken.
+The applied totals differ by pi and the sampling domains are not the same, so this
+is NOT "the same integration with one extra division". The Mie-summary scale does
+not prove canonical spherical quadrature for the Ambient/SH producer; the additional
+factor two remains unexplained.
 
 **The state that looked impossible now has a plausible account, which is not the
 same as being explained.** Slot 56 is demonstrably written in this capture by
@@ -2983,7 +3041,7 @@ shows it is produced by `GenerateHiZLevel0FromSDF_CS` rather than by
 raw field behind it may suit a thin segment better. Both should be secured if both
 exist.
 
-## The gate is a bare presence flag, and t224 splits in two — 2026-09-09
+## Historical hypothesis: the gate and two t224 roles — 2026-09-09
 
 A correction and a sharpening, both checkable and both checked.
 
@@ -2994,37 +3052,29 @@ once in the whole shader, at the comparison itself. The previous entry's phrasin
 "normalised to [0,1]" — read a 0..63 occupancy scale into something that is only
 ever tested against zero. Nothing here supports a graded occupancy in that field.
 
-**But t224 splits into two roles.** While the `w` component is used only as a
-presence flag, the nibbles unpacked from the other components ARE converted to
-float and feed the computation, with twelve uses across the shader. So:
+**But t224 splits into two roles.** While the upper six bits of `w` are used only as
+a gate, the nibbles unpacked from the other components ARE converted to float and
+feed the computation, with twelve uses across the shader. So:
 
 ```
-t224.w      presence flag only, tested != 0
-t224.xyz    4-bit fields, decoded and used as data
+t224.w>>2   gate only, tested != 0
+t224.xyz    six packed 4-bit axis distances, decoded and used as data
 ```
 
-What those nibbles mean is entirely open. That they are used numerically rather
-than as flags is the strongest available hint that `t224` carries real per-voxel
-attributes rather than a bitmask.
+The later Pass0/Pass1 producer trace established what was open here: xyz contains
+six axis-aligned run distances clamped to 15, while w is derived from SDF proximity
+and character-occlusion classifications.
 
-**Two further variants to benchmark**, both from the outside review and both
-plausible enough to record before any is built:
+**Historical variants, superseded by the producer trace:**
 
 ```
-D   traverse t224 directly, 3D-DDA over the crossed cells,
-    a relevant cell on the segment means blocked
+D   traverse t224 directly, 3D-DDA over the crossed cells
 E   hybrid: t233 for large safe steps, t224 for the actual hit decision
 ```
 
-D is attractive because it is independent of step size, needs no epsilon, no
-coverage budget and no cone, and because whatever occupancy t224 encodes should
-distinguish free cave air from a cave wall — precisely the distinction the
-sky-visibility field could not make, which is what refuted the first method.
-
-E takes from the engine only the parts that suit a point-to-point ray: the distance
-field as an accelerator for traversal, the voxel attributes for the decision, and
-leaves cone width, the 0.5 budget and the pixel footprint behind. On present
-evidence E is the most likely final shape, but nothing here decides it.
+D remains a low-priority control because t224 is half-resolution. E's final-blocker
+interpretation is not the engine structure and has no semantic support; the engine
+uses t224 as gate/axis-distance aid while t233 drives distance and coverage.
 
 **Both resources must be traced in PIX, not just t233**, each back to its producer.
 If t224's producer carries a name suggesting voxelisation or occupancy injection,
@@ -3036,12 +3086,10 @@ original scene geometry than the SDF is.
 A semantic caution and a protocol, recorded so the next step measures instead of
 theorising.
 
-**The caution.** `t224.w != 0` establishes that a cell has content relevant to this
-raymarch. It does NOT establish that the cell contains blocking geometry. Plausible
-meanings still include cell validity, presence of injected scene data, presence of
-material information, or relevance to this GI path. The previous entry treated
-presence and occupancy as interchangeable; they are not, and the difference decides
-whether variants D and E are viable at all.
+**The caution.** `(t224.w >> 2) != 0` is the raymarch gate. It does NOT establish a
+final blocking hit. The producer now shows that these upper bits come from a
+fine-SDF proximity classification; presence and a point-to-point blocker decision
+remain different claims.
 
 **The protocol, for t224 first.** Sample `w` at four world points of known
 character before drawing any conclusion:
@@ -3072,20 +3120,19 @@ and end of the occluded lantern segment give a point inside a wall and a point j
 outside one. The user confirmed the occlusion in that case, so these are labelled
 rather than assumed.
 
-**Variant matrix, renamed.**
+**Historical variant matrix, superseded by the current checkpoint.**
 
 ```
-A  SDF surface hit
-B  engine-inspired unweighted coverage      reference only
-C  length-weighted coverage                 experimental LOS score
-D  t224 voxel traversal
-E  SDF-accelerated t224 traversal
+A   t233 pure distance/sphere tracing
+B'  t233 stepping/coverage + t224 gate/axis distances
+C   length-weighted custom variant
+D   t224-only traversal
+E   t224 final-blocker decision, unsupported
 ```
 
-B is now reference only, since the engine's arrangement is tuned to a screen-space
-cone. If t224 does carry geometry occupancy, D and E answer the actual question —
-is there geometry between these two world points — rather than the question the GI
-raymarcher answers, which is how a widening pixel cone would be shaded.
+A is the first product baseline. B' is the actual reconstructed engine structure.
+C follows only a demonstrated weakness; D is a coarse control; E is not justified
+by the producer or consumer arithmetic.
 
 **In a capture, do provenance only.** For both t233 and t224: resource, format,
 dimensions, mips, last writer before the dispatch, that writer's name and its
@@ -3142,7 +3189,8 @@ generation to t233, because that would give the SDF-accelerated voxel traversal 
 structural justification instead of merely an appealing shape. Finding that they
 come from separate branches is equally informative and would weaken it.
 
-No variant should be implemented before this provenance exists.
+This provenance now exists; see the current checkpoint at the top. It authorises A
+as the first bounded test, not an assumption that E is engine-equivalent.
 
 ## Ground truth without a new session, and surface before interior — 2026-09-09
 
@@ -3307,19 +3355,19 @@ are NOT the same shape:
 211   64 x 32 x  512     8 levels x  64 slices, no border
 ```
 
-The companion is half the resolution of the distance field on every axis. So if
-t224 does carry geometry occupancy, traversing it directly — variant D — would be
-COARSER than the distance field it accompanies, not finer. That weakens D relative
-to the hybrid E, where the fine field drives traversal and the coarse one only
-qualifies the decision. It also means a thin wall is more likely to be missed by
-t224 than by t233.
+The companion is half the resolution of the distance field on every axis. Direct
+t224 traversal is therefore coarser than the fine-SDF baseline and remains only a
+control. The later producer trace also refutes the premise that it is independent
+occupancy: it is derived from t233.
 
 **Incidental but significant: the game builds raytracing acceleration structures.**
 The export contains `AccelStructureRecreation` files, so DXR is in use. Inline
 `RayQuery` therefore remains technically available as an exact alternative, which
 had been listed earlier as unknown.
 
-**Still open.** Which shader writes 191 and 211. Both are written through UAVs, and
-identifying the producers requires correlating descriptor heap slots with the root
-tables set before each dispatch in the recorded command lists. That is the next
-step and it is mechanical rather than uncertain.
+**Resolved after this entry was written.** The fixed `_Tex3D` descriptor parser and
+time-accurate root-signature resolver identify resource 191 as Pass0's t66 input and
+resource 211 as the Pass0/Pass1 u14 output. Pass0 derives classifications from the
+fine SDF; Pass1 derives six packed axis distances. The authoritative interpretation,
+variant order and exact post-Pass1 snapshot point are in the current checkpoint at
+the top of this document and in `GPU_CAPTURE_FORENSICS.md`.

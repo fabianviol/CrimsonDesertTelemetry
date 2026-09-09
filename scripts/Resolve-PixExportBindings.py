@@ -40,7 +40,7 @@ ROOTSIG = re.compile(r'CreateAndTrackRootSignature\((\d+),')
 PSO_ROOTSIG = re.compile(r'(?:cpso|gpso)Desc\.pRootSignature = GetRootSignature\((\d+)\)')
 
 VIEW_WRITE = re.compile(
-    r'Create(ShaderResourceView|UnorderedAccessView|ConstantBufferView|Sampler)[A-Za-z_]*\('
+    r'Create(ShaderResourceView|UnorderedAccessView|ConstantBufferView|Sampler)[A-Za-z0-9_]*\('
     r'(?:GetResource\((\d+)\)[^;]*?)?'
     r'GetCpuDescriptor\(g_descriptorHeap_(\d+)\.Get\(\),\s*(\d+)\)'
     r'(?:[^;]*?GetResource\((\d+)\))?')

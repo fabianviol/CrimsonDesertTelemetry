@@ -32,6 +32,14 @@ disassembly had only narrowed down.
 SetDescriptorHeaps — with **no shader names and no bindings**. Do not expect it to
 answer provenance questions.
 
+`pixtool --help save-resource` supports event selection by GlobalId, but its
+documented resource selector is RTV/depth only. It does not expose a selector for
+the arbitrary 3D SRV/UAV pair needed here. The exact t233/t224 event-state route is
+therefore an instrumented export replay: copy resources 191 and 211 immediately
+after GlobalId 749 in `PopulateCommandList_21556_1_2()`, then map after the queue
+fence. The barrier/layout recipe and evidence limits are in
+`docs/GPU_CAPTURE_FORENSICS.md`.
+
 **How to use an export-to-cpp tree.** The files are grouped by purpose and are
 grep-friendly:
 
@@ -55,6 +63,11 @@ and container (`Map-PixExportShaders.py`), candidate dispatches
 (`Resolve-PixExportBindings.py`). Use the last one before claiming a shader touches a
 resource: a descriptor table's base viewing a resource does NOT mean the shader's
 registers land on it, and that mistake has already produced one false positive here.
+
+Both descriptor scanners must accept digits in generated view-helper suffixes.
+`CreateShaderResourceView_Tex3D` and `CreateUnorderedAccessView_Tex3D` were silently
+missed by the former `[A-Za-z_]*` pattern; `[A-Za-z0-9_]*` plus SRV/UAV regression
+tests is the fixed form.
 
 A worked example: to identify a 3D texture from its shader-side shape, grep
 `CreateAndInitResources_*.cpp` for `TEXTURE3D` and match the dimensions, read the
@@ -228,7 +241,8 @@ The real interpreter is
 C:\Users\fabia\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe
 ```
 
-Script tests: `python -m unittest discover -s tests/scripts`.
+Script tests: `python -m unittest discover -s tests/scripts` (123 tests as of the
+2026-09-09 `_Tex3D` parser fix).
 
 ## PowerShell
 

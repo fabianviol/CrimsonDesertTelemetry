@@ -23,6 +23,10 @@ DESCRIPTORS = [
     "D3D12_UAV_DIMENSION_BUFFER, 0, 4, 16, 0, D3D12_BUFFER_UAV_FLAG_NONE);",
     "    CreateShaderResourceView_Buffer(GetResource(99).Get(), "
     "GetCpuDescriptor(g_descriptorHeap_4.Get(), 703), DXGI_FORMAT_UNKNOWN, 0, 64, 16);",
+    "    CreateUnorderedAccessView_Tex3D(GetResource(44).Get(), nullptr, "
+    "GetCpuDescriptor(g_descriptorHeap_4.Get(), 704), DXGI_FORMAT_R8G8B8A8_UINT);",
+    "    CreateShaderResourceView_Tex3D(GetResource(55).Get(), "
+    "GetCpuDescriptor(g_descriptorHeap_4.Get(), 705), DXGI_FORMAT_R16_FLOAT);",
 ]
 
 COMMANDS = [
@@ -59,6 +63,12 @@ class DescriptorLookupTests(unittest.TestCase):
 
     def test_a_resource_with_no_view_yields_nothing(self):
         self.assertEqual(dispatches.descriptor_slots(self.directory, 12345, 'uav'), set())
+
+    def test_tex3d_uav_helper_names_are_parsed(self):
+        self.assertEqual(dispatches.descriptor_slots(self.directory, 44, 'uav'), {704})
+
+    def test_tex3d_srv_helper_names_are_parsed(self):
+        self.assertEqual(dispatches.descriptor_slots(self.directory, 55, 'srv'), {705})
 
 
 class DispatchWalkTests(DescriptorLookupTests):

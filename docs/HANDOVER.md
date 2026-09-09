@@ -26,7 +26,7 @@ The short version, as of 2026-09-09:
 - Four scripts turn the 2.7 GB export into provable statements about the frame:
   `Read-PixExportResource.py`, `Map-PixExportShaders.py`,
   `Find-PixExportDispatches.py` (candidates only) and `Resolve-PixExportBindings.py`
-  (the one to trust). 117 unit tests.
+  (the one to trust). 123 unit tests.
 - The engine computes `saturate(1 - sample)` on the sky-visibility volume itself and
   multiplies an environment cube by it. Our decode convention is the engine's.
 - The ambient light is a 1024-byte buffer of three colour channels times nine
@@ -38,6 +38,34 @@ The short version, as of 2026-09-09:
 - The bytes extracted from the export are a replay's serialised initial payload.
   **Do not use them for semantic validation** until their position in the frame is
   established.
+- The capture now proves `t233/resource 191 -> GenerateAxisAlignedDistancePass0/1
+  -> t224/resource 211`. t224 is a coarse helper derived from the SDF, not an
+  independent occupancy truth.
+
+### Current product checkpoint — ambient plus source occlusion
+
+The private local-ambient candidate is deliberately named
+`localEnvironmentAmbientEstimateWorking`: raw global-sky RGB multiplied by raw
+`cameraSkyVisibility`, with both raw inputs, the derived RGB, source
+frame/timestamp/age and availability/staleness retained. It is a useful product
+estimate, not an exact renderer term. Do not normalise by the observed open-sky
+value near 0.53 and do not import the renderer's internal `0.03125`. This is not yet
+a public API schema.
+
+For camera-to-fire/lamp occlusion, test the fine SDF alone first. The ordered
+variants are A: pure t233 sphere tracing; B': the reconstructed engine structure
+(t233 stepping/coverage plus the t224.w gate and t224.xyz axis distances); C: a
+length-weighted custom method only if A/B' expose a concrete weakness; D: t224 alone
+as a low-priority control; E: t224 as a final blocker decision, currently
+unsupported. If A handles the labelled behind-wall cases robustly, stop there.
+
+The next evidence step is a paired replay readback immediately after GlobalId 749,
+the second `GenerateAxisAlignedDistancePass1_CS` dispatch, before Resource 191 is
+written again. Instrument `PopulateCommandList_21556_1_2()` at that exact point,
+transition Resource 191 from shader-resource and 211 from unordered-access to
+`COPY_SOURCE`, copy their `GetCopyableFootprints` into readback buffers, restore the
+layouts, then map after the queue fence. The event-state bytes have not yet been
+acquired; `resources.bin` is not a substitute.
 
 ## What changed since the old fire/console investigation
 
@@ -407,11 +435,12 @@ that resource is not proven from this capture.**
 reduced over 256 threads, scaled by `4*pi/256`. **The sampler was traced rather than
 assumed** -- a Hammersley set, `z = 1 - i/256`, azimuth from `bitReverse32(i) *
 2*pi/2^32`, `dir = (r cos, r sin, z)`. Uniform AREA, low discrepancy, no Jacobian
-missing; `4*pi/256` is twice the hemisphere weight, consistent with doubling by
-symmetry. So two shaders integrate the sky differently: Hammersley with total weight
-`4*pi` here, a projected grid with total weight `4` in the SH producer. **Not "the
-same integration over pi"** -- different domains -- but it shows the engine does apply
-canonical spherical quadrature where it wants one.
+missing. These directions cover only the upper hemisphere, whose natural weight is
+`2*pi/256`; why this Mie-summary store uses the extra factor two is **open**. No
+antipodal or symmetry operation has been demonstrated, so this does not establish
+canonical spherical quadrature for the Ambient/SH producer. The Mie summary's
+applied total scale is `4*pi`; the projected SH grid's is `4`, but they are different
+stores and domains.
 
 **The state that looked impossible has a plausible account, not an explanation.** Slot
 56 is written here by csPrecomputeAmbient as Mie RGB, and slots 0..6 / 8..55 belong to
@@ -454,7 +483,7 @@ frame, reproduce the 4096-sample projection offline with the constants above and
 same 1/6144, and compare all 27 values. Expect close numerical agreement, not bit
 equality -- a parallel reduction sums in a different order. That needs texture
 footprint work (row pitch, subresources, format) which the buffer path did not, so
-the reader is NOT yet a general texture decoder. 73 script tests pass.
+the reader is NOT yet a general texture decoder. 123 script tests pass.
 
 **The ambient half, in detail: 1024 bytes.**
 `GenerateAmbientFromEnvironmentAtmosphericScatteringCS` (in
@@ -500,30 +529,24 @@ tying binding and captured resource together. But note the radiance carrier here
 the environment CUBE, not the SH; whether the SH is ever multiplied by sky
 visibility is still unshown.
 
-**Also found without a new capture: the engine has a signed distance field.** The
-shaders extracted on 2026-09-06 were never mined for names. They contain
-`GenerateDistanceFieldsCS`, `PropagateSignedDistanceCS`,
-`GenerateAxisAlignedDistancePass0..2_CS`, `InitVoronoiSeedsCS`,
-`JumpFloodVoronoiDiagramsCS`, and — telling — `GenerateHiZLevel0FromSDF_CS`, so the
-hiZ the deferred route was about is DERIVED from the SDF, and
-`RaymarchLocalLightsCS`, so the engine already raymarches local lights.
+**The capture now identifies the SDF and its downstream helper.** The time-accurate
+resolver proves `t66/resource 191 -> GenerateAxisAlignedDistancePass0_CS ->
+u14/resource 211`, followed by Pass1 updating 211 in place. The Evaluate consumer
+binds 211 at t224 and 191 at t233. Resource 191 is 128x64x1040 R16_FLOAT; 211 is the
+half-resolution 64x32x512 RGBA8_UINT helper.
 
-`PropagateSignedDistanceCS` reads a `Texture3D<float>` (t66, space36), writes a
-`RWTexture3D<float>` (u5, space38), and uses the **same 768-byte
-VoxelGlobalIlluminationConstantBuffer we already decode** (b1, space35). The clipmap
-origins, common anchor, inverse extents and level selection therefore carry over
-unchanged. An SDF stores distance to nearest geometry, so free space reads
-positive — which is precisely what sky visibility could not express and what broke
-the occlusion test. Sphere tracing replaces fixed-step sampling.
+Captured Pass0 makes t224.w classification bits from 2x2x2 SDF neighbourhoods and
+character-occlusion AABBs. Pass1 packs six axis-aligned run distances, clamped to
+15, into the xyz nibbles. The archive `RaymarchLocalLightsCS` uses t233 for
+distance/stepping/coverage, t224.w shifted right by two as a gate, and t224.xyz as
+numeric axis distances. It does not use t224 as the final hit decision, and that
+raymarch shader did not itself execute in this capture.
 
-Unknown: dimensions, clipmap layout, sign convention, world scale per unit,
-residency, binding, and whether the existing fenced copy can reach it.
-
-**ONE next step: locate the live Texture3D<float> behind t66/space36**, verify its
-descriptor and dimensions, copy it with the same release-barrier and fence
-machinery as the R8 volume, then sphere-trace the lantern case and compare against
-the validated ground truth. The 2026-09-05 PIX capture stays available if the live
-binding is hard to reach, but is no longer needed to establish that an SDF exists.
+**ONE next step: acquire both textures at the exact post-Pass1 event state**, using
+the replay-copy recipe in the current product checkpoint above, then run the pure
+t233 sphere-tracing baseline on labelled lamp segments. Do not compare t224 from an
+older pass against a newer t233 state, and do not use the serialised initial payload
+as event-state evidence.
 
 Superseded plan, kept for context: find the resource UPSTREAM of the R8 texture. It is the result
 of a geometric computation, and whatever feeds it — opacity, occupancy, a distance
