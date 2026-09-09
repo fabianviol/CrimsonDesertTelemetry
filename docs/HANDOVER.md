@@ -149,13 +149,30 @@ steeper field beside a building rather than worse precision.
 
 Evidence artifacts/light-research/series-20260909/run4-playerhome-door-pid4760/.
 
+**INTERPRETATION, added the same day:** the quantity is most likely what its name
+says — sky visibility from a point, reduced by ground, buildings, roofs, trees,
+clouds and anything else in the volume. The form that fits is the fraction of the
+FULL SPHERE from which sky is reachable, which explains ~0.53 in the open (the
+lower half is ground), the rise to 0.562 over 10 gu of height, the exact zeros
+below the surface, and 0.000661 pointing into a building. So the value not reaching
+1 under open sky is correct rather than a shortfall. This is a reading that fits,
+not a measured fact; nothing isolates a cloud or a tree, and confirming the
+solid-angle form needs a point far from every surface, which cannot be reached by
+offsetting because Y wraps.
+
+**HARD BOUND: offsets wrap toroidally.** Y covers 32 game units, X and Z 64 each.
+Sampling +15 or +20 gu in Y returns exactly 0.0000 and +30 returns precisely the
+value of -2. The recorded ±2 and ±5 pattern is safely inside; the contract must
+state the bound or a consumer will ask for ±20 and get unrelated space.
+
 **ONE next step: design the public contract**, because every prerequisite is now
 measured. It must state the camera reference, the candidate-not-measurement
 framing, the amortisation freshness bound, the clipmap reuse for offsets, the
-mixed-age offsets, and that the value does not reach 1 under open sky (~0.53
-observed). Decide the offset pattern a consumer receives and whether the plugin
-publishes it continuously rather than one series per process. Keep the API
-vendor-neutral. Independent hiZ per-source visibility remains pending and required.
+mixed-age offsets, the toroidal offset bound above, and that the value does not
+reach 1 under open sky (~0.53) BY DESIGN rather than by defect. Decide the offset
+pattern a consumer receives and whether the plugin publishes continuously rather
+than one series per process. Keep the API vendor-neutral. Independent hiZ
+per-source visibility remains pending and required.
 
 ## Previous checkpoint — sampler wired into the probe, 2026-09-09
 

@@ -107,6 +107,55 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## What the quantity most likely is — 2026-09-09, interpretation
+
+Stated by the user and recorded here as the reading that fits every observation:
+it is what its name says. Sky visibility from a point in space, reduced by whatever
+stands between that point and the sky — ground, buildings, roofs, trees, clouds,
+and in principle anything else that moves through the volume.
+
+The concrete form that fits is **the fraction of the full sphere around a point
+from which sky is reachable**, not of the upper hemisphere. That single reading
+explains everything measured so far:
+
+| observation | explanation under this reading |
+|---|---|
+| ~0.53 in the open at ground level | the lower half of the sphere is ground |
+| rises with height: 0.159 → 0.562 over 10 gu | the ground subtends less from higher up |
+| exactly 0.000000 below the surface | no direction reaches sky |
+| 0.000661 pointing into a building | wall and roof |
+| 0.000031 deep under a roof | fully enclosed |
+| 0.0052 at 2 gu into the house, 0.374 at 2 gu outward | the doorway |
+
+It also retires the earlier puzzlement that the value "does not reach 1 under open
+sky". It should not. A point standing on ground cannot see sky in half its
+directions, and 0.53 is the correct answer rather than a shortfall.
+
+**Correction to the amortisation section.** That section said the cloud hypothesis
+"is not needed and is not supported". That was too strong, and it conflated two
+questions. Amortised block refresh explains WHEN a point's value changes — the
+plateaus and steps — and that part stands. It does not explain WHY the value
+changes at all at a fixed camera position. If the world were static, recomputing a
+block would write back the same bytes; instead about 25% of voxels differ between
+consecutive transactions with mean deviation 5.4 of 255. The content genuinely
+changes, and moving occluders are the natural cause. What remains untested is
+whether those byte differences are real scene change or temporal jitter in the
+engine's own voxel sampling; the monotonic downward drift of the daylight run
+suggests real change, while the non-monotonic night run does not settle it.
+
+**What is interpretation and what is measurement.** The fraction-of-sphere reading
+is a hypothesis that fits, not a measured fact: nothing here isolates a cloud, a
+tree or a bird, and no controlled geometry has been used to confirm the solid-angle
+form. A direct test would need a point far from every surface, where the reading
+predicts a value approaching 1 — but the Y axis of the clipmap only spans 32 gu and
+wraps, so it cannot be reached by offsetting, only by standing there.
+
+**Hard bound found while testing this.** Offsets wrap toroidally. Y covers 32 game
+units, X and Z 64 each; sampling +15 or +20 gu in Y returned exactly 0.0000 while
++30 returned precisely the same value as -2, which is the wrap made visible. The
+±2 and ±5 pattern the plugin records is safely inside, but the contract must state
+the bound or a later consumer will ask for ±20 and receive unrelated space.
+
 ## Loop closed in game, and the doorway effect measured — 2026-09-09, PID4760
 
 Live series with the sampler wired in, standing at the player home door in a part
