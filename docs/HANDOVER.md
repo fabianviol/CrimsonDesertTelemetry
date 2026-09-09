@@ -1,11 +1,11 @@
 # Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
 
 The user requested a handover for Claude after a long absence; Claude has since
-live-tested readback.2, recorded its binding rejection and built readback.3 in
-response. **Current state: readback.3 is built and host-tested but NOT installed
-or game-tested** (current checkpoint below). readback.2 is still the ASI in the
-game folder and its one-shot is consumed in the tested process, so the next live
-run needs the new ZIP. No publication or push was performed for any package.
+live-tested readback.2 and readback.3. **Current state: the binding path is
+IDENTIFIED — the selected exposure dispatch reads GI and writes exposure through
+DESCRIPTOR TABLES, not root descriptors** (current checkpoint below). readback.3
+is installed in the game folder and its one-shot is consumed in the tested
+process. No publication or push was performed for any package.
 
 ## What changed since the old fire/console investigation
 
@@ -51,8 +51,11 @@ readback.2 then added GPU GI/exposure copies for the same selected native dispat
 and WAS live-tested: the selected dispatch was observed, but the required root
 CBV/UAV bindings were absent inside its window, so it copied nothing. That valid
 negative disproves the root-descriptor assumption, not the texture result.
-**Built/tested, NOT measured in game:** readback.3 widens that window to the whole
-command-list recording and records descriptor tables, root SRVs and heaps.
+readback.3 widened that window to the whole command-list recording and WAS
+live-tested: it saw 20 root sets before the exposure and 98 descriptor-table
+bindings, with seven tables live at the dispatch and still no root UAV or SRV.
+The binding path is therefore descriptor tables, which no root-descriptor guard
+can ever accept. Do not run a fourth capture of the same kind.
 Do not restart the old emitter, generic heap scan, broad GI or PIX search.
 
 ## Short reading route — do not read all historical checkpoints
@@ -108,7 +111,64 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — readback.3 built for the real binding order, 2026-09-09
+## Current checkpoint — binding path identified as descriptor tables, 2026-09-09
+
+PRIVATE **2.0.1-spatial-readback.3** installed via DMM and LIVE-TESTED in PID4340.
+Installed ASI SHA256 9B35DEC7A0960A0FC94B3146B9104ECA3F930344A1947467CC5FEF7E4ED66352
+verified before the run; INI saved10:19:18, native log opened10:20:05 with the
+"Spatial readback v3 IDLE" line, health playing/error=null, supported build.
+ONE stationary capture. New location: OUTSIDE the barn with the four lamps, the
+first outdoor spatial run; earlier ones were in or at the roofed stall.
+
+RESULT: the diagnostic answered its question. It still copied nothing, but the
+rejection is now informative instead of blank. 20/20 CPU controls, error0, frames
+10382..10850, all GI before/after copies equal, one selected exposure at frame
+10480, bank0, single GI (5110197488) and exposure (5278233376) identity.
+
+Binding evidence at the selected Dispatch(2,1,1):
+`rootSetsBeforeExposure`20 — the widened window works, readback.2 saw none of
+these — `rootSetsInsideExposure`1, `tableSets`98, `heapSets`6 with two heaps
+(0xC92DE6A0, 0xC92DEE20), `rootThreadConflict` false. Live root descriptors: ONE
+CBV at index1 =0x1036631400, ~53GB outside the pinned GI buffer, matching the
+unrelated per-dispatch constant seen in PID2652 at a different address, which is
+consistent with an upload ring. ZERO root UAVs and ZERO root SRVs. SEVEN live
+descriptor tables at root indices5,6,7,8,9,12,14.
+
+CONCLUSION: **the GI constants and the exposure output are bound through
+descriptor tables.** No root-descriptor guard can ever accept this dispatch, so
+`required-native-root-bindings-not-unique` is the correct and final answer for
+that design. This says nothing about light, roofs or the readback.1 texture
+result. Do not repeat this capture; the question it asked is answered.
+
+Evidence artifacts/light-research/spatial-readback3-live-20260909-pid4340-outside-barn/
+(raw JSON, native log, INI). Raw spatial-binding-4340-6978343-1.json SHA256
+AE2A0DB3CB928E26062E17F3546522E8AD9291CFE98E2F9307F4824564958B2E. The decoder
+refuses it with `no-completed-gpu-copy`; this run has no derived values either.
+
+**ONE next step — a decision, not another capture.** Two honest routes to a
+same-frame GI/exposure snapshot, both bounded:
+
+1. Resolve the descriptor tables. Requires a heap-slot -> resource map built from
+   observed descriptor creation AND copies on the device, plus each heap's
+   GPU handle start and increment, then matching a bound table range against the
+   pinned resources. Gives real per-dispatch binding proof. Substantially more
+   native surface than anything built so far, and descriptors created before the
+   probe arms would be unknown, so it must fail closed on a miss.
+2. Separate the two claims instead of proving both at once. Resource IDENTITY
+   already comes from the existing validated native producer/consumer path, and
+   TEMPORAL pairing from copying in the same recording and submission immediately
+   after the selected dispatch, under one fence — which the current code already
+   does structurally. Drop the root-binding requirement, copy the WHOLE 65536-byte
+   GI buffer plus a bounded exposure prefix, and let the offline decoder locate
+   the 768-byte window that matches the CPU GI copy rather than learning the
+   offset from a binding. Report and decoder must then label the result exactly
+   as same-submission pairing, never as binding-proven.
+
+Route2 unblocks the actual roof/outside research at a clearly stated, weaker
+evidence level; route1 is stronger and much larger. Ask the user before building
+either. Independent hiZ per-source visibility remains pending and required.
+
+## Previous checkpoint — readback.3 built for the real binding order, 2026-09-09
 
 PRIVATE **2.0.1-spatial-readback.3** built and host-tested, NOT installed or
 game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-readback.3-ModManagers.zip

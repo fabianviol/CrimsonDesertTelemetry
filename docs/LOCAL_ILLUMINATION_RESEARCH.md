@@ -5,13 +5,79 @@ under roofs/in caves, and a separate camera-source visibility stream. Preserve
 existing raw/smoothed sources without a new visibility filter. These are different
 quantities; neither global sky nor exposure nor ManyLights inclusion proves them.
 This work implements **private diagnostics**, including an opt-in diagnostic ASI,
-not a new public local-illumination or source-visibility API. The newest build is
-"Widened root window" immediately below; the latest LIVE result is "Live binding
-rejection" after it, and the last successful GPU copy is "First direct live texture
-readback" further down.
+not a new public local-illumination or source-visibility API. The latest LIVE
+result is "Descriptor tables identified" immediately below, which settles how the
+selected dispatch binds GI and exposure. The last successful GPU copy is still
+"First direct live texture readback" further down.
 Older sections preserve prior evidence, not current instructions.
 
-## Widened root window — 2026-09-09, readback.3 NOT live-tested
+## Descriptor tables identified — 2026-09-09, PID4340, readback.3
+
+The widened window worked and produced the decisive evidence. This closes the
+root-descriptor line of investigation. It is a statement about binding mechanics
+only; nothing here measures light, roofs or sky visibility.
+
+Installed ASI verified as 9B35DEC7A0960A0FC94B3146B9104ECA3F930344A1947467CC5FEF7E4ED66352.
+INI saved10:19:18 with SpatialProbe1/SpatialReadback1/AmbientProbe0, native log
+opened10:20:05 carrying the "Spatial readback v3 IDLE" line, health playing and
+supported build. One stationary capture, standing OUTSIDE the barn with the four
+lamps — the first outdoor spatial run, though this capture yields no light value.
+
+CPU controls healthy: 20/20 observations, error0, frames10382..10850 progressing,
+`giCopiesMatch` true throughout, exactly one `selectedForTextureReadback` at frame
+10480, bankFlag0, single GI resource5110197488 and exposure resource5278233376.
+
+Binding state at the selected `Dispatch(2,1,1)`:
+
+| field | value |
+|---|---|
+| `rootSetsBeforeExposure` | 20 |
+| `rootSetsInsideExposure` | 1 |
+| `tableSets` | 98 |
+| `heapSets` | 6, heaps 0xC92DE6A0 and 0xC92DEE20 |
+| `rootThreadConflict` | false |
+| live root CBV | one, index1 = 0x1036631400 |
+| live root UAV | none |
+| live root SRV | none |
+| live descriptor tables | root indices 5, 6, 7, 8, 9, 12, 14 |
+
+The twenty root sets before the exposure are exactly what readback.2 could not
+see, so the window fix is confirmed by measurement rather than by argument. The
+single surviving root CBV sits ~53GB outside the pinned GI buffer and appeared at
+a different address in PID2652 (0x1039FF1700 vs 0x1036631400), which is what an
+upload-ring per-dispatch constant looks like. It is not the GI buffer.
+
+**Conclusion: GI and the exposure output reach this shader through descriptor
+tables.** `required-native-root-bindings-not-unique` is therefore the correct
+final answer for any root-descriptor design, not a defect to tune. The decoder
+refuses the capture with `no-completed-gpu-copy`, so this run has no derived
+values. readback.1's fenced texture copy is untouched by all of this.
+
+**Where a fourth step could go.** Two honest routes, both bounded, neither started:
+
+1. *Resolve the tables.* Build a heap-slot to resource map from observed descriptor
+   creation and descriptor copies on the device, read each heap's GPU handle start
+   and increment size, convert a bound table handle into a slot, and match a
+   bounded range of following slots against the pinned GI and exposure resources.
+   This restores true per-dispatch binding proof, including the offset. It is a
+   much larger native surface than anything here, and descriptors created before
+   the probe arms are unknown, so it must fail closed rather than guess.
+2. *Separate identity from timing.* Resource identity already rests on the
+   validated native producer/consumer path documented in "Native spatial
+   provenance"; temporal pairing rests on copying within the same recording and
+   submission immediately after the selected dispatch under one fence, which the
+   current code already does. Dropping the root requirement then costs only the
+   offset — recoverable by copying the whole 65536-byte GI buffer and a bounded
+   exposure prefix and letting the offline decoder locate the 768-byte window that
+   matches the CPU GI copy. The report and decoder would have to label this as
+   same-submission pairing and never as binding-proven.
+
+Evidence artifacts/light-research/spatial-readback3-live-20260909-pid4340-outside-barn/
+holds the raw JSON (SHA256 AE2A0DB3CB928E26062E17F3546522E8AD9291CFE98E2F9307F4824564958B2E),
+the native log and the INI actually used. No source, package or API change was
+made during this live-test turn.
+
+## Widened root window — 2026-09-09, readback.3 implementation
 
 Direct answer to the rejection recorded below. No new game experiment, no heap
 scan and no change to any public stream, schema or HUD value.
