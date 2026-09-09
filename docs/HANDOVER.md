@@ -177,8 +177,31 @@ off screen, which is exactly the product case. One example only; see "Segment
 occlusion" in LOCAL_ILLUMINATION_RESEARCH for what it does not establish and for
 the per-point clipmap selection that segments beyond ~32 gu would need.
 
-**ONE next step: implement continuous publication**, because the contract is now
-written and every prerequisite measured. It must state the camera reference, the candidate-not-measurement
+**OCCLUSION IS NOW THE PRIORITY** (user's decision; publishing a stream is not the
+goal here, recording state in the repo is). Two offline steps already taken:
+
+Per-point clipmap selection is solved, which was the range blocker. `wrapped`
+resolves to the world position measured from a common anchor —
+`relative[level]/originScale[level]` is identical for levels1..3 — so the shader's
+own cell test can be run for any point. Verified: the reference still selects
+clipmap1 and reproduces 0.158708192 exactly, and lights at 71..92 gu that were
+previously out of reach now select clipmap3 with plausible values.
+
+A 100-segment survey over every light in every preserved capture is strongly
+bimodal: 37 below 0.01, 57 above 0.05, only 6 between. Distance does not explain it
+— an 8.2 gu segment read 0.000000 while a 90.3 gu one read 0.082124. But this shows
+only that the statistic separates; it does NOT show which mode means occluded,
+because no capture recorded actual visibility, and ManyLights inclusion is not
+proof of visibility.
+
+Two flaws to fix before any threshold: the march silently skips points no clipmap
+covers, so a segment can be judged on partial coverage, and long segments change
+resolution partway as they cross levels.
+
+**ONE next step: the A-B-A control**, because ground truth is what is missing, not
+more statistics. One place, one session: a source in clear view, the same source
+with a wall interposed, then clear view again, recording the segment profile each
+time. One series per process means one restart per leg. It must state the camera reference, the candidate-not-measurement
 framing, the amortisation freshness bound, the clipmap reuse for offsets, the
 mixed-age offsets, the toroidal offset bound above, and that the value does not
 reach 1 under open sky (~0.53) BY DESIGN rather than by defect. Decide the offset

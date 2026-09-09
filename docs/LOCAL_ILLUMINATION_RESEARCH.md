@@ -107,6 +107,62 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Per-point clipmap selection, and a 100-segment survey — 2026-09-09
+
+Two steps toward occlusion, both offline on preserved captures.
+
+**The clipmap can be selected per point, which was the range blocker.** The
+sampler previously reused the reference's clipmap, so nothing beyond about 32 gu
+could be reached. Reading the constants shows why that limit was avoidable. The
+origins are the world position expressed in each level's grid: clip2 origin
+(-10408, 612, -4420) against a reference world of (-10411.0, 614.1, -4419.6), with
+clip1 exactly twice that and clip3 exactly half. And `wrapped` resolves to the
+world position measured from a common anchor: `relative[level] / originScale[level]`
+is IDENTICAL for levels 1, 2 and 3, at (-10408, 608, -4424) here, and
+`wrapped = world - anchor` reproduces the stored lane exactly.
+
+So for an arbitrary point: subtract that anchor, then run the shader's own cell test
+per level. Verified against the known case — the reference selects clipmap 1 and
+reproduces 0.158708192 exactly — and it extends the reach: three lights at 71..92 gu
+that previously fell outside now select clipmap 3 and return 0.33..0.44, which is
+plausible for sources standing in the open.
+
+**A 100-segment survey.** Marching from the camera to every light in every
+preserved capture, at 0.5 gu steps, taking the minimum along the way excluding
+endpoints:
+
+| band | segments |
+|---|---|
+| below 0.01 | 37 |
+| between | 6 |
+| above 0.05 | 57 |
+
+Strongly bimodal, with only 6% ambiguous. Distance does not explain it: in the
+Abyss a 77.3 gu segment read 0.000000 while a 71.6 gu one read 0.270112, and at the
+player home the 8.2 gu segment read 0.000000 while the 90.3 gu one read 0.082124.
+The coarse pattern also fits — the capture under the barn roof produced zeros
+almost throughout, the open Abyss capture mostly values above 0.05.
+
+**What the survey does NOT show.** It shows the statistic is bimodal. It does not
+show which mode means "occluded", because there is no ground truth in this data:
+no capture recorded whether a given light was actually visible. Bimodality is
+consistent with a working test and does not establish one. ManyLights inclusion
+cannot serve as truth either — the research has said throughout that an included
+source is not a proven visible source.
+
+**Two flaws found while running it, stated rather than smoothed over.** First, the
+survey silently SKIPS points where no clipmap covers the position, so a segment can
+be judged on partial coverage; that must become an explicit "unknown" result rather
+than a quiet omission, and one segment did touch a level beyond the three the
+shader samples. Second, long segments cross clipmap levels and therefore change
+resolution partway — 1 gu voxels near the camera, 4 gu at level 3 — so a thin
+obstruction far away can vanish and a coarse voxel can read low without a wall
+being there. Both must be fixed before any threshold is proposed.
+
+**Next is ground truth, not more statistics.** The A-B-A control: one place, one
+session, a source in clear view, the same source with a wall interposed, then clear
+view again, recording the segment profile each time.
+
 ## Segment occlusion — 2026-09-09, first offline test
 
 The question was whether per-source occlusion needs a different technique from the
