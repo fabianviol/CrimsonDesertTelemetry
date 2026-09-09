@@ -25,7 +25,7 @@ all.** Two invocations are proven here:
 capture as compilable C++: every resource creation with its full
 `D3D12_RESOURCE_DESC`, every descriptor and view creation, the command lists, the
 PSOs and the raytracing structures. On the 2.7 GB lantern capture it produced
-2.7 GB of source in about a minute and answered in minutes what hours of shader
+roughly 2.7 GB of binary resource data plus generated source in about a minute and answered in minutes what hours of shader
 disassembly had only narrowed down.
 
 `save-event-list` produces a bare API event list — Signal, Wait, Reset,
@@ -57,6 +57,98 @@ exports in `artifacts/light-research/pix-provenance-*/`. Both stay out of Git.
 
 Buffer contents (constant buffers, structured buffers) were exported through the
 export button in PIX's own buffer view, not by script.
+
+## Shader extraction and lookup — existing Codex tools
+
+These `.padxil/.dxbc/.ll` families came from the game's **on-disk shader-cache
+archives**, NOT PIX or process memory. Both examples below came from
+`C:\Steam\steamapps\common\Crimson Desert\0017\1.paz`. An archive variant
+is not proof of which shader was actually bound in a captured frame.
+
+### Shader name to local file — no large IR search needed
+
+`Inspect-ArchiveShader.py` already saves exact entry names in `<stem>.json`
+under `defined_functions`. From the product repository, this builds a lookup
+from existing metadata only (tested against both requested examples):
+
+```powershell
+$shaderMap = foreach ($metaFile in Get-ChildItem artifacts/light-research -Filter '*.json' -File) {
+    $listing = [IO.Path]::ChangeExtension($metaFile.FullName, '.ll')
+    if (-not (Test-Path -LiteralPath $listing)) { continue }
+    $meta = Get-Content -LiteralPath $metaFile.FullName -Raw | ConvertFrom-Json
+    foreach ($entryName in $meta.defined_functions) {
+        [pscustomobject]@{ Shader=$entryName; Listing=$listing; Metadata=$metaFile.FullName }
+    }
+}
+$shaderMap | Where-Object Shader -eq 'RaymarchLocalLightsCS' | Format-List
+# Optional inventory; choose a NEW filename:
+# $shaderMap | Export-Csv artifacts/light-research/shader-name-map-NEW.csv -NoTypeInformation
+```
+
+| Entry | Listing under artifacts/light-research |
+|---|---|
+| RaymarchLocalLightsCS | filtered-count-1322f152-20260906-2111-52c33a4a.ll |
+| RaymarchDiffuseHitDistanceCS | gi-entry-864eec9d.ll |
+
+Multiple results can be different variants. Ad-hoc listings without inspector
+metadata will not appear in this map. `<stem>.padxil.json` separately preserves
+the exact archive variant in `entry.path`, PAZ filename/offset and content hashes.
+
+### Extraction order and exact calls
+
+Reuse `artifacts/light-research/crimsonforge-shader-index-20260905.json`:
+92,788 entries under `candidates`, group0017, created with the existing
+`research/light-source-tests/Find-ArchiveLightAssets.py`. Its PAZ offsets belong
+to that archive version, not an arbitrary game update. No default rescan needed.
+
+```powershell
+$shaderPython = 'C:\Users\fabia\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+$shaderDxc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe'
+$shaderOut = 'artifacts/light-research/raymarch-local-NEW' # fresh output stem
+& $shaderPython research/light-source-tests/Read-ArchiveLightAsset.py `
+    --forge external/crimsonforge --deps external/archive-python-deps `
+    --index artifacts/light-research/crimsonforge-shader-index-20260905.json `
+    --group 0017 `
+    --path 'shadercache__/c8755039_1322f152_5_52c33a4a_3_3c400631_d81d9086.padxil' `
+    --out "$shaderOut.padxil"
+if ($LASTEXITCODE -ne 0) { throw 'Archive extraction failed' }
+& $shaderPython research/light-source-tests/Inspect-ArchiveShader.py `
+    --input "$shaderOut.padxil" --out $shaderOut --dxc $shaderDxc
+```
+
+1. `Read-ArchiveLightAsset.py` reads one indexed PAZ entry with the existing
+   CrimsonForge readers, decrypts/decompresses as indicated and checks length.
+   Saves unchanged decoded `.padxil`, extraction metadata `.padxil.json` and log.
+2. `Inspect-ArchiveShader.py` validates PASC's declared DXBC offset (or accepts
+   direct DXBC), container/chunk bounds and presence of DXIL. Saves inner `.dxbc`.
+3. It runs **`dxc.exe -dumpbin <stem>.dxbc -Fc <stem>.ll`**. The `.ll` is DXC's
+   output, not a custom IR rewrite/decompiler stage. `<stem>.json` records
+   `defined_functions`, chunk metadata, SHA256s, DXC path and exit code.
+
+Both scripts refuse existing outputs; inspector outputs must be within product
+`artifacts/light-research`. Some assets contain RTS0 root signatures only, no DXIL:
+their rejection is expected, not a broken tool. Preserved metadata may still name
+`C:\DEV\CrimsonHue\artifacts\...`; after migration use that stem under Telemetry.
+
+### What the hashes mean
+
+For `c8755039_1322f152_5_52c33a4a_3_3c400631_d81d9086.padxil`, the second
+underscore field is the observed HLSL-source family key, the fourth the entry key.
+The first is a pipeline/root-signature family, NOT HLSL-source identity. Other
+fields distinguish variants; their complete semantics are not established here.
+Existing `Find-ArchiveShaderSource.py --key-field 1` samples source families when
+needed; the earlier first-field source-identity control failed.
+
+Entry key = CrimsonForge `core.crypto_engine.hashlittle(name.encode('utf-8'),
+0xC5EDE)`, formatted as eight lowercase hex digits; the NAME is case-sensitive.
+Verified: RaymarchLocalLightsCS ->52c33a4a; RaymarchDiffuseHitDistanceCS ->864eec9d.
+Use this to select archive candidates; confirm the decoded entry afterward.
+
+Local prefixes and dates are human research labels, not engine IDs. In
+`filtered-count-1322f152-20260906-2111-52c33a4a`, 1322f152 is the source key,
+52c33a4a the entry key; `gi-entry-864eec9d` kept only the entry key. Recover the
+FULL variant from `.padxil.json`, the actual entry name from `.json`. Neither
+filename key is the DXBC SHA256 or the DXBC container's shader HASH chunk.
 
 ## Native build and test — not on PATH
 
@@ -104,6 +196,19 @@ requires 7.4 or newer.
 | `Probe-DirectionalVolume.py` | samples a stored volume at offsets around the recorded camera |
 
 All the Python tools read only preserved artifacts and never touch the game.
+
+## Other existing workflows
+
+- DMM: `C:\Modding\CrimsonDesert\DMM\DMM.exe`. The user installs the WHOLE ZIP
+  from `scripts/Build-ModManagerPackage.ps1 -Version <new-version>` through DMM;
+  outputs are in `artifacts/mod-manager/`. Close the game before ASI replacement.
+  Keep versioned ZIPs immutable; never add the archived second console ASI.
+- `scripts/Backup-UpdateEvidence.ps1` preserves existing update/shader anchors;
+  inspect parameters before use, do not regenerate the research instead.
+- Binary comparisons: `Get-FileHash -Algorithm SHA256`; source comparisons:
+  `git diff` / `git diff --check`. No custom comparison service is needed.
+- GitHub/Nexus publishing previously used web interfaces; no new publishing
+  automation is claimed here. Building a diagnostic ZIP does not publish it.
 
 ## Shell traps that have cost time here
 
