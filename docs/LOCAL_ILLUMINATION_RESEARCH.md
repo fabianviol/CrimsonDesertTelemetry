@@ -107,6 +107,47 @@ lifting the one-shot limit into a bounded periodic read of the small region of
 interest. It does NOT mean copying 2MB per frame, and it does not mean substituting
 this algebra.
 
+## Spread and the open-sky anchor — 2026-09-09, PID9464, series.1
+
+First live series. Eight transactions in one process, standing still in the Abyss
+high above the world under completely open sky, chosen deliberately as an extreme.
+8 of 8 completed and decoded, fence values 1..8 in order, no failure, all
+`texture-sample` with no fallback, reference equal to the API camera position to
+0.00 gu for the fourth time.
+
+Values in order: 0.5435463645, 0.5279821106, 0.5279821106, 0.5279821106,
+0.5383259607, 0.5383259607, 0.5383259607, 0.5289446066.
+
+**Repeat spread at one place: 0.0156** (min 0.52798, median 0.53364, max 0.54355),
+roughly 2.9% relative at this level. The repeated identical values are the R8
+quantisation of the volume showing through; the steps between them are a few byte
+levels, so the variation is real rather than numerical mush.
+
+**The open-sky anchor is about 0.53, not 1.0.** This is the single most important
+number in this section. With nothing overhead and nothing nearby, the quantity does
+not approach one. Every earlier reading has to be re-read against that ceiling: the
+0.386 and 0.458 measured beside the barn are about 73% and 86% of the open maximum,
+not "half the sky". Do not present this value as a fraction of visible sky, and do
+not normalise it to 1 without establishing what the true maximum is across
+locations — one Abyss sample is not proof of a global ceiling.
+
+**The occlusion series clears the noise floor.** Against 0.0156: open 0.458 versus
+wall 0.118 is 22x the spread; wall versus under-roof 0.000031 is 7.6x; and even the
+two open points beside the barn, which differ by 0.071, are 4.6x. Every distinction
+drawn earlier that day is comfortably above noise. The caveat is regime: this
+spread was measured at ~0.53 and says nothing certain about the floor near
+0.00003, where quantisation must dominate and relative spread must be far larger.
+
+**Achieved cadence was ~1500 ms against a configured 1000 ms minimum**, with frames
+advancing by exactly 90 per transaction at 60 fps. The interval is a floor, not a
+rate: the real limiter is the probe's own 500 ms `lastAttempt` throttle together
+with exposure dispatch selection. A live feed wanting more than roughly 0.7 Hz must
+revisit that throttle rather than lowering the configured interval.
+
+Evidence artifacts/light-research/series-20260909/run1-abyss-open-sky-pid9464/
+holds the 12453950-byte raw JSON, derived.json, pre and post snapshots, the native
+log and the INI actually used.
+
 ## Repeated measurement — 2026-09-09, series.1 NOT live-tested
 
 The one-shot limit is lifted. This was the pivotal engineering risk: every planned

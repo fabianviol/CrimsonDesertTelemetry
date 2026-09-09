@@ -4,9 +4,9 @@ The user requested a handover for Claude after a long absence. Claude built the
 pairing path up to readback.4 and then ran a five-point occlusion series with it.
 **Current state: the spatial sample is confirmed to respond to local enclosure
 across roughly four orders of magnitude, its reference is exactly the camera
-position, the cheap CPU shortcut is proven ill-conditioned, and the one-shot limit
-is now lifted — a repeated series is built and host-tested but NOT game-tested**
-(current checkpoint below). readback.4 is the ASI in
+position, the cheap CPU shortcut is proven ill-conditioned, and a repeated
+series now runs live: the repeat spread at one place is 0.0156 and the open-sky
+anchor is about 0.53, not 1.0** (current checkpoint below). readback.4 is the ASI in
 the game folder; readback.5 fixes a diagnostic counter defect and is built but not
 installed. No publication or push was performed for any package.
 
@@ -119,7 +119,64 @@ Check native completion/fence, root bindings, paired flags and progressing CPU
 controls BEFORE interpreting the direct/inverse difference. Failure is a diagnostic,
 not zero light. Exact pass/reject follow-up and package identities are below.
 
-## Current checkpoint — repeated measurement built, 2026-09-09
+## Current checkpoint — spread measured, open-sky anchor found, 2026-09-09
+
+PRIVATE **2.0.1-spatial-series.1** installed via DMM and LIVE-TESTED in PID9464.
+ASI SHA256 51BFE1C97BAB646EDA2462189DEA04196DE8F07B7A96632583B7494C23921339
+verified; the INI was written by the assistant at16:03:16 and the log opened
+16:05:28 carrying "Spatial readback v5 IDLE ... 8 texture/GI/exposure
+transaction(s) at >=1000ms". Config SpatialReadbackCount=8, IntervalMs=1000.
+Location deliberately extreme: the **Abyss, high above the world**, player at
+-10679.4/1794.8/-3687.3, fully open sky, 2 lights in range and 0 on screen.
+
+SERIES RESULT: 8 of 8 transactions completed and decoded, fences 1..8 in order, no
+failure, 25/20 CPU observations because the window correctly waited for the series.
+
+| # | frame | fence | dt ms | sky-vis |
+|---|---|---|---|---|
+| 0 | 14212 | 1 | — | 0.5435463645 |
+| 1 | 14302 | 2 | 1500 | 0.5279821106 |
+| 2 | 14392 | 3 | 1500 | 0.5279821106 |
+| 3 | 14482 | 4 | 1516 | 0.5279821106 |
+| 4 | 14572 | 5 | 1484 | 0.5383259607 |
+| 5 | 14662 | 6 | 1500 | 0.5383259607 |
+| 6 | 14752 | 7 | 1500 | 0.5383259607 |
+| 7 | 14842 | 8 | 1500 | 0.5289446066 |
+
+**REPEAT SPREAD = 0.0156** (min0.52798, median0.53364, max0.54355), about2.9%
+relative at this level. All eight are `texture-sample`, none fell back. The
+reference equalled the API camera position to 0.00gu for the fourth time.
+
+**THE OPEN-SKY ANCHOR IS ABOUT 0.53, NOT 1.0.** With nothing whatsoever overhead or
+nearby, the quantity reads ~0.53. It does not approach 1. Earlier readings must be
+re-read against this ceiling: the 0.386 and 0.458 measured beside the barn are
+roughly 73% and 86% OF THE OPEN MAXIMUM, not "half of full sky". Do not treat this
+value as a fraction of visible sky.
+
+**THE OCCLUSION SERIES SURVIVES THE NOISE FLOOR.** Against a spread of0.0156: open
+0.458 versus wall0.118 is a gap of0.34, about22x the spread; wall versus under-roof
+0.000031 is0.118, about7.6x; and even the two open points beside the barn differ
+by0.071, about4.6x. Every distinction drawn on 2026-09-09 is comfortably above
+noise. Caveat: the spread was measured at ~0.53 and may differ in other regimes,
+in particular near the0.00003 floor where quantisation dominates.
+
+**CADENCE IS ~1500ms, NOT THE CONFIGURED 1000.** Frames advance by exactly 90 per
+transaction at 60fps. The interval is a minimum, as documented, and the real
+limiter is elsewhere — the probe's own 500ms `lastAttempt` throttle plus exposure
+dispatch selection. Any future live feed wanting a faster rate must revisit that
+throttle; do not assume the configured interval is achievable.
+
+Evidence artifacts/light-research/series-20260909/run1-abyss-open-sky-pid9464/
+with the raw 12453950-byte JSON, derived.json, pre/post snapshots, native log,
+INI and notes. Raw captures stay out of Git.
+
+**ONE next step:** measure the spread once more in the MID range, for example at
+the wall position that read0.118, because the noise floor there is what a
+directional lamp mapping actually has to clear. Then the directional feed contract
+can be designed against a known floor. Independent hiZ per-source visibility
+remains pending and required.
+
+## Previous checkpoint — repeated measurement built, 2026-09-09
 
 PRIVATE **2.0.1-spatial-series.1** built and host-tested, NOT installed or
 game-tested. ZIP artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-spatial-series.1-ModManagers.zip
