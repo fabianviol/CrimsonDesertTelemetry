@@ -2444,3 +2444,54 @@ dimensions, mips, last writer before the dispatch, that writer's name and its
 inputs. Then one step further upstream if needed. The goal is the dependency graph
 between them, not a pretty resource name, and specifically whether one is derived
 from the other or they come from separate branches.
+
+## Correction: two of the four validation points are not ground truth — 2026-09-09
+
+The previous entry listed four world points of "known character" for validating a
+new resource. Two of them do not survive scrutiny and the labels are withdrawn.
+
+A blocked segment establishes that a blocker lies SOMEWHERE along it. It does not
+establish that any particular interior sample is inside geometry. Worse, the only
+instrument available for locating the blocker on that segment is the sky-visibility
+field, which this document already refuted for exactly that question: near zero
+there means "sees no sky", not "is solid". There is therefore no independent
+confirmation of where the wall stood.
+
+Revised labels:
+
+```
+free air outdoors             SOUND    the visible lantern viewpoint
+free air inside an enclosure  SOUND    the under-roof camera
+interior of the blocked ray   NOT ground truth, relabel as
+                              "blocked-ray interior sample"
+just outside a wall           NOT ground truth, same reason
+```
+
+So the validation table starts with two labelled points, both of them free air,
+and no confirmed solid point at all. A new capture, or a visualisation that shows
+where geometry actually sits, is needed before any "inside a wall" expectation can
+be checked. Until then a candidate occupancy field can be tested for the two free
+cases and for internal consistency, but not for its behaviour inside geometry.
+
+## Capture checklist, provenance only — 2026-09-09
+
+For the `RaymarchLocalLightsCS` dispatch, record for BOTH t233 and t224:
+
+- the exact SRV view, not just the resource: format, dimensions, mip, first slice
+  and array range, and any format reinterpretation. A `Texture3D<float>` in the
+  shader may be a view onto a larger or differently organised resource, which
+  matters given the 8 levels of 130 slices seen in the addressing.
+- the last writer BEFORE this dispatch, not merely any historical writer. Clipmaps
+  and temporally amortised updates have several writers, and only the one that
+  produced the content this dispatch reads is informative.
+- that writer's own inputs, then one step further upstream if needed.
+- resource and heap identity rather than descriptor slot numbers, since aliasing
+  and heap reuse make slots unreliable.
+
+The objective is the relationship between the two resources. The valuable outcome
+is a chain such as scene voxelisation to t224 or a precursor, then distance
+generation to t233, because that would give the SDF-accelerated voxel traversal a
+structural justification instead of merely an appealing shape. Finding that they
+come from separate branches is equally informative and would weaken it.
+
+No variant should be implemented before this provenance exists.
