@@ -368,10 +368,16 @@ coord_z = z_texel * 0.000961538   (= 1/1040)
 | total depth | 264 | 1040 |
 | z scale | 1/264 | 1/1040 |
 
-Same toroidal Frc addressing, same clipmap family, same 768-byte constant buffer.
-**The decoder therefore does not need re-deriving** — `sample_world` generalises by
-parameterising width, height, level depth and border. The R8 volume's hard part does
-not repeat here.
+Same toroidal Frc addressing, same clipmap family, same 768-byte constant buffer, so
+`sample_world` should generalise by parameterising width, height, level depth and
+border rather than being rewritten.
+
+**That is an anchor, not a finished decoder.** Before a sphere trace rests on it,
+five things need confirming against real data: the world-to-voxel mapping at this
+resolution, the border slices, level selection, the SIGN convention, and the world
+UNIT of the stored distance. None of that is renderer archaeology — it is calibration
+against known points — but it is work, and treating the shared addressing as though
+it settled the decoder would skip it.
 
 **Access is the open problem, and one route is closed.** Disassembling pipeline state
 21568 from the capture shows `AdaptExposureCS` — the dispatch this probe hooks —
@@ -423,8 +429,22 @@ the report is written only when the series ends or the plugin stops. Only ONE se
 runs per game start (`if(requested_) return false` in `SpatialReadback::Begin`), so a
 lost run means a restart.
 
-**Then variant A**: pure sphere tracing on t233 from camera to light, against the
-labelled cases. t224 is derived from t233 and stays demoted.
+**Then, in this order:**
+
+1. Parameterise the readback for the second signature. The R8 path stays a
+   regression invariant: byte-identical output, or the change is wrong.
+2. Copy and decode the R16 volume.
+3. Calibrate at a few KNOWN points before trusting any trace — free air, a surface,
+   just in front of and just behind it. That is what fixes the sign and the world
+   scale.
+4. Variant A: a camera-to-torch sphere trace.
+5. One controllable case, the same torch visible then blocked then visible again.
+   Not thirty lights observed statistically. Identify the torch by POSITION; the
+   rendered sample index is explicitly not a stable id.
+
+**If A works, stop there.** No reconstruction of the engine's raymarch, no coverage
+model, no DXR excursion, and t224 stays ignored. It comes back only if A visibly
+fails at thin walls, doorways or grazing angles.
 
 **Test subjects found at Alfonso Estate, Duskwood** — a fixed teleport point, so they
 repeat: an NPC carrying a torch, a light that moves behind geometry on its own, and

@@ -109,8 +109,15 @@ frame instead of trusting the tracker is what settled it. The rendered sample in
 explicitly not a stable id, so position tracking was the only option and it was not
 good enough.
 
-**This closes the cheap route and justifies the SDF work.** Occlusion has to be
-computed; the renderer will not hand it over.
+**Scope of that negative.** What is measured is that THIS FEED does not represent
+usable attenuation: a source keeps its full contribution or leaves the list, and a
+departure is ambiguous between occlusion, view filtering and range. That is enough to
+rule the feed out as an occlusion source for the product. It is NOT a claim that the
+engine never attenuates an occluded light internally; that was not tested and should
+not be asserted.
+
+**So occlusion has to be computed.** The cheap route is closed for the product, which
+is what justifies the SDF work.
 
 ## The ambient estimate measured end to end, in game — 2026-09-10
 
