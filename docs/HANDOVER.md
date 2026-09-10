@@ -1,4 +1,85 @@
-# Current checkpoint — t233 Variant A only, 2026-09-10, Codex
+# Current checkpoint — both product goals answered, 2026-09-11, Claude
+
+**The two questions this research existed for are closed.** Ambient dims correctly
+under cover, and a camera-to-light sphere trace through the engine's signed distance
+field separates a lamp behind a wall from the same lamp in the open. The consolidated
+handover — calibration, tools, limits, stopping rule — is section 4b of
+[GPU_CAPTURE_FORENSICS.md](GPU_CAPTURE_FORENSICS.md). Read that first; this checkpoint
+records the runtime and package state around it. Everything below this checkpoint is
+history, including its pending acquisition gates, which are now met.
+
+**DEMONSTRATED live, latest:** Variant A separated the labelled case in PID15940 at the
+player home, 2026-09-10 23:51. Nineteen camera-to-light traces against a lit doorway at
+`(-10403.25, 613.84, -4419.10)`, identified by world POSITION and never by the rendered
+sample index. Grouping by the camera position the copies themselves carry — the phase
+windows spilled across the user walking, so a label alone was not a pose — gives three
+poses: 3 copies clear (closest +0.304..+0.320), 10 blocked (−0.0000..−0.0068), 9 clear
+(+0.454..+0.510). One fixed parameter set (`hit_tolerance=0.0`, `minimum_step=0.05`,
+`iteration_bound=400`, `start_offset=0.6`, `end_margin=1.0`), fixed before the occluded
+phase was examined, no contradictions. Evidence:
+`artifacts/light-research/variant-a-pid15940-20260910-2351/`.
+
+**Limit, recorded as a limit:** the blocked ray GRAZES the wall. A tolerance sweep holds
+the classification from −0.05 to +0.10, so there is a working band, not a margin. Thin
+geometry, doorways at grazing angles, moving occluders and other materials are untested —
+not known-bad. Widen the test only when a concrete case fails.
+
+**Stopping rule, in force:** no t224, no reconstruction of the engine's raymarch, no
+coverage model, no DXR.
+
+**CALIBRATED:** the stored value is a signed world distance in GAME UNITS, negative
+inside (measured through a surface at y ≈ 606.72), gradient magnitude 0.99957 in the
+unsaturated band, `cellSize(L) = 0.25 * 2^L` read from the GI constants, clamp exactly
+`1.5*sqrt(2)` cell sizes on all eight levels. Toroidal wrap confirmed at 16 gu in y for
+level 0. Two new tools carry this: `scripts/Decode-SignedDistance.py` samples the live
+payload, `scripts/Trace-SignedDistance.py` traces and reports the closest approach so an
+endpoint self-hit at the fixture is distinguishable from a wall. Both are in
+[TOOLING.md](TOOLING.md).
+
+**RUNTIME FIX — a run no longer costs a game restart.** Two separate causes. First,
+`if(requested_) return false` in `SpatialReadback::Begin`; `Restartable()` replaced it
+and keeps what that rule protected — a series still owing transactions is never replaced
+mid-flight, and a destination the GPU or an open map may still touch is never handed to a
+new series. Second, and the one that still blocked it afterwards: the dispatch hook sets
+the probe's phase to `Pending` every observed frame, so it passed through `Idle` for only
+a fraction of a frame and the request event was consumed and discarded almost every time.
+The request now tests `observing`, and all three outcomes — started, already running,
+previous series unsettled — are logged. Diagnosing the second cost a round of guessing
+precisely because a refused request logged nothing.
+
+**INSTALLED and measured:**
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-restart.2-ModManagers.zip`.
+ZIP SHA256 `B7C4EBF34DFDAF27BAF365C97C19A064D4DF9A76E954369C2CFDC758829863F2`;
+ASI SHA256 `09DC5B43C02BEA822C7694B5EC304C7921EC46B6326D5B17C219E1D6090FDC15`.
+Built from HEAD, so it includes Codex's `a87a2ab` (distinct SDF barrier transitions) and
+`27c094d` (bounded R16 acquisition) alongside the restart work. Its INI is baked in via
+`-IniOverrides`: `SpatialProbe=1`, `SpatialReadback=1`, `SignedDistanceReadback=1`,
+`SignedDistanceReadbackCount=120`, `SignedDistanceReadbackIntervalMs=2000`,
+`SpatialVisibilitySeconds=0`, `AmbientProbe=0`. The earlier
+`v2.0.1-restart.1` ZIP (`0A37F27F4059D09D68C0A8F2B8F37C2BE23A4E35A7D9731CB3165AE1E9167CAF`)
+is superseded but preserved.
+
+**Ambient: parked, not abandoned.** `localEnvironmentAmbientEstimateWorking` on
+`/v1/ambient` is `skyMean x cameraSkyVisibility` with both raw inputs retained. Full-day
+range 34500x, barn traverse 15550x on visibility with the sky term steady, value follows
+camera POSITION not view direction. What is missing is the mapping to lamp brightness: a
+visibly open barn still reads 0.000025 inside, so a linear product drives a lamp to
+black. That curve is CrimsonHue's, not telemetry's.
+
+**OPEN / evidence limit, unchanged:** contextBefore/contextAfter in the R16 metadata are
+CPU observations around the copy, NOT GPU-bound GI constants. The measured transaction
+rate is 0.31–0.48/s against a configured 1 s, because arming needs the pinned resource
+identity to recur and `Discover` only re-pins while the phase is Idle; a 30 s stall was
+observed once. Known, deliberately not fixed. No source-visibility verdict and no new
+public API are published — Variant A lives in the research scripts, not in the product.
+
+**Next step, and it is not in this repository:** CrimsonHue consumes only `/v1/stream`
+today, neither the ambient estimate nor occlusion. The perceptual curve and the occlusion
+gate belong there. It was deliberately left untouched while this work ran.
+
+---
+
+# Previous checkpoint — t233 Variant A gate, 2026-09-10, Codex (history)
 
 **Product question remains OPEN.** Ambient is parked. No t224 investigation and no
 new PIX acquisition. Follow [SDF_VARIANT_A.md](SDF_VARIANT_A.md) for the bounded

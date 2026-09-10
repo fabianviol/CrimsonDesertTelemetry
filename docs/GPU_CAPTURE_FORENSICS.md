@@ -1,4 +1,4 @@
-# GPU capture forensics — self-contained handover, 2026-09-10
+# GPU capture forensics — self-contained handover, 2026-09-11
 
 Written so that someone with no memory of this session can continue. It covers the
 toolchain built for reading a PIX capture offline, and the ambient-light
@@ -11,9 +11,10 @@ The one habit that matters: **every strong claim below was tightened or reversed
 least once by an outside review.** Distinguish established from hypothesis from
 withdrawn before building on anything, and say which you are doing.
 
-**Picking this up cold? Go straight to section 4b.** It names the single action
-waiting, where both product goals stand, and the ordered plan. Sections 1-3 are the
-toolchain and the identities; section 4 is the ledger behind the claims.
+**Picking this up cold? Go straight to section 4b.** Both product goals are now
+answered; it says how far each one reaches, what is deliberately not being pursued,
+and what is genuinely next. Sections 1-3 are the toolchain and the identities;
+section 4 is the ledger behind the claims.
 
 ---
 
@@ -351,98 +352,115 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ---
 
-## 4b. Occlusion — handover, 2026-09-10 late evening
+## 4b. Occlusion — handover for Codex, 2026-09-11
 
-### Latest — Variant A ran and separated the labelled case, 2026-09-10 23:51
+### Where this stands, in one paragraph
 
-Nineteen camera-to-light sphere traces through the live distance field, one fixed
-parameter set: every trace from the two open camera poses reaches the lit doorway,
-every trace from behind the wall stops inside it. The margin is thin -- the blocked
-ray grazes the wall at -0.0000 to -0.0068 gu -- so the pass should not be read as a
-margin. Full result, parameters and scope in [SDF_VARIANT_A.md](SDF_VARIANT_A.md);
-evidence at `artifacts/light-research/variant-a-pid15940-20260910-2351/`.
+Both product questions are answered. Ambient dims correctly under cover, and a
+camera-to-light sphere trace through the engine's own signed distance field separates a
+lamp behind a wall from the same lamp in the open. Neither needs more renderer
+archaeology. What is left is product work in CrimsonHue — which consumes neither feed
+yet — plus the limits recorded below. Everything in this section was measured in the
+running game, not inferred from the capture; where something is an observation rather
+than a check, it says so.
 
-### The first live R16 payload landed, 2026-09-10 23:28
+### Goal 1: ambient under cover — done, parked
 
-Four fenced copies of 17,039,360 bytes in PID 33348, and the value semantics are now
-calibrated from the payload's own GI constants: a **signed world distance in game
-units**, with `cellSize(L) = 0.25 * 2^L` read from the constants and the value clamped
-at exactly `1.5*sqrt(2)` cell sizes on every level. Which SIGN is the inside is not
-yet measured. The field is short range -- 0.53 gu at the finest level -- which sets the
-iteration bound for a trace. Full table and consequences in
-[SDF_VARIANT_A.md](SDF_VARIANT_A.md). Evidence at
-`artifacts/light-research/sdf-live-pid33348-20260910-2328/`. The addressing, a known
-surface and any trace are still open.
+`skyMean x cameraSkyVisibility`, both raw inputs retained alongside it, published on
+`/v1/ambient` as `localEnvironmentAmbientEstimateWorking`. Measured 2026-09-10:
 
-### The one action waiting
+| place | camera sky visibility |
+|---|---|
+| the Abyss, high above the world | 0.62 – 0.86 |
+| open ground | 0.27 – 0.39 |
+| beside the barn, under trees | 0.17 – 0.31 |
+| deep inside the barn | 0.000025 – 0.014 |
 
-**Latest: probe.4 acquired the missing complete release tuple in PID1668.**
-Compute list, layout `6->1`, access `80->80000000`, sync `80->0`, flags zero,
-subresources `(4294967295,0,0,0,0,0)` (bitfields hex). Source shape matched
-128x64x1040 R16_TYPELESS. Thirteen distinct tuples were logged; evidence under
-`artifacts/light-research/sdf-transitions-pid1668-20260910-224833/`.
-The bounded R16 copy path is now implemented; package/test details and the single
-next live acquisition are at the top of [HANDOVER.md](HANDOVER.md). No R16 live
-bytes, calibrated mapping or Variant A result exist yet. CPU context bracketing
-in the new diagnostic is explicitly not a proven GPU GI binding.
+A barn traverse gives 15550x on visibility and 17902x on the estimate while the sky term
+holds between 26.0 and 38.4 with no trend, so the collapse is entirely local. The value
+follows camera POSITION, not view direction. That open ground reads about a third rather
+than one is the best support for reading it as a solid-angle fraction.
 
-The earlier probe.3 failure below is retained as the reason for probe.4:
+**Open, and it belongs to CrimsonHue:** the mapping to lamp brightness. A visibly open
+barn still reads 0.000025 inside, so a linear product drives a lamp to black where a
+person would say "much darker". It needs a perceptual curve with a floor. Do not reopen
+the atmosphere analysis to improve this; it buys nothing for the product.
 
-**probe.3 was installed and measured in PID15044, 22:35 CEST.** Its first sighting
-was a WRITE entry (`layout 1->3 access 0->10 sync 1->80`, bitfields in hex), not the
-previous run's `6->1` release. Its first-sighting-only logic then discarded every
-later tuple for that resource. The desired release tuple is still OPEN; this is
-an observer failure, not a negative result for the SDF. Evidence:
-`artifacts/light-research/sdf-access-pid15044-20260910-223544/`.
+### Goal 2: lamp occlusion — demonstrated for the controlled case
 
-The next observer retains/logs bounded **distinct complete transition tuples** so
-discovery order cannot hide the release. See the current
-[HANDOVER.md](HANDOVER.md) checkpoint for the package and
-[SDF_VARIANT_A.md](SDF_VARIANT_A.md) for the test. Follow the LIVE route in this
-section; the paired replay recipe in sections 4 and 5 is historical context, not
-the next action. No R16 event-state bytes have yet been acquired.
+Nineteen camera-to-light traces at the player home against a lit doorway at
+`(-10403.25, 613.84, -4419.10)`, identified by world POSITION and never by the rendered
+sample index. Grouping by the camera position the copies themselves carry — the phase
+labels alone were not poses, because the 15 s windows spilled across the user walking —
+resolves into exactly three poses, unanimous within each:
 
-```powershell
-$p = Get-Process CrimsonDesert
-pwsh scripts/Start-SpatialProbe.ps1 -ProcessId $p.Id
-# then, after ~60 s of moving around:
-Select-String 'C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesertTelemetry.native.log' `
-    -Pattern 'signed distance transition'
-```
+| camera z | copies | verdict | closest approach |
+|---|---|---|---|
+| −4422.90 | 3 | clear | +0.304 … +0.320 |
+| −4417.72 | 10 | **blocked** | −0.0000 … −0.0068 |
+| −4424.09 | 9 | clear | +0.454 … +0.510 |
 
-### Where the two product goals stand
+One fixed parameter set, set before the occluded phase was examined and not tuned
+afterwards: `hit_tolerance=0.0`, `minimum_step=0.05`, `iteration_bound=400`,
+`start_offset=0.6`, `end_margin=1.0`. Full write-up in
+[SDF_VARIANT_A.md](SDF_VARIANT_A.md); evidence at
+`artifacts/light-research/variant-a-pid15940-20260910-2351/`. The three preserved
+payloads carry their own cameras, so the whole result reproduces offline with the
+shipped tool — the exact commands are in that document.
 
-**Ambient: done for now, parked.** Validated end to end in game on 2026-09-10 —
-factor 15550 on camera sky visibility across a barn traverse with the sky term steady,
-34500x over the whole day's range from the Abyss to deep under a roof, and the value
-follows camera POSITION rather than view direction. Details in the research log. Do
-not reopen the atmosphere analysis; it buys nothing for the product now. The mapping
-from the estimate to lamp brightness is CrimsonHue's, and it needs a perceptual curve
-with a floor, because a visibly open barn still reads 0.000025 inside and a linear
-product would drive a lamp to black.
+**The margin is thin, and that matters.** In the blocked pose the ray grazes the wall at
+−0.0000 to −0.0068 gu rather than driving through it. A tolerance sweep holds the same
+classification from −0.05 to +0.10, so there is a working band, but a thinner wall or a
+shallower angle could plausibly fall the other way. Do not read the pass as a margin.
+Nothing is established for thin geometry, doorways at grazing angles, moving occluders or
+other materials — untested, not known-bad.
 
-**Using the existing light feed for occlusion: measured negative, closed.** Two logged
-runs with torch-carrying NPCs walking behind geometry, the user calling each occlusion.
-No contribution is ever attenuated: at every mark the surviving lights sit in the same
-0.27-0.39 band. What happens instead is that lights leave the list, and a departure
-cannot be told apart from view filtering or range. Scope that correctly — this feed
-does not represent usable attenuation, which rules it out for the product. It is NOT a
-claim that the engine never attenuates internally; that was not tested.
+**Stopping rule, still in force.** No `t224`, no reconstruction of the engine's raymarch,
+no coverage model, no DXR. `t224` in particular is derived from `t233` via
+`GenerateAxisAlignedDistancePass0/1`, so it is not independent truth. These return only if
+Variant A visibly fails on a concrete case.
 
-**So occlusion must be computed, from the signed distance field. That is the work.**
+**The cheap alternative is closed by measurement.** Two logged runs with torch-carrying
+NPCs walking behind geometry, the user calling each occlusion: no contribution is ever
+attenuated, and the surviving lights sit in the same 0.27–0.39 band at every mark. What
+happens instead is that lights leave the list, and a departure cannot be told apart from
+view filtering or range. Scope that correctly — this feed does not represent usable
+attenuation, which rules it out for the product. It is NOT a claim that the engine never
+attenuates internally; that was not tested.
 
-### What is established about the signed distance volume
+### The signed distance volume, calibrated
 
 Resource **191** in the capture, `t233` / `g_signedDistanceVoxelsTexturesLikeUav`,
 `TEXTURE3D 128x64x1040 R16_TYPELESS`, SRV as `R16_FLOAT`, committed with
-`ALLOW_UNORDERED_ACCESS`. About 16.25 MiB against the sky volume's 528 KiB.
+`ALLOW_UNORDERED_ACCESS`, 17,039,360 bytes — about 16.25 MiB against the sky volume's
+528 KiB.
 
-**Addressing, read out of `EvaluateDiffuseRadianceCS`:**
+All of the following is measured from live payloads and their own GI constants:
 
 ```
-z_texel = level * 130 + 1 + Frc(normalised) * 128
-coord_z = z_texel * 0.000961538          (= 1/1040)
+value        a signed distance in GAME UNITS
+sign         negative is inside          (from a profile descending through a surface
+                                          at y ~ 606.72, not assumed)
+addressing   z_texel = level * 130 + 1 + Frc(normalised) * 128,  coord_z = z_texel / 1040
+             world -> normalised uses the inverse extents at 0x10, scaled by 1 / 2^level
+cellSize(L)  0.25 * 2^L                 (float[0] = 0.25; the per-level w at 0x140 + 16L
+                                          is 1/cellSize, running 4 -> 0.03125)
+clamp(L)     1.5 * sqrt(2) * cellSize(L) — exactly, on all eight levels:
+             0.5303 1.0605 2.1211 4.2422 8.4844 16.9688 33.9375 67.8750
 ```
+
+The gradient magnitude in the unsaturated band is **0.99957** (central differences
+`d/dx=+0.0297`, `d/dy=−0.9935`, `d/dz=+0.1060`). One number settles the unit, the mapping
+and the fact that it is a genuine distance field there, all at once. The clamp truncates
+downward, so a clamped sample UNDERESTIMATES — the safe direction for a sphere-tracing
+step. Toroidal wrap was confirmed at exactly 16 gu in y for level 0.
+
+Level 0 is finest at 0.25 gu cells, level 7 coarsest at 32 gu. Each level wraps toroidally
+over its own window, so a point outside that window aliases onto the wrong texels: take
+the finest level whose window contains the point. That is what `finest_level()` does.
+
+The sky volume is the same clipmap family — same `Frc` addressing, same 768-byte
+`VoxelGlobalIlluminationConstantBuffer` — differing only in the numbers:
 
 | | sky visibility | signed distance |
 |---|---|---|
@@ -452,88 +470,83 @@ coord_z = z_texel * 0.000961538          (= 1/1040)
 | total depth | 264 | 1040 |
 | z scale | 1/264 | 1/1040 |
 
-Same toroidal `Frc` addressing, same clipmap family, same 768-byte
-`VoxelGlobalIlluminationConstantBuffer`. `sample_world` should generalise by
-parameterising width, height, level depth and border rather than being rewritten.
-
-**That is an anchor, not a finished decoder.** Five things still need confirming
-against real data before a trace rests on them: the world-to-voxel mapping at this
-resolution, the border slices, level selection, the SIGN convention, and the world
-UNIT of the stored distance.
-
-**Reachability, measured in game 2026-09-10:**
-
-```
-resource      = 0x137D10B00
-command list  = 0x2019580D0
-layoutBefore  = 6  = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE
-layoutAfter   = 1  = D3D12_BARRIER_LAYOUT_GENERIC_READ
-```
-
-One distinct resource, seen repeatedly, found within a minute. **`GENERIC_READ`
-already permits copy-source access**, so a `CopyTextureRegion` after that barrier
-would not require a LAYOUT change on layout grounds alone. **The probe.4 access/
-sync measurement supersedes that incomplete plan:** the release ends access with
-NO_ACCESS/NONE. The new copy path round-trips SRV -> COPY_SOURCE -> SRV BEFORE
+**How the bytes are acquired.** The engine releases the volume on a compute list with
+layout `6 -> 1` (`SHADER_RESOURCE -> GENERIC_READ`), access `80 -> 80000000`, sync
+`80 -> 0`, subresources `(4294967295,0,0,0,0,0)`, bitfields in hex. The release ends
+access with NO_ACCESS/NONE, so the copy path round-trips SRV -> COPY_SOURCE -> SRV BEFORE
 forwarding the unmodified engine release, preserving its final layout and scope.
-
-**The route that does NOT work:** `AdaptExposureCS`, the dispatch this probe hooks,
+`GENERIC_READ` alone would have permitted copy-source, but the access half is what
+decides. The route that does NOT work: `AdaptExposureCS`, the dispatch this probe hooks,
 binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else — confirmed by
-disassembling pipeline state 21568 out of the capture, the shader the frame actually
-ran. The SDF cannot be discovered through those bindings, which is why the barrier
-hook searches for it by descriptor shape instead.
+disassembling pipeline state 21568, the shader the frame actually ran. The SDF is found
+by descriptor shape through the barrier hook instead.
 
-### The plan, in order
+### Tools
 
-1. **Parameterise the readback for a second signature.** The copy path is hardcoded to
-   64x32x264 R8 in `spatial_readback.cpp`, at the `GetCopyableFootprints` guard and
-   the packing loop, and `spatial_sample.h` holds the dimensions as constants. The R8
-   path is a **regression invariant: byte-identical output, or the change is wrong.**
-2. **Copy and decode the R16 volume**, copying immediately BEFORE the measured
-   release on that list, then forwarding the unmodified release. The new CPU
-   context bracket must be validated; it is not an observed GPU constant binding.
-3. **Calibrate at known points before trusting any trace** — free air, a surface, just
-   in front of and just behind it. That is what fixes the sign and the world scale.
-4. **Variant A**: a camera-to-torch sphere trace.
-5. **One controllable case**: the same torch visible, then blocked, then visible again.
-   Not thirty lights observed statistically. Identify the torch by POSITION — the
-   rendered sample index is explicitly not a stable id, and a nearest-neighbour tracker
-   already produced a false 4000x reading when tracks crossed.
-
-**If A works, stop there.** No reconstruction of the engine's raymarch, no coverage
-model, no DXR excursion. `t224` stays ignored — it is derived from `t233` via
-`GenerateAxisAlignedDistancePass0/1`, so it is not independent truth — and returns
-only if A visibly fails at thin walls, doorways or grazing angles.
+| script | purpose |
+|---|---|
+| `Decode-SignedDistance.py` | sample the live R16 payload at a world position, or walk a profile |
+| `Trace-SignedDistance.py` | sphere-trace camera to light; reports the smallest distance seen and where, so an endpoint self-hit at the fixture is distinguishable from a wall |
+| `Decode-SpatialReadback.py` | the R8 sky-visibility decoder |
+| `Decode-AmbientSH.py` | the 1024-byte ambient buffer |
+| `Read-PixExportResource.py` | resource bytes out of a pixtool export |
+| `Map-PixExportShaders.py` | pipeline state to shader name; `--extract` yields the container the frame ran |
+| `Resolve-PixExportBindings.py` | the actual register-to-resource binding, time-accurate |
+| `Find-PixExportDispatches.py` | candidates only — it produced a false positive once |
 
 ### Operating the probe, learned the hard way
 
-- **A series can now be repeated without restarting the game** (2026-09-10). The old
-  `if(requested_) return false` in `SpatialReadback::Begin` made every repeated
-  measurement cost a game restart. `Restartable()` replaced it and keeps the two
-  things that rule actually protected: a series still owing transactions is never
-  replaced mid-flight, and a destination the GPU or an open map may still touch is
-  never handed to a new series. Signal the event again and a fresh run starts, into
-  its own report file.
-- **The log is what survives, not the report.** The report is written only when the
-  series ends or the plugin shuts down, and a game that exits without running
+- **A run can now be repeated without restarting the game.** Two separate things blocked
+  it. First, `if(requested_) return false` in `SpatialReadback::Begin` refused every
+  repeat; `Restartable()` replaced it and keeps what that rule actually protected — a
+  series still owing transactions is never replaced mid-flight, and a destination the GPU
+  or an open map may still touch is never handed to a new series. Second, and the larger
+  one: the dispatch hook sets the probe's phase to `Pending` every observed frame, so it
+  passed through `Idle` for only a fraction of a frame and a request was consumed and
+  discarded almost every time. The request now tests `observing`.
+- **Every request outcome is logged** — started, ignored because one is running, refused
+  because the previous series is not settled. The silent refusal above cost a round of
+  guessing precisely because it logged nothing.
+- **The log is what survives, not the report.** The report is written only when the series
+  ends or the plugin shuts down, and a game that exits without running
   `DLL_PROCESS_DETACH` — many do — loses it. That already cost one twenty-minute run.
   Anything worth having goes to `ch::Log` when it happens.
 - **`SpatialReadbackCount` and `SpatialVisibilitySeconds` mean different things.** The
   first bounds RETAINED diagnostic snapshots, capped at 8 because each carries a whole
   volume; the second is how long the live value keeps refreshing. One key meaning both
-  once turned a request for 900 into a run of 1.
-- **Out-of-range configuration clamps to the maximum, never collapses to 1.** It used
-  to, silently, which is how an over-large request produced the least data.
-- **The measured transaction rate is 0.31-0.48/s against a configured 1 s**, because
-  arming needs the pinned resource identity to recur and `Discover` only re-pins while
-  the phase is Idle, which a running series never returns to. One 30 s stall was
-  observed. This is a known reliability gap, deliberately not fixed yet.
-- Test subjects at **Alfonso Estate, Duskwood** — a fixed teleport point, so they
-  repeat: torch-carrying NPCs, and the Warspike Spearmaker workshop with interiors,
-  roofed outdoor areas and individually fed lamps.
-- The glowing pillars there never enter the light feed while the fire bowls beside
-  them do. Emissive material, not renderer light sources. No occlusion work will
-  surface them.
+  once turned a request for 900 into a run of 1. `SignedDistanceReadback` replaces the R8
+  diagnostic with R16 copies, bounded by `SignedDistanceReadbackCount` and
+  `SignedDistanceReadbackIntervalMs`.
+- **Out-of-range configuration clamps to the maximum, never collapses to 1.** It used to,
+  silently, which is how an over-large request produced the least data.
+- **The measured transaction rate is 0.31–0.48/s against a configured 1 s**, because
+  arming needs the pinned resource identity to recur and `Discover` only re-pins while the
+  phase is Idle, which a running series never returns to. One 30 s stall was observed.
+  A known reliability gap, deliberately not fixed.
+- Test subjects at **Alfonso Estate, Duskwood** — a fixed teleport point, so they repeat:
+  torch-carrying NPCs, and the Warspike Spearmaker workshop with interiors, roofed outdoor
+  areas and individually fed lamps. The player home (Serkis Estate) is where Variant A ran.
+- The glowing pillars at Alfonso never enter the light feed while the fire bowls beside
+  them do. Emissive material, not renderer light sources. No occlusion work will surface
+  them.
+
+### Packages
+
+`v2.0.1-restart.2` is the current build and includes Codex's barrier-tuple fix (`a87a2ab`)
+and bounded R16 acquisition (`27c094d`) as well as the restart work. Earlier ones are
+superseded. Private packages ship with the working INI baked in via `-IniOverrides`; only
+a release gets the clean template.
+
+### What is genuinely next
+
+1. **CrimsonHue.** It consumes only `/v1/stream` today and neither the ambient estimate nor
+   occlusion. That is where the perceptual curve and the occlusion gate belong. It was
+   deliberately left untouched while this work ran, at the user's instruction, and it is
+   the next thing to open.
+2. **Widen Variant A only if a concrete case fails.** Thin geometry, doorways at grazing
+   angles and moving occluders are untested, not known-bad.
+3. **The sampling rate**, if the occlusion gate turns out to need data fresher than
+   0.31–0.48/s.
 
 ## 5. Product decisions and next tests
 

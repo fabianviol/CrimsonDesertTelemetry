@@ -266,6 +266,8 @@ requires 7.4 or newer.
 | `Find-PixExportDispatches.py` | names the dispatches in an export that CAN REACH a resource -- a candidate filter, not a binding |
 | `Resolve-PixExportBindings.py` | resolves a shader register to the resource actually bound at a dispatch, time-accurately |
 | `Decode-AmbientSH.py` | decodes the 1024-byte PrecomputedAmbientConstantBuffer into three channels of nine |
+| `Decode-SignedDistance.py` | samples the live R16 signed-distance payload at a world position, or walks a profile; holds the calibrated addressing, cell sizes and clamps |
+| `Trace-SignedDistance.py` | sphere-traces camera to light through that payload and reports the smallest distance it saw and where, so an endpoint self-hit at the fixture is distinguishable from a wall |
 
 All the Python tools read only preserved artifacts and never touch the game.
 

@@ -6,6 +6,26 @@ Do not investigate t224 unless A fails on a valid concrete case. Do not acquire 
 new PIX capture unless a named mapping or acquisition failure cannot be resolved
 from the existing evidence. A failed acquisition is not a negative result for A.
 
+## Status — Variant A has run, 2026-09-11
+
+**Read this before the sections below.** They are layered in the order things were
+learned, and the early ones state limits that have since been lifted. The current
+state, in reading order:
+
+1. **[Value semantics, calibrated](#value-semantics-of-t233-calibrated-from-the-first-live-payload--2026-09-10)**
+   and **[Mapping, sign and unit confirmed by measurement](#mapping-sign-and-unit-confirmed-by-measurement--2026-09-10)**
+   — the field is a signed distance in game units, negative inside, gradient 0.99957.
+2. **[Variant A ran, and separated the labelled case](#variant-a-ran-and-separated-the-labelled-case--2026-09-10-2351)**
+   — nineteen traces, three poses, unanimous, one fixed parameter set. The margin is
+   thin and that is recorded there as a limit, not a win.
+3. **[Controlled test and stopping rule](#controlled-test-and-stopping-rule)** — still
+   in force. No t224, no raymarch reconstruction, no coverage model, no DXR, unless A
+   visibly fails on a concrete case.
+
+Anything above marked as pending acquisition, as an uncalibrated mapping or as a
+probe.3/probe.4 gate is history. See section 4b of
+[GPU_CAPTURE_FORENSICS.md](GPU_CAPTURE_FORENSICS.md) for the consolidated handover.
+
 ## ESTABLISHED
 
 - The time-accurate captured binding resolves t233/space36 to Resource 191:
@@ -14,8 +34,10 @@ from the existing evidence. A failed acquisition is not a negative result for A.
 - The existing live observer has seen a resource with this shape at a
   SHADER_RESOURCE (6) to GENERIC_READ (1) barrier. This is shape-based live
   discovery, not a new live proof of the t233 descriptor binding.
-- No fenced live R16 payload or calibrated camera-to-torch trace is documented.
-  The current readback and decoder still accept the R8 sky texture only.
+- ~~No fenced live R16 payload or calibrated camera-to-torch trace is documented.
+  The current readback and decoder still accept the R8 sky texture only.~~
+  **Superseded 2026-09-10:** both exist. See the calibration and the Variant A
+  result below.
 - The pending `sdf-probe.3` ZIP matches its recorded SHA256
   `798FD897D7B2011203275AAE215A897E9A5E385F3BC5FF7FEE5BBA144C06C648`.
   Its ASI SHA256 is
@@ -195,9 +217,11 @@ between a truncated and an untruncated texel is necessarily steeper than 1; and 
 
 ### Still open
 
-That a particular wall is preserved in the copy, and any trace at all. The sign, the
-unit and the addressing are settled; what remains is the controlled camera-to-torch
-case in the section below.
+~~That a particular wall is preserved in the copy, and any trace at all.~~ Both were
+settled the same evening by the run in the next section: a wall IS preserved in the
+copy, and the trace classifies it. The sign, the unit and the addressing were already
+settled above. What remains open is everything the controlled case did not cover —
+thin geometry, grazing doorways, moving occluders, other materials.
 
 ## Variant A ran, and separated the labelled case — 2026-09-10 23:51
 
@@ -257,7 +281,40 @@ blocked in all three poses. That is consistent with them being behind the wall
 throughout at grazing angles, but it was not separately labelled by the user, so it is
 an observation rather than a check.
 
+### Reproducing it
+
+Three preserved payloads, one per pose, carry their own camera in the metadata, so the
+shipped tool reproduces the whole result without a running game. Verified 2026-09-11:
+
+```powershell
+$dir = 'artifacts/light-research/variant-a-pid15940-20260910-2351'
+foreach ($n in 39, 55, 68) {
+    py -3 scripts/Trace-SignedDistance.py `
+        "$dir/signed-distance-15940-16797343-$n.bin" `
+        "$dir/signed-distance-15940-16797343-$n.json" `
+        --to -10403.25 613.84 -4419.10 `
+        --tolerance 0.0 --min-step 0.05 --iterations 400 `
+        --start-offset 0.6 --end-margin 1.0
+}
+```
+
+| copy | camera | verdict | closest |
+|---|---|---|---|
+| 39 | −10385.76 615.23 −4422.90 | clear | +0.3155 at 16.78 |
+| 55 | −10386.04 615.11 −4417.72 | **blocked** | −0.00047 at 8.87 |
+| 68 | −10386.58 614.93 −4424.09 | clear | +0.5081 at 15.45 |
+
+Those are the three poses; the other sixteen traces are the remaining copies within the
+same three camera positions. `--profile` prints every sample along the ray, which is how
+a graze is told apart from a solid hit. Add `--from X Y Z` to trace from somewhere other
+than the recorded camera.
+
+
 ## Controlled test and stopping rule
+
+**Steps 1-4 were executed on 2026-09-10 and step 4's condition was met** — see the
+section above. The rule is kept verbatim because step 5 and the stopping clause still
+govern what happens next.
 
 1. Calibrate the copied field at free air and across one known wall, recording
    world positions, raw half values, selected level and interpolation neighbors.
