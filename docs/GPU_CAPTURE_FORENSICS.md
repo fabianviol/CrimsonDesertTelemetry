@@ -378,24 +378,50 @@ not repeat here.
 binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else. It never touches t233,
 so the SDF's resource cannot be found the way the R8 volume's was.
 
-**A passive search is in the build and awaiting its first report.** The barrier hook
+**THE VOLUME IS REACHABLE — measured in game, 2026-09-10.** The passive search found
+it within a minute:
+
+```
+resource      = 0x137D10B00
+command list  = 0x2019580D0
+layoutBefore  = 6  = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE
+layoutAfter   = 1  = D3D12_BARRIER_LAYOUT_GENERIC_READ
+```
+
+One distinct resource, seen repeatedly, which is what a single SDF volume should
+look like.
+
+**The layout is the good news.** `GENERIC_READ` already permits copy-source access, so
+after that barrier a `CopyTextureRegion` needs **no layout transition** — at most an
+access barrier. The plan written for the replay, transitioning from shader-resource to
+`COPY_SOURCE` and restoring afterwards, is unnecessary here, and not transitioning a
+resource the engine owns is markedly safer.
+
+Caution on what that does and does not say: enhanced barriers separate sync, access
+and layout. The layout is settled; whether an access barrier is still required depends
+on the access bits the engine set, which were not recorded. Add the access bits to the
+sighting before writing the copy.
+
+**What the copy still needs.** Parameterise the readback for a second signature —
+128x64x1040, R16_TYPELESS, two bytes per texel, about 16.25 MiB against the R8
+volume's 528 KiB. The copy path is hardcoded at the footprint guard and the packing
+loop in `spatial_readback.cpp`; hold the R8 result byte-identical as the invariant.
+The fence and map machinery is unchanged. The pairing point is immediately after this
+barrier on that list, rather than the validated dispatch the R8 path pairs with.
+
+**How the search worked, for the next volume.** The barrier hook
 records the first few distinct resources whose descriptor matches 128x64x1040
 R16_TYPELESS, with the command list and the layouts they were transitioned between —
 what a later fenced copy would have to transition from. It copies nothing and issues
 no GPU work; `GetDesc` calls are capped for the whole run. The result lands in the
 report under `distanceVolume`.
 
-**Resume by reading that field** in the newest `spatial-binding-*.json`. The report is
-written only when the series ends or the game exits, and only ONE series runs per game
-start (`if(requested_) return false` in `SpatialReadback::Begin`).
-
-- Sightings present: note the list and layouts, then extend the fenced copy to a
-  second volume signature. The copy path is hardcoded to 64x32x264 R8 in
-  `spatial_readback.cpp`, at the footprint guard and the packing loop; parameterise it
-  and hold the R8 result byte-identical as the invariant.
-- No sightings: the volume is not barriered where the hook sees it, and the hook point
-  has to move. `Find-PixExportDispatches.py` plus `Resolve-PixExportBindings.py` on
-  resource 191 will name candidate dispatches; resolve before believing any of them.
+A sighting goes to the native log the moment it is found, not only into the report.
+That distinction cost one run: a twenty-minute session produced nothing because the
+game exited without running the plugin's shutdown path, which many titles skip, and
+the report is written only when the series ends or the plugin stops. Only ONE series
+runs per game start (`if(requested_) return false` in `SpatialReadback::Begin`), so a
+lost run means a restart.
 
 **Then variant A**: pure sphere tracing on t233 from camera to light, against the
 labelled cases. t224 is derived from t233 and stays demoted.
