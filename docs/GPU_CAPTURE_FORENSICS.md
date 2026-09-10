@@ -347,6 +347,69 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ---
 
+## 4b. Where the occlusion work stands — 2026-09-10, resume here
+
+Ambient is PARKED, validated end to end; see the research log. This is the second
+half: camera-to-lamp occlusion through the signed distance field.
+
+**Settled without a game run.** The SDF addresses exactly like the sky-visibility
+volume, only finer, read out of `EvaluateDiffuseRadianceCS`:
+
+```
+z_texel = level * 130 + 1 + Frc(normalised) * 128
+coord_z = z_texel * 0.000961538   (= 1/1040)
+```
+
+| | sky visibility | signed distance |
+|---|---|---|
+| resolution | 64 x 32 | 128 x 64 |
+| z per level | 33 (32 + 1 border) | 130 (128 + 2 border) |
+| levels | 8 | 8 |
+| total depth | 264 | 1040 |
+| z scale | 1/264 | 1/1040 |
+
+Same toroidal Frc addressing, same clipmap family, same 768-byte constant buffer.
+**The decoder therefore does not need re-deriving** — `sample_world` generalises by
+parameterising width, height, level depth and border. The R8 volume's hard part does
+not repeat here.
+
+**Access is the open problem, and one route is closed.** Disassembling pipeline state
+21568 from the capture shows `AdaptExposureCS` — the dispatch this probe hooks —
+binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else. It never touches t233,
+so the SDF's resource cannot be found the way the R8 volume's was.
+
+**A passive search is in the build and awaiting its first report.** The barrier hook
+records the first few distinct resources whose descriptor matches 128x64x1040
+R16_TYPELESS, with the command list and the layouts they were transitioned between —
+what a later fenced copy would have to transition from. It copies nothing and issues
+no GPU work; `GetDesc` calls are capped for the whole run. The result lands in the
+report under `distanceVolume`.
+
+**Resume by reading that field** in the newest `spatial-binding-*.json`. The report is
+written only when the series ends or the game exits, and only ONE series runs per game
+start (`if(requested_) return false` in `SpatialReadback::Begin`).
+
+- Sightings present: note the list and layouts, then extend the fenced copy to a
+  second volume signature. The copy path is hardcoded to 64x32x264 R8 in
+  `spatial_readback.cpp`, at the footprint guard and the packing loop; parameterise it
+  and hold the R8 result byte-identical as the invariant.
+- No sightings: the volume is not barriered where the hook sees it, and the hook point
+  has to move. `Find-PixExportDispatches.py` plus `Resolve-PixExportBindings.py` on
+  resource 191 will name candidate dispatches; resolve before believing any of them.
+
+**Then variant A**: pure sphere tracing on t233 from camera to light, against the
+labelled cases. t224 is derived from t233 and stays demoted.
+
+**Test subjects found at Alfonso Estate, Duskwood** — a fixed teleport point, so they
+repeat: an NPC carrying a torch, a light that moves behind geometry on its own, and
+the Warspike Spearmaker workshop with interiors, roofed outdoor areas and individually
+fed lamps.
+
+**A product limit worth recording:** the glowing pillars there never appear in the
+light feed while the fire bowls beside them do, with two SPOT contributions each. They
+are emissive material, not renderer light sources. No amount of occlusion work will
+surface them, because the feed never carries them.
+
 ## 5. Product decisions and next tests
 
 The product target is deliberately smaller than reconstructing the renderer: local
