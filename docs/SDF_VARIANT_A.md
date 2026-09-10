@@ -69,6 +69,76 @@ This is NOT GPU-paired GI and must not be presented as such. The next fact neede
 is the first successful live R16 acquisition plus that mapping check. No decoder
 or trace has yet been added. See HANDOVER.md for the package and continuation.
 
+## Value semantics of t233, calibrated from the first live payload — 2026-09-10
+
+The first fenced live R16 copy landed at 23:28 in PID 33348, four transactions of
+17,039,360 bytes each (128 x 64 x 1040 x 2 exactly), each under its own fence.
+Evidence preserved at `artifacts/light-research/sdf-live-pid33348-20260910-2328/`:
+
+```
+signed-distance-33348-15545828-1.bin   17039360 bytes  SHA256 BB1396A6E7298A1F...
+signed-distance-33348-15545828-1.json     22684 bytes  SHA256 445F316A5529A0EC...
+```
+
+The payload's own metadata carries the 768-byte GI constants, so the value semantics
+could be settled from the acquisition itself without a further capture.
+
+### Established
+
+**The stored R16_FLOAT is a signed world distance in game units.** Not normalised,
+not level-local.
+
+**Negative inside geometry**, the standard convention, observed rather than assumed:
+192 negative texels in a sparse sample of the finest level, none at all in the two
+coarsest.
+
+**Cell size per level comes straight from the constants.** `float[0] = 0.25`, and the
+per-level scale `w` at float index `80 + 4L` runs 4, 2, 1, 0.5, 0.25, 0.125, 0.0625,
+0.03125 — that is `w = 1 / cellSize(L)` with
+
+```
+cellSize(L) = 0.25 * 2^L        level 0 finest at 0.25 gu, level 7 coarsest at 32 gu
+```
+
+This replaces the archive-derived `cellSize = 0.25 * 2^level` with a reading from the
+live data.
+
+**The value is clamped per level, at exactly 1.5*sqrt(2) cell sizes.** Measured maxima
+against the constants:
+
+| level | max value | cell size | ratio |
+|---|---|---|---|
+| 0 | 0.5303 | 0.25 | 2.1213 |
+| 1 | 1.0605 | 0.5 | 2.1213 |
+| 2 | 2.1211 | 1.0 | 2.1213 |
+| 3 | 4.2422 | 2.0 | 2.1213 |
+| 4 | 8.4844 | 4.0 | 2.1213 |
+| 5 | 16.9688 | 8.0 | 2.1213 |
+| 6 | 33.9375 | 16.0 | 2.1213 |
+| 7 | 67.8750 | 32.0 | 2.1213 |
+
+`1.5 * sqrt(2) = 2.1213`. The same ratio on all eight levels, so the ladder is the
+clamp rule and not a coincidence of this scene. Levels 6 and 7 are entirely saturated
+in this frame: every sampled texel holds the clamp, so nothing within their reach
+resolves geometry at that resolution.
+
+### What this means for Variant A
+
+**The field is short range.** At the finest level it knows about geometry only within
+0.53 gu. A camera-to-lamp trace of several game units therefore takes many small steps
+at fine levels, or coarse levels whose cells are 16 to 32 gu across and will not
+resolve a wall.
+
+Sphere tracing stays CORRECT under a clamp — a clamped distance is a conservative step
+— but it is iteration-heavy. Fix the iteration bound from this, not from a guess, and
+do it before looking at the occluded phase, as the test plan requires.
+
+### Still open
+
+The world-to-voxel mapping including the border texels, verified against a known
+surface; that a particular wall is preserved in the copy; and any trace at all. The
+sign and the unit are settled; the addressing is not.
+
 ## Controlled test and stopping rule
 
 1. Calibrate the copied field at free air and across one known wall, recording
