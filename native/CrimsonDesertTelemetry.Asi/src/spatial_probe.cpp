@@ -106,6 +106,21 @@ struct DistanceSighting { uint64_t resource{},list{}; unsigned barriers{};
     D3D12_BARRIER_SYNC syncBefore{},syncAfter{}; };
 std::array<DistanceSighting,4> distanceSightings{};
 std::atomic<unsigned> distanceSeen{},distanceInspections{};
+// A first sighting may be the BEGINNING of a write, not the release needed for
+// readback. Keep distinct complete tuples for known resources even after the
+// descriptor-search budget is exhausted. No resource/list pointer is dereferenced
+// later: these are CPU observations, not a resource-state or lifetime guarantee.
+struct DistanceTransition
+{
+    D3D12_TEXTURE_BARRIER barrier{};
+    D3D12_COMMAND_LIST_TYPE listType{};
+    uint64_t firstList{},lastList{},firstTick{},lastTick{},occurrences{};
+};
+constexpr unsigned DistanceTransitionLimit=32;
+std::array<DistanceTransition,DistanceTransitionLimit> distanceTransitions{};
+unsigned distanceTransitionCount{};
+SRWLOCK distanceLock=SRWLOCK_INIT;
+std::atomic<unsigned> distanceDropped{},distanceOverflow{};
 // GetDesc on every barriered resource would cost thousands of calls per frame.
 // This bounds the whole run instead of trusting a heuristic to stay cheap.
 constexpr unsigned DistanceInspectionLimit=20000;
@@ -159,17 +174,25 @@ std::string Hex(const uint8_t* data,size_t size)
     for(size_t i=0;i<size;++i){s[i*2]=digits[data[i]>>4];s[i*2+1]=digits[data[i]&15];}
     return s;
 }
-// Records the first few distinct resources whose descriptor matches the signed
-// distance volume, with the list and layouts they were transitioned between.
-// Read-only: the layouts say where a future fenced copy could legally sit.
+bool SameDistanceBarrier(const D3D12_TEXTURE_BARRIER& a,const D3D12_TEXTURE_BARRIER& b)
+{
+    const auto& x=a.Subresources;const auto& y=b.Subresources;
+    return a.pResource==b.pResource&&a.SyncBefore==b.SyncBefore&&a.SyncAfter==b.SyncAfter&&
+        a.AccessBefore==b.AccessBefore&&a.AccessAfter==b.AccessAfter&&
+        a.LayoutBefore==b.LayoutBefore&&a.LayoutAfter==b.LayoutAfter&&a.Flags==b.Flags&&
+        x.IndexOrFirstMipLevel==y.IndexOrFirstMipLevel&&x.NumMipLevels==y.NumMipLevels&&
+        x.FirstArraySlice==y.FirstArraySlice&&x.NumArraySlices==y.NumArraySlices&&
+        x.FirstPlane==y.FirstPlane&&x.NumPlanes==y.NumPlanes;
+}
+// Bounded discovery plus distinct transition tuples. Never wait for a callback
+// holding the main probe lock (an exposure dispatch can already hold that lock).
 void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
 {
-    if(!observing.load(std::memory_order_relaxed)||!data)return;
-    if(distanceSeen.load(std::memory_order_relaxed)>=distanceSightings.size())return;
+    if(!observing.load(std::memory_order_relaxed)||!list||!data)return;
     for(UINT g=0;g<groups&&g<64;++g)
     {
         const auto& group=data[g];
-        if(group.Type!=D3D12_BARRIER_TYPE_TEXTURE||group.NumBarriers>4096)continue;
+        if(group.Type!=D3D12_BARRIER_TYPE_TEXTURE||group.NumBarriers>4096||!group.pTextureBarriers)continue;
         for(UINT i=0;i<group.NumBarriers;++i)
         {
             auto* resource=group.pTextureBarriers[i].pResource;
@@ -178,40 +201,65 @@ void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12
             unsigned seen=distanceSeen.load(std::memory_order_acquire);
             bool known=false;
             for(unsigned k=0;k<seen&&k<distanceSightings.size();++k)
-                if(distanceSightings[k].resource==address){++distanceSightings[k].barriers;known=true;break;}
-            if(known)continue;
-            if(distanceInspections.fetch_add(1,std::memory_order_relaxed)>=DistanceInspectionLimit)return;
-            const auto desc=resource->GetDesc();
-            if(desc.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE3D||desc.Width!=DistanceWidth||
-                desc.Height!=DistanceHeight||desc.DepthOrArraySize!=DistanceDepth||
-                desc.Format!=DXGI_FORMAT_R16_TYPELESS)continue;
-            AcquireSRWLockExclusive(&lock);
-            seen=distanceSeen.load(std::memory_order_relaxed);
-            bool added=false;
-            if(seen<distanceSightings.size())
+                if(distanceSightings[k].resource==address){known=true;break;}
+            if(!known)
             {
-                const auto& b=group.pTextureBarriers[i];
-                distanceSightings[seen]={address,reinterpret_cast<uint64_t>(list),1,
+                if(seen>=distanceSightings.size()||distanceInspections.load(std::memory_order_relaxed)>=DistanceInspectionLimit)continue;
+                if(distanceInspections.fetch_add(1,std::memory_order_relaxed)>=DistanceInspectionLimit)continue;
+                const auto desc=resource->GetDesc();
+                if(desc.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE3D||desc.Width!=DistanceWidth||
+                    desc.Height!=DistanceHeight||desc.DepthOrArraySize!=DistanceDepth||
+                    desc.Format!=DXGI_FORMAT_R16_TYPELESS||desc.MipLevels!=1||
+                    desc.SampleDesc.Count!=1||desc.SampleDesc.Quality!=0||
+                    !(desc.Flags&D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS))continue;
+            }
+            const auto listType=list->GetType();
+            if(!TryAcquireSRWLockExclusive(&distanceLock)){++distanceDropped;continue;}
+            seen=distanceSeen.load(std::memory_order_relaxed);
+            unsigned index=0;
+            for(;index<seen;++index)if(distanceSightings[index].resource==address)break;
+            const auto& b=group.pTextureBarriers[i];
+            if(index==seen&&seen<distanceSightings.size())
+            {
+                distanceSightings[seen]={address,reinterpret_cast<uint64_t>(list),0,
                     b.LayoutBefore,b.LayoutAfter,b.AccessBefore,b.AccessAfter,
                     b.SyncBefore,b.SyncAfter};
                 distanceSeen.store(seen+1,std::memory_order_release);
-                added=true;
             }
-            ReleaseSRWLockExclusive(&lock);
-            // Log it NOW, not only in the report. The report is written when the
-            // series ends or the plugin shuts down, and a game that exits without
-            // running DLL_PROCESS_DETACH loses it -- which already cost one run.
+            if(index>=distanceSightings.size()){ReleaseSRWLockExclusive(&distanceLock);continue;}
+            ++distanceSightings[index].barriers;
+            unsigned transition=0;
+            for(;transition<distanceTransitionCount;++transition)
+                if(distanceTransitions[transition].listType==listType&&
+                    SameDistanceBarrier(distanceTransitions[transition].barrier,b))break;
+            const bool added=transition==distanceTransitionCount&&transition<DistanceTransitionLimit;
+            const auto tick=GetTickCount64();
             if(added)
-                ch::Log("Spatial probe: signed distance volume seen. resource=%llX list=%llX "
-                    "layout %d->%d access %X->%X sync %X->%X",
+            {
+                distanceTransitions[transition]={b,listType,reinterpret_cast<uint64_t>(list),
+                    reinterpret_cast<uint64_t>(list),tick,tick,0};
+                ++distanceTransitionCount;
+            }
+            if(transition<DistanceTransitionLimit)
+            {
+                auto& t=distanceTransitions[transition];++t.occurrences;
+                t.lastList=reinterpret_cast<uint64_t>(list);t.lastTick=tick;
+            }
+            else ++distanceOverflow;
+            ReleaseSRWLockExclusive(&distanceLock);
+            // Persist each NEW tuple immediately; a missing detach report cannot
+            // erase the only release observation. Repeated tuples do not spam IO.
+            if(added)
+                ch::Log("Spatial probe: signed distance transition %u tick=%llu resource=%llX list=%llX type=%u "
+                    "layout %d->%d access %X->%X sync %X->%X flags=%X sub=%u,%u,%u,%u,%u,%u",
+                    transition,static_cast<unsigned long long>(tick),
                     static_cast<unsigned long long>(address),
                     static_cast<unsigned long long>(reinterpret_cast<uint64_t>(list)),
-                    static_cast<int>(group.pTextureBarriers[i].LayoutBefore),
-                    static_cast<int>(group.pTextureBarriers[i].LayoutAfter),
-                    static_cast<unsigned>(group.pTextureBarriers[i].AccessBefore),
-                    static_cast<unsigned>(group.pTextureBarriers[i].AccessAfter),
-                    static_cast<unsigned>(group.pTextureBarriers[i].SyncBefore),
-                    static_cast<unsigned>(group.pTextureBarriers[i].SyncAfter));
+                    static_cast<unsigned>(listType),static_cast<int>(b.LayoutBefore),static_cast<int>(b.LayoutAfter),
+                    static_cast<unsigned>(b.AccessBefore),static_cast<unsigned>(b.AccessAfter),
+                    static_cast<unsigned>(b.SyncBefore),static_cast<unsigned>(b.SyncAfter),static_cast<unsigned>(b.Flags),
+                    b.Subresources.IndexOrFirstMipLevel,b.Subresources.NumMipLevels,b.Subresources.FirstArraySlice,
+                    b.Subresources.NumArraySlices,b.Subresources.FirstPlane,b.Subresources.NumPlanes);
         }
     }
 }
@@ -593,6 +641,8 @@ void Save(const char* reason)
             // copy needs a list and a layout it can legally transition from; this
             // says whether either is reachable from the hook we already own.
             nlohmann::json found=nlohmann::json::array();
+            nlohmann::json transitions=nlohmann::json::array();
+            AcquireSRWLockExclusive(&distanceLock);
             const auto seen=distanceSeen.load(std::memory_order_acquire);
             for(unsigned i=0;i<seen&&i<distanceSightings.size();++i)
             {
@@ -605,12 +655,24 @@ void Save(const char* reason)
                     {"syncBefore",static_cast<unsigned>(d.syncBefore)},
                     {"syncAfter",static_cast<unsigned>(d.syncAfter)}});
             }
+            for(unsigned i=0;i<distanceTransitionCount;++i)
+            {
+                const auto& t=distanceTransitions[i];
+                auto row=BarrierJson(t.barrier);
+                row["resource"]=reinterpret_cast<uint64_t>(t.barrier.pResource);
+                row["listType"]=t.listType;row["firstList"]=t.firstList;row["lastList"]=t.lastList;
+                row["firstTick"]=t.firstTick;row["lastTick"]=t.lastTick;row["occurrences"]=t.occurrences;
+                transitions.push_back(std::move(row));
+            }
+            ReleaseSRWLockExclusive(&distanceLock);
             report["distanceVolume"]={{"searched",{{"width",DistanceWidth},{"height",DistanceHeight},
                 {"depth",DistanceDepth},{"format",static_cast<int>(DXGI_FORMAT_R16_TYPELESS)}}},
                 {"inspections",distanceInspections.load(std::memory_order_relaxed)},
                 {"inspectionLimit",DistanceInspectionLimit},
                 {"sightings",found},
-                {"note","passive barrier observation only; AdaptExposureCS does not bind this volume"}};
+                {"transitions",transitions},{"transitionLimit",DistanceTransitionLimit},
+                {"droppedCallbacks",distanceDropped.load()},{"overflowOccurrences",distanceOverflow.load()},
+                {"note","passive distinct barrier tuples, not GPU ordering/lifetime proof; sightings keep the first tuple only; AdaptExposureCS does not bind this volume"}};
         }
         report["requestedTransactions"]=requestedTransactions;
         report["retainedTransactions"]=readbackCount;

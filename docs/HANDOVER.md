@@ -1,4 +1,41 @@
-# Cold handover for Claude — START HERE, 2026-09-09, Codex/Astra
+# Current checkpoint — t233 Variant A only, 2026-09-10, Codex
+
+**Product question remains OPEN.** Ambient is parked. No t224 investigation and no
+new PIX acquisition. Follow [SDF_VARIANT_A.md](SDF_VARIANT_A.md) for the bounded
+test, established mapping anchors, inference limits and stopping rule. The older
+checkpoints below are history, including their superseded replay-copy next steps.
+
+**ESTABLISHED live:** `sdf-probe.3` was installed and triggered in supported
+PID15044 (started 22:32:58 CEST); API sequence progressed 4703 -> 4736 before the
+request and reached 6003 afterward. The first sighting was resource `12BE75D10`,
+list `22864FEA0`: layout **1 -> 3**, access **0 -> 0x10**, sync **1 -> 0x80**.
+That is GENERIC_READ -> UNORDERED_ACCESS, COMMON -> UAV, ALL -> COMPUTE_SHADING:
+a write entry, not the expected SRV release. No R16 copy was made.
+
+**Diagnostic failure isolated:** the old observer records only the FIRST barrier
+of a shape-matched resource, then increments a count while discarding every later
+tuple. Thus probe.3 cannot answer the pending release question when it discovers
+a write entry first. This does not falsify Variant A. Evidence, including installed
+hash, INI, native log and before/after telemetry:
+`artifacts/light-research/sdf-access-pid15044-20260910-223544/`.
+
+**One next step:** run the bounded distinct-transition observer, then use an
+actually observed complete SRV release tuple for the fenced R16 acquisition.
+The code retains up to 32 distinct tuples, flags/subresources, list type, first/last
+time and counts; logs new tuples immediately; and continues observing known
+resources after the discovery budget ends. Contention/overflow are explicit.
+Five spatial CTests pass, including a regression reproducing the live failure.
+
+Ready, not yet installed: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-probe.4-ModManagers.zip`.
+ZIP SHA256 `FDD375F0992E0DD17CC0CE56933E3A3CD78819EB85A6843BD92D24CD6287FAEF`;
+ASI SHA256 `985C0500FBE8BB7AC7E7B6CAC974B147F0047D4389A5F7D117F00C007F8B4C87`.
+Release build and package validation (including negative cases) passed. Same private
+INI switches as probe.3; R8 acquisition/sampling unchanged. Close the game, install
+the whole ZIP through DMM, restart, then signal once after progressing health.
+
+---
+
+# Historical cold handover for Claude — 2026-09-09, Codex/Astra
 
 ## Required read order
 

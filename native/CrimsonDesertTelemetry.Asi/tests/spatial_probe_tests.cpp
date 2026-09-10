@@ -95,6 +95,60 @@ int main()
     group.NumBarriers=4097;BarrierHook(list7,1,&group);Check(o.barrierOverflow);
     active=nullptr;const auto previous=o.barrierCount;BarrierHook(list7,1,&group);Check(o.barrierCount==previous);
     auto result=Json(o);Check(result["gpuCopyIssued"]==false&&result["gpuFramePaired"]==false);
+    // Reproduce PID15044: discovery sees a write entry first. A later release
+    // on the SAME resource must survive, including after the GetDesc budget is
+    // exhausted. These are passive synthetic packets; never submitted to a GPU.
+    {
+        auto distanceDesc=desc;distanceDesc.Width=128;distanceDesc.Height=64;
+        distanceDesc.DepthOrArraySize=1040;distanceDesc.Format=DXGI_FORMAT_R16_TYPELESS;
+        ComPtr<ID3D12Resource> distance;
+        Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&distanceDesc,
+            D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&distance)));
+        D3D12_TEXTURE_BARRIER packets[2]{};
+        packets[0].pResource=resource.Get(); // unrelated resource before the target
+        auto& entry=packets[1];entry.pResource=distance.Get();
+        entry.LayoutBefore=D3D12_BARRIER_LAYOUT_GENERIC_READ;
+        entry.LayoutAfter=D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
+        entry.AccessBefore=D3D12_BARRIER_ACCESS_COMMON;
+        entry.AccessAfter=D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+        entry.SyncBefore=D3D12_BARRIER_SYNC_ALL;entry.SyncAfter=D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+        entry.Subresources.IndexOrFirstMipLevel=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        D3D12_BARRIER_GROUP distanceGroup{};distanceGroup.Type=D3D12_BARRIER_TYPE_TEXTURE;
+        distanceGroup.NumBarriers=2;distanceGroup.pTextureBarriers=packets;
+        NoteDistanceVolume(list7,1,&distanceGroup);
+        Check(distanceSeen==1&&distanceTransitionCount==1);
+        NoteDistanceVolume(list7,1,&distanceGroup);
+        Check(distanceTransitionCount==1&&distanceTransitions[0].occurrences==2);
+        distanceInspections=DistanceInspectionLimit;
+        entry.LayoutBefore=D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
+        entry.LayoutAfter=D3D12_BARRIER_LAYOUT_GENERIC_READ;
+        entry.AccessBefore=D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+        entry.AccessAfter=D3D12_BARRIER_ACCESS_NO_ACCESS;
+        entry.SyncBefore=D3D12_BARRIER_SYNC_COMPUTE_SHADING;entry.SyncAfter=D3D12_BARRIER_SYNC_NONE;
+        const auto unmodified=entry;
+        const auto forwarded=barrierCalls;
+        active=nullptr;BarrierHook(list7,1,&distanceGroup);
+        Check(barrierCalls==forwarded+1&&SameDistanceBarrier(entry,unmodified));
+        Check(distanceTransitionCount==2&&distanceSightings[0].barriers==3);
+        Check(SameDistanceBarrier(distanceTransitions[1].barrier,entry));
+        // Subresource range and flags distinguish tuples even if access is equal.
+        entry.Subresources={0,1,0,1,0,1};NoteDistanceVolume(list7,1,&distanceGroup);
+        entry.Flags=D3D12_TEXTURE_BARRIER_FLAG_DISCARD;NoteDistanceVolume(list7,1,&distanceGroup);
+        Check(distanceTransitionCount==4);
+        // Lock loss and bounded overflow are explicit, never a missing transition
+        // masquerading as proof that a resource has no release.
+        AcquireSRWLockExclusive(&distanceLock);
+        std::thread contended([&]{NoteDistanceVolume(list7,1,&distanceGroup);});contended.join();
+        ReleaseSRWLockExclusive(&distanceLock);
+        Check(distanceDropped==1&&distanceTransitionCount==4);
+        for(unsigned i=0;i<DistanceTransitionLimit+2;++i)
+        {entry.Subresources.IndexOrFirstMipLevel=i+1;NoteDistanceVolume(list7,1,&distanceGroup);}
+        Check(distanceTransitionCount==DistanceTransitionLimit&&distanceOverflow==6);
+        entry=unmodified;NoteDistanceVolume(list7,1,&distanceGroup);
+        Check(distanceTransitions[1].occurrences==2); // capacity never stops known tuples
+        distanceSeen=0;distanceSightings={};distanceTransitions={};distanceTransitionCount=0;
+        distanceInspections=0;distanceDropped=0;distanceOverflow=0;
+    }
     // Real MinHook + real WARP list7::Barrier, not only the synthetic callback.
     Check(MH_Initialize()==MH_OK);
     Check(MH_CreateHook(o.barrierFunction,BarrierHook,reinterpret_cast<void**>(&originalBarrier))==MH_OK);

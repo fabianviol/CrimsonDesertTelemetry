@@ -355,20 +355,26 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ### The one action waiting
 
-**`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-probe.3-ModManagers.zip`
-is built and NOT yet installed** (SHA-256
-`798FD897D7B2011203275AAE215A897E9A5E385F3BC5FF7FEE5BBA144C06C648`). Install it
-through DMM, restart the game, trigger a run, wait a minute, and read the native log.
-It will print one line naming the distance volume's access and sync bits. Those are
-the last unknown before the copy path can be written from measurement instead of
-assumption. Everything below is already established.
+**probe.3 was installed and measured in PID15044, 22:35 CEST.** Its first sighting
+was a WRITE entry (`layout 1->3 access 0->10 sync 1->80`, bitfields in hex), not the
+previous run's `6->1` release. Its first-sighting-only logic then discarded every
+later tuple for that resource. The desired release tuple is still OPEN; this is
+an observer failure, not a negative result for the SDF. Evidence:
+`artifacts/light-research/sdf-access-pid15044-20260910-223544/`.
+
+The next observer retains/logs bounded **distinct complete transition tuples** so
+discovery order cannot hide the release. See the current
+[HANDOVER.md](HANDOVER.md) checkpoint for the package and
+[SDF_VARIANT_A.md](SDF_VARIANT_A.md) for the test. Follow the LIVE route in this
+section; the paired replay recipe in sections 4 and 5 is historical context, not
+the next action. No R16 event-state bytes have yet been acquired.
 
 ```powershell
 $p = Get-Process CrimsonDesert
 pwsh scripts/Start-SpatialProbe.ps1 -ProcessId $p.Id
 # then, after ~60 s of moving around:
 Select-String 'C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesertTelemetry.native.log' `
-    -Pattern 'signed distance volume seen'
+    -Pattern 'signed distance transition'
 ```
 
 ### Where the two product goals stand
@@ -515,9 +521,10 @@ D   t224-only traversal, low-priority control
 E   t224 as final blocker decision: unsupported hypothesis, not engine structure
 ```
 
-The next concrete action is the paired event-state copy immediately after GlobalId
-749 described above, followed by A against labelled visible and occluded lamp
-segments. If A reliably disables lamps behind walls, stop; B' is then unnecessary.
+The current next action is the live acquisition gate in section 4b, followed by A
+against labelled visible and occluded lamp segments. The GlobalId 749 paired
+replay recipe above remains preserved, but is not required while the live route
+can answer the bounded question. If A reliably disables lamps behind walls, stop; B' is then unnecessary.
 Use B' only to address a measured failure of A. Do not infer a blocker from t224.w
 alone.
 
