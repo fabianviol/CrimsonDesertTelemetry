@@ -98,7 +98,12 @@ struct Observation
 // in texture barriers instead: a barrier names its resource, and the shape is
 // unique. It copies nothing, hooks nothing new and issues no GPU work.
 constexpr unsigned DistanceWidth=128,DistanceHeight=64,DistanceDepth=1040;
-struct DistanceSighting { uint64_t resource{},list{}; unsigned barriers{}; D3D12_BARRIER_LAYOUT before{},after{}; };
+struct DistanceSighting { uint64_t resource{},list{}; unsigned barriers{};
+    D3D12_BARRIER_LAYOUT before{},after{};
+    // Enhanced barriers separate sync, access and layout. The layout says a copy
+    // needs no transition; the ACCESS bits say whether it still needs a barrier.
+    D3D12_BARRIER_ACCESS accessBefore{},accessAfter{};
+    D3D12_BARRIER_SYNC syncBefore{},syncAfter{}; };
 std::array<DistanceSighting,4> distanceSightings{};
 std::atomic<unsigned> distanceSeen{},distanceInspections{};
 // GetDesc on every barriered resource would cost thousands of calls per frame.
@@ -185,8 +190,10 @@ void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12
             bool added=false;
             if(seen<distanceSightings.size())
             {
+                const auto& b=group.pTextureBarriers[i];
                 distanceSightings[seen]={address,reinterpret_cast<uint64_t>(list),1,
-                    group.pTextureBarriers[i].LayoutBefore,group.pTextureBarriers[i].LayoutAfter};
+                    b.LayoutBefore,b.LayoutAfter,b.AccessBefore,b.AccessAfter,
+                    b.SyncBefore,b.SyncAfter};
                 distanceSeen.store(seen+1,std::memory_order_release);
                 added=true;
             }
@@ -196,11 +203,15 @@ void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12
             // running DLL_PROCESS_DETACH loses it -- which already cost one run.
             if(added)
                 ch::Log("Spatial probe: signed distance volume seen. resource=%llX list=%llX "
-                    "layoutBefore=%d layoutAfter=%d",
+                    "layout %d->%d access %X->%X sync %X->%X",
                     static_cast<unsigned long long>(address),
                     static_cast<unsigned long long>(reinterpret_cast<uint64_t>(list)),
                     static_cast<int>(group.pTextureBarriers[i].LayoutBefore),
-                    static_cast<int>(group.pTextureBarriers[i].LayoutAfter));
+                    static_cast<int>(group.pTextureBarriers[i].LayoutAfter),
+                    static_cast<unsigned>(group.pTextureBarriers[i].AccessBefore),
+                    static_cast<unsigned>(group.pTextureBarriers[i].AccessAfter),
+                    static_cast<unsigned>(group.pTextureBarriers[i].SyncBefore),
+                    static_cast<unsigned>(group.pTextureBarriers[i].SyncAfter));
         }
     }
 }
@@ -588,7 +599,11 @@ void Save(const char* reason)
                 const auto& d=distanceSightings[i];
                 found.push_back({{"resource",d.resource},{"commandList",d.list},
                     {"barriers",d.barriers},{"layoutBefore",static_cast<int>(d.before)},
-                    {"layoutAfter",static_cast<int>(d.after)}});
+                    {"layoutAfter",static_cast<int>(d.after)},
+                    {"accessBefore",static_cast<unsigned>(d.accessBefore)},
+                    {"accessAfter",static_cast<unsigned>(d.accessAfter)},
+                    {"syncBefore",static_cast<unsigned>(d.syncBefore)},
+                    {"syncAfter",static_cast<unsigned>(d.syncAfter)}});
             }
             report["distanceVolume"]={{"searched",{{"width",DistanceWidth},{"height",DistanceHeight},
                 {"depth",DistanceDepth},{"format",static_cast<int>(DXGI_FORMAT_R16_TYPELESS)}}},
