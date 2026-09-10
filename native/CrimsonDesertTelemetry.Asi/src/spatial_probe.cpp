@@ -387,20 +387,26 @@ void PublishReferenceVisibility()
     const auto records=readback->Records();
     const auto unavailable=[]{sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);};
     if(records.empty()){unavailable();return;}
-    const size_t index=records.size()-1;
-    const auto& copy=records[index];
-    if(index>=copyObservations.size()||copy.packed.size()!=VolumeBytes||copy.gpuGi.empty())
-    {unavailable();return;}
-    const auto& observation=copyObservations[index];
-    const auto window=FindGiWindow(copy.gpuGi,observation.gi);
-    if(window<0){unavailable();return;}
+    const auto& copy=records.back();
+    if(copy.packed.size()!=VolumeBytes||copy.gpuGi.empty()){unavailable();return;}
+    // Pair by CONTENT, not by position. FindGiWindow already proves a pairing, and
+    // the two rings can legitimately differ in length while a copy is in flight,
+    // so an index would be an assumption where a check is available.
+    long long window=-1;
+    const Observation* observation=nullptr;
+    for(auto it=copyObservations.rbegin();it!=copyObservations.rend();++it)
+    {
+        const auto found=FindGiWindow(copy.gpuGi,it->gi);
+        if(found>=0){window=found;observation=&*it;break;}
+    }
+    if(!observation){unavailable();return;}
     const auto reference=SampleAtReference(copy.gpuGi.data()+window,copy.packed.data());
     // Fallback is one BY DEFINITION, not a measurement. Publishing it as a value
     // would restore full ambient exactly where the local sample is missing.
     const auto state=reference.status==SampleStatus::Ok?sky::Visibility::Valid
         :reference.status==SampleStatus::Fallback?sky::Visibility::Fallback
         :sky::Visibility::Unavailable;
-    sky::PublishVisibility(reference.skyVisibility,state,observation.frame,
+    sky::PublishVisibility(reference.skyVisibility,state,observation->frame,
         copy.completedTick?copy.completedTick:GetTickCount64());
 }
 nlohmann::json NativeSamplesJson(const cdt::spatial::CopyResult& copy,const Observation& observation)
@@ -709,7 +715,12 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     if(o.selectedForReadback)
     {
         readback->ExposureEnd(o.giStable);copyObservation=o;
-        if(copyObservations.size()<cdt::spatial::SpatialReadback::MaxTransactions)copyObservations.push_back(o);
+        // Same retention as the readback's records, or the two diverge: keeping
+        // the FIRST eight here while it keeps the LAST eight silently mispaired
+        // every transaction past the eighth.
+        copyObservations.push_back(o);
+        while(copyObservations.size()>cdt::spatial::SpatialReadback::MaxTransactions)
+            copyObservations.erase(copyObservations.begin());
     }
     pending=o;phase=Phase::Pending;
     ReleaseSRWLockExclusive(&lock);
