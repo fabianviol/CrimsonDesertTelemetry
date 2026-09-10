@@ -1,4 +1,4 @@
-# GPU capture forensics — self-contained handover, 2026-09-09
+# GPU capture forensics — self-contained handover, 2026-09-10
 
 Written so that someone with no memory of this session can continue. It covers the
 toolchain built for reading a PIX capture offline, and the ambient-light
@@ -10,6 +10,10 @@ including the ones that were later withdrawn.
 The one habit that matters: **every strong claim below was tightened or reversed at
 least once by an outside review.** Distinguish established from hypothesis from
 withdrawn before building on anything, and say which you are doing.
+
+**Picking this up cold? Go straight to section 4b.** It names the single action
+waiting, where both product goals stand, and the ordered plan. Sections 1-3 are the
+toolchain and the identities; section 4 is the ledger behind the claims.
 
 ---
 
@@ -347,17 +351,58 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ---
 
-## 4b. Where the occlusion work stands — 2026-09-10, resume here
+## 4b. Occlusion — handover, 2026-09-10 late evening
 
-Ambient is PARKED, validated end to end; see the research log. This is the second
-half: camera-to-lamp occlusion through the signed distance field.
+### The one action waiting
 
-**Settled without a game run.** The SDF addresses exactly like the sky-visibility
-volume, only finer, read out of `EvaluateDiffuseRadianceCS`:
+**`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-probe.3-ModManagers.zip`
+is built and NOT yet installed** (SHA-256
+`798FD897D7B2011203275AAE215A897E9A5E385F3BC5FF7FEE5BBA144C06C648`). Install it
+through DMM, restart the game, trigger a run, wait a minute, and read the native log.
+It will print one line naming the distance volume's access and sync bits. Those are
+the last unknown before the copy path can be written from measurement instead of
+assumption. Everything below is already established.
+
+```powershell
+$p = Get-Process CrimsonDesert
+pwsh scripts/Start-SpatialProbe.ps1 -ProcessId $p.Id
+# then, after ~60 s of moving around:
+Select-String 'C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesertTelemetry.native.log' `
+    -Pattern 'signed distance volume seen'
+```
+
+### Where the two product goals stand
+
+**Ambient: done for now, parked.** Validated end to end in game on 2026-09-10 —
+factor 15550 on camera sky visibility across a barn traverse with the sky term steady,
+34500x over the whole day's range from the Abyss to deep under a roof, and the value
+follows camera POSITION rather than view direction. Details in the research log. Do
+not reopen the atmosphere analysis; it buys nothing for the product now. The mapping
+from the estimate to lamp brightness is CrimsonHue's, and it needs a perceptual curve
+with a floor, because a visibly open barn still reads 0.000025 inside and a linear
+product would drive a lamp to black.
+
+**Using the existing light feed for occlusion: measured negative, closed.** Two logged
+runs with torch-carrying NPCs walking behind geometry, the user calling each occlusion.
+No contribution is ever attenuated: at every mark the surviving lights sit in the same
+0.27-0.39 band. What happens instead is that lights leave the list, and a departure
+cannot be told apart from view filtering or range. Scope that correctly — this feed
+does not represent usable attenuation, which rules it out for the product. It is NOT a
+claim that the engine never attenuates internally; that was not tested.
+
+**So occlusion must be computed, from the signed distance field. That is the work.**
+
+### What is established about the signed distance volume
+
+Resource **191** in the capture, `t233` / `g_signedDistanceVoxelsTexturesLikeUav`,
+`TEXTURE3D 128x64x1040 R16_TYPELESS`, SRV as `R16_FLOAT`, committed with
+`ALLOW_UNORDERED_ACCESS`. About 16.25 MiB against the sky volume's 528 KiB.
+
+**Addressing, read out of `EvaluateDiffuseRadianceCS`:**
 
 ```
 z_texel = level * 130 + 1 + Frc(normalised) * 128
-coord_z = z_texel * 0.000961538   (= 1/1040)
+coord_z = z_texel * 0.000961538          (= 1/1040)
 ```
 
 | | sky visibility | signed distance |
@@ -368,24 +413,16 @@ coord_z = z_texel * 0.000961538   (= 1/1040)
 | total depth | 264 | 1040 |
 | z scale | 1/264 | 1/1040 |
 
-Same toroidal Frc addressing, same clipmap family, same 768-byte constant buffer, so
-`sample_world` should generalise by parameterising width, height, level depth and
-border rather than being rewritten.
+Same toroidal `Frc` addressing, same clipmap family, same 768-byte
+`VoxelGlobalIlluminationConstantBuffer`. `sample_world` should generalise by
+parameterising width, height, level depth and border rather than being rewritten.
 
-**That is an anchor, not a finished decoder.** Before a sphere trace rests on it,
-five things need confirming against real data: the world-to-voxel mapping at this
+**That is an anchor, not a finished decoder.** Five things still need confirming
+against real data before a trace rests on them: the world-to-voxel mapping at this
 resolution, the border slices, level selection, the SIGN convention, and the world
-UNIT of the stored distance. None of that is renderer archaeology — it is calibration
-against known points — but it is work, and treating the shared addressing as though
-it settled the decoder would skip it.
+UNIT of the stored distance.
 
-**Access is the open problem, and one route is closed.** Disassembling pipeline state
-21568 from the capture shows `AdaptExposureCS` — the dispatch this probe hooks —
-binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else. It never touches t233,
-so the SDF's resource cannot be found the way the R8 volume's was.
-
-**THE VOLUME IS REACHABLE — measured in game, 2026-09-10.** The passive search found
-it within a minute:
+**Reachability, measured in game 2026-09-10:**
 
 ```
 resource      = 0x137D10B00
@@ -394,67 +431,64 @@ layoutBefore  = 6  = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE
 layoutAfter   = 1  = D3D12_BARRIER_LAYOUT_GENERIC_READ
 ```
 
-One distinct resource, seen repeatedly, which is what a single SDF volume should
-look like.
+One distinct resource, seen repeatedly, found within a minute. **`GENERIC_READ`
+already permits copy-source access**, so a `CopyTextureRegion` after that barrier
+needs no LAYOUT transition — a real simplification over the plan written for the
+replay, and not transitioning a resource the engine owns is markedly safer. Enhanced
+barriers separate sync, access and layout, so whether an ACCESS barrier is still
+required is the open question the pending run answers.
 
-**The layout is the good news.** `GENERIC_READ` already permits copy-source access, so
-after that barrier a `CopyTextureRegion` needs **no layout transition** — at most an
-access barrier. The plan written for the replay, transitioning from shader-resource to
-`COPY_SOURCE` and restoring afterwards, is unnecessary here, and not transitioning a
-resource the engine owns is markedly safer.
+**The route that does NOT work:** `AdaptExposureCS`, the dispatch this probe hooks,
+binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else — confirmed by
+disassembling pipeline state 21568 out of the capture, the shader the frame actually
+ran. The SDF cannot be discovered through those bindings, which is why the barrier
+hook searches for it by descriptor shape instead.
 
-Caution on what that does and does not say: enhanced barriers separate sync, access
-and layout. The layout is settled; whether an access barrier is still required depends
-on the access bits the engine set, which were not recorded. Add the access bits to the
-sighting before writing the copy.
+### The plan, in order
 
-**What the copy still needs.** Parameterise the readback for a second signature —
-128x64x1040, R16_TYPELESS, two bytes per texel, about 16.25 MiB against the R8
-volume's 528 KiB. The copy path is hardcoded at the footprint guard and the packing
-loop in `spatial_readback.cpp`; hold the R8 result byte-identical as the invariant.
-The fence and map machinery is unchanged. The pairing point is immediately after this
-barrier on that list, rather than the validated dispatch the R8 path pairs with.
-
-**How the search worked, for the next volume.** The barrier hook
-records the first few distinct resources whose descriptor matches 128x64x1040
-R16_TYPELESS, with the command list and the layouts they were transitioned between —
-what a later fenced copy would have to transition from. It copies nothing and issues
-no GPU work; `GetDesc` calls are capped for the whole run. The result lands in the
-report under `distanceVolume`.
-
-A sighting goes to the native log the moment it is found, not only into the report.
-That distinction cost one run: a twenty-minute session produced nothing because the
-game exited without running the plugin's shutdown path, which many titles skip, and
-the report is written only when the series ends or the plugin stops. Only ONE series
-runs per game start (`if(requested_) return false` in `SpatialReadback::Begin`), so a
-lost run means a restart.
-
-**Then, in this order:**
-
-1. Parameterise the readback for the second signature. The R8 path stays a
-   regression invariant: byte-identical output, or the change is wrong.
-2. Copy and decode the R16 volume.
-3. Calibrate at a few KNOWN points before trusting any trace — free air, a surface,
-   just in front of and just behind it. That is what fixes the sign and the world
-   scale.
-4. Variant A: a camera-to-torch sphere trace.
-5. One controllable case, the same torch visible then blocked then visible again.
-   Not thirty lights observed statistically. Identify the torch by POSITION; the
-   rendered sample index is explicitly not a stable id.
+1. **Parameterise the readback for a second signature.** The copy path is hardcoded to
+   64x32x264 R8 in `spatial_readback.cpp`, at the `GetCopyableFootprints` guard and
+   the packing loop, and `spatial_sample.h` holds the dimensions as constants. The R8
+   path is a **regression invariant: byte-identical output, or the change is wrong.**
+2. **Copy and decode the R16 volume**, pairing immediately after the barrier on that
+   list rather than at the validated dispatch the R8 path uses.
+3. **Calibrate at known points before trusting any trace** — free air, a surface, just
+   in front of and just behind it. That is what fixes the sign and the world scale.
+4. **Variant A**: a camera-to-torch sphere trace.
+5. **One controllable case**: the same torch visible, then blocked, then visible again.
+   Not thirty lights observed statistically. Identify the torch by POSITION — the
+   rendered sample index is explicitly not a stable id, and a nearest-neighbour tracker
+   already produced a false 4000x reading when tracks crossed.
 
 **If A works, stop there.** No reconstruction of the engine's raymarch, no coverage
-model, no DXR excursion, and t224 stays ignored. It comes back only if A visibly
-fails at thin walls, doorways or grazing angles.
+model, no DXR excursion. `t224` stays ignored — it is derived from `t233` via
+`GenerateAxisAlignedDistancePass0/1`, so it is not independent truth — and returns
+only if A visibly fails at thin walls, doorways or grazing angles.
 
-**Test subjects found at Alfonso Estate, Duskwood** — a fixed teleport point, so they
-repeat: an NPC carrying a torch, a light that moves behind geometry on its own, and
-the Warspike Spearmaker workshop with interiors, roofed outdoor areas and individually
-fed lamps.
+### Operating the probe, learned the hard way
 
-**A product limit worth recording:** the glowing pillars there never appear in the
-light feed while the fire bowls beside them do, with two SPOT contributions each. They
-are emissive material, not renderer light sources. No amount of occlusion work will
-surface them, because the feed never carries them.
+- **One series per game start.** `if(requested_) return false` in
+  `SpatialReadback::Begin`. A second trigger does nothing; a lost run means a restart.
+- **The log is what survives, not the report.** The report is written only when the
+  series ends or the plugin shuts down, and a game that exits without running
+  `DLL_PROCESS_DETACH` — many do — loses it. That already cost one twenty-minute run.
+  Anything worth having goes to `ch::Log` when it happens.
+- **`SpatialReadbackCount` and `SpatialVisibilitySeconds` mean different things.** The
+  first bounds RETAINED diagnostic snapshots, capped at 8 because each carries a whole
+  volume; the second is how long the live value keeps refreshing. One key meaning both
+  once turned a request for 900 into a run of 1.
+- **Out-of-range configuration clamps to the maximum, never collapses to 1.** It used
+  to, silently, which is how an over-large request produced the least data.
+- **The measured transaction rate is 0.31-0.48/s against a configured 1 s**, because
+  arming needs the pinned resource identity to recur and `Discover` only re-pins while
+  the phase is Idle, which a running series never returns to. One 30 s stall was
+  observed. This is a known reliability gap, deliberately not fixed yet.
+- Test subjects at **Alfonso Estate, Duskwood** — a fixed teleport point, so they
+  repeat: torch-carrying NPCs, and the Warspike Spearmaker workshop with interiors,
+  roofed outdoor areas and individually fed lamps.
+- The glowing pillars there never enter the light feed while the fire bowls beside
+  them do. Emissive material, not renderer light sources. No occlusion work will
+  surface them.
 
 ## 5. Product decisions and next tests
 

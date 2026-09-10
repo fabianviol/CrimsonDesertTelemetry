@@ -32,6 +32,11 @@ checkpoints below, which record how the conclusions were reached in the order th
 were reached -- including several that were later retracted. Come back here for the
 in-game probe, the ASI, the packaging and the occlusion history.
 
+**As of 2026-09-10 the immediate next action is in section 4b of that document**: a
+built but not yet installed package, `v2.0.1-sdf-probe.3`, whose run prints the last
+unknown before the signed-distance copy path can be written. Ambient is validated and
+PARKED; using the existing light feed for occlusion is a measured negative and closed.
+
 The short version, as of 2026-09-09:
 
 - Four scripts turn the 2.7 GB export into provable statements about the frame:
