@@ -70,6 +70,46 @@ buffers, restore the layouts, and map only after the queue fence. The event-stat
 bytes have not yet been acquired. The initial payload in `resources.bin` must not be
 used as a substitute or paired across different temporal states.
 
+## The light feed carries no occlusion, measured — 2026-09-10
+
+Before extending the fenced copy to the signed distance volume, the cheap
+alternative was tested directly: does the rendered light feed already attenuate an
+occluded source? Torch-carrying NPCs at Alfonso Estate walked past and behind
+geometry while the user called out each occlusion and the feed was logged at 4-5 Hz.
+Two runs, `artifacts/light-research/moving-light2.tsv` and `moving-light3.tsv`, with
+the calls in the matching `.marks.tsv`.
+
+**No contribution is ever attenuated.** At every marked occlusion the surviving
+lights sit in the same 0.27-0.39 band they occupied throughout:
+
+```
+run 2, "1 verdeckt"          0.31192 0.31069 / 0.30647 0.29939 / 0.31399 0.30676 0.28694
+run 3, "2 verdeckt"          0.31547 0.30588 0.28487 0.27690
+run 3, "3 verdeckt"          0.31133 0.31108
+run 3, "alle weg/verdeckt"   0.39362 0.31871
+```
+
+Over two minutes of NPCs walking 130 game units past the camera, the tracked
+luminance never left that band.
+
+**What actually happens is that lights LEAVE the list.** The count falls 4, 3, 2, 1
+as sources go away or pass behind things. Whether a light vanished because it was
+occluded, view-filtered or simply out of range cannot be told apart from the feed.
+That is the documented warning -- missing or culled is not proven OFF -- now with a
+measurement behind it rather than a caution.
+
+**Two near-zero values appeared and are NOT the effect.** 0.00007 at run 2 t=8.4 and
+0.00011 at t=72.2 sit nowhere near any marked occlusion; distant sources entering the
+list at negligible brightness is the likely reading. A first pass that tracked lights
+by nearest neighbour did suggest a 4000x collapse, but all four tracks reported
+identical extremes, which is what crossing tracks look like. Counting dark lights per
+frame instead of trusting the tracker is what settled it. The rendered sample index is
+explicitly not a stable id, so position tracking was the only option and it was not
+good enough.
+
+**This closes the cheap route and justifies the SDF work.** Occlusion has to be
+computed; the renderer will not hand it over.
+
 ## The ambient estimate measured end to end, in game — 2026-09-10
 
 The first measurement of `localEnvironmentAmbientEstimateWorking` against real
