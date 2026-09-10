@@ -50,20 +50,24 @@ the planned observer's sufficiency, not Variant A.
 
 ## OPEN — one acquisition gate first
 
-Measure the corrected observer's complete read-release tuple
-on a supported, progressing game process. Preserve that line with PID/start time,
-installed ASI hash, INI, native log and progressing telemetry controls. Layout alone
-does not settle enhanced-barrier access/synchronization. This run copies no R16.
+The corrected observer measured the complete compute read-release tuple in
+supported PID1668: layout 6->1, access 0x80->0x80000000, sync 0x80->0, flags zero,
+subresources (UINT_MAX,0,0,0,0,0). The preserved evidence is
+`artifacts/light-research/sdf-transitions-pid1668-20260910-224833/`, with hashes,
+INI, native log and progressing telemetry controls. That run copied no R16.
 In particular, `SyncAfter=NONE` / `AccessAfter=NO_ACCESS` forbids later access or
 barriers in the same ExecuteCommandLists scope. If that is the observed release,
 copy **before** forwarding it (round-trip the original pre-release state), not
 after it merely because GENERIC_READ supports copies. See Microsoft's
 [Enhanced Barriers specification](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html).
 
-Then implement one bounded fenced R16 copy at the observed barrier, with exact
-resource/tuple/subresource and command-list generation guards, recorded copy time,
-and usable GI/camera context. Preserve the existing R8 results. Store completed
-R16 evidence immediately, rather than relying on process-detach report writing.
+The bounded R16 copy is now implemented with exact shape/tuple/subresource,
+known command-list generation, Close/Submit and queue-fence guards. Its completed
+binary and metadata are saved immediately. CPU observations before/after recording
+are preserved; their stable mapping to the copied volume remains to be checked.
+This is NOT GPU-paired GI and must not be presented as such. The next fact needed
+is the first successful live R16 acquisition plus that mapping check. No decoder
+or trace has yet been added. See HANDOVER.md for the package and continuation.
 
 ## Controlled test and stopping rule
 

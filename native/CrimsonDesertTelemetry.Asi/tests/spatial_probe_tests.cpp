@@ -146,6 +146,34 @@ int main()
         Check(distanceTransitionCount==DistanceTransitionLimit&&distanceOverflow==6);
         entry=unmodified;NoteDistanceVolume(list7,1,&distanceGroup);
         Check(distanceTransitions[1].occurrences==2); // capacity never stops known tuples
+        // Exercise the NEW acquisition adapter separately from the real GPU
+        // copies in spatial_readback_tests: only a fresh CPU context plus the
+        // measured compute release and a known Reset may arm it.
+        ComPtr<ID3D12CommandAllocator> computeAllocator;
+        Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,IID_PPV_ARGS(&computeAllocator)));
+        ComPtr<ID3D12GraphicsCommandList7> computeList;
+        Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_COMPUTE,computeAllocator.Get(),nullptr,IID_PPV_ARGS(&computeList)));
+        auto* savedReadback=readback;readback=new SpatialReadback;
+        Check(readback->Begin(2,0,1));distanceMode=true;directReadback=true;
+        distanceLatest=o;distanceLatest.giStable=true;distanceLatest.enhanced=true;
+        distanceLatest.tick=GetTickCount64();
+        ArmDistanceRelease(list7,1,&distanceGroup);
+        Check(readback->Snapshot().phase==CopyPhase::Idle); // direct lists ignored
+        distanceLatest.tick=GetTickCount64()-1000;
+        ArmDistanceRelease(computeList.Get(),1,&distanceGroup);
+        Check(readback->Snapshot().phase==CopyPhase::Idle); // stale context ignored
+        distanceLatest.tick=GetTickCount64();
+        ArmDistanceRelease(computeList.Get(),1,&distanceGroup);readback->Poll();
+        Check(readback->Snapshot().phase==CopyPhase::Ready);
+        ArmDistanceRelease(computeList.Get(),1,&distanceGroup);
+        Check(readback->Snapshot().phase==CopyPhase::Ready); // unknown reset
+        readback->Reset(computeList.Get(),false);readback->Reset(computeList.Get(),true,S_OK);
+        ArmDistanceRelease(computeList.Get(),1,&distanceGroup);
+        Check(readback->Snapshot().phase==CopyPhase::AwaitRelease&&copyObservation.frame==o.frame);
+        Check(!readback->Snapshot().buffersRequested&&!readback->Snapshot().issued);
+        readback->Cancel("adapter-test-no-submit");delete readback;readback=savedReadback;
+        directReadback=false;distanceMode=false;distanceLatest={};distanceArmedTick=0;
+        Hr(computeList->Close());
         distanceSeen=0;distanceSightings={};distanceTransitions={};distanceTransitionCount=0;
         distanceInspections=0;distanceDropped=0;distanceOverflow=0;
     }

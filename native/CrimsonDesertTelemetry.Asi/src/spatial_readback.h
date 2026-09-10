@@ -50,8 +50,8 @@ class SpatialReadback
 {
 public:
     // RETAINED records, not the series length. Each record keeps its whole volume
-    // snapshot, so this is a memory bound: eight cost about 4 MB and nine hundred
-    // would cost about half a gigabyte. A longer series drops its oldest records.
+    // snapshot: eight R8 copies cost about 4 MB. The R16 diagnostic requests one
+    // retained record (16.25 MiB) and persists each completed copy to disk.
     static constexpr unsigned MaxTransactions=8;
     // A series may run far longer than it retains, because a live consumer needs
     // the newest value rather than a history. An hour at one second.
@@ -60,10 +60,11 @@ public:
     // count>1 repeats the SAME validated transaction, reusing one readback buffer
     // and one fence sequence. A new copy is only ever armed after the previous
     // fence completed and its map finished, so the destination is never in flight.
-    bool Begin(unsigned count=1,uint64_t intervalMilliseconds=1000);
+    bool Begin(unsigned count=1,uint64_t intervalMilliseconds=1000,unsigned retained=MaxTransactions);
     bool SeriesFinished() const;
     unsigned Completed() const;
     std::vector<CopyResult> Records() const;
+    CopyResult LatestRecord() const;
     void Discover(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
     bool Arm(ID3D12GraphicsCommandList7* list,ID3D12Resource* source,uint32_t frame,ID3D12Resource* gi=nullptr,ID3D12Resource* exposure=nullptr);
     void RootSignature();
@@ -91,6 +92,7 @@ private:
     CopyResult result_;
     bool requested_{}, resetPending_{}, generationKnown_{}, closed_{}, closePending_{}, mapping_{};
     unsigned budget_{}, completed_{};
+    unsigned retained_{MaxTransactions};
     uint64_t intervalMs_{}, lastCompletedTick_{}, nextFence_{};
     std::vector<CopyResult> records_;
     uint64_t generation_{}, armedTick_{};

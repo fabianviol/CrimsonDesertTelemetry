@@ -25,14 +25,14 @@ SpatialReadback::~SpatialReadback()
     if(result_.issued&&!result_.gpuCompleted)
     {list_.Detach();source_.Detach();readback_.Detach();gi_.Detach();exposure_.Detach();device_.Detach();deviceIdentity_.Detach();fence_.Detach();queue_.Detach();}
 }
-bool SpatialReadback::Begin(unsigned count,uint64_t intervalMilliseconds)
+bool SpatialReadback::Begin(unsigned count,uint64_t intervalMilliseconds,unsigned retained)
 {
     Guard g(mutex_);
     if(requested_) return false; // One SERIES per plugin process, including failures.
-    if(!count||count>MaxSeriesTransactions) return false;
+    if(!count||count>MaxSeriesTransactions||!retained||retained>MaxTransactions) return false;
     requested_=true;result_={};result_.reason="awaiting-source";
     budget_=count;completed_=0;nextFence_=0;lastCompletedTick_=0;
-    intervalMs_=intervalMilliseconds;records_.clear();
+    intervalMs_=intervalMilliseconds;retained_=retained;records_.clear();
     return true;
 }
 bool SpatialReadback::SeriesFinished() const
@@ -56,13 +56,18 @@ std::vector<CopyResult> SpatialReadback::Records() const
     else if(records_.empty())copy.push_back(result_);
     return copy;
 }
+CopyResult SpatialReadback::LatestRecord() const
+{
+    Guard g(const_cast<SRWLOCK&>(mutex_));
+    return records_.empty()?CopyResult{}:records_.back();
+}
 void SpatialReadback::KeepRecordAndRearm()
 {
     // Caller holds the lock and has finished mapping this transaction.
     records_.push_back(result_);
     // A long series must not grow without bound: each record carries its whole
     // volume snapshot. The newest are the ones a live consumer and a report need.
-    while(records_.size()>MaxTransactions) records_.erase(records_.begin());
+    while(records_.size()>retained_) records_.erase(records_.begin());
     ++completed_;
     if(budget_)--budget_;
     lastCompletedTick_=GetTickCount64();
@@ -351,8 +356,12 @@ void SpatialReadback::Poll()
         ComPtr<ID3D12Resource> buffer;ComPtr<ID3D12Fence> fence;
         D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};HRESULT hr=S_OK;
         UINT rows{};UINT64 rowBytes{},bytes{},giWidth{},exposureWidth{};auto desc=source->GetDesc();
-        const bool shape=desc.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE3D&&desc.Width==64&&desc.Height==32&&
-            desc.DepthOrArraySize==264&&desc.MipLevels==1&&desc.Format==DXGI_FORMAT_R8_TYPELESS&&
+        const bool skyShape=desc.Width==64&&desc.Height==32&&desc.DepthOrArraySize==264&&desc.Format==DXGI_FORMAT_R8_TYPELESS;
+        const bool distanceShape=desc.Width==128&&desc.Height==64&&desc.DepthOrArraySize==1040&&desc.Format==DXGI_FORMAT_R16_TYPELESS;
+        const UINT64 texelBytes=distanceShape?2u:1u;
+        const UINT64 packedBytes=desc.Width*desc.Height*desc.DepthOrArraySize*texelBytes;
+        const bool shape=(skyShape||distanceShape)&&desc.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE3D&&desc.MipLevels==1&&
+            (desc.Flags&D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)&&
             desc.SampleDesc.Count==1&&desc.SampleDesc.Quality==0;
         if(!shape||(type_!=D3D12_COMMAND_LIST_TYPE_DIRECT&&type_!=D3D12_COMMAND_LIST_TYPE_COMPUTE))hr=E_INVALIDARG;
         if(SUCCEEDED(hr))hr=source->GetDevice(IID_PPV_ARGS(&device));
@@ -365,9 +374,10 @@ void SpatialReadback::Poll()
         if(SUCCEEDED(hr))
         {
             device->GetCopyableFootprints(&desc,0,1,0,&footprint,&rows,&rowBytes,&bytes);
-            if(rows!=32||rowBytes!=64||footprint.Footprint.Width!=64||footprint.Footprint.Height!=32||
-                footprint.Footprint.Depth!=264||footprint.Footprint.Format!=DXGI_FORMAT_R8_TYPELESS||
-                footprint.Footprint.RowPitch<64||bytes>4*1024*1024||bytes<540672)hr=E_INVALIDARG;
+            if(rows!=desc.Height||rowBytes!=desc.Width*texelBytes||footprint.Footprint.Width!=desc.Width||
+                footprint.Footprint.Height!=desc.Height||footprint.Footprint.Depth!=desc.DepthOrArraySize||
+                footprint.Footprint.Format!=desc.Format||footprint.Footprint.RowPitch<rowBytes||
+                bytes>(distanceShape?18u:4u)*1024*1024||bytes<packedBytes)hr=E_INVALIDARG;
         }
         if(SUCCEEDED(hr))
         {
@@ -425,10 +435,13 @@ void SpatialReadback::Poll()
         std::vector<uint8_t> packed,gpuGi,gpuExposure;
         if(SUCCEEDED(hr))
         {
-            packed.resize(64*32*264);
+            const size_t rowSize=static_cast<size_t>(footprint.Footprint.Width)*
+                (footprint.Footprint.Format==DXGI_FORMAT_R16_TYPELESS?2u:1u);
+            const size_t height=footprint.Footprint.Height,depth=footprint.Footprint.Depth;
+            packed.resize(rowSize*height*depth);
             const auto* data=static_cast<const uint8_t*>(pointer)+footprint.Offset;
-            for(size_t z=0;z<264;++z)for(size_t y=0;y<32;++y)
-                std::memcpy(packed.data()+(z*32+y)*64,data+(z*32+y)*footprint.Footprint.RowPitch,64);
+            for(size_t z=0;z<depth;++z)for(size_t y=0;y<height;++y)
+                std::memcpy(packed.data()+(z*height+y)*rowSize,data+(z*height+y)*footprint.Footprint.RowPitch,rowSize);
             if(result_.buffersCopied)
             {
                 const auto* tail=static_cast<const uint8_t*>(pointer)+result_.pairReadbackOffset;

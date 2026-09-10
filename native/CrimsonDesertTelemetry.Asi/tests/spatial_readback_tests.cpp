@@ -43,9 +43,16 @@ int main()
     ComPtr<IDXGIAdapter> warp;Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)),"WARP");
     ComPtr<ID3D12Device> device;Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
     ComPtr<ID3D12InfoQueue> info;Hr(device.As(&info),"info queue");
+    // The same real queue/fence and negative controls cover both byte layouts.
+    // R8 is the existing byte-exact invariant; R16 exercises both bytes of every
+    // half value through the final depth slice, without assuming their semantics.
+    for(bool distanceVolume:{false,true})
+    {
     D3D12_RESOURCE_DESC td{};td.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE3D;td.Width=64;td.Height=32;
     td.DepthOrArraySize=264;td.MipLevels=1;td.SampleDesc.Count=1;td.Format=DXGI_FORMAT_R8_TYPELESS;
     td.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    if(distanceVolume){td.Width=128;td.Height=64;td.DepthOrArraySize=1040;td.Format=DXGI_FORMAT_R16_TYPELESS;}
+    const size_t rowSize=static_cast<size_t>(td.Width)*(distanceVolume?2u:1u);
     D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;heap.CreationNodeMask=heap.VisibleNodeMask=1;
     ComPtr<ID3D12Resource> texture;Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&td,
         D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&texture)),"texture");
@@ -55,12 +62,12 @@ int main()
     bd.DepthOrArraySize=1;bd.MipLevels=1;bd.SampleDesc.Count=1;bd.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     heap.Type=D3D12_HEAP_TYPE_UPLOAD;ComPtr<ID3D12Resource> upload;
     Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&bd,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"upload");
-    std::vector<uint8_t> expected(64*32*264);void* ptr{};D3D12_RANGE empty{};
+    std::vector<uint8_t> expected(rowSize*td.Height*td.DepthOrArraySize);void* ptr{};D3D12_RANGE empty{};
     Hr(upload->Map(0,&empty,&ptr),"upload map");std::memset(ptr,0xA5,static_cast<size_t>(bytes));
-    for(size_t z=0;z<264;++z)for(size_t y=0;y<32;++y)for(size_t x=0;x<64;++x)
+    for(size_t z=0;z<td.DepthOrArraySize;++z)for(size_t y=0;y<td.Height;++y)for(size_t x=0;x<rowSize;++x)
     {
         const auto value=static_cast<uint8_t>((x*7+y*13+z*17)%256);
-        expected[(z*32+y)*64+x]=value;static_cast<uint8_t*>(ptr)[fp.Offset+(z*32+y)*fp.Footprint.RowPitch+x]=value;
+        expected[(z*td.Height+y)*rowSize+x]=value;static_cast<uint8_t*>(ptr)[fp.Offset+(z*td.Height+y)*fp.Footprint.RowPitch+x]=value;
     }
     upload->Unmap(0,nullptr);
     auto release=Release(texture.Get());auto releaseGroup=Group(&release);
@@ -126,7 +133,8 @@ int main()
         const auto result=copy.Snapshot();
         if(result.phase!=CopyPhase::Complete)std::cerr<<result.reason<<'\n';
         Check(result.phase==CopyPhase::Complete&&result.gpuCompleted,"own queue fence complete");
-        Check(result.packed==expected,"all 540672 texels exact including last depth slice; padding removed");
+        Check(result.packed==expected,"every R8/R16 byte exact including final slice; padding removed");
+        Check(copy.LatestRecord().packed==expected,"latest completed evidence retained");
         Check(result.mapCalls==1&&result.frame==77&&result.generation==1&&result.queue==reinterpret_cast<uint64_t>(queue.Get()),"paired transaction provenance");
         Check(!copy.Begin(),"second request refused, never overwrites first");
         Hr(allocator->Reset(),"allocator GPU done");
@@ -195,6 +203,7 @@ int main()
             }
             reject.Poll();Check(reject.Snapshot().mapCalls==0&&!reject.Snapshot().gpuCompleted,"failed submission never maps");
         }
+    }
     }
     const auto messages=info->GetNumStoredMessagesAllowedByRetrievalFilter();
     for(UINT64 i=0;i<messages;++i)

@@ -10,7 +10,8 @@ namespace cdt::spatial
 // publishSeconds: how long the live camera-visibility value keeps refreshing.
 // They are separate on purpose; one key meaning both already misfired once.
 bool Start(uint64_t moduleBase, const wchar_t* directory,bool enableReadback=false,
-    unsigned transactions=1,unsigned intervalMilliseconds=1000,unsigned publishSeconds=0);
+    unsigned transactions=1,unsigned intervalMilliseconds=1000,unsigned publishSeconds=0,
+    bool enableDistanceReadback=false);
 void Poll();
 void Stop();
 bool OwnsCodeAddress(uint64_t address);

@@ -5,7 +5,49 @@ new PIX acquisition. Follow [SDF_VARIANT_A.md](SDF_VARIANT_A.md) for the bounded
 test, established mapping anchors, inference limits and stopping rule. The older
 checkpoints below are history, including their superseded replay-copy next steps.
 
-**ESTABLISHED live:** `sdf-probe.3` was installed and triggered in supported
+**ESTABLISHED live, latest:** `sdf-probe.4` ran in supported PID1668 (started
+22:46:06 CEST), triggered 22:48:33 with progressing API sequence 3563 -> 3565;
+later control 26286. It recorded 13 distinct tuples for resource `139FF33E0`.
+The complete COMPUTE-list release is **layout 6 -> 1, access 0x80 -> 0x80000000,
+sync 0x80 -> 0, flags 0, subresources (UINT_MAX,0,0,0,0,0)**. This is exactly the
+existing R8 copy guard's tuple. Readback belongs BEFORE forwarding that release;
+NO_ACCESS/NONE forbids a subsequent copy in the same ExecuteCommandLists scope.
+Evidence: `artifacts/light-research/sdf-transitions-pid1668-20260910-224833/`.
+The game's installed ASI is still probe.4; no R16 has been copied live yet.
+
+**Completed implementation:** private `SignedDistanceReadback=1` mode discovers
+the shape-matched SDF on that compute release, requires a known list Reset and
+fresh preceding CPU context, and uses the existing guarded copy/Close/Submit/fence
+path. Readback now accepts exactly the existing R8 or the R16 signature and packs
+their respective row bytes. Every completed R16 copy is saved immediately as
+`bin64/signed-distance-PID-STARTTICK-N.bin` plus `.json`; one is retained in memory.
+The package bounds the series to 120 copies at >=2000 ms, about 1.90 GiB total.
+Do not run an acquisition until the intended stationary calibration scene is ready.
+
+**Ready, NOT installed:**
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-readback.1-ModManagers.zip`.
+ZIP SHA256 `911BED78B5CDEF35C929B87475109C8AD8CD537E57E5B7736D7220728C8D9F18`;
+ASI SHA256 `3B2AFC835E05A12AC61AD7A14C4F18DE8F0792A92B88B05A3DC0058D85FD3056`.
+Release build, five spatial CTests and package validation/negative cases passed.
+The expanded WARP test verifies EVERY R8/R16 byte on DIRECT and COMPUTE queues,
+unchanged engine barriers, a held GPU fence and rejection cases with zero debug
+warnings/errors. The adapter test rejects graphics lists, stale context and unknown
+Reset before accepting the measured compute release. These are synthetic controls,
+not live R16 acquisition or occlusion evidence.
+
+**OPEN / evidence limit:** contextBefore/contextAfter are CPU observations around
+the copy, NOT GPU-bound GI constants. Metadata records the bracket, frames/ticks,
+raw GI/scene, footprint, resource, release and fence. Mapping stability, borders,
+sign and distance scale still need calibration. No R16 decoder or Variant A trace
+has been implemented; no source-visibility verdict or new API is published.
+
+**One next step:** after installing the ready R16 package through DMM with the game
+closed, acquire its first completed live R16 snapshot at a known stationary wall/
+torch scene. Check the new binary/metadata and mapping stability before tracing.
+The user requested this checkpoint to conserve the remaining five-hour usage
+window; no further restart/test was requested in this session.
+
+**Previous acquisition failure:** `sdf-probe.3` was installed and triggered in supported
 PID15044 (started 22:32:58 CEST); API sequence progressed 4703 -> 4736 before the
 request and reached 6003 afterward. The first sighting was resource `12BE75D10`,
 list `22864FEA0`: layout **1 -> 3**, access **0 -> 0x10**, sync **1 -> 0x80**.
@@ -19,19 +61,18 @@ a write entry first. This does not falsify Variant A. Evidence, including instal
 hash, INI, native log and before/after telemetry:
 `artifacts/light-research/sdf-access-pid15044-20260910-223544/`.
 
-**One next step:** run the bounded distinct-transition observer, then use an
+The subsequent distinct-transition observer was built to use an
 actually observed complete SRV release tuple for the fenced R16 acquisition.
 The code retains up to 32 distinct tuples, flags/subresources, list type, first/last
 time and counts; logs new tuples immediately; and continues observing known
 resources after the discovery budget ends. Contention/overflow are explicit.
 Five spatial CTests pass, including a regression reproducing the live failure.
 
-Ready, not yet installed: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-probe.4-ModManagers.zip`.
+Installed and measured: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-sdf-probe.4-ModManagers.zip`.
 ZIP SHA256 `FDD375F0992E0DD17CC0CE56933E3A3CD78819EB85A6843BD92D24CD6287FAEF`;
 ASI SHA256 `985C0500FBE8BB7AC7E7B6CAC974B147F0047D4389A5F7D117F00C007F8B4C87`.
 Release build and package validation (including negative cases) passed. Same private
-INI switches as probe.3; R8 acquisition/sampling unchanged. Close the game, install
-the whole ZIP through DMM, restart, then signal once after progressing health.
+INI switches as probe.3. Preserved as an immutable package.
 
 ---
 

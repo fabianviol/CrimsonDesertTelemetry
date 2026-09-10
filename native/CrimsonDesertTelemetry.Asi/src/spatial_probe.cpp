@@ -62,6 +62,7 @@ enum class Phase { Idle, Ready, Pending, Failed };
 Phase phase=Phase::Idle;
 bool barrierInstalled{}, incomplete{};
 bool directReadback{};
+bool distanceMode{};
 unsigned readbackCount{1},requestedTransactions{1},seriesCount{1},visibilitySeconds{};
 uint64_t readbackIntervalMs{1000};
 // Module is process-pinned; unresolved GPU work retains its bounded allocation.
@@ -126,12 +127,14 @@ std::atomic<unsigned> distanceDropped{},distanceOverflow{};
 constexpr unsigned DistanceInspectionLimit=20000;
 Observation pending;
 Observation copyObservation;
+Observation distanceLatest;
+uint64_t distanceArmedTick{};
 std::vector<Observation> copyObservations;
 unsigned publishedTransactions{};
 thread_local Observation* active{};
 bool SelectedNative(ID3D12GraphicsCommandList* list)
 {
-    return directReadback&&active&&active->selectedForReadback&&active->nativeList7==reinterpret_cast<uint64_t>(list);
+    return directReadback&&!distanceMode&&active&&active->selectedForReadback&&active->nativeList7==reinterpret_cast<uint64_t>(list);
 }
 // Root arguments outlive the exposure wrapper, so these observe the whole
 // recording of the pinned list. Only the dispatch itself stays exposure-scoped.
@@ -263,8 +266,50 @@ void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12
         }
     }
 }
+void ArmDistanceRelease(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
+{
+    if(!distanceMode||!observing||!list||!data||groups>64)return;
+    // Copy only the exact COMPUTE SRV release measured in probe.4, on a compute
+    // list. The same tuple on a graphics list is not a reason to broaden scope.
+    if(list->GetType()!=D3D12_COMMAND_LIST_TYPE_COMPUTE)return;
+    for(UINT g=0;g<groups;++g)
+    {
+        const auto& packet=data[g];
+        if(packet.Type!=D3D12_BARRIER_TYPE_TEXTURE||packet.NumBarriers>4096||!packet.pTextureBarriers)continue;
+        for(UINT i=0;i<packet.NumBarriers;++i)
+        {
+            const auto& b=packet.pTextureBarriers[i];
+            bool known=false;
+            const auto seen=distanceSeen.load(std::memory_order_acquire);
+            for(unsigned k=0;k<seen;++k)
+                if(distanceSightings[k].resource==reinterpret_cast<uint64_t>(b.pResource)){known=true;break;}
+            if(!known||!SpatialReadback::MatchesRelease(b,b.pResource))continue;
+            if(!TryAcquireSRWLockExclusive(&lock))return;
+            // Context is deliberately CPU-bracketed, not GPU-bound GI. Retain
+            // both sides and require offline mapping calibration before any trace.
+            const auto now=GetTickCount64();
+            if(distanceLatest.giStable&&!distanceLatest.error&&distanceLatest.enhanced&&
+                now>=distanceLatest.tick&&now-distanceLatest.tick<=750&&
+                publishedTransactions==readback->Completed())
+            {
+                readback->Discover(list,b.pResource);
+                if(readback->Arm(list,b.pResource,distanceLatest.frame))
+                {
+                    copyObservation=distanceLatest;distanceArmedTick=now;
+                    readback->ExposureEnd(true);
+                }
+            }
+            ReleaseSRWLockExclusive(&lock);
+        }
+    }
+}
 void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
 {
+    if(distanceMode)
+    {
+        NoteDistanceVolume(list,groups,data);
+        ArmDistanceRelease(list,groups,data);
+    }
     if(directReadback)readback->Barrier(list,groups,data,originalBarrier);
     trace.Barrier(list,groups,data); // Entire requested interval, every observed list/thread.
     // Thread-local scope is ONLY the actual AdaptExposure Dispatch invocation.
@@ -287,7 +332,7 @@ void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,
             }
         }
     }
-    NoteDistanceVolume(list,groups,data);
+    if(!distanceMode)NoteDistanceVolume(list,groups,data);
     originalBarrier(list,groups,data); // Never modify or suppress an engine call.
 }
 HRESULT STDMETHODCALLTYPE ResetHook(ID3D12GraphicsCommandList* list,ID3D12CommandAllocator* allocator,ID3D12PipelineState* state)
@@ -337,7 +382,7 @@ bool Resolve(Observation& o)
     uint32_t viewCount{};
     if(!Read(o.owner+(bank?0x568:0x560),cbWrapper)||!Read(cbWrapper+0x18,cbOuter)||
         !Read(cbOuter+0x30,cbStorage)||!Read(cbStorage+0x168,o.giGpuResource)) return false;
-    if(directReadback&&o.giGpuResource)
+    if(directReadback&&!distanceMode&&o.giGpuResource)
     {
         auto* cb=reinterpret_cast<ID3D12Resource*>(o.giGpuResource);
         o.giDesc=cb->GetDesc();D3D12_HEAP_FLAGS flags{};
@@ -351,7 +396,7 @@ bool Resolve(Observation& o)
     }
     std::memcpy(&o.frame,o.scene.data()+0x20,4);
     if(Read(renderer+0x690,exposureOwner)) Read(exposureOwner+0xD8,o.exposure);
-    if(directReadback)
+    if(directReadback&&!distanceMode)
     {
         uint64_t exposureOuter{},exposureStorage{},exposureBack{};uint32_t stride{},elements{};
         if(!Read(exposureOwner+0x10,exposureBack)||exposureBack!=renderer||
@@ -572,7 +617,7 @@ nlohmann::json NativeSamplesJson(const cdt::spatial::CopyResult& copy,const Obse
         "may read voxels of differing age because the volume refreshes in amortised blocks.";
     return out;
 }
-nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy)
+nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy,bool includeHex=true)
 {
     const auto& f=copy.footprint;
     nlohmann::json row={{"status",copy.reason},{"hresult",static_cast<uint32_t>(copy.error)},
@@ -584,7 +629,7 @@ nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy)
         {"allocationBytes",copy.allocationBytes},{"footprint",{{"offset",f.Offset},{"format",f.Footprint.Format},
             {"width",f.Footprint.Width},{"height",f.Footprint.Height},{"depth",f.Footprint.Depth},{"rowPitch",f.Footprint.RowPitch}}},
         {"packing","uint8 x-fastest, then y, then z; row padding removed; resource R8_TYPELESS"},
-        {"packedTextureHex",Hex(copy.packed.data(),copy.packed.size())}};
+        {"packedTextureHex",includeHex?Hex(copy.packed.data(),copy.packed.size()):""}};
     row["bufferPair"]={{"requested",copy.buffersRequested},{"nativeDispatchSeen",copy.nativeDispatchSeen},
         {"nativeDispatches",copy.nativeDispatches},{"copied",copy.buffersCopied},{"giResource",copy.giResource},
         {"exposureResource",copy.exposureResource},{"giBase",copy.giBase},{"exposureBase",copy.exposureBase},
@@ -606,9 +651,70 @@ nlohmann::json TransactionJson(const cdt::spatial::CopyResult& copy)
         {"exposureHex",copy.buffersGpuPaired?Hex(copy.gpuExposure.data(),copy.gpuExposure.size()):""}};
     return row;
 }
+bool WriteNewEvidence(const std::filesystem::path& path,const void* data,size_t size)
+{
+    if(size>MAXDWORD)return false;
+    const auto file=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(file==INVALID_HANDLE_VALUE)return false;
+    DWORD written{};
+    const bool ok=WriteFile(file,data,static_cast<DWORD>(size),&written,nullptr)&&written==size;
+    CloseHandle(file);return ok;
+}
+void SaveDistanceTransaction()
+{
+    const auto completed=readback->Completed();
+    Observation before{},after{};
+    AcquireSRWLockExclusive(&lock);
+    if(!completed||completed==publishedTransactions||
+        (distanceLatest.tick<=distanceArmedTick&&GetTickCount64()-distanceArmedTick<2000))
+    {ReleaseSRWLockExclusive(&lock);return;}
+    before=copyObservation;after=distanceLatest;
+    ReleaseSRWLockExclusive(&lock);
+    const auto copy=readback->LatestRecord();
+    const auto stem=L"signed-distance-"+std::to_wstring(GetCurrentProcessId())+L"-"+
+        std::to_wstring(started)+L"-"+std::to_wstring(completed);
+    auto metadata=TransactionJson(copy,false);
+    metadata.erase("packedTextureHex");metadata.erase("bufferPair");
+    metadata["format"]="private-signed-distance-readback-v1";
+    metadata["pid"]=GetCurrentProcessId();
+    metadata["executableSha256"]=Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size());
+    metadata["packing"]="little-endian binary16, x-fastest then y then z; row padding removed; R16_TYPELESS viewed as R16_FLOAT";
+    metadata["packedBytes"]=copy.packed.size();
+    metadata["resource"]=reinterpret_cast<uint64_t>(copy.release.pResource);
+    metadata["dataFile"]=std::filesystem::path(stem+L".bin").string();
+    metadata["contextBefore"]=Json(before);metadata["contextAfter"]=Json(after);
+    metadata["cpuContextBracketsCopy"]=before.tick<=copy.releaseTick&&after.tick>copy.releaseTick&&
+        before.frame!=after.frame&&before.giStable&&after.giStable;
+    metadata["frameMeaning"]="preceding CPU exposure context frame, NOT a GPU-paired distance-volume frame";
+    metadata["caveat"]="Fenced live R16 copy at a shape-matched resource's observed SRV release. "
+        "CPU GI/scene observations bracket recording when flagged; neither is an observed GPU binding. "
+        "Validate mapping stability and known geometry before tracing. Voxel content age is unknown. No visibility verdict.";
+    const auto bin=outputDirectory/(stem+L".bin"),json=outputDirectory/(stem+L".json");
+    const bool rawOk=copy.gpuCompleted&&copy.packed.size()==17039360&&
+        WriteNewEvidence(bin,copy.packed.data(),copy.packed.size());
+    metadata["rawSaved"]=rawOk;
+    const auto text=metadata.dump(2);
+    const bool metaOk=WriteNewEvidence(json,text.data(),text.size());
+    AcquireSRWLockExclusive(&lock);
+    publishedTransactions=completed;
+    if(!rawOk||!metaOk){incomplete=true;readback->Cancel("distance-evidence-write-failed");}
+    ReleaseSRWLockExclusive(&lock);
+    ch::Log("Signed distance readback %u: %s, bytes=%llu fence=%llu contexts=%u/%u bracket=%d, %s",
+        completed,rawOk&&metaOk?"saved":"WRITE FAILED",static_cast<unsigned long long>(copy.packed.size()),
+        static_cast<unsigned long long>(copy.fenceValue),before.frame,after.frame,
+        metadata["cpuContextBracketsCopy"].get<bool>()?1:0,json.string().c_str());
+}
 void Save(const char* reason)
 {
     if(directReadback)readback->Cancel("capture-window-ended");
+    if(distanceMode)
+    {
+        const auto state=readback->Snapshot();
+        ch::Log("Signed distance run ended: %s, copy=%s completed=%u saved=%u; individual evidence files retained.",
+            reason,state.reason,readback->Completed(),publishedTransactions);
+        if(traceResource){traceResource->Release();traceResource=nullptr;}
+        observing=false;phase=Phase::Idle;return;
+    }
     const auto copy=readback->Snapshot();
     const bool progressing=samples.size()>1 && samples.front()["frame"]!=samples.back()["frame"];
     nlohmann::json report={{"format",directReadback?"private-spatial-readback-v5":"private-spatial-binding-v2"},{"pid",GetCurrentProcessId()},
@@ -701,12 +807,13 @@ void Save(const char* reason)
 }
 
 bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
-    unsigned transactions,unsigned intervalMilliseconds,unsigned publishSeconds)
+    unsigned transactions,unsigned intervalMilliseconds,unsigned publishSeconds,bool enableDistanceReadback)
 {
     if(enabled) return false;
     std::array<uint8_t,Signature.size()> bytes{};
     if(!Read(moduleBase+DispatchRva,bytes)||bytes!=Signature) return false;
-    base=moduleBase;outputDirectory=directory;directReadback=enableReadback;
+    base=moduleBase;outputDirectory=directory;distanceMode=enableDistanceReadback;
+    directReadback=enableReadback||distanceMode;
     // Out-of-range configuration falls back to the proven single transaction.
     // SpatialReadbackCount keeps its own meaning: RETAINED diagnostic snapshots.
     // Clamp, never collapse -- asking for more than the maximum used to yield ONE
@@ -722,6 +829,11 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
     // defaults and silently produced a series of eight for a request of nine
     // hundred, which is why the arithmetic now lives in a testable function.
     seriesCount=SeriesLength(readbackCount,visibilitySeconds,readbackIntervalMs);
+    if(distanceMode)
+    {
+        seriesCount=transactions<1?1u:transactions>120?120u:transactions;
+        readbackCount=1;visibilitySeconds=0;
+    }
     const std::string readbackSeriesMessage="Spatial readback v5 IDLE: explicit event starts"+
         std::to_string(Limit)+" CPU controls plus "+std::to_string(seriesCount)+
         " texture/GI/exposure transaction(s), "+std::to_string(readbackCount)+
@@ -739,7 +851,10 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
     {CloseHandle(requestEvent);requestEvent=nullptr;return false;}
     enabled=true;
     render::submissionObserver=Submission;
-    ch::Log(directReadback?
+    if(distanceMode)ch::Log("Signed distance readback IDLE: explicit event starts %u R16 copies at >=%llums; "
+        "one retained, immediate binary files, CPU-bracketed context only; no sky publication.",seriesCount,
+        static_cast<unsigned long long>(readbackIntervalMs));
+    else ch::Log(directReadback?
         readbackSeriesMessage.c_str():
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
     return true;
@@ -750,11 +865,12 @@ void Poll()
     if(directReadback)readback->Poll();
     // Outside our own lock, and the sky lock is not held here: SRW exclusive is
     // not recursive, so a nested acquisition would deadlock rather than fail.
-    if(directReadback)PublishReferenceVisibility();
+    if(distanceMode)SaveDistanceTransaction();
+    else if(directReadback)PublishReferenceVisibility();
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
     {
-        if(!directReadback||readback->Begin(seriesCount,readbackIntervalMs))
+        if(!directReadback||readback->Begin(seriesCount,readbackIntervalMs,distanceMode?1u:SpatialReadback::MaxTransactions))
         {samples=nlohmann::json::array();copyObservation={};copyObservations.clear();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
         else ch::Log("Spatial direct readback already requested in this process; restart required for another run.");
     }
@@ -769,7 +885,8 @@ void Poll()
         if(!barrierInstalled&&!pending.error)
         {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;installBindings=pending.bindingFunctions;}
         phase=Phase::Ready;
-        if(count>=Limit&&(!directReadback||readback->SeriesFinished())) Save("sample-limit");
+        if(count>=Limit&&(!directReadback||(readback->SeriesFinished()&&
+            (!distanceMode||publishedTransactions==readback->Completed())))) Save("sample-limit");
     }
     // The guard exists to end a run that never completes, not to cap a series the
     // caller legitimately asked for. A long series must be able to outlive 30s.
@@ -813,7 +930,7 @@ void Stop()
 {
     enabled=false;observing=false;
     // The run is the only producer of this value, so it must not outlive it.
-    if(directReadback)sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);
+    if(directReadback&&!distanceMode)sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);
     if(directReadback)readback->Cancel("stopped");
     trace.target=0;render::submissionObserver=nullptr;
     if(dispatchTarget&&originalDispatch) MH_DisableHook(dispatchTarget);
@@ -852,7 +969,7 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
         traceResource=reinterpret_cast<ID3D12Resource*>(o.resource);traceResource->AddRef();
         if(!directReadback&&barrierInstalled)trace.Begin(o.resource);
     }
-    if(directReadback)
+    if(directReadback&&!distanceMode)
     {
         if(!valid)readback->Cancel("binding-validation-failed");
         else if(!o.enhanced)readback->Cancel("enhanced-barriers-disabled");
@@ -873,6 +990,7 @@ uint64_t Dispatch(uint64_t command,uint32_t x,uint32_t y,uint32_t z,uint64_t own
     if(valid)trace.Lifecycle(o.nativeList7,TraceKind::ExposureEnd);
     active=previous;
     if(valid){o.giStable=Read(owner+0x20,o.giAfter)&&o.gi==o.giAfter;}
+    if(distanceMode&&valid&&o.giStable)distanceLatest=o;
     if(o.selectedForReadback)
     {
         readback->ExposureEnd(o.giStable);copyObservation=o;

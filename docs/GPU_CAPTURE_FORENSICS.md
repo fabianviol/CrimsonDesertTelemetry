@@ -355,6 +355,18 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ### The one action waiting
 
+**Latest: probe.4 acquired the missing complete release tuple in PID1668.**
+Compute list, layout `6->1`, access `80->80000000`, sync `80->0`, flags zero,
+subresources `(4294967295,0,0,0,0,0)` (bitfields hex). Source shape matched
+128x64x1040 R16_TYPELESS. Thirteen distinct tuples were logged; evidence under
+`artifacts/light-research/sdf-transitions-pid1668-20260910-224833/`.
+The bounded R16 copy path is now implemented; package/test details and the single
+next live acquisition are at the top of [HANDOVER.md](HANDOVER.md). No R16 live
+bytes, calibrated mapping or Variant A result exist yet. CPU context bracketing
+in the new diagnostic is explicitly not a proven GPU GI binding.
+
+The earlier probe.3 failure below is retained as the reason for probe.4:
+
 **probe.3 was installed and measured in PID15044, 22:35 CEST.** Its first sighting
 was a WRITE entry (`layout 1->3 access 0->10 sync 1->80`, bitfields in hex), not the
 previous run's `6->1` release. Its first-sighting-only logic then discarded every
@@ -439,10 +451,10 @@ layoutAfter   = 1  = D3D12_BARRIER_LAYOUT_GENERIC_READ
 
 One distinct resource, seen repeatedly, found within a minute. **`GENERIC_READ`
 already permits copy-source access**, so a `CopyTextureRegion` after that barrier
-needs no LAYOUT transition — a real simplification over the plan written for the
-replay, and not transitioning a resource the engine owns is markedly safer. Enhanced
-barriers separate sync, access and layout, so whether an ACCESS barrier is still
-required is the open question the pending run answers.
+would not require a LAYOUT change on layout grounds alone. **The probe.4 access/
+sync measurement supersedes that incomplete plan:** the release ends access with
+NO_ACCESS/NONE. The new copy path round-trips SRV -> COPY_SOURCE -> SRV BEFORE
+forwarding the unmodified engine release, preserving its final layout and scope.
 
 **The route that does NOT work:** `AdaptExposureCS`, the dispatch this probe hooks,
 binds `g_skyVisibilityVoxelsTexturesLikeUav` and nothing else — confirmed by
@@ -456,8 +468,9 @@ hook searches for it by descriptor shape instead.
    64x32x264 R8 in `spatial_readback.cpp`, at the `GetCopyableFootprints` guard and
    the packing loop, and `spatial_sample.h` holds the dimensions as constants. The R8
    path is a **regression invariant: byte-identical output, or the change is wrong.**
-2. **Copy and decode the R16 volume**, pairing immediately after the barrier on that
-   list rather than at the validated dispatch the R8 path uses.
+2. **Copy and decode the R16 volume**, copying immediately BEFORE the measured
+   release on that list, then forwarding the unmodified release. The new CPU
+   context bracket must be validated; it is not an observed GPU constant binding.
 3. **Calibrate at known points before trusting any trace** — free air, a surface, just
    in front of and just behind it. That is what fixes the sign and the world scale.
 4. **Variant A**: a camera-to-torch sphere trace.
