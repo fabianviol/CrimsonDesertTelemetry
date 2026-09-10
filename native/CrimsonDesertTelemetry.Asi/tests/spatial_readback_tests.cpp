@@ -136,7 +136,13 @@ int main()
         Check(result.packed==expected,"every R8/R16 byte exact including final slice; padding removed");
         Check(copy.LatestRecord().packed==expected,"latest completed evidence retained");
         Check(result.mapCalls==1&&result.frame==77&&result.generation==1&&result.queue==reinterpret_cast<uint64_t>(queue.Get()),"paired transaction provenance");
-        Check(!copy.Begin(),"second request refused, never overwrites first");
+        // A finished series may be started again: repeating a measurement must not
+        // cost a game restart. What must still be refused is replacing one that is
+        // in flight, which the phase and fence state below stand in for.
+        Check(copy.Restartable(),"a settled series is restartable");
+        Check(copy.Begin(),"a finished series can start again in the same process");
+        Check(!copy.Restartable(),"a series that still owes transactions is not restartable");
+        Check(!copy.Begin(),"a running series is never overwritten");
         Hr(allocator->Reset(),"allocator GPU done");
 
         // Negative controls do not add ANY command to a list.

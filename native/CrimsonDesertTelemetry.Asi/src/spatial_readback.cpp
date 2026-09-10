@@ -25,14 +25,35 @@ SpatialReadback::~SpatialReadback()
     if(result_.issued&&!result_.gpuCompleted)
     {list_.Detach();source_.Detach();readback_.Detach();gi_.Detach();exposure_.Detach();device_.Detach();deviceIdentity_.Detach();fence_.Detach();queue_.Detach();}
 }
+bool SpatialReadback::Restartable() const
+{
+    // Caller holds the lock. The old rule -- one series per process, ever --
+    // guaranteed safety bluntly and made every repeated measurement cost a game
+    // restart. Two things it protected have to be kept explicitly:
+    if(!requested_) return true;
+    // a series that still owes transactions is never replaced mid-flight, and
+    if(budget_&&result_.phase!=CopyPhase::Failed) return false;
+    // a destination the GPU or a map may still touch is never handed to a new one.
+    if(mapping_) return false;
+    if(result_.issued&&!result_.gpuCompleted) return false;
+    return result_.phase==CopyPhase::Idle||result_.phase==CopyPhase::Complete||
+        result_.phase==CopyPhase::Failed;
+}
 bool SpatialReadback::Begin(unsigned count,uint64_t intervalMilliseconds,unsigned retained)
 {
     Guard g(mutex_);
-    if(requested_) return false; // One SERIES per plugin process, including failures.
+    if(!Restartable()) return false;
     if(!count||count>MaxSeriesTransactions||!retained||retained>MaxTransactions) return false;
     requested_=true;result_={};result_.reason="awaiting-source";
     budget_=count;completed_=0;nextFence_=0;lastCompletedTick_=0;
     intervalMs_=intervalMilliseconds;retained_=retained;records_.clear();
+    // Per-series recording state. The pinned list's generation is deliberately NOT
+    // cleared: it is refreshed by that list's own Reset every frame, and dropping it
+    // here would stall the first arm of the new series for no gain.
+    armedTick_=0;
+    cbv_={};uav_={};srv_={};table_={};heapPtrs_={};
+    rootsBefore_=0;rootsInside_=0;tables_=0;heaps_=0;
+    threadConflict_=false;rootThread_=0;
     return true;
 }
 bool SpatialReadback::SeriesFinished() const

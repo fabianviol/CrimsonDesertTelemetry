@@ -4,7 +4,7 @@
 namespace cdt::spatial
 {
 // Private passive observation by default. The separate readback opt-in permits
-// ONE guarded texture copy per process; neither mode publishes API data.
+// guarded texture copies; a series can be repeated without restarting the game.
 // A named event starts one bounded run after the game has loaded.
 // transactions: RETAINED diagnostic snapshots, bounded by memory.
 // publishSeconds: how long the live camera-visibility value keeps refreshing.

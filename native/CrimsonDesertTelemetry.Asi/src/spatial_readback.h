@@ -60,7 +60,11 @@ public:
     // count>1 repeats the SAME validated transaction, reusing one readback buffer
     // and one fence sequence. A new copy is only ever armed after the previous
     // fence completed and its map finished, so the destination is never in flight.
+    // A series may be started again once the previous one has finished. Repeating a
+    // measurement must not cost a game restart, which the old one-per-process rule
+    // required; Restartable() is the safety condition that replaced it.
     bool Begin(unsigned count=1,uint64_t intervalMilliseconds=1000,unsigned retained=MaxTransactions);
+    bool Restartable() const;
     bool SeriesFinished() const;
     unsigned Completed() const;
     std::vector<CopyResult> Records() const;

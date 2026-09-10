@@ -313,7 +313,8 @@ int main()
             uint32_t first{};std::memcpy(&first,r.gpuGi.data()+256,4);
             Check(first==1000u*pass_,"reused destination holds THIS transaction's GI bytes");
         }
-        Check(!series.Begin(2),"a consumed series cannot restart in the same process");
+        Check(series.Begin(2),"a consumed series restarts in the same process");
+        Check(!series.Begin(2),"but the restarted series is not itself overwritten");
     }
     for(UINT64 i=0;i<info->GetNumStoredMessagesAllowedByRetrievalFilter();++i)
     {

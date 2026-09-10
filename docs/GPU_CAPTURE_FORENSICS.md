@@ -486,8 +486,13 @@ only if A visibly fails at thin walls, doorways or grazing angles.
 
 ### Operating the probe, learned the hard way
 
-- **One series per game start.** `if(requested_) return false` in
-  `SpatialReadback::Begin`. A second trigger does nothing; a lost run means a restart.
+- **A series can now be repeated without restarting the game** (2026-09-10). The old
+  `if(requested_) return false` in `SpatialReadback::Begin` made every repeated
+  measurement cost a game restart. `Restartable()` replaced it and keeps the two
+  things that rule actually protected: a series still owing transactions is never
+  replaced mid-flight, and a destination the GPU or an open map may still touch is
+  never handed to a new series. Signal the event again and a fresh run starts, into
+  its own report file.
 - **The log is what survives, not the report.** The report is written only when the
   series ends or the plugin shuts down, and a game that exits without running
   `DLL_PROCESS_DETACH` — many do — loses it. That already cost one twenty-minute run.
