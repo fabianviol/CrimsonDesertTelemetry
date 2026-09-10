@@ -199,6 +199,64 @@ That a particular wall is preserved in the copy, and any trace at all. The sign,
 unit and the addressing are settled; what remains is the controlled camera-to-torch
 case in the section below.
 
+## Variant A ran, and separated the labelled case — 2026-09-10 23:51
+
+At the player home, Serkis Estate. A lit doorway on the house wall at
+`(-10403.25, 613.84, -4419.10)`, luminance 0.19 to 0.37, identified by world
+POSITION across poses and never by the rendered sample index. The user called V1
+(clear), O (the wall between), V2 (clear again). SDF copies every 2 s, the light feed
+and camera at about 3 Hz.
+
+Evidence: `artifacts/light-research/variant-a-pid15940-20260910-2351/` — one payload
+per pose, the light log and the phase marks.
+
+### The result
+
+**Grouping by the camera position the copies themselves carry, not by the phase
+windows.** The 15 s windows spilled across the user walking, so a label alone was not
+a pose; the copies' own cameras resolve into exactly three:
+
+| camera z | copies | verdict | closest approach |
+|---|---|---|---|
+| -4422.90 | 3 | clear | +0.304 .. +0.320 |
+| -4417.72 | 10 | **blocked** | -0.0000 .. -0.0068 |
+| -4424.09 | 9 | clear | +0.454 .. +0.510 |
+
+**Nineteen traces, one fixed parameter set, no contradictions.** The blocked pose is
+the one the user labelled O; the two clear poses are V1 and V2. Every trace from an
+open position reaches the light and every trace from behind the wall stops inside it.
+
+Parameters, fixed before the occluded phase was examined and not tuned afterwards:
+
+```
+hit tolerance   0.0 gu          a sample at or below this is a hit
+minimum step    0.05 gu         so a clamped or zero sample still advances
+iteration bound 400
+start offset    0.6 gu          clear of the camera's own surroundings
+end margin      1.0 gu          stop short of the light's own fixture
+```
+
+Level selection takes the finest level whose non-aliasing window contains the sample
+point, because each level wraps toroidally over its own window and a point outside it
+aliases onto the wrong texels.
+
+### What this does and does not establish
+
+It demonstrates A **for this controlled case**: one stationary light, one wall, three
+poses, unanimous within each. It says nothing yet about thin geometry, doorways at
+grazing angles, moving occluders or other materials.
+
+**The margin is thin, and that matters.** In the blocked pose the closest approach is
+between -0.0000 and -0.0068 gu: the ray grazes the wall rather than driving through
+it. A tolerance sweep holds the same classification from -0.05 to +0.10, so there is a
+working band, but a thinner wall or a shallower angle could plausibly fall the other
+way. Do not read the pass as a margin.
+
+Two other lights further along the same wall, at 21 and 29 gu and much dimmer, read
+blocked in all three poses. That is consistent with them being behind the wall
+throughout at grazing angles, but it was not separately labelled by the user, so it is
+an observation rather than a check.
+
 ## Controlled test and stopping rule
 
 1. Calibrate the copied field at free air and across one known wall, recording

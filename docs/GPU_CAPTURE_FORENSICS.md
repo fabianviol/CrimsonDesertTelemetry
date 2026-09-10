@@ -353,7 +353,16 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ## 4b. Occlusion — handover, 2026-09-10 late evening
 
-### Latest — the first live R16 payload landed, 2026-09-10 23:28
+### Latest — Variant A ran and separated the labelled case, 2026-09-10 23:51
+
+Nineteen camera-to-light sphere traces through the live distance field, one fixed
+parameter set: every trace from the two open camera poses reaches the lit doorway,
+every trace from behind the wall stops inside it. The margin is thin -- the blocked
+ray grazes the wall at -0.0000 to -0.0068 gu -- so the pass should not be read as a
+margin. Full result, parameters and scope in [SDF_VARIANT_A.md](SDF_VARIANT_A.md);
+evidence at `artifacts/light-research/variant-a-pid15940-20260910-2351/`.
+
+### The first live R16 payload landed, 2026-09-10 23:28
 
 Four fenced copies of 17,039,360 bytes in PID 33348, and the value semantics are now
 calibrated from the payload's own GI constants: a **signed world distance in game
