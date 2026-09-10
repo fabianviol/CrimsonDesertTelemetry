@@ -25,6 +25,16 @@ uint64_t StubDispatch(uint64_t,uint32_t,uint32_t,uint32_t){++dispatchCalls;retur
 void STDMETHODCALLTYPE StubBarrier(ID3D12GraphicsCommandList7*,UINT,const D3D12_BARRIER_GROUP*){++barrierCalls;}
 int main()
 {
+    // Series length against retained count. Both silently disagreed with the
+    // request once: an over-large count collapsed to one, and computing the
+    // length before its inputs were assigned turned nine hundred into eight.
+    Check(SeriesLength(8,0,1000)==8);            // no live channel: just the retained run
+    Check(SeriesLength(8,900,1000)==900);        // the duration drives the series
+    Check(SeriesLength(8,4,1000)==8);            // never below what the report retains
+    Check(SeriesLength(1,3,500)==6);             // a shorter interval needs more transactions
+    Check(SeriesLength(8,2,750)==8);             // rounds up, then floors at the retained count
+    Check(SeriesLength(8,100000,1000)==SpatialReadback::MaxSeriesTransactions);   // clamped, not collapsed
+    Check(SeriesLength(8,900,0)==900);           // a zero interval falls back to one second
     ComPtr<IDXGIFactory4> factory;Hr(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory)));
     ComPtr<IDXGIAdapter> warp;Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)));
     ComPtr<ID3D12Device> device;Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)));

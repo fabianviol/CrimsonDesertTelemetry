@@ -360,6 +360,20 @@ std::vector<std::array<double,3>> BuildSampleOffsets()
     return offsets;
 }
 const std::vector<std::array<double,3>> SampleOffsets=BuildSampleOffsets();
+// How many transactions a run needs. The live channel is a SEPARATE duration
+// from the retained snapshot count, because how long a value keeps refreshing and
+// how much history is kept are different questions; one key answering both once
+// made a request mean its own opposite. Never returns less than the retained
+// count, and never more than the series cap.
+unsigned SeriesLength(unsigned retained,unsigned publishSeconds,uint64_t intervalMs)
+{
+    const uint64_t interval=intervalMs?intervalMs:1000;
+    const uint64_t wanted=(uint64_t{publishSeconds}*1000+interval-1)/interval;
+    const uint64_t series=wanted>retained?wanted:retained;
+    return series>cdt::spatial::SpatialReadback::MaxSeriesTransactions
+        ?cdt::spatial::SpatialReadback::MaxSeriesTransactions:static_cast<unsigned>(series);
+}
+
 // Publishes the reference sky visibility of each newly completed transaction so
 // an ambient consumer sees a live value WHILE a run is in progress. It adds no
 // copy, no hook and no GPU work: it reads a transaction the probe already made,
@@ -535,19 +549,16 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
     readbackCount=transactions<1?1u
         :transactions>cdt::spatial::SpatialReadback::MaxTransactions
             ?cdt::spatial::SpatialReadback::MaxTransactions:transactions;
-    // The live channel is a SEPARATE duration, because how long the value is
-    // published and how much history is kept are different questions. One key
-    // answering both is what made the last request mean its own opposite.
-    const uint64_t interval=readbackIntervalMs?readbackIntervalMs:1000;
-    const uint64_t wanted=(uint64_t{visibilitySeconds}*1000+interval-1)/interval;
-    seriesCount=static_cast<unsigned>(wanted>readbackCount?wanted:readbackCount);
-    if(seriesCount>cdt::spatial::SpatialReadback::MaxSeriesTransactions)
-        seriesCount=cdt::spatial::SpatialReadback::MaxSeriesTransactions;
     visibilitySeconds=publishSeconds;
     readbackIntervalMs=(intervalMilliseconds>=250&&intervalMilliseconds<=10000)?intervalMilliseconds:1000;
+    // Both inputs are assigned ABOVE. Computing this before them read their
+    // defaults and silently produced a series of eight for a request of nine
+    // hundred, which is why the arithmetic now lives in a testable function.
+    seriesCount=SeriesLength(readbackCount,visibilitySeconds,readbackIntervalMs);
     const std::string readbackSeriesMessage="Spatial readback v5 IDLE: explicit event starts"+
-        std::to_string(Limit)+" CPU controls plus "+std::to_string(readbackCount)+
-        " texture/GI/exposure transaction(s) at >="+std::to_string(readbackIntervalMs)+
+        std::to_string(Limit)+" CPU controls plus "+std::to_string(seriesCount)+
+        " texture/GI/exposure transaction(s), "+std::to_string(readbackCount)+
+        " retained, at >="+std::to_string(readbackIntervalMs)+
         "ms; same-submission pairing, whole buffers, offsets resolved offline.";
     dispatchTarget=reinterpret_cast<void*>(base+DispatchRva);
     const auto name=L"Local\\CrimsonDesertTelemetry.SpatialProbe."+std::to_wstring(GetCurrentProcessId());
