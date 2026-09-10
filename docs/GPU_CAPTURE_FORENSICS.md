@@ -357,9 +357,9 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 Four fenced copies of 17,039,360 bytes in PID 33348, and the value semantics are now
 calibrated from the payload's own GI constants: a **signed world distance in game
-units**, negative inside geometry, with `cellSize(L) = 0.25 * 2^L` read from the
-constants and the value clamped at exactly `1.5*sqrt(2)` cell sizes on every level.
-The field is short range as a result -- 0.53 gu at the finest level -- which sets the
+units**, with `cellSize(L) = 0.25 * 2^L` read from the constants and the value clamped
+at exactly `1.5*sqrt(2)` cell sizes on every level. Which SIGN is the inside is not
+yet measured. The field is short range -- 0.53 gu at the finest level -- which sets the
 iteration bound for a trace. Full table and consequences in
 [SDF_VARIANT_A.md](SDF_VARIANT_A.md). Evidence at
 `artifacts/light-research/sdf-live-pid33348-20260910-2328/`. The addressing, a known

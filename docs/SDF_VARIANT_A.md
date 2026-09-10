@@ -88,9 +88,11 @@ could be settled from the acquisition itself without a further capture.
 **The stored R16_FLOAT is a signed world distance in game units.** Not normalised,
 not level-local.
 
-**Negative inside geometry**, the standard convention, observed rather than assumed:
-192 negative texels in a sparse sample of the finest level, none at all in the two
-coarsest.
+**Negative values exist and concentrate on the fine levels**: 192 in a sparse sample
+of level 0, none at all in the two coarsest. That the negative side is the INSIDE is
+the standard convention and the obvious reading, but it is NOT yet measured — no
+negative texel has been correlated with known geometry. Confirming it is what the
+Pfree / Psurface / Pback points are for.
 
 **Cell size per level comes straight from the constants.** `float[0] = 0.25`, and the
 per-level scale `w` at float index `80 + 4L` runs 4, 2, 1, 0.5, 0.25, 0.125, 0.0625,
@@ -118,20 +120,30 @@ against the constants:
 | 7 | 67.8750 | 32.0 | 2.1213 |
 
 `1.5 * sqrt(2) = 2.1213`. The same ratio on all eight levels, so the ladder is the
-clamp rule and not a coincidence of this scene. Levels 6 and 7 are entirely saturated
-in this frame: every sampled texel holds the clamp, so nothing within their reach
-resolves geometry at that resolution.
+clamp rule and not a coincidence of this scene.
+
+Every sampled texel of levels 6 and 7 sits at the positive clamp. The tempting reading
+is "no geometry within their reach", but in an amortised clipmap that needs freshness
+and validity evidence this payload does not carry, so it stays a description of the
+values and not a claim about the world.
 
 ### What this means for Variant A
 
 **The field is short range.** At the finest level it knows about geometry only within
-0.53 gu. A camera-to-lamp trace of several game units therefore takes many small steps
-at fine levels, or coarse levels whose cells are 16 to 32 gu across and will not
-resolve a wall.
+0.53 gu, and the coarse levels whose cells are 16 to 32 gu across will not resolve a
+wall.
 
-Sphere tracing stays CORRECT under a clamp — a clamped distance is a conservative step
-— but it is iteration-heavy. Fix the iteration bound from this, not from a guess, and
-do it before looking at the occluded phase, as the test plan requires.
+The step count is not alarming, and an earlier note calling it "iteration-heavy"
+overstated it: a 10 gu ray held at the finest level costs about twenty steps, and
+choosing the level along the ray costs fewer. For the few dozen lights Hue cares about
+that is cheap. Fix the iteration bound from these numbers rather than a guess, before
+looking at the occluded phase.
+
+**Sphere tracing is correct only IF the stored positive value never overestimates the
+distance to the nearest surface.** Under a clamp, `min(trueDistance, clamp)` stays
+conservative — but the non-overestimating property has not been demonstrated for this
+voxelised, propagated field. Treat it as the working hypothesis Variant A rests on,
+not as a theorem, and let the calibration points test it.
 
 ### Still open
 
