@@ -13,6 +13,7 @@ var tests = new (string Name, Action Run)[]
 {
     ("sky SH math, color inverse and raw preservation", SkyAmbientTests.MathAndRaw),
     ("sky bridge protocol, producer identity and freshness", SkyAmbientTests.Protocol),
+    ("camera visibility block, fallback rule and estimate staleness", SkyAmbientTests.Visibility),
     ("sky mapping cache and fault isolation", SkyAmbientTests.Mapping),
     ("sky HTTP/WS state isolation and loading invalidation", SkyAmbientTests.Transport),
     ("signature exact", SignatureExact),

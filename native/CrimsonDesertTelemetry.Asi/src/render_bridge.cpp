@@ -134,10 +134,12 @@ bool OpenBridge()
     { UnmapViewOfFile(mapping); mapping = nullptr; CloseHandle(handle); handle = nullptr; return false; }
     Begin();
     auto& h = mapping->header;
-    h.magic = 0x53445443; h.version = 1; h.headerBytes = sizeof(Header); h.totalBytes = sizeof(Mapping);
+    h.magic = 0x53445443; h.version = Version; h.headerBytes = sizeof(Header); h.totalBytes = sizeof(Mapping);
     h.pid = GetCurrentProcessId(); h.state = render::Status::Stopped;
     h.processStartFileTime = (uint64_t{created.dwHighDateTime} << 32) | created.dwLowDateTime;
     h.sceneBytes = render::SceneBytes; h.payloadBytes = PayloadBytes;
+    h.cameraSkyVisibilityWorking = 0.0; h.visibilityState = Visibility::Unavailable;
+    h.visibilityFrameNumber = 0; h.visibilityTickMs = 0;
     End();
     return true;
 }
@@ -168,6 +170,19 @@ void PublishSample(const void* scene, const void* data, uint64_t tick, uint64_t 
     h.resource = resource; h.producerRva = producerRva; h.error = 0;
     h.flags = render::ExactBuild | render::FenceCompleted | render::PairedScene;
     h.state = render::Status::Active;
+    End(); ReleaseSRWLockExclusive(&lock);
+}
+void PublishVisibility(double value, Visibility state, uint32_t frameNumber, uint64_t tickMs)
+{
+    // A different subsystem at a different rate, so this deliberately leaves
+    // state, sampleSequence, flags and the sky frame alone. It only borrows the
+    // lock and seqlock so a reader cannot observe a half-written block.
+    if (!mapping) return;
+    if (state != Visibility::Valid) { value = 0.0; frameNumber = 0; tickMs = 0; }
+    AcquireSRWLockExclusive(&lock); Begin();
+    auto& h = mapping->header;
+    h.cameraSkyVisibilityWorking = value; h.visibilityState = state;
+    h.visibilityFrameNumber = frameNumber; h.visibilityTickMs = tickMs;
     End(); ReleaseSRWLockExclusive(&lock);
 }
 }

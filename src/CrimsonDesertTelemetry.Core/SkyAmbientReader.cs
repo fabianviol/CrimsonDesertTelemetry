@@ -10,10 +10,28 @@ public sealed record SkyAmbientValues(
     double[] InverseMatrixUpwardIrradianceOverPi,
     double Rec709MeanLuminanceEstimate);
 
+/// <summary>
+/// Camera sky visibility, produced by the spatial probe on ITS own cadence. The
+/// frame and age are its own and must never be read as the sky sample's.
+/// </summary>
+public sealed record CameraSkyVisibility(double ValueWorking, uint FrameNumber, long AgeMilliseconds);
+
+/// <summary>
+/// Global sky times camera visibility. A working product estimate, not an exact
+/// renderer term: the engine multiplies its environment cube by that factor, while
+/// this multiplies an already hemisphere-averaged sky value. Both raw inputs stay
+/// on the snapshot so the scaling question can be settled from measurements rather
+/// than assumed here. Never normalise the visibility and never import the
+/// renderer's internal constants.
+/// </summary>
+public sealed record LocalEnvironmentAmbientEstimate(double[]? RgbWorking, bool Available, bool Stale, string Basis);
+
 /// <summary>Global sky only: not local room illumination, lux or final pixel color.</summary>
 public sealed record SkyAmbientSnapshot(string Status, string? Reason = null,
     ulong? CaptureSequence = null, uint? FrameNumber = null, DateTimeOffset? CapturedAt = null,
-    long? AgeMilliseconds = null, SkyAmbientValues? Sky = null)
+    long? AgeMilliseconds = null, SkyAmbientValues? Sky = null,
+    CameraSkyVisibility? Visibility = null,
+    LocalEnvironmentAmbientEstimate? LocalEnvironmentAmbientEstimateWorking = null)
 {
     public string SchemaVersion => "1.0";
     public string Source => "precompute-ambient-sky";
@@ -30,6 +48,16 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
 {
     public const int HeaderBytes = 128, SceneBytes = 2816, PayloadBytes = 1024;
     public const int TotalBytes = HeaderBytes + SceneBytes + PayloadBytes;
+    /// <summary>
+    /// 2 added the camera visibility block. The check is exact on purpose: an older
+    /// CLI paired with a newer plugin reports bridge-invalid, which is the safe
+    /// failure, rather than reading the block as something else.
+    /// </summary>
+    public const uint BridgeVersion = 2;
+    // Byte offsets into the native header, pinned by static_assert on that side.
+    private const int VisibilityValueOffset = 96, VisibilityStateOffset = 104,
+        VisibilityFrameOffset = 108, VisibilityTickOffset = 112;
+    private const uint VisibilityUnavailable = 0, VisibilityValid = 1, VisibilityFallback = 2;
     public const long MaximumAgeMilliseconds = 1500; // Three nominal 2Hz intervals; not 60Hz data.
     private MemoryMappedFile? _mapping;
     private MemoryMappedViewAccessor? _view;
@@ -75,7 +103,7 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
     public static SkyAmbientSnapshot Decode(byte[] bytes, int pid, long start, long now)
     {
         if (bytes.Length != TotalBytes || BitConverter.ToUInt32(bytes, 0) != 0x53445443 ||
-            BitConverter.ToUInt32(bytes, 4) != 1 || BitConverter.ToUInt32(bytes, 8) != HeaderBytes ||
+            BitConverter.ToUInt32(bytes, 4) != BridgeVersion || BitConverter.ToUInt32(bytes, 8) != HeaderBytes ||
             BitConverter.ToUInt32(bytes, 12) != TotalBytes || (BitConverter.ToUInt64(bytes, 16) & 1) != 0 ||
             BitConverter.ToUInt32(bytes, 24) != pid || BitConverter.ToInt64(bytes, 32) != start ||
             BitConverter.ToUInt32(bytes, 68) != SceneBytes || BitConverter.ToUInt32(bytes, 72) != PayloadBytes)
@@ -100,7 +128,41 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
         var scene = SceneConstantsDecoder.Decode(bytes.AsSpan(HeaderBytes, SceneBytes).ToArray());
         if (scene.FrameNumber != BitConverter.ToUInt32(bytes, 64)) throw new InvalidDataException("Sky/scene frame mismatch.");
         var values = DecodePayload(bytes.AsSpan(HeaderBytes + SceneBytes, PayloadBytes));
-        return new("available", null, sequence, scene.FrameNumber, DateTimeOffset.UtcNow.AddMilliseconds(-age), age, values);
+        var visibility = DecodeVisibility(bytes, now);
+        return new("available", null, sequence, scene.FrameNumber, DateTimeOffset.UtcNow.AddMilliseconds(-age), age,
+            values, visibility, Combine(values, visibility));
+    }
+
+    /// <summary>
+    /// The spatial probe publishes this on its own cadence, so it carries its own
+    /// frame and age. A state other than valid yields null: the shader's fallback
+    /// branch is one BY DEFINITION and is not a measurement, and treating it as one
+    /// would restore full ambient exactly where the local sample is missing.
+    /// </summary>
+    public static CameraSkyVisibility? DecodeVisibility(byte[] bytes, long now)
+    {
+        if (BitConverter.ToUInt32(bytes, VisibilityStateOffset) != VisibilityValid) return null;
+        var tick = BitConverter.ToInt64(bytes, VisibilityTickOffset);
+        if (tick <= 0 || now < tick) return null;
+        var value = BitConverter.ToDouble(bytes, VisibilityValueOffset);
+        if (double.IsNaN(value) || value < 0 || value > 1) return null;
+        return new(value, BitConverter.ToUInt32(bytes, VisibilityFrameOffset), now - tick);
+    }
+
+    /// <summary>
+    /// Raw sky mean times raw visibility. Deliberately unnormalised: whether that
+    /// is the right final scaling is an open measurement question, and both inputs
+    /// stay on the snapshot so it can be answered from a controlled traverse.
+    /// </summary>
+    public static LocalEnvironmentAmbientEstimate Combine(SkyAmbientValues? sky, CameraSkyVisibility? visibility)
+    {
+        const string basis = "upperHemisphereMeanWorking * cameraSkyVisibilityWorking, both raw";
+        if (sky is null) return new(null, false, false, basis);
+        if (visibility is null) return new(null, false, false, basis);
+        if (visibility.AgeMilliseconds > MaximumAgeMilliseconds) return new(null, false, true, basis);
+        var rgb = new double[3];
+        for (var c = 0; c < 3; c++) rgb[c] = sky.UpperHemisphereMeanWorking[c] * visibility.ValueWorking;
+        return new(rgb, true, false, basis);
     }
 
     // Port of the independently tested scripts/AmbientSh.psm1. Keep the exact

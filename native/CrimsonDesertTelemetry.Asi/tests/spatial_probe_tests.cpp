@@ -7,6 +7,14 @@
 #include <thread>
 #include <vector>
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t){return false;} }
+namespace cdt::sky {
+// Link seam, matching the OwnsCodeAddress one above: these targets compile the
+// probe without the bridge. Recording the call lets the fallback rule be asserted.
+double publishedValue{}; Visibility publishedState{Visibility::Unavailable};
+unsigned publishedCalls{};
+void PublishVisibility(double value, Visibility state, uint32_t, uint64_t)
+{ publishedValue = value; publishedState = state; ++publishedCalls; }
+}
 using namespace cdt::spatial;
 using Microsoft::WRL::ComPtr;
 unsigned checks{},dispatchCalls{},barrierCalls{};

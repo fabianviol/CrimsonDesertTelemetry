@@ -31,7 +31,7 @@ internal static class SkyAmbientTests
     private static byte[] Bridge()
     {
         var b = new byte[SkyAmbientReader.TotalBytes];
-        U32(b, 0, 0x53445443); U32(b, 4, 1); U32(b, 8, 128); U32(b, 12, (uint)b.Length);
+        U32(b, 0, 0x53445443); U32(b, 4, SkyAmbientReader.BridgeVersion); U32(b, 8, 128); U32(b, 12, (uint)b.Length);
         U64(b, 16, 2); U32(b, 24, 42); U32(b, 28, 1); U64(b, 32, 123); U64(b, 40, 7);
         U64(b, 48, 1000); U64(b, 56, 1010); U32(b, 64, 42); U32(b, 68, 2816);
         U32(b, 72, 1024); U32(b, 76, 0x3849BB7); U32(b, 84, 7); U64(b, 88, 999);
@@ -77,6 +77,62 @@ internal static class SkyAmbientTests
         for(uint state=0;state<6;state++) if(state!=1)
         { var b=Bridge(); U32(b,28,state); Check(Read(b).Sky is null, "Unavailable state retained sky."); }
         var invalid=Bridge(); U32(invalid,28,6); Invalid(()=>Read(invalid));
+    }
+    public static void Visibility()
+    {
+        SkyAmbientSnapshot Read(byte[] b, long now = 1100) => SkyAmbientReader.Decode(b, 42, 123, now);
+        static byte[] WithVisibility(double value, uint state, uint frame, ulong tick)
+        {
+            var b = Bridge();
+            BinaryPrimitives.WriteDoubleLittleEndian(b.AsSpan(96), value);
+            U32(b, 104, state); U32(b, 108, frame); U64(b, 112, tick);
+            return b;
+        }
+        // No block at all: sky still available, estimate simply absent.
+        var bare = Read(Bridge());
+        Check(bare.Visibility is null, "Absent visibility invented a value.");
+        Check(bare.LocalEnvironmentAmbientEstimateWorking is { Available: false, Stale: false, RgbWorking: null },
+            "Absent visibility produced an estimate.");
+
+        var valid = Read(WithVisibility(0.25, 1, 77, 1000));
+        Check(valid.Visibility is { ValueWorking: 0.25, FrameNumber: 77 }, "Valid visibility lost.");
+        Check(valid.Visibility!.AgeMilliseconds == 100, "Visibility age uses the wrong base.");
+        // Its own frame, never the sky sample's.
+        Check(valid.FrameNumber == 42 && valid.Visibility.FrameNumber == 77, "Frames were merged.");
+        var estimate = valid.LocalEnvironmentAmbientEstimateWorking!;
+        Check(estimate.Available && !estimate.Stale, "Valid visibility did not produce an estimate.");
+        for (var c = 0; c < 3; c++) Near(estimate.RgbWorking![c], (c + 1) * 0.25);
+        // Raw inputs survive: the scaling question stays answerable from the payload.
+        Near(valid.Sky!.UpperHemisphereMeanWorking[0], 1);
+
+        // The fallback branch is one BY DEFINITION. Accepting it would restore full
+        // ambient exactly where the local measurement is missing, which is indoors.
+        var fallback = Read(WithVisibility(1.0, 2, 77, 1000));
+        Check(fallback.Visibility is null, "Fallback was published as a measurement.");
+        Check(fallback.LocalEnvironmentAmbientEstimateWorking is { Available: false },
+            "Fallback produced an estimate.");
+        Check(Read(WithVisibility(1.0, 0, 77, 1000)).Visibility is null, "Unavailable state retained.");
+
+        // Stale visibility must say so rather than pass off a fresh-looking ambient.
+        // The two ages are independent, so the sky is held fresh while only the
+        // visibility expires; sharing one clock would hide exactly this case.
+        var staleBridge = WithVisibility(0.25, 1, 77, 3000);
+        U64(staleBridge, 48, 5000); U64(staleBridge, 56, 5010);
+        var stale = Read(staleBridge, 5100);
+        Check(stale.Status == "available" && stale.AgeMilliseconds == 100, "Sky was not held fresh.");
+        Check(stale.Visibility is not null, "Stale visibility was hidden instead of flagged.");
+        Check(stale.Visibility!.AgeMilliseconds > SkyAmbientReader.MaximumAgeMilliseconds, "Wrong age.");
+        Check(stale.LocalEnvironmentAmbientEstimateWorking is { Available: false, Stale: true, RgbWorking: null },
+            "Stale visibility was not flagged.");
+
+        // Out-of-contract values are refused rather than propagated.
+        foreach (var bad in new[] { -0.01, 1.01, double.NaN })
+            Check(Read(WithVisibility(bad, 1, 77, 1000)).Visibility is null, "Out-of-range visibility accepted.");
+        Check(Read(WithVisibility(0.25, 1, 77, 0)).Visibility is null, "Zero tick accepted.");
+        Check(Read(WithVisibility(0.25, 1, 77, 2000)).Visibility is null, "Future tick accepted.");
+
+        // Version 1 has no block, so the whole bridge must be refused, not misread.
+        var old = WithVisibility(0.25, 1, 77, 1000); U32(old, 4, 1); Invalid(() => Read(old));
     }
     public static void Mapping()
     {

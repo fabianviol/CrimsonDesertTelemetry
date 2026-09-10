@@ -2,55 +2,266 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Crimson Desert global sky ambient v1",
   "type": "object",
-  "required": ["schemaVersion", "status", "source", "scope", "units", "localOcclusionIncluded", "exposureNormalized", "directSunMoonSeparated", "colorInterpretation"],
+  "required": [
+    "schemaVersion",
+    "status",
+    "source",
+    "scope",
+    "units",
+    "localOcclusionIncluded",
+    "exposureNormalized",
+    "directSunMoonSeparated",
+    "colorInterpretation",
+    "localEnvironmentAmbientEstimateWorking"
+  ],
   "properties": {
-    "schemaVersion": {"const": "1.0"},
-    "status": {"enum": ["available", "unavailable"]},
-    "source": {"const": "precompute-ambient-sky"},
-    "scope": {"const": "global-upper-hemisphere-sky"},
-    "units": {"const": "relative-shader-units"},
-    "localOcclusionIncluded": {"const": false},
-    "exposureNormalized": {"const": false},
-    "directSunMoonSeparated": {"const": false},
-    "colorInterpretation": {"type": "string"},
-    "reason": {"type": ["string", "null"]},
-    "captureSequence": {"type": ["integer", "null"], "minimum": 1},
-    "frameNumber": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295},
-    "capturedAt": {"type": ["string", "null"], "format": "date-time"},
-    "ageMilliseconds": {"type": ["integer", "null"], "minimum": 0, "maximum": 1500},
-    "sky": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/sky"}]}
-  },
-  "allOf": [{
-    "if": {"properties": {"status": {"const": "available"}}},
-    "then": {
-      "required": ["captureSequence", "frameNumber", "capturedAt", "ageMilliseconds", "sky"],
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "status": {
+      "enum": [
+        "available",
+        "unavailable"
+      ]
+    },
+    "source": {
+      "const": "precompute-ambient-sky"
+    },
+    "scope": {
+      "const": "global-upper-hemisphere-sky"
+    },
+    "units": {
+      "const": "relative-shader-units"
+    },
+    "localOcclusionIncluded": {
+      "const": false
+    },
+    "exposureNormalized": {
+      "const": false
+    },
+    "directSunMoonSeparated": {
+      "const": false
+    },
+    "colorInterpretation": {
+      "type": "string"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "captureSequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "frameNumber": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "capturedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ageMilliseconds": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1500
+    },
+    "sky": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sky"
+        }
+      ]
+    },
+    "visibility": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Camera sky visibility from the spatial probe, on ITS own cadence. Present only when the voxel texture was actually sampled: the shader fallback branch is one by definition and is deliberately not reported here as a measurement. Null when no run is in progress.",
       "properties": {
-        "sky": {"$ref": "#/$defs/sky"},
-        "captureSequence": {"type": "integer"}, "frameNumber": {"type": "integer"},
-        "capturedAt": {"type": "string"}, "ageMilliseconds": {"type": "integer"},
-        "reason": {"type": "null"}
+        "valueWorking": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "saturate(1 - sampled), raw and unnormalised."
+        },
+        "frameNumber": {
+          "type": "integer",
+          "description": "Its own frame, not the sky sample’s."
+        },
+        "ageMilliseconds": {
+          "type": "integer",
+          "description": "Its own age, on the same monotonic base."
+        }
       }
     },
-    "else": {
-      "required": ["reason"],
-      "properties": {"reason": {"type": "string", "minLength": 1}, "sky": {"type": "null"},
-        "captureSequence": {"type": "null"}, "frameNumber": {"type": "null"},
-        "capturedAt": {"type": "null"}, "ageMilliseconds": {"type": "null"}}
+    "localEnvironmentAmbientEstimateWorking": {
+      "type": "object",
+      "description": "Working product estimate: the global upper-hemisphere sky mean times raw camera visibility. NOT an exact renderer term — the engine multiplies an environment cube by that factor, while this multiplies an already averaged sky value, so the final scaling is an open measurement question. Both raw inputs stay on this response so it can be settled from data. Not a public API surface.",
+      "properties": {
+        "rgbWorking": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "available": {
+          "type": "boolean",
+          "description": "True only for a real texture sample within its freshness bound."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Visibility exists but is too old; no value is emitted."
+        },
+        "basis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "available",
+        "stale",
+        "basis"
+      ]
     }
-  }],
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "captureSequence",
+          "frameNumber",
+          "capturedAt",
+          "ageMilliseconds",
+          "sky"
+        ],
+        "properties": {
+          "sky": {
+            "$ref": "#/$defs/sky"
+          },
+          "captureSequence": {
+            "type": "integer"
+          },
+          "frameNumber": {
+            "type": "integer"
+          },
+          "capturedAt": {
+            "type": "string"
+          },
+          "ageMilliseconds": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sky": {
+            "type": "null"
+          },
+          "captureSequence": {
+            "type": "null"
+          },
+          "frameNumber": {
+            "type": "null"
+          },
+          "capturedAt": {
+            "type": "null"
+          },
+          "ageMilliseconds": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
-    "rgb": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+    "rgb": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "number"
+      }
+    },
     "sky": {
       "type": "object",
-      "required": ["coefficientsWorking", "upperHemisphereMeanWorking", "upwardIrradianceOverPiWorking", "inverseMatrixMean", "inverseMatrixUpwardIrradianceOverPi", "rec709MeanLuminanceEstimate"],
+      "required": [
+        "coefficientsWorking",
+        "upperHemisphereMeanWorking",
+        "upwardIrradianceOverPiWorking",
+        "inverseMatrixMean",
+        "inverseMatrixUpwardIrradianceOverPi",
+        "rec709MeanLuminanceEstimate"
+      ],
       "properties": {
-        "coefficientsWorking": {"type": "array", "minItems": 3, "maxItems": 3,
-          "items": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"type": "number"}}},
-        "upperHemisphereMeanWorking": {"$ref": "#/$defs/rgb"},
-        "upwardIrradianceOverPiWorking": {"$ref": "#/$defs/rgb"},
-        "inverseMatrixMean": {"$ref": "#/$defs/rgb"},
-        "inverseMatrixUpwardIrradianceOverPi": {"$ref": "#/$defs/rgb"},
-        "rec709MeanLuminanceEstimate": {"type": "number"}
+        "coefficientsWorking": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "array",
+            "minItems": 9,
+            "maxItems": 9,
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "upperHemisphereMeanWorking": {
+          "$ref": "#/$defs/rgb"
+        },
+        "upwardIrradianceOverPiWorking": {
+          "$ref": "#/$defs/rgb"
+        },
+        "inverseMatrixMean": {
+          "$ref": "#/$defs/rgb"
+        },
+        "inverseMatrixUpwardIrradianceOverPi": {
+          "$ref": "#/$defs/rgb"
+        },
+        "rec709MeanLuminanceEstimate": {
+          "type": "number"
+        }
       }
     }
   }

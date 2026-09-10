@@ -2,6 +2,7 @@
 #include "spatial_trace.h"
 #include "spatial_readback.h"
 #include "spatial_sample.h"
+#include "sky_bridge.h"
 #include "submission_observer.h"
 #include "console/mem.h"
 #include "console/common.h"
@@ -93,6 +94,7 @@ struct Observation
 Observation pending;
 Observation copyObservation;
 std::vector<Observation> copyObservations;
+unsigned publishedTransactions{};
 thread_local Observation* active{};
 bool SelectedNative(ID3D12GraphicsCommandList* list)
 {
@@ -358,6 +360,35 @@ std::vector<std::array<double,3>> BuildSampleOffsets()
     return offsets;
 }
 const std::vector<std::array<double,3>> SampleOffsets=BuildSampleOffsets();
+// Publishes the reference sky visibility of each newly completed transaction so
+// an ambient consumer sees a live value WHILE a run is in progress. It adds no
+// copy, no hook and no GPU work: it reads a transaction the probe already made,
+// so the probe stays a bounded research instrument and the value stops with it.
+void PublishReferenceVisibility()
+{
+    using namespace cdt::spatial;
+    const auto completed=readback?readback->Completed():0u;
+    if(completed==publishedTransactions)return;
+    publishedTransactions=completed;
+    const auto records=readback->Records();
+    const auto unavailable=[]{sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);};
+    if(records.empty()){unavailable();return;}
+    const size_t index=records.size()-1;
+    const auto& copy=records[index];
+    if(index>=copyObservations.size()||copy.packed.size()!=VolumeBytes||copy.gpuGi.empty())
+    {unavailable();return;}
+    const auto& observation=copyObservations[index];
+    const auto window=FindGiWindow(copy.gpuGi,observation.gi);
+    if(window<0){unavailable();return;}
+    const auto reference=SampleAtReference(copy.gpuGi.data()+window,copy.packed.data());
+    // Fallback is one BY DEFINITION, not a measurement. Publishing it as a value
+    // would restore full ambient exactly where the local sample is missing.
+    const auto state=reference.status==SampleStatus::Ok?sky::Visibility::Valid
+        :reference.status==SampleStatus::Fallback?sky::Visibility::Fallback
+        :sky::Visibility::Unavailable;
+    sky::PublishVisibility(reference.skyVisibility,state,observation.frame,
+        copy.completedTick?copy.completedTick:GetTickCount64());
+}
 nlohmann::json NativeSamplesJson(const cdt::spatial::CopyResult& copy,const Observation& observation)
 {
     using namespace cdt::spatial;
@@ -520,6 +551,9 @@ void Poll()
 {
     if(!enabled) return;
     if(directReadback)readback->Poll();
+    // Outside our own lock, and the sky lock is not held here: SRW exclusive is
+    // not recursive, so a nested acquisition would deadlock rather than fail.
+    if(directReadback)PublishReferenceVisibility();
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
     {
@@ -540,7 +574,10 @@ void Poll()
         phase=Phase::Ready;
         if(count>=Limit&&(!directReadback||readback->SeriesFinished())) Save("sample-limit");
     }
-    if(observing&&GetTickCount64()-started>30000){incomplete=true;Save("timeout");}
+    // The guard exists to end a run that never completes, not to cap a series the
+    // caller legitimately asked for. A long series must be able to outlive 30s.
+    const uint64_t budget=30000+(directReadback?readbackCount*readbackIntervalMs:0);
+    if(observing&&GetTickCount64()-started>budget){incomplete=true;Save("timeout");}
     ReleaseSRWLockExclusive(&lock);
     // MinHook suspends threads: never hold our capture lock during patching.
     if(install)
@@ -578,6 +615,8 @@ void Poll()
 void Stop()
 {
     enabled=false;observing=false;
+    // The run is the only producer of this value, so it must not outlive it.
+    if(directReadback)sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);
     if(directReadback)readback->Cancel("stopped");
     trace.target=0;render::submissionObserver=nullptr;
     if(dispatchTarget&&originalDispatch) MH_DisableHook(dispatchTarget);
