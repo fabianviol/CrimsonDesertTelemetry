@@ -70,6 +70,74 @@ buffers, restore the layouts, and map only after the queue fence. The event-stat
 bytes have not yet been acquired. The initial payload in `resources.bin` must not be
 used as a substitute or paired across different temporal states.
 
+## The ambient estimate measured end to end, in game — 2026-09-10
+
+The first measurement of `localEnvironmentAmbientEstimateWorking` against real
+geometry, with both raw inputs retained. Day 44, ~08:41-08:49 in game.
+
+**The barn traverse**, 48 transactions in 99 s, logged at
+`artifacts/light-research/traverse-barn.tsv`:
+
+| section | camera sky visibility | estimate, red |
+|---|---|---|
+| outside, open | 0.272 - 0.389 | 8.5 - 13.4 |
+| deep inside | **0.000025** - 0.014 | 0.00075 - 0.44 |
+| walking back out | 0.046 -> 0.14 -> 0.23 | 1.47 -> 4.9 -> 6.7 |
+
+**A factor of 15550 on visibility and 17902 on the estimate**, while the sky term
+stayed between 26.0 and 38.4 — 32% spread with no trend. The collapse is therefore
+entirely local and does not come from the sky. The recovery on the way out is a
+ramp, not a step.
+
+**The full scale, all on the same day:**
+
+| place | visibility |
+|---|---|
+| the Abyss, high above the world | 0.62 - 0.86 |
+| open ground | 0.27 - 0.39 |
+| beside the barn, under trees | 0.17 - 0.31 |
+| deep inside the barn | 0.000025 - 0.014 |
+
+**34500x end to end**, monotonic with sky access. That open ground reads about 0.35
+rather than 1.0 is itself the strongest support yet for reading this as a solid-angle
+fraction: high above the world sky surrounds nearly every direction, while on the
+ground the ground itself removes the lower half, with horizon and surroundings taking
+more. A hemispherical integral lands exactly there.
+
+**It does not follow the view direction.** Thirteen transactions while looking
+straight up read 0.17-0.31, at the low end of that spot's band rather than above it.
+The reference is the camera POSITION; the engine uses the value as a positional
+occlusion factor on its environment cube, where a view-dependent quantity would be
+wrong. Two things could not be separated: a third-person camera moves when the view
+turns, and the block refresh produces plateaus regardless — the readings group as
+0.265794 / 0.265690 / 0.265423 / 0.265405, together to a ten-thousandth, then jump.
+
+**What this settles, and what it does not.** As a product principle
+`skyMean x cameraSkyVisibility` separates open sky from heavy cover by four orders of
+magnitude with a steady sky term, and recovers. That was the question.
+
+It does NOT settle the mapping to lamp brightness, and the barn shows why: the
+building is visibly open — a gable opening, gaps between planks, light shafts on the
+floor — and still reads 0.000025 deep inside. A person would say "much darker", not
+"fifteen thousand times darker". A linear product would drive a lamp to black there.
+The mapping needs a perceptual curve with a floor, and it belongs in CrimsonHue, not
+here.
+
+**Unexplained:** the sky term read ~18 in the Abyss against ~30 on the ground.
+Altitude-dependent scattering is plausible and so is the advancing time of day; they
+were not separated.
+
+**Stream reliability, measured rather than assumed.** 0.48 transactions per second at
+the barn, 0.31 at the player home, against a configured interval of 1 s. The gap is
+the readback's pinned identity: `Discover` only re-pins while the phase is Idle, which
+a running series never returns to, so an engine bank rotation stalls arming until it
+rotates back. One 30 s stall was observed. Offline filtering of the player-home data
+showed the rate, not the filter shape, is the limit: a symmetric EMA buys stability
+almost only against lag (1.64x spread raw, 1.32x at tau 8 s but 20 s to react), while
+an asymmetric fast-down/slow-up filter holds a 2.5 s attack — one transaction, the
+floor of the current ACQUIRE path, not of the signal. Time constants are deliberately
+NOT fixed: they were derived at 0.31/s and the optimum moves with the rate.
+
 ## The second writer, and why the buffer looked inconsistent — 2026-09-09
 
 The review's prescription was to build root signature resolution before forcing a
