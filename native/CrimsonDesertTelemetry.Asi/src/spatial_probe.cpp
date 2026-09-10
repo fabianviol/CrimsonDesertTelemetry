@@ -91,6 +91,19 @@ struct Observation
     void* closeFunction{};
     std::array<void*,BindingHooks> bindingFunctions{};
 };
+// Passive search for the signed distance volume. AdaptExposureCS -- the dispatch
+// this probe hooks -- binds only the sky-visibility volume, confirmed by
+// disassembling the pipeline state the captured frame actually ran. So the SDF's
+// resource cannot be discovered the way the R8 volume was, and this looks for it
+// in texture barriers instead: a barrier names its resource, and the shape is
+// unique. It copies nothing, hooks nothing new and issues no GPU work.
+constexpr unsigned DistanceWidth=128,DistanceHeight=64,DistanceDepth=1040;
+struct DistanceSighting { uint64_t resource{},list{}; unsigned barriers{}; D3D12_BARRIER_LAYOUT before{},after{}; };
+std::array<DistanceSighting,4> distanceSightings{};
+std::atomic<unsigned> distanceSeen{},distanceInspections{};
+// GetDesc on every barriered resource would cost thousands of calls per frame.
+// This bounds the whole run instead of trusting a heuristic to stay cheap.
+constexpr unsigned DistanceInspectionLimit=20000;
 Observation pending;
 Observation copyObservation;
 std::vector<Observation> copyObservations;
@@ -141,6 +154,44 @@ std::string Hex(const uint8_t* data,size_t size)
     for(size_t i=0;i<size;++i){s[i*2]=digits[data[i]>>4];s[i*2+1]=digits[data[i]&15];}
     return s;
 }
+// Records the first few distinct resources whose descriptor matches the signed
+// distance volume, with the list and layouts they were transitioned between.
+// Read-only: the layouts say where a future fenced copy could legally sit.
+void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
+{
+    if(!observing.load(std::memory_order_relaxed)||!data)return;
+    if(distanceSeen.load(std::memory_order_relaxed)>=distanceSightings.size())return;
+    for(UINT g=0;g<groups&&g<64;++g)
+    {
+        const auto& group=data[g];
+        if(group.Type!=D3D12_BARRIER_TYPE_TEXTURE||group.NumBarriers>4096)continue;
+        for(UINT i=0;i<group.NumBarriers;++i)
+        {
+            auto* resource=group.pTextureBarriers[i].pResource;
+            if(!resource)continue;
+            const auto address=reinterpret_cast<uint64_t>(resource);
+            unsigned seen=distanceSeen.load(std::memory_order_acquire);
+            bool known=false;
+            for(unsigned k=0;k<seen&&k<distanceSightings.size();++k)
+                if(distanceSightings[k].resource==address){++distanceSightings[k].barriers;known=true;break;}
+            if(known)continue;
+            if(distanceInspections.fetch_add(1,std::memory_order_relaxed)>=DistanceInspectionLimit)return;
+            const auto desc=resource->GetDesc();
+            if(desc.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE3D||desc.Width!=DistanceWidth||
+                desc.Height!=DistanceHeight||desc.DepthOrArraySize!=DistanceDepth||
+                desc.Format!=DXGI_FORMAT_R16_TYPELESS)continue;
+            AcquireSRWLockExclusive(&lock);
+            seen=distanceSeen.load(std::memory_order_relaxed);
+            if(seen<distanceSightings.size())
+            {
+                distanceSightings[seen]={address,reinterpret_cast<uint64_t>(list),1,
+                    group.pTextureBarriers[i].LayoutBefore,group.pTextureBarriers[i].LayoutAfter};
+                distanceSeen.store(seen+1,std::memory_order_release);
+            }
+            ReleaseSRWLockExclusive(&lock);
+        }
+    }
+}
 void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12_BARRIER_GROUP* data)
 {
     if(directReadback)readback->Barrier(list,groups,data,originalBarrier);
@@ -165,6 +216,7 @@ void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list,UINT groups,
             }
         }
     }
+    NoteDistanceVolume(list,groups,data);
     originalBarrier(list,groups,data); // Never modify or suppress an engine call.
 }
 HRESULT STDMETHODCALLTYPE ResetHook(ID3D12GraphicsCommandList* list,ID3D12CommandAllocator* allocator,ID3D12PipelineState* state)
@@ -513,6 +565,26 @@ void Save(const char* reason)
             transactions.push_back(std::move(row));
         }
         report["transactions"]=transactions;
+        {
+            // Where the signed distance volume was seen, if at all. A future fenced
+            // copy needs a list and a layout it can legally transition from; this
+            // says whether either is reachable from the hook we already own.
+            nlohmann::json found=nlohmann::json::array();
+            const auto seen=distanceSeen.load(std::memory_order_acquire);
+            for(unsigned i=0;i<seen&&i<distanceSightings.size();++i)
+            {
+                const auto& d=distanceSightings[i];
+                found.push_back({{"resource",d.resource},{"commandList",d.list},
+                    {"barriers",d.barriers},{"layoutBefore",static_cast<int>(d.before)},
+                    {"layoutAfter",static_cast<int>(d.after)}});
+            }
+            report["distanceVolume"]={{"searched",{{"width",DistanceWidth},{"height",DistanceHeight},
+                {"depth",DistanceDepth},{"format",static_cast<int>(DXGI_FORMAT_R16_TYPELESS)}}},
+                {"inspections",distanceInspections.load(std::memory_order_relaxed)},
+                {"inspectionLimit",DistanceInspectionLimit},
+                {"sightings",found},
+                {"note","passive barrier observation only; AdaptExposureCS does not bind this volume"}};
+        }
         report["requestedTransactions"]=requestedTransactions;
         report["retainedTransactions"]=readbackCount;
         report["seriesTransactions"]=seriesCount;
