@@ -182,13 +182,25 @@ void NoteDistanceVolume(ID3D12GraphicsCommandList7* list,UINT groups,const D3D12
                 desc.Format!=DXGI_FORMAT_R16_TYPELESS)continue;
             AcquireSRWLockExclusive(&lock);
             seen=distanceSeen.load(std::memory_order_relaxed);
+            bool added=false;
             if(seen<distanceSightings.size())
             {
                 distanceSightings[seen]={address,reinterpret_cast<uint64_t>(list),1,
                     group.pTextureBarriers[i].LayoutBefore,group.pTextureBarriers[i].LayoutAfter};
                 distanceSeen.store(seen+1,std::memory_order_release);
+                added=true;
             }
             ReleaseSRWLockExclusive(&lock);
+            // Log it NOW, not only in the report. The report is written when the
+            // series ends or the plugin shuts down, and a game that exits without
+            // running DLL_PROCESS_DETACH loses it -- which already cost one run.
+            if(added)
+                ch::Log("Spatial probe: signed distance volume seen. resource=%llX list=%llX "
+                    "layoutBefore=%d layoutAfter=%d",
+                    static_cast<unsigned long long>(address),
+                    static_cast<unsigned long long>(reinterpret_cast<uint64_t>(list)),
+                    static_cast<int>(group.pTextureBarriers[i].LayoutBefore),
+                    static_cast<int>(group.pTextureBarriers[i].LayoutAfter));
         }
     }
 }
