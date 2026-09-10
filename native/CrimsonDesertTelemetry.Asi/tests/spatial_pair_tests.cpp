@@ -225,7 +225,11 @@ int main()
         Hr(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&td,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&seriesTexture)),"series texture");
         SpatialReadback series;
         Check(!series.Begin(0),"zero transactions refused");
-        Check(!series.Begin(SpatialReadback::MaxTransactions+1),"too many transactions refused");
+        // A series may outlive what it retains: the retention cap is a memory
+        // bound, not a limit on how long a live value keeps refreshing.
+        Check(!series.Begin(SpatialReadback::MaxSeriesTransactions+1),"over-long series refused");
+        Check(SpatialReadback::MaxSeriesTransactions>SpatialReadback::MaxTransactions,
+            "series cap must exceed the retention cap");
         Check(series.Begin(kRuns,0),"series begin");
         series.Discover(list.Get(),seriesTexture.Get(),seriesGi.Get(),seriesOut.Get());series.Poll();
         Check(series.Snapshot().phase==CopyPhase::Ready,"series prepared once");

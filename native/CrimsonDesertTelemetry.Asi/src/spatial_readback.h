@@ -49,7 +49,13 @@ struct CopyResult
 class SpatialReadback
 {
 public:
+    // RETAINED records, not the series length. Each record keeps its whole volume
+    // snapshot, so this is a memory bound: eight cost about 4 MB and nine hundred
+    // would cost about half a gigabyte. A longer series drops its oldest records.
     static constexpr unsigned MaxTransactions=8;
+    // A series may run far longer than it retains, because a live consumer needs
+    // the newest value rather than a history. An hour at one second.
+    static constexpr unsigned MaxSeriesTransactions=3600;
     ~SpatialReadback();
     // count>1 repeats the SAME validated transaction, reusing one readback buffer
     // and one fence sequence. A new copy is only ever armed after the previous

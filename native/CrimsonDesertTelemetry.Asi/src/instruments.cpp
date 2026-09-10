@@ -192,8 +192,13 @@ void RunImpl(HANDLE stopEvent)
         GetPrivateProfileIntW(L"Research", L"SpatialReadbackCount", 1, iniPath.c_str());
     const unsigned spatialInterval =
         GetPrivateProfileIntW(L"Research", L"SpatialReadbackIntervalMs", 1000, iniPath.c_str());
+    // Separate from the retained count above: this is how long the live camera
+    // visibility keeps refreshing on the ambient endpoint, 0 to leave it off.
+    const unsigned spatialVisibilitySeconds =
+        GetPrivateProfileIntW(L"Research", L"SpatialVisibilitySeconds", 0, iniPath.c_str());
     const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
-        std::filesystem::path(moduleDirectory).c_str(),spatialReadback,spatialTransactions,spatialInterval);
+        std::filesystem::path(moduleDirectory).c_str(),spatialReadback,spatialTransactions,spatialInterval,
+        spatialVisibilitySeconds);
     if(spatialProbe && !spatialStarted)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;

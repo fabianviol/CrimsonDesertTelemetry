@@ -62,7 +62,7 @@ enum class Phase { Idle, Ready, Pending, Failed };
 Phase phase=Phase::Idle;
 bool barrierInstalled{}, incomplete{};
 bool directReadback{};
-unsigned readbackCount{1};
+unsigned readbackCount{1},requestedTransactions{1},seriesCount{1},visibilitySeconds{};
 uint64_t readbackIntervalMs{1000};
 // Module is process-pinned; unresolved GPU work retains its bounded allocation.
 SpatialReadback* readback=new SpatialReadback;
@@ -493,7 +493,10 @@ void Save(const char* reason)
             transactions.push_back(std::move(row));
         }
         report["transactions"]=transactions;
-        report["requestedTransactions"]=readbackCount;
+        report["requestedTransactions"]=requestedTransactions;
+        report["retainedTransactions"]=readbackCount;
+        report["seriesTransactions"]=seriesCount;
+        report["visibilityPublishSeconds"]=visibilitySeconds;
         report["completedTransactions"]=readback->Completed();
         report["transactionIntervalMilliseconds"]=readbackIntervalMs;
         // Latest transaction repeated at the v4 location so existing readers keep working.
@@ -517,14 +520,30 @@ void Save(const char* reason)
 }
 
 bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
-    unsigned transactions,unsigned intervalMilliseconds)
+    unsigned transactions,unsigned intervalMilliseconds,unsigned publishSeconds)
 {
     if(enabled) return false;
     std::array<uint8_t,Signature.size()> bytes{};
     if(!Read(moduleBase+DispatchRva,bytes)||bytes!=Signature) return false;
     base=moduleBase;outputDirectory=directory;directReadback=enableReadback;
     // Out-of-range configuration falls back to the proven single transaction.
-    readbackCount=(transactions>=1&&transactions<=cdt::spatial::SpatialReadback::MaxTransactions)?transactions:1;
+    // SpatialReadbackCount keeps its own meaning: RETAINED diagnostic snapshots.
+    // Clamp, never collapse -- asking for more than the maximum used to yield ONE
+    // transaction, so an over-large request silently produced the least data
+    // instead of the most. That cost a live test.
+    requestedTransactions=transactions;
+    readbackCount=transactions<1?1u
+        :transactions>cdt::spatial::SpatialReadback::MaxTransactions
+            ?cdt::spatial::SpatialReadback::MaxTransactions:transactions;
+    // The live channel is a SEPARATE duration, because how long the value is
+    // published and how much history is kept are different questions. One key
+    // answering both is what made the last request mean its own opposite.
+    const uint64_t interval=readbackIntervalMs?readbackIntervalMs:1000;
+    const uint64_t wanted=(uint64_t{visibilitySeconds}*1000+interval-1)/interval;
+    seriesCount=static_cast<unsigned>(wanted>readbackCount?wanted:readbackCount);
+    if(seriesCount>cdt::spatial::SpatialReadback::MaxSeriesTransactions)
+        seriesCount=cdt::spatial::SpatialReadback::MaxSeriesTransactions;
+    visibilitySeconds=publishSeconds;
     readbackIntervalMs=(intervalMilliseconds>=250&&intervalMilliseconds<=10000)?intervalMilliseconds:1000;
     const std::string readbackSeriesMessage="Spatial readback v5 IDLE: explicit event starts"+
         std::to_string(Limit)+" CPU controls plus "+std::to_string(readbackCount)+
@@ -557,7 +576,7 @@ void Poll()
     AcquireSRWLockExclusive(&lock);
     if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
     {
-        if(!directReadback||readback->Begin(readbackCount,readbackIntervalMs))
+        if(!directReadback||readback->Begin(seriesCount,readbackIntervalMs))
         {samples=nlohmann::json::array();copyObservation={};copyObservations.clear();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
         else ch::Log("Spatial direct readback already requested in this process; restart required for another run.");
     }
@@ -576,7 +595,7 @@ void Poll()
     }
     // The guard exists to end a run that never completes, not to cap a series the
     // caller legitimately asked for. A long series must be able to outlive 30s.
-    const uint64_t budget=30000+(directReadback?readbackCount*readbackIntervalMs:0);
+    const uint64_t budget=30000+(directReadback?uint64_t{seriesCount}*readbackIntervalMs:0);
     if(observing&&GetTickCount64()-started>budget){incomplete=true;Save("timeout");}
     ReleaseSRWLockExclusive(&lock);
     // MinHook suspends threads: never hold our capture lock during patching.

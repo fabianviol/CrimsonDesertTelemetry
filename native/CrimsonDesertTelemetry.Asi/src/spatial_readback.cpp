@@ -29,7 +29,7 @@ bool SpatialReadback::Begin(unsigned count,uint64_t intervalMilliseconds)
 {
     Guard g(mutex_);
     if(requested_) return false; // One SERIES per plugin process, including failures.
-    if(!count||count>MaxTransactions) return false;
+    if(!count||count>MaxSeriesTransactions) return false;
     requested_=true;result_={};result_.reason="awaiting-source";
     budget_=count;completed_=0;nextFence_=0;lastCompletedTick_=0;
     intervalMs_=intervalMilliseconds;records_.clear();
@@ -60,6 +60,9 @@ void SpatialReadback::KeepRecordAndRearm()
 {
     // Caller holds the lock and has finished mapping this transaction.
     records_.push_back(result_);
+    // A long series must not grow without bound: each record carries its whole
+    // volume snapshot. The newest are the ones a live consumer and a report need.
+    while(records_.size()>MaxTransactions) records_.erase(records_.begin());
     ++completed_;
     if(budget_)--budget_;
     lastCompletedTick_=GetTickCount64();
