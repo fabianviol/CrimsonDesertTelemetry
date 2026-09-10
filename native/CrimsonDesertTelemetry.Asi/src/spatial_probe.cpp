@@ -868,11 +868,19 @@ void Poll()
     if(distanceMode)SaveDistanceTransaction();
     else if(directReadback)PublishReferenceVisibility();
     AcquireSRWLockExclusive(&lock);
-    if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0&&phase==Phase::Idle)
+    // `observing` is what "a run is in progress" means. The phase is NOT: the
+    // dispatch hook sets it to Pending on every observed frame, so after a run ends
+    // it only passes through Idle for a fraction of a frame and a request would be
+    // consumed and silently discarded almost every time. That, rather than the
+    // readback's own guard, is what really made a second run need a game restart.
+    if(requestEvent&&WaitForSingleObject(requestEvent,0)==WAIT_OBJECT_0)
     {
-        if(!directReadback||readback->Begin(seriesCount,readbackIntervalMs,distanceMode?1u:SpatialReadback::MaxTransactions))
-        {samples=nlohmann::json::array();copyObservation={};copyObservations.clear();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;}
-        else ch::Log("Spatial direct readback already requested in this process; restart required for another run.");
+        if(observing.load(std::memory_order_relaxed))
+            ch::Log("Spatial probe: request ignored, a run is already in progress.");
+        else if(!directReadback||readback->Begin(seriesCount,readbackIntervalMs,distanceMode?1u:SpatialReadback::MaxTransactions))
+        {samples=nlohmann::json::array();copyObservation={};copyObservations.clear();count=0;incomplete=false;trace.Begin(0);started=GetTickCount64();lastAttempt=0;phase=Phase::Ready;observing=true;
+         publishedTransactions=0;ch::Log("Spatial probe: run started.");}
+        else ch::Log("Spatial probe: readback refused a new series; the previous one is not settled.");
     }
     void* install{};
     void* installReset{};
@@ -880,12 +888,19 @@ void Poll()
     std::array<void*,BindingHooks> installBindings{};
     if(phase==Phase::Pending)
     {
-        if(count<Limit)samples.push_back(Json(pending));
-        ++count;
+        // Between runs the hook keeps setting Pending, so the bookkeeping and the
+        // finish test only apply while a run is actually observing. Installing the
+        // hooks stays unconditional: it happens once and is needed either way.
+        const bool inRun=observing.load(std::memory_order_relaxed);
+        if(inRun)
+        {
+            if(count<Limit)samples.push_back(Json(pending));
+            ++count;
+        }
         if(!barrierInstalled&&!pending.error)
         {install=pending.barrierFunction;installReset=pending.resetFunction;installClose=pending.closeFunction;installBindings=pending.bindingFunctions;}
         phase=Phase::Ready;
-        if(count>=Limit&&(!directReadback||(readback->SeriesFinished()&&
+        if(inRun&&count>=Limit&&(!directReadback||(readback->SeriesFinished()&&
             (!distanceMode||publishedTransactions==readback->Completed())))) Save("sample-limit");
     }
     // The guard exists to end a run that never completes, not to cap a series the
