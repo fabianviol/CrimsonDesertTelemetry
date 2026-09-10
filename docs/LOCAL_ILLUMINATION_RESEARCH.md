@@ -98,9 +98,11 @@ occluded, view-filtered or simply out of range cannot be told apart from the fee
 That is the documented warning -- missing or culled is not proven OFF -- now with a
 measurement behind it rather than a caution.
 
-**Two near-zero values appeared and are NOT the effect.** 0.00007 at run 2 t=8.4 and
-0.00011 at t=72.2 sit nowhere near any marked occlusion; distant sources entering the
-list at negligible brightness is the likely reading. A first pass that tracked lights
+**Near-zero values do occur, and they are NOT the effect.** Over run 3's full four
+minutes, 26 of 788 reported luminances fall below 1e-3, about 3%, and none of them
+land on a marked occlusion. Distant sources entering the list at negligible brightness
+is the likely reading. So "no light is ever dark" would be wrong; what is true is that
+darkness does not follow occlusion. A first pass that tracked lights
 by nearest neighbour did suggest a 4000x collapse, but all four tracks reported
 identical extremes, which is what crossing tracks look like. Counting dark lights per
 frame instead of trusting the tracker is what settled it. The rendered sample index is
