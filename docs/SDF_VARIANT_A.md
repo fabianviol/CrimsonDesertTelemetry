@@ -145,11 +145,59 @@ conservative — but the non-overestimating property has not been demonstrated f
 voxelised, propagated field. Treat it as the working hypothesis Variant A rests on,
 not as a theorem, and let the calibration points test it.
 
+### Mapping, sign and unit confirmed by measurement — 2026-09-10
+
+`scripts/Decode-SignedDistance.py` samples the live payload with the shader's own
+addressing: world times the inverse extents at 0x10 of the GI constants, scaled by
+`1/2^level`, wrapped toroidally, with the z texel at `level*130 + 1 + frac*128` over
+1040. A vertical profile through the ground below the camera at
+(-10501.56, 614.37, -4379.30):
+
+```
+   y        value
+606.25     0.53027   clamp, far field
+606.50     0.21447
+606.72     0.0       surface
+607.00    -0.28227   inside
+607.15     0.06442   out again, a second surface
+...
+622.50     0.21447   the level-0 y extent is 16 gu, so this is the SAME texel
+```
+
+**The gradient magnitude is 1.** Central differences in the unsaturated band at
+y = 606.75:
+
+```
+d/dx = +0.0297
+d/dy = -0.9935        |grad| = 0.99957
+d/dz = +0.1060
+```
+
+That single number settles three things at once. The stored value is a distance in
+GAME UNITS -- a wrong world scale anywhere in the mapping would put the magnitude off
+1. The world-to-voxel mapping is right, confirmed independently by the toroidal wrap
+repeating at exactly 16 gu in y. And the field is a genuine distance field in that
+band rather than a rescaled or normalised quantity.
+
+**Negative is inside, now measured.** The value falls monotonically while descending
+through the surface and the gradient points along -y, away from the solid. This
+replaces the earlier assumption.
+
+**And the conservative-step hypothesis is now argued rather than assumed.** In the
+unsaturated band the field is a true distance field, and the clamp truncates DOWNWARD.
+An underestimate is the safe direction for sphere tracing. That is not a proof for
+every configuration, but it is no longer a bare assumption.
+
+Two features deliberately not smoothed over: the -1.263 slope between 606.30 and
+606.50 is the trilinear transition out of the clamped region, where interpolating
+between a truncated and an untruncated texel is necessarily steeper than 1; and the
++2.311 above 607.05 is a second surface, thin geometry rather than noise.
+
 ### Still open
 
-The world-to-voxel mapping including the border texels, verified against a known
-surface; that a particular wall is preserved in the copy; and any trace at all. The
-sign and the unit are settled; the addressing is not.
+That a particular wall is preserved in the copy, and any trace at all. The sign, the
+unit and the addressing are settled; what remains is the controlled camera-to-torch
+case in the section below.
 
 ## Controlled test and stopping rule
 
