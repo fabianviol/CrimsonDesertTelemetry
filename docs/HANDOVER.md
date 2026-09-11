@@ -1,9 +1,15 @@
-# Current checkpoint — 2.0.2 uploaded, scan pending, 2026-09-11, Claude
+# Current checkpoint — 2.0.2 LIVE on Nexus, 2026-09-11, Claude
 
-**UPLOADED, NOT YET LIVE: `v2.0.2`.** The user uploaded it to Nexus (mod 3374) after
-the checks below; the host's own antivirus scan was still running at the time of
-writing, so acceptance is NOT established. 2.0.0 stays available there as the version
-for Steam build 25116796.
+**LIVE: `v2.0.2` passed the Nexus scan and is the main file.** Confirmed through the
+API, not the page: `Get-NexusModStatus.ps1` reports the ModManagers entry (file id
+`7891854`) with `2.0.2  main  09/11/2026 11:29:37`, version id `38521561692992`.
+2.0.0 remains as `old_version`, so it stays downloadable for Steam build 25116796 as
+intended. The rejected 2.0.1 sits `archived`.
+
+The mod id question from the previous commit is settled: `$mod.id` from
+`GET /games/crimsondesert/mods/3374` is exactly the site's 14-digit "Unique Mod ID",
+`38521561681198`. Game id `8969`. All three identifiers are in `.env` and both Nexus
+scripts load it themselves.
 
 **Why 2.0.2 and not 2.0.1.** Nexus rejected the 2.0.1 package on that scan. The data,
 gathered rather than assumed:

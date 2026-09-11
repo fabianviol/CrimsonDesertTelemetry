@@ -36,17 +36,15 @@ Read off the mod page on 2026-09-11 under **Files -> Advanced**, for the
 |---|---|---|
 | File ID | `7891854` | `NEXUSMODS_FILE_ID` |
 | Short Unique File ID | `R07hI2hXi` | share links only; the API does not take it |
-| Unique Mod ID | `38521561681198` | **not confirmed** as `NEXUSMODS_MOD_ID` |
+| Unique Mod ID | `38521561681198` | `NEXUSMODS_MOD_ID` |
 
-The file id is exactly what `POST /mod-files/{id}/versions` wants. The mod id is
-the one to be careful with: `Get-NexusModStatus.ps1` derives `NEXUSMODS_MOD_ID`
-from `GET /games/crimsondesert/mods/3374` and prints `$mod.id`, and whether the
-site's 14-digit "Unique Mod ID" is that same number has not been checked against
-the API. Run the status script once with a key before using it for changelogs;
-a wrong mod id there appends release notes to the wrong page, and changelogs
-cannot be deleted.
+The file id is what `POST /mod-files/{id}/versions` wants. The mod id was worth
+checking rather than assuming, because a wrong one appends release notes to
+another page and changelogs cannot be deleted -- but it checks out: run against
+`GET /games/crimsondesert/mods/3374` on 2026-09-11, `$mod.id` is exactly the
+site's 14-digit "Unique Mod ID". Game id is `8969`.
 
-Both values live in `.env`, which the scripts now load themselves.
+All three live in `.env`, which the scripts load themselves.
 
 ## One-time setup
 
