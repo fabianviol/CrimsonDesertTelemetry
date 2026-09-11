@@ -1,6 +1,59 @@
-# Current checkpoint — 2.0.1 release built, ambient still gated, 2026-09-11, Claude
+# Current checkpoint — 2.0.2 uploaded, scan pending, 2026-09-11, Claude
 
-**RELEASE BUILT, NOT PUBLISHED — `v2.0.1`.** The user asked for the fastest possible
+**UPLOADED, NOT YET LIVE: `v2.0.2`.** The user uploaded it to Nexus (mod 3374) after
+the checks below; the host's own antivirus scan was still running at the time of
+writing, so acceptance is NOT established. 2.0.0 stays available there as the version
+for Steam build 25116796.
+
+**Why 2.0.2 and not 2.0.1.** Nexus rejected the 2.0.1 package on that scan. The data,
+gathered rather than assumed:
+
+| | 2.0.0 (accepted) | 2.0.1 (rejected) | 2.0.2 (uploaded) |
+|---|---|---|---|
+| ZIP | 0/65 | **8/66** | **0/67** |
+| ASI | 4/70 | 12/70 | **4/70** |
+
+All eight ZIP hits on 2.0.1 were one engine under eight brand names, six reporting the
+identical signature id `Gen:Variant.Application.Barys.73277`. The baseline was never
+clean: the accepted 2.0.0 ASI already scored 4/70. Compiling the research
+instrumentation out (`CDT_RESEARCH=OFF`, derived from the version) removed that
+signature entirely — the ZIP that a host scans is back to zero.
+
+**Recorded as a real regression, not talked away:** the 2.0.2 ASI's four are
+CrowdStrike 70%, Cynet, McAfee `ti!hash` and **Microsoft `Trojan:Win32/Wacatac.B!ml`**.
+2.0.0's fourth was Trellix instead of Microsoft. Same count, worse composition —
+Defender is on every Windows machine, so an extracted ASI can be quarantined where
+2.0.0's would not have been. A VirusTotal ZIP scan does not surface it. A
+false-positive report to Microsoft is the only clean fix and is NOT done.
+
+**Verified live against the exact uploaded binary**, ASI SHA256
+`3222B06A9BAD95CAEEF466185DCF91BDA6CD18F0C25E1245FC307E47871C799E`, confirmed by
+hashing the installed file rather than trusting the installer:
+
+```
+/v1/health            supportedBuild true, gameBuild 25246367, mode "tested", playing
+/v1/snapshot          authored 18, rendered available, 31 published, 0 malformed, 46 ms
+/v1/schema            9976 bytes
+/v1/lights/smoothed   available, 25 groups, 200 ms / 0.15, 49 ms
+```
+
+The WebSocket routes are exercised by the in-game HUD, a peer consumer of the same
+loopback API, running at 103.2 received Hz. Package ZIP SHA256
+`8CF638ECBD815B6D84144BDDB6B4B9B7972DC5ED9E6B11988156FDCA8DAB5C04`.
+
+**Known rough edge from the cut:** with research compiled out, the HUD still prints
+`SDF test disabled: set [LightOverlay] OcclusionTest=1`. Following that hint in a
+release build does nothing — the probe returns false and logs a refusal. The hint
+should say the feature is not built into this package. Cosmetic, in a hidden
+diagnostic panel, and not worth a respin on its own.
+
+**`scripts/Get-VirusTotalVerdict.py`** now answers these questions from the preserved
+packages instead of guessing. A lookup sends only a hash; `--submit` uploads and is
+never implied, because uploading publishes the file. Its key comes from a git-ignored
+`.env` (`.env.example` is the tracked template), and packages are assembled from an
+explicit nine-file list, so no key can reach a release.
+
+**Superseded detail — the rejected 2.0.1 attempt.** The user asked for the fastest possible
 release carrying only the already-promised 2.0.0 feature set, with anything newer
 allowed to ship disabled. 2.0.0 fails closed on build 25246367, so every Nexus user is
 currently on a mod that installs no hook and captures nothing.
