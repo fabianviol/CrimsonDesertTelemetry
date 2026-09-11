@@ -463,6 +463,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
                         captureWatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency, orientation,
                         lights, runtime.SupportsLights, SchemaFor(lightOptions));
                     state.Publish(snapshot, tracker.AddressCount, discoveryMilliseconds);
+                    // Only an untested build leaves Sky null now, so the reason fits.
                     state.PublishSky(runtime.Sky?.Capture() ?? SkyAmbientReader.Unavailable("unsupported-build"));
                 }
                 catch (Exception exception) when (exception is InvalidDataException or Win32Exception)
@@ -737,7 +738,21 @@ sealed class RuntimeContext(
     public EngineCameraReader Camera { get; } = camera;
     public EngineLightReader? Lights { get; } = lights;
     public RenderLightReader? Rendered { get; } = rendered;
-    public SkyAmbientReader? Sky { get; } = resolved.Compatibility.Mode == "tested" && resolved.GameBuild == "25116796"
+    /// <summary>
+    /// The sky reader attaches on any exactly tested build. It used to require build
+    /// 25116796 by name, which silently killed the ambient feed on 25246367 even
+    /// after the native hooks were relocated for it: the reader was never
+    /// constructed, so the endpoint reported "unsupported-build" whatever the INI
+    /// and the ASI actually did.
+    ///
+    /// Nothing is lost by dropping the build name. Attaching is not trusting: the
+    /// bridge validates its own magic, version, bounds, owning process id and start
+    /// time before a sample is believed, and reports its own state -- bridge-missing
+    /// when the native side never opened it, unsupported-build when the ASI itself
+    /// refused the executable. Those answers are accurate, where a hardcoded build
+    /// name could only ever go stale at the next game update.
+    /// </summary>
+    public SkyAmbientReader? Sky { get; } = resolved.Compatibility.Mode == "tested"
         ? new SkyAmbientReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
     public LightOptions LightOptions { get; } = lightOptions;
     public bool SupportsLights => Lights is not null;
