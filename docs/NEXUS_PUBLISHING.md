@@ -23,6 +23,13 @@ The v3 API is a *file* API, not a page editor.
 | Create the mod page itself | **no** |
 | Edit the mod page description, images, tags, category | **no** |
 | Delete a file or version | **no** |
+| Report whether a file passed the virus scan | **no** |
+
+There is no scan status anywhere in the v3 API. A file version object carries only
+`id`, `file`, `position`, `name`, `version`, `category`, `uploaded_at`, and
+`category: main` means the page rubric, NOT that the scan cleared. A freshly
+uploaded file shows "Virus scanning is in progress" on the page and is not
+downloadable until Nexus finishes; the page is the only place that says so.
 
 So the page text, screenshots and requirements stay manual edits on the site. The
 API only ever adds files, versions and changelog entries.

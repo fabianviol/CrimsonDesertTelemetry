@@ -1,10 +1,21 @@
-# Current checkpoint — 2.0.2 LIVE on Nexus, 2026-09-11, Claude
+# Current checkpoint — 2.0.2 uploaded, scan still running, 2026-09-11, Claude
 
-**LIVE: `v2.0.2` passed the Nexus scan and is the main file.** Confirmed through the
-API, not the page: `Get-NexusModStatus.ps1` reports the ModManagers entry (file id
-`7891854`) with `2.0.2  main  09/11/2026 11:29:37`, version id `38521561692992`.
-2.0.0 remains as `old_version`, so it stays downloadable for Steam build 25116796 as
-intended. The rejected 2.0.1 sits `archived`.
+**UPLOADED, NOT YET DOWNLOADABLE: `v2.0.2`.** The mod page says "Virus scanning is in
+progress" and "Some files not scanned"; the file cannot be downloaded yet, and
+acceptance is NOT established.
+
+**Correction, recorded because it was briefly written down as fact:** `category: main`
+from the API was read as "passed the scan". It is not. It is only the file's category
+on the page. **The v3 API exposes no virus-scan state at all** -- the version object
+carries `id`, `file`, `position`, `name`, `version`, `category`, `uploaded_at` and
+nothing else, and "scan" appears nowhere in the endpoint reference. The mod page is
+the only source for scan status, so `Get-NexusModStatus.ps1` cannot answer it and
+should not be asked to.
+
+What the API does confirm: the ModManagers entry (file id `7891854`) holds 2.0.2 as
+version id `38521561692992`, uploaded 11:29:37; 2.0.0 remains `old_version` and so
+stays downloadable for Steam build 25116796 as intended; the rejected 2.0.1 sits
+`archived`.
 
 The mod id question from the previous commit is settled: `$mod.id` from
 `GET /games/crimsondesert/mods/3374` is exactly the site's 14-digit "Unique Mod ID",
