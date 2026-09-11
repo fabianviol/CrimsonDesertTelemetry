@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 namespace cdt::spatial
 {
@@ -31,7 +32,15 @@ struct SpatialTrace
     static constexpr size_t EventLimit=8192, ListLimit=512;
     SRWLOCK mutex=SRWLOCK_INIT;
     std::atomic<uint64_t> target{}, lost{};
-    std::array<TraceEvent,EventLimit> events{};
+    // The event buffer is almost all of this structure: 8192 entries of 120
+    // bytes, most of it the embedded D3D12_TEXTURE_BARRIER. Held as a member
+    // array it was ~0.95 MiB of zero-filled static data in every build that
+    // compiles the probe in -- wasteful in a binary that usually never traces,
+    // and a shape generic scanners weight heavily. It is allocated on the first
+    // Begin() instead, under the same exclusive lock that every reader and
+    // writer already takes, and then kept for the process lifetime so no hook
+    // on a render thread can ever observe it disappear.
+    std::unique_ptr<TraceEvent[]> events;
     std::array<TraceList,ListLimit> lists{};
     size_t eventCount{},listCount{};
     uint64_t startedTick{},order{},barrierCalls{},textureEntries{},targetBarriers{},resetCalls{},closeCalls{},executeCalls{};
@@ -43,6 +52,13 @@ struct SpatialTrace
         eventCount=listCount=0;order=barrierCalls=textureEntries=targetBarriers=0;
         resetCalls=closeCalls=executeCalls=0;overflow=false;lost=0;
         startedTick=resource?GetTickCount64():0;
+        if(resource&&!events)
+        {
+            // nothrow: Begin runs on the probe's own path, but this object is
+            // reachable from render-thread hooks and must not raise there.
+            events.reset(new(std::nothrow) TraceEvent[EventLimit]{});
+            if(!events)overflow=true;
+        }
         target=resource;
         ReleaseSRWLockExclusive(&mutex);
     }
@@ -61,7 +77,7 @@ struct SpatialTrace
     }
     void Add(TraceList& list,TraceKind kind,HRESULT hr=0,uint64_t queue=0,const D3D12_TEXTURE_BARRIER* barrier=nullptr)
     {
-        if(eventCount==EventLimit){overflow=true;return;}
+        if(!events||eventCount==EventLimit){overflow=true;return;}
         auto& e=events[eventCount++];e={};e.order=++order;e.tick=GetTickCount64();
         e.thread=GetCurrentThreadId();e.list=list.address;e.queue=queue;
         e.generation=list.generation;e.generationKnown=list.known;e.kind=kind;e.result=hr;
