@@ -33,6 +33,28 @@ target_compile_features(cdt_sdf PUBLIC cxx_std_20)
 target_compile_options(cdt_sdf PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_sdf PUBLIC src)
 
+# The private research instrumentation -- the spatial probe's GPU readback and
+# barrier observation, and the experimental Variant A line-of-sight test -- is
+# reached by no released feature. Release packages are built with this OFF so a
+# published binary does not carry hooking and copying machinery it never runs.
+# Nothing is removed from the tree: the real sources stay, every research test
+# below keeps building against them directly, and ON remains the default for
+# development builds. src/research_disabled.cpp explains the stand-ins.
+option(CDT_RESEARCH "Compile the private research instrumentation into the ASI" ON)
+if(CDT_RESEARCH)
+    set(CDT_RESEARCH_SOURCES src/spatial_probe.cpp src/spatial_readback.cpp
+        src/spatial_sample.cpp src/spatial_thunk.asm)
+    set(CDT_SDF_LIBRARY cdt_sdf)
+else()
+    set(CDT_RESEARCH_SOURCES src/research_disabled.cpp)
+    add_library(cdt_sdf_disabled STATIC src/sdf_disabled.cpp)
+    target_compile_features(cdt_sdf_disabled PUBLIC cxx_std_20)
+    target_compile_options(cdt_sdf_disabled PRIVATE /W4 /WX /permissive-)
+    target_include_directories(cdt_sdf_disabled PUBLIC src)
+    set(CDT_SDF_LIBRARY cdt_sdf_disabled)
+    message(STATUS "CDT_RESEARCH=OFF: research instrumentation excluded from the ASI")
+endif()
+
 add_library(cdt_imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp ${imgui_SOURCE_DIR}/imgui_widgets.cpp
@@ -45,7 +67,7 @@ target_compile_features(cdt_overlay PUBLIC cxx_std_20)
 target_compile_definitions(cdt_overlay PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_overlay PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_overlay PUBLIC src)
-target_link_libraries(cdt_overlay PUBLIC cdt_imgui cdt_sdf minhook nlohmann_json::nlohmann_json winhttp)
+target_link_libraries(cdt_overlay PUBLIC cdt_imgui ${CDT_SDF_LIBRARY} minhook nlohmann_json::nlohmann_json winhttp)
 
 file(READ "${imgui_SOURCE_DIR}/LICENSE.txt" imgui_license)
 file(READ "${minhook_SOURCE_DIR}/LICENSE.txt" minhook_license)
@@ -76,13 +98,12 @@ set(CDT_CONSOLE_SOURCES
 set_source_files_properties(${CDT_CONSOLE_SOURCES} PROPERTIES COMPILE_OPTIONS "/WX-;/wd4996")
 add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
     src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm
-    src/spatial_probe.cpp src/spatial_readback.cpp src/spatial_sample.cpp
-    src/spatial_thunk.asm ${CDT_CONSOLE_SOURCES})
+    ${CDT_RESEARCH_SOURCES} ${CDT_CONSOLE_SOURCES})
 target_compile_features(cdt_instruments PUBLIC cxx_std_20)
 target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
 target_include_directories(cdt_instruments PUBLIC src)
-target_link_libraries(cdt_instruments PUBLIC cdt_sdf minhook d3d12 dxgi bcrypt psapi user32)
+target_link_libraries(cdt_instruments PUBLIC ${CDT_SDF_LIBRARY} minhook d3d12 dxgi bcrypt psapi user32)
 target_link_libraries(cdt_instruments PRIVATE nlohmann_json::nlohmann_json)
 
 add_library(CrimsonDesertTelemetryAsi SHARED src/bootstrap.cpp)

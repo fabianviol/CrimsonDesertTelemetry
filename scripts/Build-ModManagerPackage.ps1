@@ -7,7 +7,14 @@ param(
     # after every install, which has already cost one wasted game start. Keys must
     # already exist in the template. A version without a prerelease suffix is
     # treated as a release and refuses overrides outright.
-    [hashtable]$IniOverrides
+    [hashtable]$IniOverrides,
+    # The private research instrumentation -- the spatial probe's GPU readback and
+    # the experimental line-of-sight test -- is reached by no released feature.
+    # 'auto' compiles it out of release versions and keeps it in prerelease ones,
+    # which is what every private diagnostic build wants. Nothing is deleted; the
+    # sources and their tests are untouched either way.
+    [ValidateSet('auto', 'on', 'off')]
+    [string]$Research = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,7 +43,9 @@ if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) {
 }
 
 $nativeSource = Join-Path $repoRoot 'native\CrimsonDesertTelemetry.Asi'
-$nativeBuild = Join-Path $repoRoot 'build\native-package'
+$researchEnabled = if ($Research -eq 'auto') { [bool]($Version -match '-') } else { $Research -eq 'on' }
+# Separate trees per setting so a release build never inherits a research CMake cache.
+$nativeBuild = Join-Path $repoRoot $(if ($researchEnabled) { 'build\native-package' } else { 'build\native-package-release' })
 $managedPublish = Join-Path $repoRoot "build\managed-package\v$Version-$buildStamp"
 
 function Assert-WithinRepo([string]$Path) {
@@ -53,7 +62,8 @@ Assert-WithinRepo $archive
     -c Release -r win-x64 --self-contained false -p:UseAppHost=false "-p:Version=$Version" -o $managedPublish
 if ($LASTEXITCODE -ne 0) { throw 'Managed host publish failed.' }
 
-& $cmake -S $nativeSource -B $nativeBuild -A x64 "-DCDT_NATIVE_BUILD_ID=$NativeBuildId"
+Write-Output "Research instrumentation: $(if ($researchEnabled) { 'compiled in' } else { 'COMPILED OUT' }) (-Research $Research)"
+& $cmake -S $nativeSource -B $nativeBuild -A x64 "-DCDT_NATIVE_BUILD_ID=$NativeBuildId" "-DCDT_RESEARCH=$(if ($researchEnabled) { 'ON' } else { 'OFF' })"
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI configure failed.' }
 & $cmake --build $nativeBuild --config Release
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI build failed.' }

@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.1 - 2026-09-11
+## 2.0.2 - 2026-09-11
 
 Compatibility release for Crimson Desert Steam build `25246367` (executable
 `1.0.0.2850`). 2.0.0 fails closed on that build: it reports `unsupported-build`,
@@ -31,6 +31,16 @@ on the updated game and adds no new promised behavior.
   the new executable, and a live in-game run on `25246367` — `/v1/health` reporting
   `supportedBuild` with `compatibility.mode "tested"`, progressing capture and frame
   sequences, fresh paired copies at 0-47 ms and zero malformed records.
+- Compile the private research instrumentation out of released packages. The
+  spatial probe's GPU readback and barrier observation and the experimental
+  line-of-sight test are reached by no released feature, and a published binary
+  should not carry hooking and copying machinery it never runs. The new
+  `CDT_RESEARCH` build option keeps them in development builds, where the default
+  is unchanged; no source is removed and their tests still run against the real
+  code. The released ASI drops from 1,563,648 to 1,385,984 bytes.
+- 2.0.1 was built and rejected by the file host's antivirus scan before it reached
+  anyone; nothing was published under that number. Its package is preserved
+  unchanged as the record of what was rejected.
 
 ## 2.0.0 - 2026-09-06
 
