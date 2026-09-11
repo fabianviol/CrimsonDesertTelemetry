@@ -1,4 +1,20 @@
-# Current checkpoint — evidence review and HUD test path, 2026-09-11, Codex
+# Current checkpoint — PARKED after game update, 2026-09-11, Codex
+
+**PARKED by user instruction.** A Crimson Desert update was installed after `hud.3`
+was built. Everything below was measured against the previous supported game build and
+must not be projected onto the updated executable or shaders. The new build number,
+executable hash, native instruction contracts, resource mappings and runtime behavior
+are all UNVERIFIED. Preserve all packages and evidence; do not install `hud.3`, resume
+Ambient/Variant A, inspect t224 or start PIX work while this checkpoint is parked.
+
+**Resume gate, only when explicitly requested:** identify the new game build and
+executable hash, then run the existing fail-closed build/preflight checks before any
+instrumented package is installed. A refusal is a compatibility result, not evidence
+that the telemetry sources disappeared.
+
+---
+
+# Previous checkpoint — evidence review and HUD test path, 2026-09-11, Codex
 
 **ESTABLISHED:** Ambient dims under cover. Three retained, independently reproducible
 R16 payloads also separate one user-labelled visible → occluded → visible torch sequence
