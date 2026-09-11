@@ -1,242 +1,156 @@
-# Current checkpoint — both goals live on 25246367, 2.0.2 uploaded, 2026-09-11, Claude
+# Current checkpoint — takeover, 2026-09-11 end of day, Claude
 
-**GOAL 2 CONFIRMED AT A SECOND SITE, and by two independent implementations.**
-Warspike Spearmaker, a fireplace point light, the user stepping behind a partition and
-back. Thirty copies traced offline give clear x10 / blocked x3 / clear x17 with the
-original fixed parameters. Simultaneously the native HUD marcher
-(`[LightOverlay] OcclusionTest=1`, Codex's code, never run live before) reported
-`SDF A LOS CLEAR +0.45148` and `SDF A LOS BLOCKED -0.03038` on the same light -- both
-inside the offline bands. Native C++ against a volume in memory, Python against a file
-on disk, sharing the calibration and not the code. Detail in
-[SDF_VARIANT_A.md](SDF_VARIANT_A.md); evidence in
-`artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
+Written for someone taking over who has read the repository but was not here today.
+Eighteen commits landed; this replaces the running notes they were written as.
 
-**And the thin margin now has a visible consequence.** A lamp two game units away from
-the traced one reported CLEAR at +0.00618 from one pose and BLOCKED at -0.01891 from
-the other. A consumer needs hysteresis or it will flicker on borderline geometry.
+## Where this stands
 
-**The restart fix is confirmed live** -- three series were started in one game session
-with `Start-SpatialProbe.ps1`, no restart between them. Note the shape of the trap it
-replaced: a bounded run of 30 copies at 2000 ms lasts 60 seconds, so the first attempt
-expired before the user was in position and every light read `stale-sdf-volume`. That
-is not a fault, it is the series ending; re-signal and it runs again.
+The game updated to Steam build `25246367` this morning and broke everything. All of
+it is working again, both product goals are measured live on the new build, and a
+compatibility release is uploaded to Nexus. Nothing here is waiting on a decision
+except the two items under "What is actually open".
 
-**AMBIENT IS BACK ON BUILD 25246367, measured in game 12:30.** Three separate gates
-were closed after the update, all found and fixed today:
+| | state |
+|---|---|
+| light/player/camera telemetry | working on 25246367, verified live |
+| ambient (goal 1) | working, measured from 0.3916 outdoors to exactly 0 indoors |
+| occlusion (goal 2) | confirmed at two sites, by two independent implementations |
+| public release | `v2.0.2` uploaded, Nexus virus scan still running |
+| CrimsonHue | untouched, consumes neither feed |
 
-| | where | what |
+## The machine right now
+
+- **Installed and running:** private package `2.0.3-ambient.2`, ASI `C2DD4CBD…`. This
+  is a RESEARCH build, not the release.
+- **The installed INI is a test configuration**, edited by hand during the session:
+  `SpatialProbe=1`, `SpatialReadback=1`, `SpatialVisibilitySeconds=1800`,
+  `SignedDistanceReadback=1`, `[LightOverlay] OcclusionTest=1`. Both `bin64` and the
+  DMM mods folder carry it, so a redeploy will not silently revert it.
+- **`bin64` holds 313 R16 payloads, about 5.9 GB.** They accumulate at 17 MB each and
+  nothing deletes them. The ones worth keeping are already copied into
+  `artifacts/light-research/`. Clearing the rest is safe and overdue.
+- **125 commits are unpushed.** Pushing publishes the whole research history; that is
+  the user's call and was never made. The Nexus page links `blob/main/docs/API.md`,
+  so that link currently shows a pre-update document.
+- `.env` holds working VirusTotal and Nexus API keys. Git-ignored; packages are built
+  from an explicit nine-file list, so no key can reach a release.
+
+## What broke and what fixed it
+
+The update moved code. **Four native anchors, all by exactly +0x21C0**, which is itself
+the evidence that a region shifted rather than functions changing:
+
+| where | constant | old | new |
+|---|---|---|---|
+| `ambient_probe.h` | `AmbientHookRvas[0]` | `0x3849BB7` | `0x384BD77` |
+| `ambient_probe.h` | `AmbientHookRvas[1]` | `0x384CBA3` | `0x384ED63` |
+| `spatial_probe.cpp` | `DispatchRva` | `0x37B4360` | `0x37B6520` |
+| `spatial_probe.cpp` | `ExposureReturnRva` | `0x35450A4` | `0x3547264` |
+
+Plus two managed gates that had nothing to do with the update and everything to do with
+duplicated build identity:
+
+- `SkyAmbientReader.SkyProducerRva` was the old `AmbientHookRvas[0]` as a literal.
+- `Program.cs` constructed the sky reader only when `GameBuild == "25116796"`, so ambient
+  stayed dead even after the native relocation. **That cost an entire debugging round:**
+  the endpoint reported `unsupported-build`, which is also what it reports when the
+  feature is simply switched off, so the message actively misled. It is a blanket
+  fallback for a null reader, not a statement about the build.
+
+`ProcessManyLights` had already been relocated by Codex before the session
+(`0x3CB65CA` → `0x3CB89DA`).
+
+**The lesson that became rule 3a:** the ambient hooks were recoverable from their own
+signatures because those happen to be unique. The spatial pair was not — its anchor is
+an ordinary function prologue occurring **1390 times** in the image. It was recovered
+only by reading 32 bytes of context at the old address in the PREVIOUS executable.
+`scripts/Backup-GameExecutable.ps1` now preserves every executable, idempotent by
+content. Without the old binary that relocation was not possible, and an overwritten
+executable cannot be got back.
+
+## Goal 1: ambient — working and measured
+
+Three positions on the new build, one session, monotone:
+
+| where | visibility | local estimate |
 |---|---|---|
-| 1 | `ambient_probe.h` | two hook RVAs, moved +0x21C0 |
-| 2 | `Program.cs` | the sky reader was gated on the literal build `25116796` |
-| 3 | `spatial_probe.cpp` | `DispatchRva`/`ExposureReturnRva`, also +0x21C0 |
+| open ground, Serkis Estate | 0.3916 | 0.003436 |
+| stable with an open frontage | 0.0476 | 0.000144 |
+| enclosed interior, Warspike Spearmaker | **0.0000000** | `[0, 0, 0]` |
 
-All four native anchors moved by the same delta, which is the evidence that the
-region shifted rather than the functions changing. The spatial pair could NOT be
-relocated from its own signature -- an ordinary prologue occurring 1390 times --
-and needed 32 bytes of context from the preserved previous executable. That is now
-rule 3a with `scripts/Backup-GameExecutable.ps1`.
+0.39 outdoors sits inside the 0.27–0.39 band measured on 2026-09-10, so the feed means
+what it meant before.
 
-Live values, package `2.0.3-ambient.2`, probe armed with `Start-SpatialProbe.ps1`:
+**The enclosed value is exactly zero**, checked unrounded. That settles a product
+question: a lamp driven by `sky × visibility` goes black indoors and nothing recovers a
+signal from zero. The perceptual curve with a floor is mandatory, not polish.
 
-| where | position | visibility | local estimate |
-|---|---|---|---|
-| open ground, Serkis Estate | -10503.83 609.83 -4380.79 | **0.3916** | 0.003436 |
-| stable, open frontage | -10532.53 609.16 -4419.52 | **0.0476** | 0.000144 |
-| enclosed interior, Warspike Spearmaker | -11410.45 665.86 -4213.65 | **0.0000000** | [0, 0, 0] |
+Weaker evidence than the 2026-09-10 barn traverse, and recorded as such: the sky term
+also fell (0.00887 → 0.00302) because game time advanced into dusk. What carries the
+result is that the visibility term is independent of the sky by construction, not the
+comparison.
 
-Monotone across three degrees of enclosure, and 0.39 outdoors sits exactly in the
-0.27-0.39 band measured for open ground on 2026-09-10. The mechanism and the meaning
-are both back.
+**Sampling limit worth acting on:** the combined estimate was null in two of four
+consecutive samples in one place and fresh five times running in another. The freshness
+bound is 1500 ms against a 0.31–0.48/s acquisition rate, so the paired value flickers
+intermittently rather than predictably. A consumer must hold the last good value.
 
-**The enclosed value is exactly zero, not a small number** -- checked unrounded, and
-the estimate with it. Yesterday's deep barn bottomed out at 0.000025; a fully closed
-interior reaches the floor. That settles the question of whether the perceptual curve
-CrimsonHue needs is optional: multiplying by this value drives a lamp to black, and
-no amount of scaling recovers anything from zero. A floor is mandatory, not a polish
-item.
+## Goal 2: occlusion — confirmed twice, by two implementations
 
-**Read that as less controlled than yesterday's barn traverse.** The sky term also
-fell, 0.00887 to 0.00302, because roughly fifteen minutes of game time passed and it
-is 8:42 PM in game. So this is not a clean "sky steady while visibility collapses"
-control; the visibility term is independent by construction, which is what carries
-the result, not the comparison.
+Second site: Warspike Spearmaker, a fireplace point light, the user stepping behind a
+partition and back. Thirty copies traced offline with the parameters fixed on
+2026-09-10 and nothing re-tuned: clear ×10, blocked ×3, clear ×17.
 
-**Observed limit worth acting on:** the combined estimate reports null in two of four
-consecutive samples. `SkyAmbientReader.MaximumAgeMilliseconds` is 1500 while the
-measured acquisition rate is 0.31-0.48/s, so a visibility sample is older than the
-freshness bound more often than not. At this rate the combined value flickers rather
-than streams. Whoever wires this into lamp control must hold the last good value, or
-the acquisition rate has to improve first.
+The native HUD marcher (`OcclusionTest=1`, Codex's code, never run live before) ran at
+the same time and reported `CLEAR +0.45148` and `BLOCKED −0.03038` on that light. Both
+land inside the offline bands (+0.301…+0.496 and −0.0039…−0.0400). Native C++ marching
+a volume in memory, Python marching a file on disk, sharing the calibration and not the
+code.
 
-**UPLOADED, NOT YET DOWNLOADABLE: `v2.0.2`.** The mod page says "Virus scanning is in
-progress" and "Some files not scanned"; the file cannot be downloaded yet, and
-acceptance is NOT established.
+**The thin margin is systematic, and it has a visible consequence.** A lamp two game
+units from the traced one read `CLEAR +0.00618` from one pose and `BLOCKED −0.01891`
+from the other. Anything consuming this needs hysteresis or it will flicker on
+borderline geometry.
 
-**Correction, recorded because it was briefly written down as fact:** `category: main`
-from the API was read as "passed the scan". It is not. It is only the file's category
-on the page. **The v3 API exposes no virus-scan state at all** -- the version object
-carries `id`, `file`, `position`, `name`, `version`, `category`, `uploaded_at` and
-nothing else, and "scan" appears nowhere in the endpoint reference. The mod page is
-the only source for scan status, so `Get-NexusModStatus.ps1` cannot answer it and
-should not be asked to.
+Stopping rule unchanged: no t224, no raymarch reconstruction, no coverage model, no
+DXR, unless A visibly fails on a concrete case.
 
-What the API does confirm: the ModManagers entry (file id `7891854`) holds 2.0.2 as
-version id `38521561692992`, uploaded 11:29:37; 2.0.0 remains `old_version` and so
-stays downloadable for Steam build 25116796 as intended; the rejected 2.0.1 sits
-`archived`.
+## The release, and the antivirus work behind it
 
-The mod id question from the previous commit is settled: `$mod.id` from
-`GET /games/crimsondesert/mods/3374` is exactly the site's 14-digit "Unique Mod ID",
-`38521561681198`. Game id `8969`. All three identifiers are in `.env` and both Nexus
-scripts load it themselves.
+Nexus rejected `2.0.1`. What was then measured rather than guessed is in
+[ANTIVIRUS_FINDINGS.md](ANTIVIRUS_FINDINGS.md); the two conclusions matter for every
+future release:
 
-**Why 2.0.2 and not 2.0.1.** Nexus rejected the 2.0.1 package on that scan. The data,
-gathered rather than assumed:
+- **Microsoft `Wacatac.B!ml` is not ours.** Proven by rebuilding the v2.0.0 source with
+  today's toolchain: identical source, now flagged, where the September build was not.
+  It also flickers across builds. No feature removal fixes it. **Do not trade
+  functionality for it** — that was nearly done before the control was run.
+- **Bitdefender `Barys.73277` is ours and is pinned** to commit `6937fa9`, the bounded
+  repeated readback series. Releases build with `CDT_RESEARCH=OFF`, which excludes it,
+  and the 2.0.2 ZIP scans 0/67.
 
-| | 2.0.0 (accepted) | 2.0.1 (rejected) | 2.0.2 (uploaded) |
-|---|---|---|---|
-| ZIP | 0/65 | **8/66** | **0/67** |
-| ASI | 4/70 | 12/70 | **4/70** |
+`CDT_RESEARCH` derives from the version: off for releases, on for prereleases. Nothing
+was deleted; the research sources and their tests are untouched, and two stand-in
+translation units satisfy the same interfaces when it is off.
 
-All eight ZIP hits on 2.0.1 were one engine under eight brand names, six reporting the
-identical signature id `Gen:Variant.Application.Barys.73277`. The baseline was never
-clean: the accepted 2.0.0 ASI already scored 4/70. Compiling the research
-instrumentation out (`CDT_RESEARCH=OFF`, derived from the version) removed that
-signature entirely — the ZIP that a host scans is back to zero.
+One correction worth carrying: `category: main` from the Nexus API was briefly written
+down as "passed the scan". It is not. **The v3 API exposes no scan state at all** — only
+the mod page does.
 
-**Recorded as a real regression, not talked away:** the 2.0.2 ASI's four are
-CrowdStrike 70%, Cynet, McAfee `ti!hash` and **Microsoft `Trojan:Win32/Wacatac.B!ml`**.
-2.0.0's fourth was Trellix instead of Microsoft. Same count, worse composition —
-Defender is on every Windows machine, so an extracted ASI can be quarantined where
-2.0.0's would not have been. A VirusTotal ZIP scan does not surface it. A
-false-positive report to Microsoft is the only clean fix and is NOT done.
+## What is actually open
 
-**Verified live against the exact uploaded binary**, ASI SHA256
-`3222B06A9BAD95CAEEF466185DCF91BDA6CD18F0C25E1245FC307E47871C799E`, confirmed by
-hashing the installed file rather than trusting the installer:
+1. **CrimsonHue.** It consumes only `/v1/stream`, neither ambient nor occlusion. Both
+   feeds are now proven on the current build. The perceptual curve with a floor and the
+   occlusion gate with hysteresis belong there. This is the next real step and it has
+   been deliberately untouched for two days.
+2. **The Nexus scan on 2.0.2.** Nothing to do but watch the page.
+3. **Housekeeping:** 5.9 GB of payloads in `bin64`; the installed INI is a test
+   configuration; `docs/API.md` still describes the pre-update state and its link on
+   Nexus points at unpushed `main`.
 
-```
-/v1/health            supportedBuild true, gameBuild 25246367, mode "tested", playing
-/v1/snapshot          authored 18, rendered available, 31 published, 0 malformed, 46 ms
-/v1/schema            9976 bytes
-/v1/lights/smoothed   available, 25 groups, 200 ms / 0.15, 49 ms
-```
-
-The WebSocket routes are exercised by the in-game HUD, a peer consumer of the same
-loopback API, running at 103.2 received Hz. Package ZIP SHA256
-`8CF638ECBD815B6D84144BDDB6B4B9B7972DC5ED9E6B11988156FDCA8DAB5C04`.
-
-**Known rough edge from the cut:** with research compiled out, the HUD still prints
-`SDF test disabled: set [LightOverlay] OcclusionTest=1`. Following that hint in a
-release build does nothing — the probe returns false and logs a refusal. The hint
-should say the feature is not built into this package. Cosmetic, in a hidden
-diagnostic panel, and not worth a respin on its own.
-
-**`scripts/Get-VirusTotalVerdict.py`** now answers these questions from the preserved
-packages instead of guessing. A lookup sends only a hash; `--submit` uploads and is
-never implied, because uploading publishes the file. Its key comes from a git-ignored
-`.env` (`.env.example` is the tracked template), and packages are assembled from an
-explicit nine-file list, so no key can reach a release.
-
-**Superseded detail — the rejected 2.0.1 attempt.** The user asked for the fastest possible
-release carrying only the already-promised 2.0.0 feature set, with anything newer
-allowed to ship disabled. 2.0.0 fails closed on build 25246367, so every Nexus user is
-currently on a mod that installs no hook and captures nothing.
-`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ModManagers.zip`,
-ZIP SHA256 `870B7B40CB40D8EF1D9B8D637FF44A5478639009A83603DF9FA161FFCE977DCA`,
-ASI SHA256 `B5C8946740BDA016E6E7ECDD01CD699800DFEAAFE82F03B0320EF7E2E249C010`.
-Its INI differs from the published 2.0.0 INI by ADDED keys only — no 2.0.0 key changed
-or was removed. Everything added is 0/off except `[LightSmoothing]` (200 ms, 0.15),
-which is a separate derived stream and leaves the raw API, the HUD and `/v1/stream`
-untouched. A release version refuses `-IniOverrides`, so the template itself now ships
-`[Ambient] Enabled=0` and `[Overlay] ShowAmbient=0`.
-25/25 native tests, 66 managed tests and package validation pass. Publishing to Nexus
-is the user's action through the site UI; nothing was uploaded.
-
-**Native instrumentation is exact-executable for 25246367 only.** On 25116796 this
-package reports an unsupported build and installs nothing. 2.0.0 stays the version for
-that older build. The managed side resolves against every embedded definition, so it is
-the native contract, generated from one `CDT_NATIVE_BUILD_ID`, that pins this.
-
-**SECOND ambient gate found — the relocation alone does not bring ambient back.**
-`Program.cs` constructs the sky reader as
-
-```csharp
-resolved.Compatibility.Mode == "tested" && resolved.GameBuild == "25116796"
-```
-
-so on 25246367 `runtime.Sky` is null whatever the INI or the native hooks say, and the
-endpoint falls back to the literal `"unsupported-build"`. Verified live at 10:32 with
-`[Ambient] Enabled=1` installed: health reports `supportedBuild true / 25246367` while
-`/v1/ambient` still reports unavailable. The hardcoded build string has to become the
-build the ASI's ambient anchors were compiled for — those RVAs are baked into
-`ambient_probe.h` per build, so the two must agree. Deliberately NOT changed before the
-release, because ambient ships off and the change would be untested.
-
-Note also that the `"unsupported-build"` reason cannot distinguish a disabled feature
-from an incompatible build; it is a blanket fallback for a null reader. That is a
-misleading message for a released build and worth a separate `"disabled"` reason.
-
-**VERIFIED LIVE on build 25246367:** the `build25246367.1` package was installed at
-10:12 and the light path is fully back. `/v1/health` reports `supportedBuild: true`,
-`gameBuild 25246367`, `compatibility.mode "tested"`, exact EXE `BCBF623A…`. The native
-log shows `ManyLights exact-build/context detour installed at RVA 0x3CB89DA` and
-`recurring capture ready: exact filter callsite, 20 Hz, paired counter, submission
-fence`. Six snapshots over ~12 s: snapshot sequence 6038→6063, GPU capture sequence
-2461→2467, frame 8758→8779, age 0–47 ms, 43–44 published records, 201 active / 157
-outside radius / **0 malformed**. With the camera stationary the summed luminance rose
-5.97→7.83, so the values are live scene data, not a replayed buffer. That is the
-freshness control; the lamp ON→OFF→ON toggle was NOT performed, and an older checkpoint
-records the user's standing instruction not to insist on it.
-Evidence: `artifacts/recovery/20260911-build-25246367/live-verification/`.
-
-**ROOT-CAUSED and FIXED — ambient was still down, and not because of the INI.**
-`/v1/ambient` reported `unavailable / unsupported-build`. The managed reason string
-cannot distinguish "switched off" from "build unsupported" (a null `runtime.Sky` falls
-back to that literal), so it was checked against the executable instead. The two ambient
-hook RVAs are hardcoded in `ambient_probe.h` — they are NOT generated from the build
-definition, so promoting the build does not move them. All six anchors the ambient
-preflight tests missed on the new EXE.
-
-Both hook signatures are still **unique image-wide** and both paths moved by exactly
-**+0x21C0**, with `Dispatch(1,1,1)` and the `[sky+0x98]` source loads matching at the
-shifted addresses — a plain whole-region shift, the simple case in
-[UPDATE_RECOVERY.md](UPDATE_RECOVERY.md).
-
-```
-AmbientHookRvas    {0x3849BB7, 0x384CBA3} -> {0x384BD77, 0x384ED63}
-AmbientSourceRvas  {0x38498AF, 0x384CADB} -> {0x384BA6F, 0x384EC9B}   (was inline)
-SkyAmbientReader.SkyProducerRva  0x3849BB7 -> 0x384BD77               (was a literal)
-```
-
-The scattered literals are now named constants in one place on each side, so the next
-update touches one header and one C# constant.
-
-**New tool:** `scripts/Verify-AmbientAnchors.py` reads those constants out of the header
-and checks them against an executable, so the check cannot drift from the code. It
-reports MATCH for all six on the new EXE. Negative control: run against the preserved
-**old** 25116796 EXE it misses all six, finds both signatures unique, derives the shared
-delta −0x21C0 and reconstructs exactly the original constants — the relocation is
-confirmed from both directions.
-
-**READY, NOT INSTALLED:**
-`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ambient25246367.1-ModManagers.zip`,
-ZIP SHA256 `C94528F3BB86738CDCE4A80FAF1F3124378C3BE137979969F52FBBEFD8452170`,
-ASI SHA256 `B5C8946740BDA016E6E7ECDD01CD699800DFEAAFE82F03B0320EF7E2E249C010`.
-Baked INI: `[Ambient] Enabled=1` and `[Overlay] ShowAmbient=1`; every research probe
-(`SpatialProbe`, `SpatialReadback`, `SignedDistanceReadback`, `AmbientProbe`) and
-`OcclusionTest` stay 0. 25/25 native tests, 66 managed tests and package validation pass.
-
-**OPEN:** the relocated ambient hooks have NOT run live. Offline byte identity is not a
-runtime result — the preflight can now pass, but whether the sky dispatch still produces
-the same 1024-byte payload with the same semantics on this build is unverified. An
-unchanged EXE does not prove unchanged shaders. Variant A / SDF remain parked; no t224,
-no PIX, no DXR, no CrimsonHue work.
-
-**ONE next step:** user closes the game, installs the ambient ZIP through DMM, loads the
-save. Check `/v1/ambient` for `status: available` with a plausible sky and camera sky
-visibility, then walk out of cover and back under it to confirm the visibility term still
-collapses indoors. Stop on a preflight failure and report it as a compatibility result.
+**One next step:** open CrimsonHue and wire the ambient estimate to lamp brightness
+through a curve with a floor. Everything it needs is measured, and the floor is not
+optional — the indoor value is exactly zero.
 
 ---
 
