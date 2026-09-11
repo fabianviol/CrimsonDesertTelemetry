@@ -310,6 +310,58 @@ a graze is told apart from a solid hit. Add `--from X Y Z` to trace from somewhe
 than the recorded camera.
 
 
+
+## Second case, and the HUD marcher agrees with the offline trace — 2026-09-11 12:42
+
+At Alfonso Estate, Warspike Spearmaker: a different building, a different light and a
+different game build (25246367) from the doorway case below. A fireplace point light at
+`(-11402.502, 666.559, -4216.367)`, the user standing in front of it, walking to the
+door where a wooden partition comes between, and back.
+
+### Offline, from the preserved payloads
+
+Thirty copies of one series, grouped by the camera each one carries, with the SAME
+fixed parameters as the original test and nothing re-tuned:
+
+| phase | copies | camera z | verdict | closest approach |
+|---|---|---|---|---|
+| in front of the fireplace | 10 | −4214.3 … −4214.5 | clear | +0.301 … +0.430 |
+| at the door | 3 | −4218.8 … −4219.3 | **blocked** | −0.0095, −0.0039, −0.0400 |
+| back again | 17 | −4215.3 | clear | +0.349 … +0.496 |
+
+A-B-A, thirty traces, no contradictions. Evidence:
+`artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
+
+### In game, from the HUD
+
+`[LightOverlay] OcclusionTest=1` ran the same test natively while this happened. It is
+Codex's separate implementation, and it had never run live before. On the fireplace:
+
+| camera | HUD verdict | HUD closest | volume age |
+|---|---|---|---|
+| −11410.76 665.86 −4215.19 | `SDF A LOS CLEAR` | **+0.45148 gu** | 485 ms |
+| −11411.28 665.82 −4218.38 | `SDF A LOS BLOCKED` | **−0.03038 gu** | 2047 ms |
+
+**Two independent implementations, agreeing on the verdict AND on the magnitude.** The
+HUD's +0.45 sits inside the offline clear band of +0.301…+0.496, and its −0.030 inside
+the blocked band of −0.0039…−0.0400. One is native C++ marching a volume held in
+memory; the other is Python marching a file on disk through
+`scripts/Trace-SignedDistance.py`. They share the calibration, not the code.
+
+That is the corroboration the single-implementation result below did not have.
+
+### The thin margin is systematic, and it makes borderline lights flip
+
+Both cases graze rather than punch through: −0.0000…−0.0068 at the doorway,
+−0.0039…−0.0400 here. It is a property of the method, not luck.
+
+The HUD makes the consequence visible. A lamp at `(-11402.870, 666.593, -4225.171)`
+reported `CLEAR / closest +0.00618` from one pose and `BLOCKED / closest −0.01891` from
+the other, barely two game units apart. Its true state may well have changed, but a
+verdict resting on six thousandths of a game unit is not a verdict to build a product
+on. **Anything consuming this needs hysteresis, or it will flicker on geometry that
+sits near the boundary.** That is now an observation, not a worry.
+
 ## Controlled test and stopping rule
 
 **Steps 1-2 and one retained exemplar per pose were completed on 2026-09-10.** The

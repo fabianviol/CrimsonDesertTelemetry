@@ -1,4 +1,25 @@
-# Current checkpoint — ambient restored on 25246367, 2.0.2 uploaded, 2026-09-11, Claude
+# Current checkpoint — both goals live on 25246367, 2.0.2 uploaded, 2026-09-11, Claude
+
+**GOAL 2 CONFIRMED AT A SECOND SITE, and by two independent implementations.**
+Warspike Spearmaker, a fireplace point light, the user stepping behind a partition and
+back. Thirty copies traced offline give clear x10 / blocked x3 / clear x17 with the
+original fixed parameters. Simultaneously the native HUD marcher
+(`[LightOverlay] OcclusionTest=1`, Codex's code, never run live before) reported
+`SDF A LOS CLEAR +0.45148` and `SDF A LOS BLOCKED -0.03038` on the same light -- both
+inside the offline bands. Native C++ against a volume in memory, Python against a file
+on disk, sharing the calibration and not the code. Detail in
+[SDF_VARIANT_A.md](SDF_VARIANT_A.md); evidence in
+`artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
+
+**And the thin margin now has a visible consequence.** A lamp two game units away from
+the traced one reported CLEAR at +0.00618 from one pose and BLOCKED at -0.01891 from
+the other. A consumer needs hysteresis or it will flicker on borderline geometry.
+
+**The restart fix is confirmed live** -- three series were started in one game session
+with `Start-SpatialProbe.ps1`, no restart between them. Note the shape of the trap it
+replaced: a bounded run of 30 copies at 2000 ms lasts 60 seconds, so the first attempt
+expired before the user was in position and every light read `stale-sdf-volume`. That
+is not a fault, it is the series ending; re-signal and it runs again.
 
 **AMBIENT IS BACK ON BUILD 25246367, measured in game 12:30.** Three separate gates
 were closed after the update, all found and fixed today:
