@@ -23,7 +23,14 @@ namespace cdt::spatial
 {
 namespace
 {
-constexpr uint32_t DispatchRva=0x37B4360, ExposureReturnRva=0x35450A4;
+// Exact-executable addresses, like the ambient hooks in ambient_probe.h, and not
+// generated from a build definition -- promoting a build does not move them.
+// Build 25246367 shifted both by +0x21C0 from 25116796, the same delta the two
+// ambient paths moved by, so this whole code region travelled together. The
+// 14-byte prologue below occurs 1390 times in the image and cannot relocate
+// anything on its own; 32 bytes of context from the previous executable pins
+// each of these uniquely. scripts/Verify-NativeAnchors.py does that check.
+constexpr uint32_t DispatchRva=0x37B6520, ExposureReturnRva=0x3547264;
 constexpr std::array<uint8_t,14> Signature{0x48,0x89,0x5C,0x24,0x10,0x48,0x89,0x6C,0x24,0x18,0x56,0x57,0x41,0x56};
 constexpr unsigned Limit=20, BarrierLimit=8;
 // Preserve RAX even though the inspected exposure caller ignores it.

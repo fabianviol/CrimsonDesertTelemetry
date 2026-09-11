@@ -5,6 +5,7 @@ Documentation is for the assistants, not homework for the user.
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.
 3. Preserve both assistants' work. Commit completed changes with clear ownership. Never overwrite a versioned release or delete old research/captures.
+3a. Preserve every game executable you work against: run `scripts/Backup-GameExecutable.ps1` after any install or update, before Steam replaces the file. Relocating a hardcoded address after an update can be impossible without the PREVIOUS binary to read context from, and an overwritten executable cannot be recovered.
 4. Verify the actual result. Separate measured facts, hypotheses and invalid tests. A failed reader proves no absence; game tests need a progressing control.
 5. Maintain one concise current checkpoint in `docs/HANDOVER.md`: result, remaining work, relevant evidence and one next step. Raw captures stay out of Git.
 6. Scoped reversible console/graphics instrumentation is authorized for lighting research. Never call an instrumented run an untouched baseline. Require game shutdown for ASI replacement.

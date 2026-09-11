@@ -27,7 +27,22 @@ are the fallback, not a promise that every failure can be rendered.
 
 Baseline: Steam25116796, EXE1.0.0.2760, 379781016 bytes, SHA256
 `4D99C15C58BD20A94D354D10AE395D1FAC777D59EF52CBA8080DC3FC8DC6F454`.
-Preserve this EXE privately BEFORE Steam overwrites it. The former lost EXE cost us
+Preserve this EXE privately BEFORE Steam overwrites it:
+
+```powershell
+.\scripts\Backup-GameExecutable.ps1
+```
+
+Idempotent by content, so running it twice costs nothing; it files the copy under
+`artifacts/recovery/` with a manifest and never overwrites an existing one.
+
+This is not bookkeeping. On 2026-09-11 the spatial probe's anchor could not be
+relocated from its own signature -- an ordinary function prologue occurring 1390
+times in the image -- and was only recovered by reading 32 bytes of context at the
+old address in the PREVIOUS executable and searching for that. It was unique on the
+first try, and it showed the anchor had moved by the same +0x21C0 as the ambient
+pair, which is itself the evidence that the region shifted rather than changed.
+None of that exists without the old binary. The former lost EXE cost us
 RTTI/provenance evidence; do not repeat that failure.
 
 ## Recover only the broken layer

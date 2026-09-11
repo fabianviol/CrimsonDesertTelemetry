@@ -259,6 +259,7 @@ requires 7.4 or newer.
 | `Verify-NativeSampler.py` | compares the native sampler against the decoder on preserved captures |
 | `Verify-AmbientAnchors.py` | checks the hardcoded ambient hook RVAs in `ambient_probe.h` against a game executable, and derives the shift when an update moves them |
 | `Get-VirusTotalVerdict.py` | looks a package binary up on VirusTotal by hash, or uploads it with `--submit`; key from `.env`. See [ANTIVIRUS_FINDINGS.md](ANTIVIRUS_FINDINGS.md) |
+| `Backup-GameExecutable.ps1` | preserves the installed game executable under `artifacts/recovery/`, idempotent by content. Run it after every install or update -- the previous binary is what makes the next relocation possible |
 | `Compare-PeSurface.py` | diffs two PE files' sections, entropy and imports, flagging the APIs generic AV engines weight |
 | `Survey-SegmentOcclusion.py` | segment occlusion over every rendered light in every capture |
 | `Analyze-SegmentOcclusion.py` | one capture, given viewpoints and a target |
