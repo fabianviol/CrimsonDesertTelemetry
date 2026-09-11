@@ -1,4 +1,43 @@
-# Current checkpoint — 2.0.2 uploaded, scan still running, 2026-09-11, Claude
+# Current checkpoint — ambient restored on 25246367, 2.0.2 uploaded, 2026-09-11, Claude
+
+**AMBIENT IS BACK ON BUILD 25246367, measured in game 12:30.** Three separate gates
+were closed after the update, all found and fixed today:
+
+| | where | what |
+|---|---|---|
+| 1 | `ambient_probe.h` | two hook RVAs, moved +0x21C0 |
+| 2 | `Program.cs` | the sky reader was gated on the literal build `25116796` |
+| 3 | `spatial_probe.cpp` | `DispatchRva`/`ExposureReturnRva`, also +0x21C0 |
+
+All four native anchors moved by the same delta, which is the evidence that the
+region shifted rather than the functions changing. The spatial pair could NOT be
+relocated from its own signature -- an ordinary prologue occurring 1390 times --
+and needed 32 bytes of context from the preserved previous executable. That is now
+rule 3a with `scripts/Backup-GameExecutable.ps1`.
+
+Live values, package `2.0.3-ambient.2`, probe armed with `Start-SpatialProbe.ps1`:
+
+| where | position | visibility | local estimate |
+|---|---|---|---|
+| open ground | -10503.83 609.83 -4380.79 | **0.3916** | 0.003436 |
+| inside the stable | -10532.53 609.16 -4419.52 | **0.0476** | 0.000144 |
+
+A factor of 8.2 on visibility and 23 on the estimate, and 0.39 outdoors sits exactly
+in the 0.27-0.39 band measured for open ground on 2026-09-10. The mechanism and the
+meaning are both back.
+
+**Read that as less controlled than yesterday's barn traverse.** The sky term also
+fell, 0.00887 to 0.00302, because roughly fifteen minutes of game time passed and it
+is 8:42 PM in game. So this is not a clean "sky steady while visibility collapses"
+control; the visibility term is independent by construction, which is what carries
+the result, not the comparison.
+
+**Observed limit worth acting on:** the combined estimate reports null in two of four
+consecutive samples. `SkyAmbientReader.MaximumAgeMilliseconds` is 1500 while the
+measured acquisition rate is 0.31-0.48/s, so a visibility sample is older than the
+freshness bound more often than not. At this rate the combined value flickers rather
+than streams. Whoever wires this into lamp control must hold the last good value, or
+the acquisition rate has to improve first.
 
 **UPLOADED, NOT YET DOWNLOADABLE: `v2.0.2`.** The mod page says "Virus scanning is in
 progress" and "Some files not scanned"; the file cannot be downloaded yet, and
