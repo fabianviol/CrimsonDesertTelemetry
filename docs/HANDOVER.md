@@ -19,12 +19,20 @@ Live values, package `2.0.3-ambient.2`, probe armed with `Start-SpatialProbe.ps1
 
 | where | position | visibility | local estimate |
 |---|---|---|---|
-| open ground | -10503.83 609.83 -4380.79 | **0.3916** | 0.003436 |
-| inside the stable | -10532.53 609.16 -4419.52 | **0.0476** | 0.000144 |
+| open ground, Serkis Estate | -10503.83 609.83 -4380.79 | **0.3916** | 0.003436 |
+| stable, open frontage | -10532.53 609.16 -4419.52 | **0.0476** | 0.000144 |
+| enclosed interior, Warspike Spearmaker | -11410.45 665.86 -4213.65 | **0.0000000** | [0, 0, 0] |
 
-A factor of 8.2 on visibility and 23 on the estimate, and 0.39 outdoors sits exactly
-in the 0.27-0.39 band measured for open ground on 2026-09-10. The mechanism and the
-meaning are both back.
+Monotone across three degrees of enclosure, and 0.39 outdoors sits exactly in the
+0.27-0.39 band measured for open ground on 2026-09-10. The mechanism and the meaning
+are both back.
+
+**The enclosed value is exactly zero, not a small number** -- checked unrounded, and
+the estimate with it. Yesterday's deep barn bottomed out at 0.000025; a fully closed
+interior reaches the floor. That settles the question of whether the perceptual curve
+CrimsonHue needs is optional: multiplying by this value drives a lamp to black, and
+no amount of scaling recovers anything from zero. A floor is mandatory, not a polish
+item.
 
 **Read that as less controlled than yesterday's barn traverse.** The sky term also
 fell, 0.00887 to 0.00302, because roughly fifteen minutes of game time passed and it
