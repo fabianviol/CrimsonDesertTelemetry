@@ -1,4 +1,43 @@
-# Current checkpoint — lights recovered live, ambient relocated, 2026-09-11, Claude
+# Current checkpoint — 2.0.1 release built, ambient still gated, 2026-09-11, Claude
+
+**RELEASE BUILT, NOT PUBLISHED — `v2.0.1`.** The user asked for the fastest possible
+release carrying only the already-promised 2.0.0 feature set, with anything newer
+allowed to ship disabled. 2.0.0 fails closed on build 25246367, so every Nexus user is
+currently on a mod that installs no hook and captures nothing.
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ModManagers.zip`,
+ZIP SHA256 `870B7B40CB40D8EF1D9B8D637FF44A5478639009A83603DF9FA161FFCE977DCA`,
+ASI SHA256 `B5C8946740BDA016E6E7ECDD01CD699800DFEAAFE82F03B0320EF7E2E249C010`.
+Its INI differs from the published 2.0.0 INI by ADDED keys only — no 2.0.0 key changed
+or was removed. Everything added is 0/off except `[LightSmoothing]` (200 ms, 0.15),
+which is a separate derived stream and leaves the raw API, the HUD and `/v1/stream`
+untouched. A release version refuses `-IniOverrides`, so the template itself now ships
+`[Ambient] Enabled=0` and `[Overlay] ShowAmbient=0`.
+25/25 native tests, 66 managed tests and package validation pass. Publishing to Nexus
+is the user's action through the site UI; nothing was uploaded.
+
+**Native instrumentation is exact-executable for 25246367 only.** On 25116796 this
+package reports an unsupported build and installs nothing. 2.0.0 stays the version for
+that older build. The managed side resolves against every embedded definition, so it is
+the native contract, generated from one `CDT_NATIVE_BUILD_ID`, that pins this.
+
+**SECOND ambient gate found — the relocation alone does not bring ambient back.**
+`Program.cs` constructs the sky reader as
+
+```csharp
+resolved.Compatibility.Mode == "tested" && resolved.GameBuild == "25116796"
+```
+
+so on 25246367 `runtime.Sky` is null whatever the INI or the native hooks say, and the
+endpoint falls back to the literal `"unsupported-build"`. Verified live at 10:32 with
+`[Ambient] Enabled=1` installed: health reports `supportedBuild true / 25246367` while
+`/v1/ambient` still reports unavailable. The hardcoded build string has to become the
+build the ASI's ambient anchors were compiled for — those RVAs are baked into
+`ambient_probe.h` per build, so the two must agree. Deliberately NOT changed before the
+release, because ambient ships off and the change would be untested.
+
+Note also that the `"unsupported-build"` reason cannot distinguish a disabled feature
+from an incompatible build; it is a blanket fallback for a null reader. That is a
+misleading message for a released build and worth a separate `"disabled"` reason.
 
 **VERIFIED LIVE on build 25246367:** the `build25246367.1` package was installed at
 10:12 and the light path is fully back. `/v1/health` reports `supportedBuild: true`,

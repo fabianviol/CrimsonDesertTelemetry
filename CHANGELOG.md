@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.1 - 2026-09-11
+
+Compatibility release for Crimson Desert Steam build `25246367` (executable
+`1.0.0.2850`). 2.0.0 fails closed on that build: it reports `unsupported-build`,
+installs no hook and captures nothing. This release restores the 2.0.0 feature set
+on the updated game and adds no new promised behavior.
+
+- Validate and hook the new executable. `ProcessManyLights` moved by `0x2410`; its
+  13,607-byte body keeps the same 2,890 normalized instructions, register lifetime
+  and binder/Dispatch contexts, so the hook relocates to RVA `0x3CB89DA` rather
+  than being re-derived. Camera and player anchors relocated; the scene vtable is
+  `0x5C04768`; the RTTI-guarded player chain and all known object offsets still
+  validate. Runtime preflight remains byte-exact and unknown executables are still
+  barred from native hooks.
+- Fix the update checker reporting the native hook missing on a relocated build.
+  It compared a `call rel32` literally, which changes whenever the target moves;
+  the offline finder now anchors that hook to its unique dispatch context.
+- Native instrumentation is exact-executable and is built for `25246367` only.
+  On Steam build `25116796` this package reports an unsupported build and installs
+  nothing; 2.0.0 remains the version for that older build.
+- Ship the new global ambient feed disabled. `[Ambient] Enabled=0` installs no sky
+  hook, and `[Overlay] ShowAmbient=0` keeps it off the F9 diagnostics page. The
+  feed is not part of the published feature set and is not validated on this build.
+- The derived smoothed-light stream stays available and unchanged; raw API values,
+  the HUD and `/v1/stream` are untouched by it. Private research switches under
+  `[Research]` and the experimental `[LightOverlay] OcclusionTest` remain off.
+- Verified before release: 25 native CTest paths, 66 managed tests, package
+  validation including negative cases, the read-only offline anchor check against
+  the new executable, and a live in-game run on `25246367` — `/v1/health` reporting
+  `supportedBuild` with `compatibility.mode "tested"`, progressing capture and frame
+  sequences, fresh paired copies at 0-47 ms and zero malformed records.
+
 ## 2.0.0 - 2026-09-06
 
 - Publish current filtered renderer light contributions through HTTP/WebSocket:
