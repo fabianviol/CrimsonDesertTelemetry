@@ -34,7 +34,7 @@ internal static class SkyAmbientTests
         U32(b, 0, 0x53445443); U32(b, 4, SkyAmbientReader.BridgeVersion); U32(b, 8, 128); U32(b, 12, (uint)b.Length);
         U64(b, 16, 2); U32(b, 24, 42); U32(b, 28, 1); U64(b, 32, 123); U64(b, 40, 7);
         U64(b, 48, 1000); U64(b, 56, 1010); U32(b, 64, 42); U32(b, 68, 2816);
-        U32(b, 72, 1024); U32(b, 76, 0x3849BB7); U32(b, 84, 7); U64(b, 88, 999);
+        U32(b, 72, 1024); U32(b, 76, SkyAmbientReader.SkyProducerRva); U32(b, 84, 7); U64(b, 88, 999);
         EngineCameraTests.SceneBytes().CopyTo(b, 128); Payload().CopyTo(b, 128 + 2816);
         return b;
     }
@@ -69,7 +69,8 @@ internal static class SkyAmbientTests
         { var b=Bridge(); U32(b,offset,0); Invalid(()=>Read(b)); }
         var odd=Bridge(); U64(odd,16,3); Invalid(()=>Read(odd));
         var mismatch=Bridge(); U32(mismatch,64,41); Invalid(()=>Read(mismatch));
-        var otherPath=Bridge(); U32(otherPath,76,0x384CBA3); Invalid(()=>Read(otherPath));
+        // The second ambient path must never be accepted as the sky producer.
+        var otherPath=Bridge(); U32(otherPath,76,0x384ED63); Invalid(()=>Read(otherPath));
         Invalid(()=>Read(Bridge(),1009));
         var times=Bridge(); U64(times,56,999); Invalid(()=>Read(times));
         Check(Read(Bridge(),2500).Status=="available", "Freshness boundary wrong.");

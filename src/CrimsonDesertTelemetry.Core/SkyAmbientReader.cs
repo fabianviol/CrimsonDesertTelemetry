@@ -54,6 +54,13 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
     /// failure, rather than reading the block as something else.
     /// </summary>
     public const uint BridgeVersion = 2;
+    /// <summary>
+    /// The producing hook's RVA, as the native side stamps it. Only the sky path
+    /// (<c>AmbientHookRvas[0]</c>) may publish here; the second ambient path must be
+    /// rejected rather than read as sky. This is an exact-executable address and moves
+    /// with the game build: build 25246367 relocated it by +0x21C0 from 25116796.
+    /// </summary>
+    public const uint SkyProducerRva = 0x384BD77;
     // Byte offsets into the native header, pinned by static_assert on that side.
     private const int VisibilityValueOffset = 96, VisibilityStateOffset = 104,
         VisibilityFrameOffset = 108, VisibilityTickOffset = 112;
@@ -115,7 +122,7 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
             0 => "bridge-waiting", 2 => "unsupported-build", 3 => "native-fault",
             4 => "legacy-plugin-conflict", _ => "capture-disabled-or-stopped"
         });
-        if (BitConverter.ToUInt32(bytes, 84) != 7 || BitConverter.ToUInt32(bytes, 76) != 0x3849BB7 ||
+        if (BitConverter.ToUInt32(bytes, 84) != 7 || BitConverter.ToUInt32(bytes, 76) != SkyProducerRva ||
             BitConverter.ToUInt64(bytes, 88) == 0 || BitConverter.ToUInt32(bytes, 80) != 0)
             throw new InvalidDataException("Sky sample lacks validated producer/fence/scene provenance.");
         var tick = BitConverter.ToInt64(bytes, 48);

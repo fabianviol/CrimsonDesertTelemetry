@@ -1,4 +1,69 @@
-# Current checkpoint — build 25246367 test candidate, 2026-09-11, Codex
+# Current checkpoint — lights recovered live, ambient relocated, 2026-09-11, Claude
+
+**VERIFIED LIVE on build 25246367:** the `build25246367.1` package was installed at
+10:12 and the light path is fully back. `/v1/health` reports `supportedBuild: true`,
+`gameBuild 25246367`, `compatibility.mode "tested"`, exact EXE `BCBF623A…`. The native
+log shows `ManyLights exact-build/context detour installed at RVA 0x3CB89DA` and
+`recurring capture ready: exact filter callsite, 20 Hz, paired counter, submission
+fence`. Six snapshots over ~12 s: snapshot sequence 6038→6063, GPU capture sequence
+2461→2467, frame 8758→8779, age 0–47 ms, 43–44 published records, 201 active / 157
+outside radius / **0 malformed**. With the camera stationary the summed luminance rose
+5.97→7.83, so the values are live scene data, not a replayed buffer. That is the
+freshness control; the lamp ON→OFF→ON toggle was NOT performed, and an older checkpoint
+records the user's standing instruction not to insist on it.
+Evidence: `artifacts/recovery/20260911-build-25246367/live-verification/`.
+
+**ROOT-CAUSED and FIXED — ambient was still down, and not because of the INI.**
+`/v1/ambient` reported `unavailable / unsupported-build`. The managed reason string
+cannot distinguish "switched off" from "build unsupported" (a null `runtime.Sky` falls
+back to that literal), so it was checked against the executable instead. The two ambient
+hook RVAs are hardcoded in `ambient_probe.h` — they are NOT generated from the build
+definition, so promoting the build does not move them. All six anchors the ambient
+preflight tests missed on the new EXE.
+
+Both hook signatures are still **unique image-wide** and both paths moved by exactly
+**+0x21C0**, with `Dispatch(1,1,1)` and the `[sky+0x98]` source loads matching at the
+shifted addresses — a plain whole-region shift, the simple case in
+[UPDATE_RECOVERY.md](UPDATE_RECOVERY.md).
+
+```
+AmbientHookRvas    {0x3849BB7, 0x384CBA3} -> {0x384BD77, 0x384ED63}
+AmbientSourceRvas  {0x38498AF, 0x384CADB} -> {0x384BA6F, 0x384EC9B}   (was inline)
+SkyAmbientReader.SkyProducerRva  0x3849BB7 -> 0x384BD77               (was a literal)
+```
+
+The scattered literals are now named constants in one place on each side, so the next
+update touches one header and one C# constant.
+
+**New tool:** `scripts/Verify-AmbientAnchors.py` reads those constants out of the header
+and checks them against an executable, so the check cannot drift from the code. It
+reports MATCH for all six on the new EXE. Negative control: run against the preserved
+**old** 25116796 EXE it misses all six, finds both signatures unique, derives the shared
+delta −0x21C0 and reconstructs exactly the original constants — the relocation is
+confirmed from both directions.
+
+**READY, NOT INSTALLED:**
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-ambient25246367.1-ModManagers.zip`,
+ZIP SHA256 `C94528F3BB86738CDCE4A80FAF1F3124378C3BE137979969F52FBBEFD8452170`,
+ASI SHA256 `B5C8946740BDA016E6E7ECDD01CD699800DFEAAFE82F03B0320EF7E2E249C010`.
+Baked INI: `[Ambient] Enabled=1` and `[Overlay] ShowAmbient=1`; every research probe
+(`SpatialProbe`, `SpatialReadback`, `SignedDistanceReadback`, `AmbientProbe`) and
+`OcclusionTest` stay 0. 25/25 native tests, 66 managed tests and package validation pass.
+
+**OPEN:** the relocated ambient hooks have NOT run live. Offline byte identity is not a
+runtime result — the preflight can now pass, but whether the sky dispatch still produces
+the same 1024-byte payload with the same semantics on this build is unverified. An
+unchanged EXE does not prove unchanged shaders. Variant A / SDF remain parked; no t224,
+no PIX, no DXR, no CrimsonHue work.
+
+**ONE next step:** user closes the game, installs the ambient ZIP through DMM, loads the
+save. Check `/v1/ambient` for `status: available` with a plausible sky and camera sky
+visibility, then walk out of cover and back under it to confirm the visibility term still
+collapses indoors. Stop on a preflight failure and report it as a compatibility result.
+
+---
+
+# Previous checkpoint — build 25246367 test candidate, 2026-09-11, Codex (history)
 
 **ESTABLISHED:** the previously installed plugin failed closed on the update: Steam
 build `25246367`, EXE `1.0.0.2850`, SHA256

@@ -257,6 +257,7 @@ requires 7.4 or newer.
 | `Start-SpatialProbe.ps1` | signals the plugin's capture event; ONE transaction series per process, including failures |
 | `Decode-SpatialReadback.py` | decodes a spatial capture; also hosts the shared `sample_world`, `select_clipmap` and `march_segment` helpers |
 | `Verify-NativeSampler.py` | compares the native sampler against the decoder on preserved captures |
+| `Verify-AmbientAnchors.py` | checks the hardcoded ambient hook RVAs in `ambient_probe.h` against a game executable, and derives the shift when an update moves them |
 | `Survey-SegmentOcclusion.py` | segment occlusion over every rendered light in every capture |
 | `Analyze-SegmentOcclusion.py` | one capture, given viewpoints and a target |
 | `Analyze-VolumeChurn.py` | how much of a volume changes between transactions |

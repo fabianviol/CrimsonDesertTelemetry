@@ -1,4 +1,5 @@
 #include "render_bridge.h"
+#include "ambient_probe.h"
 #include "sky_bridge.h"
 #include <array>
 #include <cmath>
@@ -161,7 +162,7 @@ uint32_t FailureCode()
 }
 void PublishSample(const void* scene, const void* data, uint64_t tick, uint64_t resource, uint32_t producerRva)
 {
-    if (!mapping || !render::ValidateScene(scene) || !data || !tick || !resource || producerRva != 0x3849BB7) return;
+    if (!mapping || !render::ValidateScene(scene) || !data || !tick || !resource || producerRva != render::AmbientHookRvas[0]) return;
     AcquireSRWLockExclusive(&lock); Begin();
     memcpy(mapping->scene, scene, render::SceneBytes); memcpy(mapping->data, data, PayloadBytes);
     auto& h = mapping->header;

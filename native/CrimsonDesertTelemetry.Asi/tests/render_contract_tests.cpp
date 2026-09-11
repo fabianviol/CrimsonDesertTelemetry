@@ -164,11 +164,12 @@ int wmain(int argc, wchar_t** argv)
         const std::array<uint8_t,6> dispatch{0xFF,0x90,0x28,0x03,0x00,0x00};
         memcpy(image.data+AmbientHookRvas[n]-6,dispatch.data(),dispatch.size());
     }
-    image.Commit(0x38498AF,7); image.Commit(0x384CADB,7);
+    image.Commit(AmbientSourceRvas[0],7); image.Commit(AmbientSourceRvas[1],7);
     const std::array<uint8_t,7> sourceA{0x48,0x8B,0xAF,0x98,0,0,0}, sourceB{0x48,0x8B,0x9D,0x98,0,0,0};
-    memcpy(image.data+0x38498AF,sourceA.data(),7); memcpy(image.data+0x384CADB,sourceB.data(),7);
+    memcpy(image.data+AmbientSourceRvas[0],sourceA.data(),7); memcpy(image.data+AmbientSourceRvas[1],sourceB.data(),7);
     Check(CheckAmbientPreflight(image.Base()),"valid ambient preflight rejected");
-    for(auto rva : {AmbientHookRvas[0],AmbientHookRvas[1],AmbientHookRvas[0]-6,AmbientHookRvas[1]-6,0x38498AFu,0x384CADBu})
+    for(auto rva : {AmbientHookRvas[0],AmbientHookRvas[1],AmbientHookRvas[0]-6,AmbientHookRvas[1]-6,
+                    AmbientSourceRvas[0],AmbientSourceRvas[1]})
     {
         image.data[rva]^=1; Check(!CheckAmbientPreflight(image.Base()),"changed ambient context accepted"); image.data[rva]^=1;
     }

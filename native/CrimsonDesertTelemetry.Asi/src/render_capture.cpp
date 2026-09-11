@@ -418,7 +418,7 @@ bool CheckAmbientPreflight(uint64_t moduleBase)
     const std::array<uint8_t, 7> sourceA{0x48,0x8B,0xAF,0x98,0x00,0x00,0x00};
     const std::array<uint8_t, 7> sourceB{0x48,0x8B,0x9D,0x98,0x00,0x00,0x00};
     return match(AmbientHookRvas[0] - 6, dispatch) && match(AmbientHookRvas[1] - 6, dispatch) &&
-        match(0x38498AF, sourceA) && match(0x384CADB, sourceB);
+        match(AmbientSourceRvas[0], sourceA) && match(AmbientSourceRvas[1], sourceB);
 }
 
 bool StartAmbientProbe(uint64_t moduleBase, const wchar_t* outputDirectory)

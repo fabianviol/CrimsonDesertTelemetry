@@ -17,7 +17,14 @@ struct AmbientRecordHeader
 };
 static_assert(sizeof(AmbientRecordHeader) == 64);
 // Live-code evidence: binding lookup -> [sky+98] -> UAV binder -> Dispatch(1,1,1).
-constexpr std::array<uint32_t, 2> AmbientHookRvas{0x3849BB7, 0x384CBA3};
+// Build 25246367 relocated both paths by +0x21C0 from build 25116796. Each hook
+// signature is still unique image-wide and every surrounding anchor matched at the
+// shifted address; offline evidence in artifacts/recovery/20260911-build-25246367/.
+// These are exact-executable addresses: promote them with the build, never alone.
+constexpr std::array<uint32_t, 2> AmbientHookRvas{0x384BD77, 0x384ED63};
+// The [sky+0x98] source-field load preceding each hook. Held here rather than
+// inline so one relocation touches one place.
+constexpr std::array<uint32_t, 2> AmbientSourceRvas{0x384BA6F, 0x384EC9B};
 constexpr std::array<uint8_t, 15> AmbientSignatureA{
     0x48,0x8B,0xCB,0xE8,0x81,0xD0,0xF8,0xFF,0x48,0x8B,0x03,0x48,0x8B,0xCB,0xFF};
 constexpr std::array<uint8_t, 15> AmbientSignatureB{
