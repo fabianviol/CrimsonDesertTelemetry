@@ -228,7 +228,23 @@ static void EmbeddedBuildDefinition()
                                              BasisZOffset: 0x80,
                                              PositionOffset: 0x90
                                          }),
-        "The current live-validated build definition is not embedded.");
+        "The previous direct-camera build definition is not embedded.");
+    Assert(definitions.Any(definition => definition.SteamBuildId == "25246367" &&
+                                         definition.ExecutableVersion == "1.0.0.2850" &&
+                                         definition.ExecutableSha256 == "BCBF623AD5690147DC462AEAED5B4F97BD73296BA0D6AB54663586E7088B1C0E" &&
+                                         definition.EngineCamera is
+                                         {
+                                             Layout: "renderer-camera-direct-v1",
+                                             CameraReferenceRva: 46413159,
+                                             CameraGlobalRva: 112537704,
+                                             CameraVtableRva: 96487272
+                                         } &&
+                                         definition.NativeCapture is
+                                         {
+                                             ContractId: "manylights-filter-25246367-v1",
+                                             HookRva: 63670746
+                                         }),
+        "The current exact-build recovery definition is not embedded.");
 }
 
 static void TelemetryJsonContract()

@@ -175,6 +175,18 @@ internal sealed class CompatibilityImage
         return _functions[text] = matches[0];
     }
 
+    internal bool MatchesFunctionAt(ulong rva, string text)
+    {
+        var pattern = SignaturePattern.Parse(text);
+        if (pattern.Length < 12) throw new InvalidDataException("Fingerprint too short.");
+        var section = _sections.SingleOrDefault(candidate => candidate.Executable &&
+            rva >= candidate.VirtualAddress && rva + (ulong)pattern.Length <=
+            (ulong)candidate.VirtualAddress + candidate.RawSize);
+        if (section is null) return false;
+        var offset = checked((int)(rva - section.VirtualAddress));
+        return pattern.FindAll(Bytes(section).AsSpan(offset, pattern.Length)).SequenceEqual([0]);
+    }
+
     public (ulong Instruction, ulong Target) ResolveDataReference(PatternDefinition pattern, int size)
     {
         var length = SignaturePattern.Parse(pattern.Pattern).Length;

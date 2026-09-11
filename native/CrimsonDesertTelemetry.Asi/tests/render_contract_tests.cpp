@@ -43,9 +43,12 @@ struct Image
         nt->OptionalHeader.SizeOfImage = Size;
         nt->OptionalHeader.SizeOfHeaders = 0x400;
         sections = IMAGE_FIRST_SECTION(nt);
-        sections[0].VirtualAddress = 0x3CB5000; sections[0].Misc.VirtualSize = 0x3000;
+        const auto codeStart = static_cast<DWORD>(contract::ContextSignatures.front().rva & ~uint64_t{0xFFF});
+        const auto codeEnd = static_cast<DWORD>((contract::HookRva + contract::HookSignature.size() + 0xFFF) & ~uint64_t{0xFFF});
+        sections[0].VirtualAddress = codeStart; sections[0].Misc.VirtualSize = codeEnd - codeStart;
         sections[0].Characteristics = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE;
-        sections[1].VirtualAddress = 0x6B4E000; sections[1].Misc.VirtualSize = 0x2000;
+        sections[1].VirtualAddress = static_cast<DWORD>(contract::SceneGlobalRva & ~uint64_t{0xFFF});
+        sections[1].Misc.VirtualSize = 0x1000;
         sections[1].Characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
         Commit(contract::HookRva, contract::HookSignature.size());
         memcpy(data + contract::HookRva, contract::HookSignature.data(), contract::HookSignature.size());
@@ -79,7 +82,7 @@ struct Image
     }
 };
 
-void CheckFileSignatures(const wchar_t* path)
+void CheckFileSignatures(const wchar_t* path, bool ambient)
 {
     std::ifstream file(std::filesystem::path(path), std::ios::binary);
     Check(file.good(), "Open optional current game executable");
@@ -110,9 +113,13 @@ void CheckFileSignatures(const wchar_t* path)
     };
     verify(contract::HookRva, contract::HookSignature);
     for (const auto& context : contract::ContextSignatures) verify(context.rva, context.bytes);
-    verify(cdt::render::AmbientHookRvas[0], cdt::render::AmbientSignatureA);
-    verify(cdt::render::AmbientHookRvas[1], cdt::render::AmbientSignatureB);
-    std::cout << "PASS generated hook and all caller contexts against current EXE file (no process access)\n";
+    if (ambient)
+    {
+        verify(cdt::render::AmbientHookRvas[0], cdt::render::AmbientSignatureA);
+        verify(cdt::render::AmbientHookRvas[1], cdt::render::AmbientSignatureB);
+    }
+    std::cout << "PASS generated hook and all caller contexts against current EXE file (no process access)"
+        << (ambient ? ", including ambient hook bytes\n" : "; ambient deliberately not checked\n");
 }
 }
 
@@ -167,7 +174,12 @@ int wmain(int argc, wchar_t** argv)
     }
     image.sections[0]=section;
     Check(!CheckAmbientPreflight(image.Base()),"ambient hooks outside executable section accepted");
-    if (argc == 2) CheckFileSignatures(argv[1]);
+    if (argc == 2 || argc == 3)
+    {
+        const bool ambient = argc == 3 && wcscmp(argv[2], L"--ambient") == 0;
+        Check(argc == 2 || ambient, "Unknown file-signature test option");
+        CheckFileSignatures(argv[1], ambient);
+    }
     std::cout << "PASS production preflight and StartCapture rejection: missing/unreadable/malformed image, "
         "bounds, executable sections, hook bytes and each caller context; no hook installed\n";
 }

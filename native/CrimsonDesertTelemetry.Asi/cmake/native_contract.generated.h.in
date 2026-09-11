@@ -1,5 +1,5 @@
 #pragma once
-// GENERATED from definitions/build-25116796.json; do not hand-edit.
+// GENERATED from the selected exact-build definition; do not hand-edit.
 #include <array>
 #include <cstddef>
 #include <cstdint>

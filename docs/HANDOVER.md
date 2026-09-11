@@ -1,4 +1,40 @@
-# Current checkpoint — PARKED after game update, 2026-09-11, Codex
+# Current checkpoint — build 25246367 test candidate, 2026-09-11, Codex
+
+**ESTABLISHED:** the previously installed plugin failed closed on the update: Steam
+build `25246367`, EXE `1.0.0.2850`, SHA256
+`BCBF623AD5690147DC462AEAED5B4F97BD73296BA0D6AB54663586E7088B1C0E`.
+Health reported `unsupported-build`, zero native copies and no hook installation.
+The new EXE is preserved privately under
+`artifacts/recovery/20260911-build-25246367/`.
+
+Offline and bounded read-only live recovery are complete. Camera/player anchors
+relocated, scene vtable is `0x5C04768`, the RTTI-guarded player chain and all known
+object offsets still validate, camera frames progress, and 18 authored-light records
+decoded with zero malformed records. `ProcessManyLights` moved by `0x2410`; its
+13,607-byte body has the same 2,890 normalized instructions, register lifetime and
+binder/Dispatch contexts. New hook RVA is `0x3CB89DA`. The update checker formerly
+reported this hook missing because it compared a relocated `call rel32` literally;
+the offline finder now anchors it to the unique dispatch context while runtime
+preflight remains byte-exact.
+
+**READY, NOT INSTALLED:** `artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-build25246367.1-ModManagers.zip`,
+ZIP SHA256 `57C7DD5E5E6142A38259977A92BE3EC453C8D084F80B3E02F3F16959E5583E98`,
+ASI SHA256 `55DA4A5A32C794B8520132F5C1A02032B9A91A1842BEFED95573DC874600915B`.
+Its baked INI has Ambient, SDF and every Spatial research switch off; F9 details are
+on. Managed tests, 25/25 native tests, package validation and the production native
+preflight against the preserved new EXE pass.
+
+**OPEN:** the new GPU light stream has not run live. Ambient/Variant A remain parked;
+ambient hook bytes were deliberately not promoted. No t224, PIX, DXR or CrimsonHue work.
+
+**ONE next step:** user closes the game, installs the ready ZIP through DMM and loads
+the same save. Check native log and `/v1/health` for exact build, progressing camera
+and fresh paired copies, then perform one documented lamp ON → OFF → ON control. Stop
+on any preflight/copy failure; do not reopen the parked research.
+
+---
+
+# Previous checkpoint — PARKED after game update, 2026-09-11, Codex
 
 **PARKED by user instruction.** A Crimson Desert update was installed after `hud.3`
 was built. Everything below was measured against the previous supported game build and

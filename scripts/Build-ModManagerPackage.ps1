@@ -1,6 +1,8 @@
 param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]*$')]
     [string]$Version = '2.0.0',
+    [ValidatePattern('^[0-9]+$')]
+    [string]$NativeBuildId = '25246367',
     # Private diagnostic builds ship ready to run instead of forcing a hand edit
     # after every install, which has already cost one wasted game start. Keys must
     # already exist in the template. A version without a prerelease suffix is
@@ -51,7 +53,7 @@ Assert-WithinRepo $archive
     -c Release -r win-x64 --self-contained false -p:UseAppHost=false "-p:Version=$Version" -o $managedPublish
 if ($LASTEXITCODE -ne 0) { throw 'Managed host publish failed.' }
 
-& $cmake -S $nativeSource -B $nativeBuild -A x64
+& $cmake -S $nativeSource -B $nativeBuild -A x64 "-DCDT_NATIVE_BUILD_ID=$NativeBuildId"
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI configure failed.' }
 & $cmake --build $nativeBuild --config Release
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI build failed.' }
@@ -80,10 +82,25 @@ if ($IniOverrides -and $IniOverrides.Count -gt 0) {
     }
     $iniPath = Join-Path $packageRoot 'CrimsonDesertTelemetry.ini'
     $ini = Get-Content -LiteralPath $iniPath -Raw
-    foreach ($key in $IniOverrides.Keys) {
-        $pattern = "(?m)^$([regex]::Escape($key))=.*$"
-        if ($ini -notmatch $pattern) { throw "INI override key not present in the template: $key" }
-        $ini = [regex]::Replace($ini, $pattern, "$key=$($IniOverrides[$key])")
+    foreach ($qualifiedKey in $IniOverrides.Keys) {
+        $parts = $qualifiedKey -split '\.', 2
+        $key = $parts[-1]
+        $pattern = if ($parts.Count -eq 2) {
+            $section = [regex]::Escape($parts[0])
+            "(?m)(^\[$section\]\s*\r?\n(?:(?!^\[)[^\r\n]*(?:\r?\n|$))*?^$([regex]::Escape($key))=)[^\r\n]*"
+        } else {
+            "(?m)^$([regex]::Escape($key))=[^\r\n]*$"
+        }
+        $matches = [regex]::Matches($ini, $pattern)
+        if ($matches.Count -ne 1) {
+            throw "INI override must identify exactly one template key: $qualifiedKey (found $($matches.Count))"
+        }
+        $value = [string]$IniOverrides[$qualifiedKey]
+        $ini = [regex]::Replace($ini, $pattern, {
+            param($match)
+            if ($parts.Count -eq 2) { return $match.Groups[1].Value + $value }
+            return $key + '=' + $value
+        })
     }
     Set-Content -LiteralPath $iniPath -Value $ini -NoNewline
     Write-Output "INI overrides applied (private build): $(($IniOverrides.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')"

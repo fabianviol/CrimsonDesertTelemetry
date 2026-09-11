@@ -1,6 +1,11 @@
-# The JSON definition is the only editable allowlist/offset source. Reconfigure
-# automatically when it changes; never silently fall back to embedded old data.
-set(CDT_NATIVE_DEFINITION "${CDT_ROOT}/definitions/build-25116796.json")
+# The JSON definition is the only editable allowlist/offset source. Each ASI is
+# exact-build-only; old build packages remain reproducible with
+# -DCDT_NATIVE_BUILD_ID=<id> while the default follows the current product build.
+set(CDT_NATIVE_BUILD_ID "25246367" CACHE STRING "Exact Steam build contract compiled into this ASI")
+set(CDT_NATIVE_DEFINITION "${CDT_ROOT}/definitions/build-${CDT_NATIVE_BUILD_ID}.json")
+if(NOT EXISTS "${CDT_NATIVE_DEFINITION}")
+    message(FATAL_ERROR "Native contract definition does not exist: ${CDT_NATIVE_DEFINITION}")
+endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CDT_NATIVE_DEFINITION}")
 file(READ "${CDT_NATIVE_DEFINITION}" cdt_profile)
 
@@ -39,9 +44,10 @@ cdt_require(CDT_CONTRACT_ID STRING nativeCapture contractId)
 cdt_require(status STRING status)
 cdt_require(native_status STRING nativeCapture status)
 cdt_require(exact BOOLEAN nativeCapture requiresExactExecutable)
+set(expected_contract_id "manylights-filter-${CDT_BUILD}-v1")
 if(NOT CDT_SCHEMA EQUAL 1 OR NOT CDT_NATIVE_SCHEMA EQUAL 1 OR
    NOT status STREQUAL "locally-validated" OR NOT native_status STREQUAL "locally-validated" OR NOT exact OR
-   NOT CDT_CONTRACT_ID STREQUAL "manylights-filter-25116796-v1")
+   NOT CDT_BUILD STREQUAL CDT_NATIVE_BUILD_ID OR NOT CDT_CONTRACT_ID STREQUAL expected_contract_id)
     message(FATAL_ERROR "Native contract is not a supported, explicitly validated exact-executable contract")
 endif()
 cdt_require(hash STRING executableSha256)

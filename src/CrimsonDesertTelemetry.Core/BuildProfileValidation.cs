@@ -95,7 +95,8 @@ public static class BuildProfileValidation
 
     private static void ValidateNative(BuildDefinition definition, NativeCaptureDefinition native)
     {
-        if (native.SchemaVersion != 1 || native.ContractId != "manylights-filter-25116796-v1" ||
+        var expectedContractId = $"manylights-filter-{definition.SteamBuildId}-v1";
+        if (native.SchemaVersion != 1 || native.ContractId != expectedContractId ||
             native.Status != "locally-validated" || definition.Status != "locally-validated" ||
             !native.RequiresExactExecutable || definition.AllowAutomaticCompatibility ||
             definition.EngineCamera?.Layout != "renderer-camera-direct-v1" ||

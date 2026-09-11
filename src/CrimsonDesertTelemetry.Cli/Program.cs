@@ -548,7 +548,7 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
                 lights = new EngineLightReader(reader,
                     checked((ulong)process.MainModule!.BaseAddress.ToInt64()), lightDefinition);
             var rendered = lightOptions.Enabled && resolved.Compatibility.Mode == "tested" &&
-                           resolved.GameBuild == "25116796"
+                           definition.NativeCapture is not null
                 ? new RenderLightReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
             return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered, lightOptions);
         }

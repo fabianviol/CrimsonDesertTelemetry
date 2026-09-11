@@ -72,6 +72,12 @@ internal static class UpdateCheckTests
             Check(fixture.Definition.ExecutableSha256 == originalHash && fixture.Definition.NativeCapture is not null,
                 "Diagnostic mutated the trusted profile.");
         }
+        using var movedCall = DirectFixture();
+        movedCall.Bytes[0xE09] ^= 0x5A;
+        movedCall.Save();
+        var movedResult = UpdateCheck.Run(movedCall.Path, [movedCall.Definition]);
+        Check(movedResult.Anchors.Single(a => a.Name == "native-filter-callsite").FoundRva == movedCall.Code + 0xA00,
+            "Offline update check treated a relocated call displacement as instruction identity.");
     }
 
     public static void ExactAndAmbiguous()
@@ -84,8 +90,17 @@ internal static class UpdateCheckTests
         fixture.Bytes.AsSpan(0xE00, 25).CopyTo(fixture.Bytes.AsSpan(0x1800));
         fixture.Save();
         result = UpdateCheck.Run(fixture.Path, [fixture.Definition]);
-        Check(result.Status == "anchor-check-failed" && result.Anchors.Single(a => a.Name == "native-filter-callsite").Status == "ambiguous",
-            "Ambiguous native hook accepted.");
+        Check(result.Status == "candidate-layout-unverified" &&
+            result.Anchors.Single(a => a.Name == "native-filter-callsite").FoundRva == fixture.Code + 0xA00,
+            "The unique dispatch context did not disambiguate a repeated hook instruction sequence.");
+        using var ambiguousContext = DirectFixture();
+        var firstContext = ambiguousContext.Definition.NativeCapture!.ContextSignatures[0];
+        PutSignature(ambiguousContext, 0x1800, firstContext.Bytes);
+        ambiguousContext.Save();
+        result = UpdateCheck.Run(ambiguousContext.Path, [ambiguousContext.Definition]);
+        Check(result.Status == "anchor-check-failed" && result.Anchors.Single(a =>
+                a.Name == "native-context-" + firstContext.Purpose).Status == "ambiguous",
+            "Ambiguous native dispatch context accepted.");
         using var missing = DirectFixture();
         missing.Bytes[0x580] ^= 1; missing.Save();
         result = UpdateCheck.Run(missing.Path, [missing.Definition]);
@@ -112,6 +127,7 @@ internal static class UpdateCheckTests
         definition.EngineLights = new() { Layout = "light-source-array-scene-global-v1", SceneGlobalRva = 0x7108, SceneVtableRva = 0x5200 };
         definition.NativeCapture = Current().NativeCapture;
         var native = definition.NativeCapture!;
+        native.ContractId = $"manylights-filter-{definition.SteamBuildId}-v1";
         native.HookRva = 0x1A00;
         PutSignature(fixture, 0xE00, native.HookSignature);
         for (var index = 0; index < native.ContextSignatures.Count; index++)

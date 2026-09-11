@@ -87,11 +87,30 @@ public static class UpdateCheck
                 null, null, "No heap read: CPU array offset, stride and field meanings require runtime validation even when the scene anchor matches."));
         if (reference.NativeCapture is { } native)
         {
-            Check("native-filter-callsite", native.HookRva, () => (image.FindFunction(native.HookSignature, "native filter callsite"),
-                null, "Unique exact instruction guard; does not prove register/dataflow or shader semantics on an unknown build."));
+            var relocatedContexts = new List<(NativeContextSignature Context, ulong Found)>();
             foreach (var context in native.ContextSignatures)
                 Check("native-context-" + context.Purpose, context.Rva, () =>
-                    (image.FindFunction(context.Bytes, context.Purpose), null, "Unique bounded dispatch-context instruction guard."));
+                {
+                    var found = image.FindFunction(context.Bytes, context.Purpose);
+                    relocatedContexts.Add((context, found));
+                    return (found, null, "Unique bounded dispatch-context instruction guard.");
+                });
+            Check("native-filter-callsite", native.HookRva, () =>
+            {
+                if (exact)
+                    return (image.FindFunction(native.HookSignature, "native filter callsite"), null,
+                        "Unique exact instruction guard for the exact executable profile.");
+                var pattern = HookRelocationPattern(native.HookSignature);
+                var nearest = relocatedContexts.MinBy(candidate => Distance(candidate.Context.Rva, native.HookRva));
+                if (nearest.Context is null)
+                    return (image.FindFunction(pattern, "native filter callsite"), null,
+                        "Unique instruction guard with its rel32 call displacement masked for offline relocation only; runtime preflight remains byte-exact.");
+                var delta = checked((long)native.HookRva - (long)nearest.Context.Rva);
+                var candidate = checked((ulong)((long)nearest.Found + delta));
+                if (!image.MatchesFunctionAt(candidate, pattern))
+                    throw new InvalidDataException("Missing code fingerprint at the position established by the nearest native dispatch context.");
+                return (candidate, null, "Instruction guard located relative to the unique nearest dispatch context; its rel32 call displacement is masked for offline relocation only. Runtime preflight remains byte-exact.");
+            });
         }
         else anchors.Add(new("native-filter-callsite", "unverified", null, null, null, "This reference has no native capture contract."));
         var failures = anchors.Any(a => a.Status is "missing" or "ambiguous" or "rejected" or "mismatch");
@@ -100,5 +119,17 @@ public static class UpdateCheck
             reference.SteamBuildId, exact, false,
             "Offline anchors are recovery evidence, not proof of runtime layouts. No profile is promoted and no lights/hooks are enabled.",
             "Not checked: EXE identity and archived shader notes do not verify live PSO/shader-archive semantics.", anchors);
+    }
+
+    private static ulong Distance(ulong first, ulong second) => first >= second ? first - second : second - first;
+
+    private static string HookRelocationPattern(string signature)
+    {
+        var tokens = signature.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length != 25 || !tokens[8].Equals("E8", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Unsupported native hook signature shape for relocation.");
+        for (var displacement = 9; displacement <= 12; ++displacement)
+            tokens[displacement] = "??";
+        return string.Join(' ', tokens);
     }
 }

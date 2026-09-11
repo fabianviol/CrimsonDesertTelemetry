@@ -3,6 +3,7 @@
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "sky_bridge.h"
+#include "native_contract.generated.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -30,6 +31,7 @@ namespace cdt::instruments { bool OwnsCodeAddress(uint64_t) { return false; } }
 
 namespace
 {
+namespace contract = cdt::native_contract;
 using Microsoft::WRL::ComPtr;
 void Check(bool value, const char* message) { if (!value) { std::cerr << message << '\n'; ExitProcess(1); } }
 void Hr(HRESULT value, const char* message) { if (FAILED(value)) { std::cerr << std::hex << value << ' '; Check(false,message); } }
@@ -143,10 +145,12 @@ int main(int argc, char** argv)
     Put(constants,0x80,std::array<float,4>{-10528,611,-4354,0}); Put(constants,0x90,std::array<float,4>{0,0,1,0});
     std::array<uint8_t,0x500> root{};
     Put(root,0x428,reinterpret_cast<uint64_t>(constants.data()));
-    auto* fakeBase=static_cast<uint8_t*>(VirtualAlloc(nullptr,0x6B50000,MEM_RESERVE,PAGE_NOACCESS));
+    const auto scenePage=contract::SceneGlobalRva&~uint64_t{0xFFF};
+    const auto fakeModuleBytes=(contract::SceneGlobalRva+sizeof(uint64_t)+0xFFF)&~uint64_t{0xFFF};
+    auto* fakeBase=static_cast<uint8_t*>(VirtualAlloc(nullptr,static_cast<SIZE_T>(fakeModuleBytes),MEM_RESERVE,PAGE_NOACCESS));
     Check(fakeBase!=nullptr,"reserve fake module");
-    Check(VirtualAlloc(fakeBase+0x6B4E000,0x1000,MEM_COMMIT,PAGE_READWRITE)!=nullptr,"commit fake root");
-    const auto rootPtr=reinterpret_cast<uint64_t>(root.data()); memcpy(fakeBase+0x6B4EFB8,&rootPtr,8);
+    Check(VirtualAlloc(fakeBase+scenePage,0x1000,MEM_COMMIT,PAGE_READWRITE)!=nullptr,"commit fake root");
+    const auto rootPtr=reinterpret_cast<uint64_t>(root.data()); memcpy(fakeBase+contract::SceneGlobalRva,&rootPtr,8);
     std::array<uint8_t,0x200> inner{}; std::array<uint8_t,0x38> outer{};
     Put(inner,0xC0,RecordStride); Put(inner,0xC4,RecordCount); Put(inner,0x168,reinterpret_cast<uint64_t>(source.Get()));
     Put(outer,0x30,reinterpret_cast<uint64_t>(inner.data()));
