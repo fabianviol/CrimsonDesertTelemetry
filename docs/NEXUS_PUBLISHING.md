@@ -27,12 +27,36 @@ The v3 API is a *file* API, not a page editor.
 So the page text, screenshots and requirements stay manual edits on the site. The
 API only ever adds files, versions and changelog entries.
 
+## Known identifiers
+
+Read off the mod page on 2026-09-11 under **Files -> Advanced**, for the
+`CrimsonDesertTelemetry-ModManagers` file entry:
+
+| Shown as | Value | Use |
+|---|---|---|
+| File ID | `7891854` | `NEXUSMODS_FILE_ID` |
+| Short Unique File ID | `R07hI2hXi` | share links only; the API does not take it |
+| Unique Mod ID | `38521561681198` | **not confirmed** as `NEXUSMODS_MOD_ID` |
+
+The file id is exactly what `POST /mod-files/{id}/versions` wants. The mod id is
+the one to be careful with: `Get-NexusModStatus.ps1` derives `NEXUSMODS_MOD_ID`
+from `GET /games/crimsondesert/mods/3374` and prints `$mod.id`, and whether the
+site's 14-digit "Unique Mod ID" is that same number has not been checked against
+the API. Run the status script once with a key before using it for changelogs;
+a wrong mod id there appends release notes to the wrong page, and changelogs
+cannot be deleted.
+
+Both values live in `.env`, which the scripts now load themselves.
+
 ## One-time setup
 
 1. Create a personal API key at <https://www.nexusmods.com/settings/api-keys>.
    Treat it like a password: it can upload files under your account.
-2. Add it to the GitHub repository as the secret `NEXUSMODS_API_KEY`
-   (Settings -> Secrets and variables -> Actions -> Secrets).
+2. Put it in `.env` as `NEXUSMODS_API_KEY` for local runs -- the file is
+   git-ignored and both scripts load it without anything being exported by hand.
+   For CI, add it to the GitHub repository as the secret `NEXUSMODS_API_KEY`
+   (Settings -> Secrets and variables -> Actions -> Secrets); an exported
+   environment variable always wins over the file, so CI stays authoritative.
 3. Find the two ids and add them as repository *variables* (same page, Variables
    tab):
 

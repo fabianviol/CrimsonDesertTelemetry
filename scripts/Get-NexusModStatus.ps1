@@ -22,6 +22,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $repoRoot 'tools\nexus\NexusMods.psm1') -Force
+Import-NexusDotEnv
 
 if (-not $ApiKey) { $ApiKey = $env:NEXUSMODS_API_KEY }
 

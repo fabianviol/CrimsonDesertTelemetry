@@ -362,4 +362,37 @@ function ConvertTo-NexusChangelog {
     return $text
 }
 
-Export-ModuleMember -Function Get-NexusMod, Get-NexusModFiles, Get-NexusModFileVersions, Get-NexusFileDigest, New-NexusUpload, Wait-NexusUpload, New-NexusModFile, New-NexusModFileVersion, Add-NexusModChangelog, ConvertTo-NexusChangelog, Assert-NexusVersion, Assert-NexusFileName
+function Import-NexusDotEnv {
+    <#
+    .SYNOPSIS
+        Loads KEY=VALUE pairs from the repository's .env into this process.
+
+    .DESCRIPTION
+        So a publish can be run without exporting anything by hand first. A value
+        already present in the environment wins, which keeps CI (where the key is
+        a secret, not a file) authoritative. A missing .env is not an error.
+
+        .env is git-ignored and packages are assembled from an explicit file list,
+        so nothing loaded here can reach a commit or a release.
+    #>
+    [CmdletBinding()]
+    param([string]$Path)
+
+    if (-not $Path) {
+        $Path = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.env'
+    }
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $line = $line.Trim()
+        if (-not $line -or $line.StartsWith('#') -or $line -notmatch '=') { continue }
+        $name, $value = $line.Split('=', 2)
+        $name = $name.Trim()
+        $value = $value.Trim().Trim('"').Trim("'")
+        if (-not $name -or -not $value) { continue }
+        # Never override an explicitly exported value.
+        if (Get-Item -LiteralPath "env:$name" -ErrorAction SilentlyContinue) { continue }
+        Set-Item -LiteralPath "env:$name" -Value $value
+    }
+}
+
+Export-ModuleMember -Function Import-NexusDotEnv, Get-NexusMod, Get-NexusModFiles, Get-NexusModFileVersions, Get-NexusFileDigest, New-NexusUpload, Wait-NexusUpload, New-NexusModFile, New-NexusModFileVersion, Add-NexusModChangelog, ConvertTo-NexusChangelog, Assert-NexusVersion, Assert-NexusFileName
