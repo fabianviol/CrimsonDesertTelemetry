@@ -28,6 +28,11 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(imgui minhook json)
 
+add_library(cdt_sdf STATIC src/sdf_visibility.cpp)
+target_compile_features(cdt_sdf PUBLIC cxx_std_20)
+target_compile_options(cdt_sdf PRIVATE /W4 /WX /permissive-)
+target_include_directories(cdt_sdf PUBLIC src)
+
 add_library(cdt_imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp ${imgui_SOURCE_DIR}/imgui_widgets.cpp
@@ -40,7 +45,7 @@ target_compile_features(cdt_overlay PUBLIC cxx_std_20)
 target_compile_definitions(cdt_overlay PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_overlay PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_overlay PUBLIC src)
-target_link_libraries(cdt_overlay PUBLIC cdt_imgui minhook nlohmann_json::nlohmann_json winhttp)
+target_link_libraries(cdt_overlay PUBLIC cdt_imgui cdt_sdf minhook nlohmann_json::nlohmann_json winhttp)
 
 file(READ "${imgui_SOURCE_DIR}/LICENSE.txt" imgui_license)
 file(READ "${minhook_SOURCE_DIR}/LICENSE.txt" minhook_license)
@@ -77,7 +82,7 @@ target_compile_features(cdt_instruments PUBLIC cxx_std_20)
 target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
 target_include_directories(cdt_instruments PUBLIC src)
-target_link_libraries(cdt_instruments PUBLIC minhook d3d12 dxgi bcrypt psapi user32)
+target_link_libraries(cdt_instruments PUBLIC cdt_sdf minhook d3d12 dxgi bcrypt psapi user32)
 target_link_libraries(cdt_instruments PRIVATE nlohmann_json::nlohmann_json)
 
 add_library(CrimsonDesertTelemetryAsi SHARED src/bootstrap.cpp)
@@ -112,7 +117,7 @@ target_compile_features(CrimsonDesertTelemetrySpatialProbeTests PRIVATE cxx_std_
 target_include_directories(CrimsonDesertTelemetrySpatialProbeTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetrySpatialProbeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(CrimsonDesertTelemetrySpatialProbeTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
-target_link_libraries(CrimsonDesertTelemetrySpatialProbeTests PRIVATE minhook nlohmann_json::nlohmann_json d3d12 dxgi psapi user32)
+target_link_libraries(CrimsonDesertTelemetrySpatialProbeTests PRIVATE cdt_sdf minhook nlohmann_json::nlohmann_json d3d12 dxgi psapi user32)
 add_test(NAME spatial-passive-probe COMMAND CrimsonDesertTelemetrySpatialProbeTests)
 set_tests_properties(spatial-passive-probe PROPERTIES TIMEOUT 20)
 add_executable(CrimsonDesertTelemetrySpatialReadbackTests tests/spatial_readback_tests.cpp src/spatial_readback.cpp)
@@ -130,12 +135,17 @@ target_compile_features(CrimsonDesertTelemetrySpatialPairTests PRIVATE cxx_std_2
 target_include_directories(CrimsonDesertTelemetrySpatialPairTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetrySpatialPairTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(CrimsonDesertTelemetrySpatialPairTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
-target_link_libraries(CrimsonDesertTelemetrySpatialPairTests PRIVATE minhook nlohmann_json::nlohmann_json d3d12 dxgi d3dcompiler psapi user32)
+target_link_libraries(CrimsonDesertTelemetrySpatialPairTests PRIVATE cdt_sdf minhook nlohmann_json::nlohmann_json d3d12 dxgi d3dcompiler psapi user32)
 add_test(NAME spatial-paired-readback COMMAND CrimsonDesertTelemetrySpatialPairTests)
 set_tests_properties(spatial-paired-readback PROPERTIES TIMEOUT 30)
 add_executable(CrimsonDesertTelemetrySpatialSampleTests tests/spatial_sample_tests.cpp src/spatial_sample.cpp)
 target_compile_features(CrimsonDesertTelemetrySpatialSampleTests PRIVATE cxx_std_20)
 add_test(NAME spatial-native-sampler COMMAND CrimsonDesertTelemetrySpatialSampleTests)
+
+add_executable(CrimsonDesertTelemetrySdfVisibilityTests tests/sdf_visibility_tests.cpp)
+target_link_libraries(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE cdt_sdf)
+target_compile_options(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE /W4 /WX /permissive-)
+add_test(NAME sdf-variant-a-hud COMMAND CrimsonDesertTelemetrySdfVisibilityTests)
 
 add_executable(CrimsonDesertTelemetrySpatialThunkTests tests/spatial_thunk_tests.cpp tests/spatial_thunk_fixture.asm src/spatial_thunk.asm)
 target_compile_features(CrimsonDesertTelemetrySpatialThunkTests PRIVATE cxx_std_20)

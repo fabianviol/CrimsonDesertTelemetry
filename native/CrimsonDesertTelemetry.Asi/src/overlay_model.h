@@ -33,6 +33,22 @@ struct LightSummary
     // storage; unavailable/malformed/newly missing feeds never retain it.
     std::shared_ptr<const std::vector<LightRecord>> records;
 };
+struct AmbientSummary
+{
+    std::string status = "not-reported", reason;
+    std::optional<std::uint64_t> captureSequence;
+    std::optional<std::uint32_t> frameNumber;
+    std::optional<double> sourceAgeMilliseconds;
+    std::optional<Vec3> upperHemisphereMeanWorking;
+    std::optional<Vec3> upwardIrradianceOverPiWorking;
+    std::optional<Vec3> inverseMatrixMean;
+    std::optional<double> rec709MeanLuminanceEstimate;
+    std::optional<double> cameraSkyVisibilityWorking;
+    std::optional<std::uint32_t> visibilityFrameNumber;
+    std::optional<double> visibilityAgeMilliseconds;
+    std::optional<Vec3> localEnvironmentAmbientEstimateWorking;
+    bool localEstimateStale{};
+};
 struct Sample
 {
     std::string state = "waiting", build, orientationSource, schemaVersion;
@@ -58,6 +74,9 @@ struct View
     struct LocalFault { std::string source, title, detail; };
     std::vector<LocalFault> localFaults;
     double rateHz{};
+    AmbientSummary ambient;
+    Clock::time_point ambientReceived{};
+    bool hasAmbient{};
 };
 struct Config
 {
@@ -65,6 +84,7 @@ struct Config
     bool notifications = false;
     bool lightsExpected = false, renderedExpected = false;
     bool lightOverlay = false, lightOverlayVisible = true, radar3D = true;
+    bool showAmbient = true, occlusionTest = false;
     int notificationDurationMs = 6000;
     int toggleKey = 0x77, detailsKey = 0x78, corner = 0, staleMs = 1000;
     int lightToggleKey = 0x79, lightMaxMarkers = 512, lightMaxLabels = 6;
@@ -91,6 +111,7 @@ private:
 };
 // Reject malformed/oversize/incompatible data; never interpret missing vectors as zero.
 Sample ParseSample(std::string_view json, std::chrono::system_clock::time_point now);
+AmbientSummary ParseAmbient(std::string_view json);
 std::optional<float> Heading(Vec3 direction);
 struct ScreenPoint { float x{}, y{}, depth{}; };
 // World positions are already reconstructed with the capture-paired camera.
@@ -115,6 +136,8 @@ std::vector<std::vector<size_t>> GroupLightDetails(std::span<const LightRecord* 
 double AgeMs(const View& view, Clock::time_point now);
 bool IsLive(const View& view, Clock::time_point now, int staleMs);
 bool RenderedLightsLive(const View& view, Clock::time_point now, int staleMs);
+bool AmbientLive(const View& view, Clock::time_point now);
+double AmbientAgeMs(const View& view, Clock::time_point now);
 std::string LightFeedStatus(const View& view, Clock::time_point now, int staleMs);
 std::string Status(const View& view, Clock::time_point now, int staleMs);
 float HudNaturalHeight(const Config& config, bool details);

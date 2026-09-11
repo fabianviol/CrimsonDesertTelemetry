@@ -11,9 +11,9 @@ The one habit that matters: **every strong claim below was tightened or reversed
 least once by an outside review.** Distinguish established from hypothesis from
 withdrawn before building on anything, and say which you are doing.
 
-**Picking this up cold? Go straight to section 4b.** Both product goals are now
-answered; it says how far each one reaches, what is deliberately not being pursued,
-and what is genuinely next. Sections 1-3 are the toolchain and the identities;
+**Picking this up cold? Go straight to section 4b.** It records the ambient result,
+the three retained Variant A exemplars, the repeatability gap and the stopping rule.
+Sections 1-3 are the toolchain and the identities;
 section 4 is the ledger behind the claims.
 
 ---
@@ -356,13 +356,12 @@ It presupposes what is open. `1/6144` also factors as `(2/3)/4096` and as
 
 ### Where this stands, in one paragraph
 
-Both product questions are answered. Ambient dims correctly under cover, and a
+Ambient dims correctly under cover. Three retained R16 payloads show that a
 camera-to-light sphere trace through the engine's own signed distance field separates a
-lamp behind a wall from the same lamp in the open. Neither needs more renderer
-archaeology. What is left is product work in CrimsonHue — which consumes neither feed
-yet — plus the limits recorded below. Everything in this section was measured in the
-running game, not inferred from the capture; where something is an observation rather
-than a check, it says so.
+lamp behind a wall from the same lamp in the open. The retained evidence does not prove
+repeatability within each pose: an earlier 19-trace claim conflicts with its own 22-copy
+table, and only one payload per pose was preserved. No more renderer archaeology is
+needed; the repeatability check now belongs in the built-in HUD.
 
 ### Goal 1: ambient under cover — done, parked
 
@@ -381,35 +380,41 @@ holds between 26.0 and 38.4 with no trend, so the collapse is entirely local. Th
 follows camera POSITION, not view direction. That open ground reads about a third rather
 than one is the best support for reading it as a solid-angle fraction.
 
-**Open, and it belongs to CrimsonHue:** the mapping to lamp brightness. A visibly open
+**Open product policy:** the mapping to lamp brightness. A visibly open
 barn still reads 0.000025 inside, so a linear product drives a lamp to black where a
 person would say "much darker". It needs a perceptual curve with a floor. Do not reopen
 the atmosphere analysis to improve this; it buys nothing for the product.
 
 ### Goal 2: lamp occlusion — demonstrated for the controlled case
 
-Nineteen camera-to-light traces at the player home against a lit doorway at
+Three retained camera-to-light payloads at the player home against a lit doorway at
 `(-10403.25, 613.84, -4419.10)`, identified by world POSITION and never by the rendered
 sample index. Grouping by the camera position the copies themselves carry — the phase
 labels alone were not poses, because the 15 s windows spilled across the user walking —
-resolves into exactly three poses, unanimous within each:
+resolve into exactly three poses:
 
 | camera z | copies | verdict | closest approach |
 |---|---|---|---|
-| −4422.90 | 3 | clear | +0.304 … +0.320 |
-| −4417.72 | 10 | **blocked** | −0.0000 … −0.0068 |
-| −4424.09 | 9 | clear | +0.454 … +0.510 |
+| −4422.90 | 1 retained | clear | +0.3155 |
+| −4417.72 | 1 retained | **blocked** | −0.00047 |
+| −4424.09 | 1 retained | clear | +0.5081 |
 
 One fixed parameter set, set before the occluded phase was examined and not tuned
 afterwards: `hit_tolerance=0.0`, `minimum_step=0.05`, `iteration_bound=400`,
 `start_offset=0.6`, `end_margin=1.0`. Full write-up in
 [SDF_VARIANT_A.md](SDF_VARIANT_A.md); evidence at
 `artifacts/light-research/variant-a-pid15940-20260910-2351/`. The three preserved
-payloads carry their own cameras, so the whole result reproduces offline with the
+payloads carry their own cameras, so the retained result reproduces offline with the
 shipped tool — the exact commands are in that document.
 
+The earlier text called this 19 traces but listed 3 + 10 + 9 = 22. Since the other
+copies were not retained, neither total nor the claimed within-pose repeatability is
+ESTABLISHED. The three-pose separation is established; reliability across repeated
+fresh volumes remains OPEN and is now exposed by the native HUD diagnostic.
+
 **The margin is thin, and that matters.** In the blocked pose the ray grazes the wall at
-−0.0000 to −0.0068 gu rather than driving through it. A tolerance sweep holds the same
+−0.00047 gu in the retained payload rather than driving through it. The reported
+unretained range was −0.0000 to −0.0068 gu. A tolerance sweep holds the same
 classification from −0.05 to +0.10, so there is a working band, but a thinner wall or a
 shallower angle could plausibly fall the other way. Do not read the pass as a margin.
 Nothing is established for thin geometry, doorways at grazing angles, moving occluders or
@@ -539,14 +544,19 @@ a release gets the clean template.
 
 ### What is genuinely next
 
-1. **CrimsonHue.** It consumes only `/v1/stream` today and neither the ambient estimate nor
-   occlusion. That is where the perceptual curve and the occlusion gate belong. It was
-   deliberately left untouched while this work ran, at the user's instruction, and it is
-   the next thing to open.
-2. **Widen Variant A only if a concrete case fails.** Thin geometry, doorways at grazing
+1. **Telemetry HUD.** Repeat visible → occluded → visible with at least three fresh
+   volumes per pose. It now shows the fixed Variant A result, closest distance, volume
+   age and Ambient raw/derived values without writing R16 payloads to disk.
+2. **Improve the acquisition path before product use.** The measured 0.31–0.48 fresh
+   volumes/s is useful for diagnosis but too slow for responsive lighting. Measure the
+   HUD mode's frame cost, then pursue a smaller/faster readback or GPU-side evaluation.
+3. **Widen Variant A only if a concrete case fails.** Thin geometry, doorways at grazing
    angles and moving occluders are untested, not known-bad.
-3. **The sampling rate**, if the occlusion gate turns out to need data fresher than
-   0.31–0.48/s.
+
+CrimsonHue remains untouched. It should eventually own Hue credentials, Entertainment
+area/channel mapping, DTLS stream lifetime, smoothing, perceptual lamp curves and the
+policy for combining/failing over ambient and occlusion. Acquisition, freshness,
+source association and any neutral visibility feed belong in telemetry and its HUD.
 
 ## 5. Product decisions and next tests
 

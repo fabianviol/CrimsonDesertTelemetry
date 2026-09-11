@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <ctime>
 #include <numbers>
+#include <limits>
 #include <stdexcept>
 
 namespace cdt::overlay
@@ -25,6 +26,11 @@ float Number(const Json& value)
 Vec3 Vector(const Json& value)
 {
     return {Number(value.at("x")), Number(value.at("y")), Number(value.at("z"))};
+}
+Vec3 ArrayVector(const Json& value)
+{
+    if (!value.is_array() || value.size() != 3) throw std::runtime_error("Invalid RGB vector");
+    return {Number(value.at(0)),Number(value.at(1)),Number(value.at(2))};
 }
 bool Finite(const Vec3 value)
 {
@@ -310,7 +316,7 @@ std::vector<std::vector<size_t>> GroupLightDetails(const std::span<const LightRe
 
 float HudNaturalHeight(const Config& config, const bool details)
 {
-    return config.radar3D ? (details ? 806.f : 550.f) : (details ? 600.f : 344.f);
+    return config.radar3D ? (details ? 930.f : 550.f) : (details ? 724.f : 344.f);
 }
 
 float HudScale(float width, float height, const Config& config, bool details)
@@ -405,6 +411,49 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
     }
     return sample;
 }
+AmbientSummary ParseAmbient(const std::string_view text)
+{
+    if(text.empty()||text.size()>65536)throw std::runtime_error("Invalid ambient message size");
+    const auto root=Json::parse(text);
+    if(root.at("schemaVersion")!="1.0")throw std::runtime_error("Unsupported ambient schema");
+    AmbientSummary result;result.status=root.at("status").get<std::string>();
+    if(result.status=="unavailable")
+    {
+        result.reason=root.at("reason").get<std::string>();
+        if(result.reason.empty()||result.reason.size()>128)throw std::runtime_error("Invalid ambient reason");
+        return result;
+    }
+    if(result.status!="available")throw std::runtime_error("Invalid ambient status");
+    result.captureSequence=root.at("captureSequence").get<std::uint64_t>();
+    result.frameNumber=root.at("frameNumber").get<std::uint32_t>();
+    result.sourceAgeMilliseconds=root.at("ageMilliseconds").get<double>();
+    if(!std::isfinite(*result.sourceAgeMilliseconds)||*result.sourceAgeMilliseconds<0)
+        throw std::runtime_error("Invalid ambient age");
+    const auto& sky=root.at("sky");
+    result.upperHemisphereMeanWorking=ArrayVector(sky.at("upperHemisphereMeanWorking"));
+    result.upwardIrradianceOverPiWorking=ArrayVector(sky.at("upwardIrradianceOverPiWorking"));
+    result.inverseMatrixMean=ArrayVector(sky.at("inverseMatrixMean"));
+    result.rec709MeanLuminanceEstimate=sky.at("rec709MeanLuminanceEstimate").get<double>();
+    if(!std::isfinite(*result.rec709MeanLuminanceEstimate))throw std::runtime_error("Invalid ambient luminance");
+    if(root.contains("visibility")&&!root.at("visibility").is_null())
+    {
+        const auto& value=root.at("visibility");
+        result.cameraSkyVisibilityWorking=value.at("valueWorking").get<double>();
+        result.visibilityFrameNumber=value.at("frameNumber").get<std::uint32_t>();
+        result.visibilityAgeMilliseconds=value.at("ageMilliseconds").get<double>();
+        if(!std::isfinite(*result.cameraSkyVisibilityWorking)||*result.cameraSkyVisibilityWorking<0||
+            *result.cameraSkyVisibilityWorking>1||!std::isfinite(*result.visibilityAgeMilliseconds)||
+            *result.visibilityAgeMilliseconds<0)throw std::runtime_error("Invalid sky visibility");
+    }
+    if(root.contains("localEnvironmentAmbientEstimateWorking")&&!root.at("localEnvironmentAmbientEstimateWorking").is_null())
+    {
+        const auto& local=root.at("localEnvironmentAmbientEstimateWorking");
+        result.localEstimateStale=local.at("stale").get<bool>();
+        if(local.at("available").get<bool>())
+            result.localEnvironmentAmbientEstimateWorking=ArrayVector(local.at("rgbWorking"));
+    }
+    return result;
+}
 double AgeMs(const View& view, const Clock::time_point now)
 {
     return view.sample.sourceAgeMs + std::max(0.0, std::chrono::duration<double, std::milli>(now - view.received).count());
@@ -423,6 +472,16 @@ bool RenderedLightsLive(const View& view, const Clock::time_point now, const int
     // transport and time in this client; its camera timestamp slightly predates
     // light decoding, so the resulting freshness bound is conservative.
     return *lights.ageMilliseconds + AgeMs(view, now) <= 500.0;
+}
+double AmbientAgeMs(const View& view,const Clock::time_point now)
+{
+    if(!view.hasAmbient||!view.ambient.sourceAgeMilliseconds)return std::numeric_limits<double>::infinity();
+    return *view.ambient.sourceAgeMilliseconds+
+        std::max(0.0,std::chrono::duration<double,std::milli>(now-view.ambientReceived).count());
+}
+bool AmbientLive(const View& view,const Clock::time_point now)
+{
+    return view.hasAmbient&&view.ambient.status=="available"&&AmbientAgeMs(view,now)<=1500.0;
 }
 std::string LightFeedStatus(const View& view, const Clock::time_point now, const int staleMs)
 {

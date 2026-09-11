@@ -16,8 +16,8 @@ state, in reading order:
    and **[Mapping, sign and unit confirmed by measurement](#mapping-sign-and-unit-confirmed-by-measurement--2026-09-10)**
    — the field is a signed distance in game units, negative inside, gradient 0.99957.
 2. **[Variant A ran, and separated the labelled case](#variant-a-ran-and-separated-the-labelled-case--2026-09-10-2351)**
-   — nineteen traces, three poses, unanimous, one fixed parameter set. The margin is
-   thin and that is recorded there as a limit, not a win.
+   — three retained payloads, one per pose, clear / blocked / clear with one fixed
+   parameter set. Repeatability within each pose was not retained and remains open.
 3. **[Controlled test and stopping rule](#controlled-test-and-stopping-rule)** — still
    in force. No t224, no raymarch reconstruction, no coverage model, no DXR, unless A
    visibly fails on a concrete case.
@@ -236,19 +236,20 @@ per pose, the light log and the phase marks.
 
 ### The result
 
-**Grouping by the camera position the copies themselves carry, not by the phase
+**Grouping by the camera position the retained copies themselves carry, not by the phase
 windows.** The 15 s windows spilled across the user walking, so a label alone was not
-a pose; the copies' own cameras resolve into exactly three:
+a pose; the retained copies resolve into exactly three:
 
 | camera z | copies | verdict | closest approach |
 |---|---|---|---|
-| -4422.90 | 3 | clear | +0.304 .. +0.320 |
-| -4417.72 | 10 | **blocked** | -0.0000 .. -0.0068 |
-| -4424.09 | 9 | clear | +0.454 .. +0.510 |
+| -4422.90 | 1 retained | clear | +0.3155 |
+| -4417.72 | 1 retained | **blocked** | -0.00047 |
+| -4424.09 | 1 retained | clear | +0.5081 |
 
-**Nineteen traces, one fixed parameter set, no contradictions.** The blocked pose is
-the one the user labelled O; the two clear poses are V1 and V2. Every trace from an
-open position reaches the light and every trace from behind the wall stops inside it.
+**Three retained traces, one fixed parameter set, no contradiction.** The blocked pose
+is the one the user labelled O; the two clear poses are V1 and V2. The prior 19-trace
+claim conflicts with the table's 22 copies, and the other copies were not preserved.
+Therefore the A-B-A separation is reproducible but within-pose repeatability is OPEN.
 
 Parameters, fixed before the occluded phase was examined and not tuned afterwards:
 
@@ -266,12 +267,12 @@ aliases onto the wrong texels.
 
 ### What this does and does not establish
 
-It demonstrates A **for this controlled case**: one stationary light, one wall, three
-poses, unanimous within each. It says nothing yet about thin geometry, doorways at
+It demonstrates A **for the retained A-B-A exemplars**: one stationary light, one wall,
+three poses. It does not yet establish repeated fresh copies within each pose, thin geometry, doorways at
 grazing angles, moving occluders or other materials.
 
 **The margin is thin, and that matters.** In the blocked pose the closest approach is
-between -0.0000 and -0.0068 gu: the ray grazes the wall rather than driving through
+at -0.00047 gu in the retained payload: the ray grazes the wall rather than driving through
 it. A tolerance sweep holds the same classification from -0.05 to +0.10, so there is a
 working band, but a thinner wall or a shallower angle could plausibly fall the other
 way. Do not read the pass as a margin.
@@ -304,17 +305,17 @@ foreach ($n in 39, 55, 68) {
 | 55 | −10386.04 615.11 −4417.72 | **blocked** | −0.00047 at 8.87 |
 | 68 | −10386.58 614.93 −4424.09 | clear | +0.5081 at 15.45 |
 
-Those are the three poses; the other sixteen traces are the remaining copies within the
-same three camera positions. `--profile` prints every sample along the ray, which is how
+Those are the only three retained payloads. `--profile` prints every sample along the ray, which is how
 a graze is told apart from a solid hit. Add `--from X Y Z` to trace from somewhere other
 than the recorded camera.
 
 
 ## Controlled test and stopping rule
 
-**Steps 1-4 were executed on 2026-09-10 and step 4's condition was met** — see the
-section above. The rule is kept verbatim because step 5 and the stopping clause still
-govern what happens next.
+**Steps 1-2 and one retained exemplar per pose were completed on 2026-09-10.** The
+retained evidence does not satisfy step 3's three-fresh-copies-per-pose requirement,
+so step 4's repeatability condition remains OPEN. The rule is kept verbatim because it
+still governs the built-in HUD check and any concrete failure.
 
 1. Calibrate the copied field at free air and across one known wall, recording
    world positions, raw half values, selected level and interpolation neighbors.

@@ -557,15 +557,17 @@ int main(int argc, char** argv)
         Require(ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=1\n").notificationDurationMs == 5000 &&
             ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=60000\n").notificationDurationMs == 10000,
             "Configured ready duration must remain between five and ten seconds");
-        Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121,
+        Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121 &&
+            config.showAmbient && !config.occlusionTest,
             "World markers must default off and retain independent visibility/hotkey defaults");
         const auto markers = ReadTestConfig("[Overlay]\nEnabled=0\nAutoScale=0\nScale=1.5\nRadar3D=0\n"
             "[Notifications]\nEnabled=0\n[LightOverlay]\nEnabled=1\nInitiallyVisible=0\nToggleKey=122\n"
-            "MaxMarkers=200\nMaxLabels=4\nRadius=42.5\n[Server]\nPort=27329\n");
+            "MaxMarkers=200\nMaxLabels=4\nRadius=42.5\nOcclusionTest=1\n[Server]\nPort=27329\n");
         Require(markers.lightOverlay && !markers.enabled && !markers.notifications && !markers.lightOverlayVisible &&
             markers.lightToggleKey == 122 && markers.lightMaxMarkers == 200 && markers.lightMaxLabels == 4 &&
             markers.lightRadius == 42.5f && !markers.autoScale && markers.scale == 1.5f && !markers.radar3D &&
-            markers.port == 27329, "World markers alone must retain client, scale and independent toggle configuration");
+            markers.port == 27329 && markers.occlusionTest,
+            "World markers alone must retain client, scale and independent toggle configuration");
         const auto largeMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=99999\nMaxLabels=999\nRadius=99999\nToggleKey=999\n");
         Require(largeMarkers.lightMaxMarkers == 2048 && largeMarkers.lightMaxLabels == 16 &&
             largeMarkers.lightRadius == 500 && largeMarkers.lightToggleKey == 255, "Large marker settings must be bounded");
@@ -594,7 +596,7 @@ int main(int argc, char** argv)
                             550 * scale <= display[0] + .01f,
                             "Both full-width radar and legacy HUD, normal/details and manual/auto scales must fit display");
                     }
-        Require(HudNaturalHeight(config, false) == 550 && HudNaturalHeight(config, true) == 806,
+        Require(HudNaturalHeight(config, false) == 550 && HudNaturalHeight(config, true) == 930,
             "3D radar layout must use the shared taller natural heights");
         Require(HudScale(0, 0, config, false) == 0, "Minimized surface");
         std::cout << "PASS HUD resolution scaling and panel bounds\n";
@@ -648,6 +650,29 @@ int main(int argc, char** argv)
         Require(sample.authoredLights.status == "not-reported" && sample.renderedLights.status == "not-reported" &&
             !sample.authoredLights.publishedRecords, "Missing light module must not become an OFF/zero state");
         std::cout << "PASS additive schemas and independently optional light summaries\n";
+        const auto ambientJson=nlohmann::json{{"schemaVersion","1.0"},{"status","available"},
+            {"captureSequence",7},{"frameNumber",81},{"ageMilliseconds",25},
+            {"sky",{{"upperHemisphereMeanWorking",{1.0,2.0,3.0}},
+                {"upwardIrradianceOverPiWorking",{4.0,5.0,6.0}},
+                {"inverseMatrixMean",{7.0,8.0,9.0}},{"rec709MeanLuminanceEstimate",8.1}}},
+            {"visibility",{{"valueWorking",.25},{"frameNumber",77},{"ageMilliseconds",40}}},
+            {"localEnvironmentAmbientEstimateWorking",{{"rgbWorking",{.25,.5,.75}},
+                {"available",true},{"stale",false},{"basis","raw product"}}}};
+        const auto ambient=ParseAmbient(ambientJson.dump());
+        Require(ambient.status=="available"&&ambient.captureSequence==7&&
+            ambient.upperHemisphereMeanWorking&&ambient.upperHemisphereMeanWorking->z==3&&
+            ambient.cameraSkyVisibilityWorking==.25&&ambient.localEnvironmentAmbientEstimateWorking&&
+            ambient.localEnvironmentAmbientEstimateWorking->y==.5f,"Ambient HUD fields were not preserved");
+        View ambientView;ambientView.hasAmbient=true;ambientView.ambient=ambient;
+        ambientView.ambientReceived=Clock::time_point{}+std::chrono::seconds(10);
+        Require(AmbientLive(ambientView,ambientView.ambientReceived+std::chrono::milliseconds(1475))&&
+            !AmbientLive(ambientView,ambientView.ambientReceived+std::chrono::milliseconds(1476)),
+            "Ambient HUD must expire source plus client age at 1500 ms");
+        const auto unavailable=ParseAmbient(nlohmann::json{{"schemaVersion","1.0"},
+            {"status","unavailable"},{"reason","bridge-waiting"}}.dump());
+        Require(unavailable.reason=="bridge-waiting"&&!unavailable.upperHemisphereMeanWorking,
+            "Unavailable ambient invented a measurement");
+        std::cout << "PASS ambient HUD parsing, independent freshness and unavailable state\n";
         json["schemaVersion"] = "1.1";
         View view;
         view.sample = sample; view.connected = true; view.hasSample = true; view.received = Clock::now();

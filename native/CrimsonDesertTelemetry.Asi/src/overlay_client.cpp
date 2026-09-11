@@ -23,6 +23,9 @@ struct Shared
     View view;
     std::string healthStatus, healthError;
     std::vector<View::LocalFault> localFaults;
+    AmbientSummary ambient;
+    Clock::time_point ambientReceived{};
+    bool hasAmbient{};
 };
 // Deliberately process-lifetime: callbacks/worker teardown must not run in DllMain.
 Shared& SharedView() { static auto* shared = new Shared; return *shared; }
@@ -193,6 +196,40 @@ void PollHealth(unsigned short port)
     shared.healthStatus = std::move(status);
     shared.healthError = std::move(error);
 }
+void PollAmbient(unsigned short port)
+{
+    AmbientSummary ambient; ambient.status="unavailable"; ambient.reason="host-unreachable";
+    try
+    {
+        HttpHandle session(WinHttpOpen(L"CrimsonDesertTelemetryAmbientHud/1",WINHTTP_ACCESS_TYPE_NO_PROXY,
+            WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0));
+        if(!session.value)throw std::runtime_error("Ambient session failed");
+        WinHttpSetTimeouts(session.value,500,500,500,500);
+        HttpHandle connection(WinHttpConnect(session.value,L"127.0.0.1",port,0));
+        HttpHandle request(WinHttpOpenRequest(connection.value,L"GET",L"/v1/ambient",nullptr,
+            WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,0));
+        DWORD redirect=WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+        if(!request.value||!WinHttpSetOption(request.value,WINHTTP_OPTION_REDIRECT_POLICY,&redirect,sizeof(redirect))||
+            !WinHttpSendRequest(request.value,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)||
+            !WinHttpReceiveResponse(request.value,nullptr))throw std::runtime_error("Ambient unavailable");
+        DWORD code{},size=sizeof(code);
+        if(!WinHttpQueryHeaders(request.value,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX,&code,&size,WINHTTP_NO_HEADER_INDEX)||code!=200)
+            throw std::runtime_error("Ambient response failed");
+        std::string body;std::array<char,4096> bytes{};
+        for(unsigned reads=0;reads<16;++reads)
+        {
+            DWORD received{};if(!WinHttpReadData(request.value,bytes.data(),static_cast<DWORD>(bytes.size()),&received))
+                throw std::runtime_error("Ambient read failed");
+            if(!received)break;body.append(bytes.data(),received);
+            if(body.size()>65536)throw std::runtime_error("Ambient size limit");
+        }
+        ambient=ParseAmbient(body);
+    }
+    catch(...){ }
+    auto& shared=SharedView();std::lock_guard guard(shared.mutex);
+    shared.ambient=std::move(ambient);shared.ambientReceived=Clock::now();shared.hasAmbient=true;
+}
 DWORD WINAPI Worker(void* parameter)
 {
     auto* args = static_cast<WorkerArgs*>(parameter);
@@ -204,6 +241,15 @@ DWORD WINAPI Worker(void* parameter)
         log.flush();
         if (!installed) return 1;
         std::thread([args] { try { Connect(args->config, args->stop); } catch (...) { } }).detach();
+        if(args->config.enabled&&args->config.showAmbient)
+            std::thread([args]
+            {
+                while(WaitForSingleObject(args->stop,0)==WAIT_TIMEOUT)
+                {
+                    PollAmbient(args->config.port);
+                    if(WaitForSingleObject(args->stop,500)!=WAIT_TIMEOUT)break;
+                }
+            }).detach();
         std::string last;
         std::string lastNotice;
         NoticeTracker notices;
@@ -252,6 +298,7 @@ bool TryRead(View& view)
     std::unique_lock lock(shared.mutex, std::try_to_lock);
     if (!lock.owns_lock()) return false;
     view = shared.view;
+    view.ambient=shared.ambient;view.ambientReceived=shared.ambientReceived;view.hasAmbient=shared.hasAmbient;
     view.healthStatus = shared.healthStatus;
     view.healthError = shared.healthError;
     view.localFaults.insert(view.localFaults.end(), shared.localFaults.begin(), shared.localFaults.end());
@@ -304,7 +351,9 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.lightMaxMarkers = std::clamp(lightInteger(L"MaxMarkers", 512), 1, 2048);
     config.lightMaxLabels = std::clamp(lightInteger(L"MaxLabels", 6), 0, 16);
     config.lightRadius = IniFloat(ini, L"Radius", 35.0f, 1.0f, 500.0f, L"LightOverlay");
+    config.occlusionTest = lightInteger(L"OcclusionTest", 0) != 0;
     config.radar3D = integer(L"Radar3D", 1) != 0;
+    config.showAmbient = integer(L"ShowAmbient", 1) != 0;
     config.notifications = GetPrivateProfileIntW(L"Notifications", L"Enabled", 0, ini.c_str()) != 0;
     config.lightsExpected = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str()) != 0;
     config.renderedExpected = config.lightsExpected && GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, ini.c_str()) != 0;

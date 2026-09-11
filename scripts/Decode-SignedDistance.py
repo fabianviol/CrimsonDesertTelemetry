@@ -10,8 +10,8 @@ That predicts `cellSize(L) = 0.25 * 2^L`, which is independently what the consta
 themselves carry: their per-level w at 0x140 + 16L is 1/cellSize.
 
 The stored value is a signed distance in game units, clamped per level at
-1.5*sqrt(2) cell sizes. WHICH SIGN IS THE INSIDE IS NOT YET MEASURED -- that is what
-the free/surface/back probes are for. Do not assume it here.
+1.5*sqrt(2) cell sizes. Live surface crossings established negative inside and
+positive in free space; see docs/SDF_VARIANT_A.md for the measured calibration.
 
   python scripts/Decode-SignedDistance.py PAYLOAD.bin PAYLOAD.json [--level L]
 """

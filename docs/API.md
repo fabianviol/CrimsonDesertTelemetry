@@ -83,12 +83,14 @@ ManyLightsSampleRateHz=20
 Enabled=1
 InitiallyVisible=1
 Radar3D=1
+ShowAmbient=1
 HdrPaperWhiteNits=200
 
 [LightOverlay]
 Enabled=1
 InitiallyVisible=1
 Radius=35
+OcclusionTest=0
 
 [Notifications]
 Enabled=1
@@ -101,6 +103,15 @@ outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
 metadata unchanged; it is not user configuration. F8 toggles the corner HUD,
 F9 diagnostics and F10 fullscreen markers. Display radius does not expand the
 API's source coverage or its configured nearby radius.
+
+`ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
+display global sky, camera sky visibility and the local estimate with their separate
+ages. `OcclusionTest=1` is an experimental native HUD diagnostic: it starts one bounded
+120-copy R16 run, retains only the newest logical volume (with bounded readback/staging
+copies) and shows the fixed
+Variant A CLEAR/BLOCKED/UNKNOWN result when a rendered light is inspected. It writes no
+R16 evidence files. The measured 0.31-0.48 fresh volumes/s is too slow for a responsive
+production lighting gate; this switch exists to measure reliability and runtime cost.
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed

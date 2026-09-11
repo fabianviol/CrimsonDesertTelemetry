@@ -1,4 +1,5 @@
 #include "overlay.h"
+#include "sdf_visibility.h"
 #include <imgui.h>
 #include <algorithm>
 #include <array>
@@ -350,8 +351,40 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20,diagnostics+135,Muted,"Camera forward  " + VectorText(sample.cameraForward,3),13);
     text(20,diagnostics+156,Muted,"Player up       " + VectorText(sample.playerUp,3),13);
     text(20,diagnostics+177,Muted,"Build " + view.sample.build,13);
-    text(20,diagnostics+198,Muted,std::string(GraphicsOutputLabel()) + "  |  passive HUD  |  no mouse capture",13);
+    text(20,diagnostics+198,Muted,std::string(GraphicsOutputLabel())+
+        (config.occlusionTest?"  |  instrumented SDF test":"  |  passive HUD")+"  |  no mouse capture",13);
     text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
+    const bool ambientLive=config.showAmbient&&AmbientLive(view,now);
+    text(20,diagnostics+251,Cyan,"AMBIENT TEST VALUES",12);
+    text(20,diagnostics+272,ambientLive?White:Amber,config.showAmbient
+        ? ambientLive?std::format("Global sky frame {}  |  age {:.0f} ms",
+            view.ambient.frameNumber.value_or(0),AmbientAgeMs(view,now))
+            : "Ambient unavailable: "+(view.hasAmbient
+                ? view.ambient.status=="available"?"stale":""+view.ambient.reason
+                : "waiting for /v1/ambient")
+        : "Ambient HUD disabled",12);
+    text(20,diagnostics+293,Muted,"Upper mean RGB  "+
+        VectorText(ambientLive?view.ambient.upperHemisphereMeanWorking:std::nullopt,4),12);
+    text(20,diagnostics+314,Muted,ambientLive
+        ? std::format("Inverse mean RGB  {}  |  Rec.709 estimate {:.4f}",
+            VectorText(view.ambient.inverseMatrixMean,4),view.ambient.rec709MeanLuminanceEstimate.value_or(0))
+        : "Inverse mean RGB  --   --   --  |  Rec.709 estimate --",12);
+    text(20,diagnostics+335,ambientLive&&view.ambient.cameraSkyVisibilityWorking?White:Amber,
+        ambientLive&&view.ambient.cameraSkyVisibilityWorking
+            ? std::format("Camera sky visibility {:.4f}  |  own age {:.0f} ms  |  frame {}",
+                *view.ambient.cameraSkyVisibilityWorking,view.ambient.visibilityAgeMilliseconds.value_or(0),
+                view.ambient.visibilityFrameNumber.value_or(0))
+            : "Camera sky visibility unavailable (separate R8 acquisition)",12);
+    text(20,diagnostics+356,ambientLive&&view.ambient.localEnvironmentAmbientEstimateWorking?White:Amber,
+        "Local estimate RGB  "+VectorText(ambientLive?view.ambient.localEnvironmentAmbientEstimateWorking:std::nullopt,4)+
+        (ambientLive&&view.ambient.localEstimateStale?"  |  STALE":""),12);
+    const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
+    text(20,diagnostics+381,Cyan,"VARIANT A SDF TEST",12);
+    text(20,diagnostics+402,sdfStatus.available?White:Amber,config.occlusionTest
+        ? sdfStatus.available?std::format("Volume #{}  |  age {} ms  |  CPU context frame {}",
+            sdfStatus.sequence,sdfStatus.ageMilliseconds,sdfStatus.contextFrame)
+            : "SDF test unavailable: "+sdfStatus.reason
+        : "SDF test disabled; set [LightOverlay] OcclusionTest=1",12);
 }
 
 void DrawLightOverlay(const View& view, const Config& config)
@@ -421,7 +454,11 @@ void DrawLightOverlay(const View& view, const Config& config)
     else if (!cameraReady) headline = "RENDERED LIGHTS  /  camera projection unavailable";
     else headline = std::format("RENDERED LIGHTS  /  {} in range  /  {} on screen",inRange,markers.size());
     const std::string controls = std::format("{} hide  /  radius {:.0f} game units  /  aim to inspect",LightKey(config),radius);
-    const std::string caveat = "Filtered / no depth test / HDR swatches / spot arrows schematic";
+    const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
+    const std::string caveat = config.occlusionTest
+        ? sdfStatus.available?std::format("SDF A volume age {} ms / aim at a light for LOS",sdfStatus.ageMilliseconds)
+            : "SDF A UNKNOWN / "+sdfStatus.reason
+        : "Filtered / no depth test / HDR swatches / spot arrows schematic";
     float legendWidth = 0;
     for (const auto* line : std::array<const std::string*,3>{&headline,&controls,&caveat})
         legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
@@ -541,6 +578,16 @@ void DrawLightOverlay(const View& view, const Config& config)
                 value.position.y,value.position.z),Muted});
             lines.push_back({std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}   |   L {:.4g}",
                 value.colorLinear.x,value.colorLinear.y,value.colorLinear.z,value.luminanceLinear),White});
+            if(config.occlusionTest)
+            {
+                const auto trace=sdf::Trace({value.position.x,value.position.y,value.position.z},GetTickCount64());
+                if(!trace.available)
+                    lines.push_back({"SDF A LOS UNKNOWN  /  "+trace.reason,Amber});
+                else
+                    lines.push_back({std::format("SDF A LOS {}  /  closest {:+.5f} gu  /  volume {} ms",
+                        sdf::VerdictName(trace.verdict),trace.closest,trace.ageMilliseconds),
+                        trace.verdict==sdf::Verdict::Clear?Cyan:trace.verdict==sdf::Verdict::Blocked?Amber:Muted});
+            }
         }
         if (group.size() > shown)
             lines.push_back({std::format("+{} more contributions; all raw values remain in API",group.size()-shown),Muted});

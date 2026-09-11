@@ -1,28 +1,38 @@
-# Current checkpoint — both product goals answered, 2026-09-11, Claude
+# Current checkpoint — evidence review and HUD test path, 2026-09-11, Codex
 
-**The two questions this research existed for are closed.** Ambient dims correctly
-under cover, and a camera-to-light sphere trace through the engine's signed distance
-field separates a lamp behind a wall from the same lamp in the open. The consolidated
-handover — calibration, tools, limits, stopping rule — is section 4b of
-[GPU_CAPTURE_FORENSICS.md](GPU_CAPTURE_FORENSICS.md). Read that first; this checkpoint
-records the runtime and package state around it. Everything below this checkpoint is
-history, including its pending acquisition gates, which are now met.
+**ESTABLISHED:** Ambient dims under cover. Three retained, independently reproducible
+R16 payloads also separate one user-labelled visible → occluded → visible torch sequence
+with Variant A. Their verdicts are clear / blocked / clear and closest approaches are
++0.3155 / -0.00047 / +0.5081 gu with the fixed parameters below.
 
-**DEMONSTRATED live, latest:** Variant A separated the labelled case in PID15940 at the
-player home, 2026-09-10 23:51. Nineteen camera-to-light traces against a lit doorway at
+**EVIDENCE CORRECTION:** the previous checkpoint said 19 traces, while its table listed
+3 + 10 + 9 = 22. Neither total is reproducible from the retained evidence: the folder
+contains exactly three payloads, one per pose. Those three establish the A-B-A separation,
+but do not preserve the test plan's requested three fresh copies per pose. Claims about
+the unretained copies are observations, not independently checkable evidence.
+
+The retained Variant A case ran in PID15940 at the player home, 2026-09-10 23:51,
+against a lit doorway at
 `(-10403.25, 613.84, -4419.10)`, identified by world POSITION and never by the rendered
-sample index. Grouping by the camera position the copies themselves carry — the phase
-windows spilled across the user walking, so a label alone was not a pose — gives three
-poses: 3 copies clear (closest +0.304..+0.320), 10 blocked (−0.0000..−0.0068), 9 clear
-(+0.454..+0.510). One fixed parameter set (`hit_tolerance=0.0`, `minimum_step=0.05`,
+sample index. One fixed parameter set (`hit_tolerance=0.0`, `minimum_step=0.05`,
 `iteration_bound=400`, `start_offset=0.6`, `end_margin=1.0`), fixed before the occluded
-phase was examined, no contradictions. Evidence:
+phase was examined, classifies all three retained poses without contradiction. Evidence:
 `artifacts/light-research/variant-a-pid15940-20260910-2351/`.
 
-**Limit, recorded as a limit:** the blocked ray GRAZES the wall. A tolerance sweep holds
-the classification from −0.05 to +0.10, so there is a working band, not a margin. Thin
+**INFERENCE / limit:** the retained blocked ray GRAZES the wall at -0.00047 gu. The
+reported unretained range was −0.0000 to −0.0068 gu. A tolerance sweep of the retained
+poses holds the classification from −0.05 to +0.10, so there is a working band, not a margin. Thin
 geometry, doorways at grazing angles, moving occluders and other materials are untested —
 not known-bad. Widen the test only when a concrete case fails.
+
+**OPEN:** reliability across repeated copies of each pose is not established by the
+retained evidence. The native HUD now contains the same fixed Variant A marcher so this
+repeatability and concrete failures can be observed in-game without exporting payloads.
+It reports CLEAR / BLOCKED / UNKNOWN, the closest signed distance, volume age and the
+CPU-bracketed context frame. `[LightOverlay] OcclusionTest=1` starts one bounded 120-copy
+diagnostic run and keeps the 16.25 MiB payload in memory instead of writing every copy.
+F9 diagnostics polls `/v1/ambient` and shows global sky, camera visibility and the local
+estimate with their separate ages. No public occlusion API has been added.
 
 **Stopping rule, in force:** no t224, no reconstruction of the engine's raymarch, no
 coverage model, no DXR.
@@ -59,6 +69,16 @@ Built from HEAD, so it includes Codex's `a87a2ab` (distinct SDF barrier transiti
 `v2.0.1-restart.1` ZIP (`0A37F27F4059D09D68C0A8F2B8F37C2BE23A4E35A7D9731CB3165AE1E9167CAF`)
 is superseded but preserved.
 
+**BUILT, validated, not installed while the game is running:**
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.0.1-hud.3-ModManagers.zip`.
+ZIP SHA256 `23108FB89030F723A1D396401E361F345590339F9BC9CACA5621A8E435204203`;
+ASI SHA256 `7156C8B74FB5D5F32BCDCDEDD45D7706CBCDEB96AC240EF4EEEAE62397CB7D0B`.
+The private package has `ShowDetails=1`, `ShowAmbient=1` and `OcclusionTest=1`; the old
+Research keys remain off because the HUD switch starts the bounded in-memory run itself.
+Package validator and all 25 native tests pass. CrimsonHue is untouched. `hud.1` and
+`hud.2` are superseded but preserved; `hud.2+` removes one avoidable 16.25 MiB CPU copy
+per fresh volume, while `hud.3` opens the diagnostic panel without an INI edit.
+
 **Ambient: parked, not abandoned.** `localEnvironmentAmbientEstimateWorking` on
 `/v1/ambient` is `skyMean x cameraSkyVisibility` with both raw inputs retained. Full-day
 range 34500x, barn traverse 15550x on visibility with the sky term steady, value follows
@@ -71,11 +91,15 @@ CPU observations around the copy, NOT GPU-bound GI constants. The measured trans
 rate is 0.31–0.48/s against a configured 1 s, because arming needs the pinned resource
 identity to recur and `Discover` only re-pins while the phase is Idle; a 30 s stall was
 observed once. Known, deliberately not fixed. No source-visibility verdict and no new
-public API are published — Variant A lives in the research scripts, not in the product.
+public API are published; the HUD result is explicitly a local diagnostic.
+At 0.31-0.48 fresh volumes per second it is too slow for a responsive production
+occlusion gate; the HUD is for measuring correctness and cost. A product path needs a
+smaller/faster readback or GPU-side evaluation.
 
-**Next step, and it is not in this repository:** CrimsonHue consumes only `/v1/stream`
-today, neither the ambient estimate nor occlusion. The perceptual curve and the occlusion
-gate belong there. It was deliberately left untouched while this work ran.
+**ONE next step:** after shutting down the game, package/install this HUD build and repeat
+the visible → occluded → visible torch sequence while aiming at the same rendered light.
+Require at least three fresh SDF volumes per pose. That closes the retained-repeatability
+gap without t224 or PIX.
 
 ---
 

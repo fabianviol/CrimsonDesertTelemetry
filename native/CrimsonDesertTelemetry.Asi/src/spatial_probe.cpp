@@ -2,6 +2,7 @@
 #include "spatial_trace.h"
 #include "spatial_readback.h"
 #include "spatial_sample.h"
+#include "sdf_visibility.h"
 #include "sky_bridge.h"
 #include "submission_observer.h"
 #include "console/mem.h"
@@ -63,6 +64,7 @@ Phase phase=Phase::Idle;
 bool barrierInstalled{}, incomplete{};
 bool directReadback{};
 bool distanceMode{};
+bool persistDistanceEvidence{};
 unsigned readbackCount{1},requestedTransactions{1},seriesCount{1},visibilitySeconds{};
 uint64_t readbackIntervalMs{1000};
 // Module is process-pinned; unresolved GPU work retains its bounded allocation.
@@ -670,7 +672,22 @@ void SaveDistanceTransaction()
     {ReleaseSRWLockExclusive(&lock);return;}
     before=copyObservation;after=distanceLatest;
     ReleaseSRWLockExclusive(&lock);
-    const auto copy=readback->LatestRecord();
+    auto copy=readback->LatestRecord();
+    const auto packedBytes=copy.packed.size();
+    const bool bracketed=before.tick<=copy.releaseTick&&after.tick>copy.releaseTick&&
+        before.frame!=after.frame&&before.giStable&&after.giStable;
+    std::array<float,3> camera{};
+    std::memcpy(camera.data(),after.scene.data()+0x80,sizeof(camera));
+    if(!persistDistanceEvidence)
+    {
+        if(copy.gpuCompleted&&packedBytes==17039360)
+            sdf::Publish(std::move(copy.packed),after.gi,camera,after.frame,copy.completedTick,bracketed);
+        AcquireSRWLockExclusive(&lock);publishedTransactions=completed;ReleaseSRWLockExclusive(&lock);
+        ch::Log("Signed distance HUD snapshot %u: cached, bytes=%llu fence=%llu contexts=%u/%u bracket=%d",
+            completed,static_cast<unsigned long long>(packedBytes),
+            static_cast<unsigned long long>(copy.fenceValue),before.frame,after.frame,bracketed?1:0);
+        return;
+    }
     const auto stem=L"signed-distance-"+std::to_wstring(GetCurrentProcessId())+L"-"+
         std::to_wstring(started)+L"-"+std::to_wstring(completed);
     auto metadata=TransactionJson(copy,false);
@@ -679,28 +696,29 @@ void SaveDistanceTransaction()
     metadata["pid"]=GetCurrentProcessId();
     metadata["executableSha256"]=Hex(native_contract::ExecutableSha256.data(),native_contract::ExecutableSha256.size());
     metadata["packing"]="little-endian binary16, x-fastest then y then z; row padding removed; R16_TYPELESS viewed as R16_FLOAT";
-    metadata["packedBytes"]=copy.packed.size();
+    metadata["packedBytes"]=packedBytes;
     metadata["resource"]=reinterpret_cast<uint64_t>(copy.release.pResource);
     metadata["dataFile"]=std::filesystem::path(stem+L".bin").string();
     metadata["contextBefore"]=Json(before);metadata["contextAfter"]=Json(after);
-    metadata["cpuContextBracketsCopy"]=before.tick<=copy.releaseTick&&after.tick>copy.releaseTick&&
-        before.frame!=after.frame&&before.giStable&&after.giStable;
+    metadata["cpuContextBracketsCopy"]=bracketed;
     metadata["frameMeaning"]="preceding CPU exposure context frame, NOT a GPU-paired distance-volume frame";
     metadata["caveat"]="Fenced live R16 copy at a shape-matched resource's observed SRV release. "
         "CPU GI/scene observations bracket recording when flagged; neither is an observed GPU binding. "
         "Validate mapping stability and known geometry before tracing. Voxel content age is unknown. No visibility verdict.";
     const auto bin=outputDirectory/(stem+L".bin"),json=outputDirectory/(stem+L".json");
-    const bool rawOk=copy.gpuCompleted&&copy.packed.size()==17039360&&
-        WriteNewEvidence(bin,copy.packed.data(),copy.packed.size());
+    const bool rawOk=copy.gpuCompleted&&packedBytes==17039360&&
+        WriteNewEvidence(bin,copy.packed.data(),packedBytes);
     metadata["rawSaved"]=rawOk;
     const auto text=metadata.dump(2);
     const bool metaOk=WriteNewEvidence(json,text.data(),text.size());
+    if(copy.gpuCompleted&&packedBytes==17039360)
+        sdf::Publish(std::move(copy.packed),after.gi,camera,after.frame,copy.completedTick,bracketed);
     AcquireSRWLockExclusive(&lock);
     publishedTransactions=completed;
     if(!rawOk||!metaOk){incomplete=true;readback->Cancel("distance-evidence-write-failed");}
     ReleaseSRWLockExclusive(&lock);
     ch::Log("Signed distance readback %u: %s, bytes=%llu fence=%llu contexts=%u/%u bracket=%d, %s",
-        completed,rawOk&&metaOk?"saved":"WRITE FAILED",static_cast<unsigned long long>(copy.packed.size()),
+        completed,rawOk&&metaOk?"saved":"WRITE FAILED",static_cast<unsigned long long>(packedBytes),
         static_cast<unsigned long long>(copy.fenceValue),before.frame,after.frame,
         metadata["cpuContextBracketsCopy"].get<bool>()?1:0,json.string().c_str());
 }
@@ -710,8 +728,9 @@ void Save(const char* reason)
     if(distanceMode)
     {
         const auto state=readback->Snapshot();
-        ch::Log("Signed distance run ended: %s, copy=%s completed=%u saved=%u; individual evidence files retained.",
-            reason,state.reason,readback->Completed(),publishedTransactions);
+        ch::Log("Signed distance run ended: %s, copy=%s completed=%u processed=%u; mode=%s.",
+            reason,state.reason,readback->Completed(),publishedTransactions,
+            persistDistanceEvidence?"persistent evidence":"HUD memory only");
         if(traceResource){traceResource->Release();traceResource=nullptr;}
         observing=false;phase=Phase::Idle;return;
     }
@@ -807,12 +826,14 @@ void Save(const char* reason)
 }
 
 bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
-    unsigned transactions,unsigned intervalMilliseconds,unsigned publishSeconds,bool enableDistanceReadback)
+    unsigned transactions,unsigned intervalMilliseconds,unsigned publishSeconds,bool enableDistanceReadback,
+    bool persistEvidence,bool startImmediately)
 {
     if(enabled) return false;
     std::array<uint8_t,Signature.size()> bytes{};
     if(!Read(moduleBase+DispatchRva,bytes)||bytes!=Signature) return false;
     base=moduleBase;outputDirectory=directory;distanceMode=enableDistanceReadback;
+    persistDistanceEvidence=persistEvidence;
     directReadback=enableReadback||distanceMode;
     // Out-of-range configuration falls back to the proven single transaction.
     // SpatialReadbackCount keeps its own meaning: RETAINED diagnostic snapshots.
@@ -857,6 +878,7 @@ bool Start(uint64_t moduleBase,const wchar_t* directory,bool enableReadback,
     else ch::Log(directReadback?
         readbackSeriesMessage.c_str():
         "Spatial binding probe v2 IDLE: passive interval Barrier/Reset/Close/submission trace; explicit event starts20 samples, no GPU copy.");
+    if(startImmediately)SetEvent(requestEvent);
     return true;
 }
 void Poll()
@@ -947,6 +969,7 @@ void Stop()
     // The run is the only producer of this value, so it must not outlive it.
     if(directReadback&&!distanceMode)sky::PublishVisibility(0.0,sky::Visibility::Unavailable,0,0);
     if(directReadback)readback->Cancel("stopped");
+    if(distanceMode)sdf::Clear();
     trace.target=0;render::submissionObserver=nullptr;
     if(dispatchTarget&&originalDispatch) MH_DisableHook(dispatchTarget);
     if(barrierTarget&&originalBarrier) MH_DisableHook(barrierTarget);

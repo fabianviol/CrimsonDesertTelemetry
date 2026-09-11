@@ -11,7 +11,8 @@ namespace cdt::spatial
 // They are separate on purpose; one key meaning both already misfired once.
 bool Start(uint64_t moduleBase, const wchar_t* directory,bool enableReadback=false,
     unsigned transactions=1,unsigned intervalMilliseconds=1000,unsigned publishSeconds=0,
-    bool enableDistanceReadback=false);
+    bool enableDistanceReadback=false,bool persistDistanceEvidence=false,
+    bool startImmediately=false);
 void Poll();
 void Stop();
 bool OwnsCodeAddress(uint64_t address);
