@@ -15,7 +15,7 @@ except the two items under "What is actually open".
 | light/player/camera telemetry | working on 25246367, verified live |
 | ambient (goal 1) | working, measured from 0.3916 outdoors to exactly 0 indoors |
 | occlusion (goal 2) | confirmed at two sites, by two independent implementations |
-| public release | `v2.0.2` uploaded, Nexus virus scan still running |
+| public release | `v2.0.2` passed Nexus virus scan, is LIVE |
 | CrimsonHue | untouched, consumes neither feed |
 
 ## The machine right now
@@ -143,8 +143,7 @@ the mod page does.
    feeds are now proven on the current build. The perceptual curve with a floor and the
    occlusion gate with hysteresis belong there. This is the next real step and it has
    been deliberately untouched for two days.
-2. **The Nexus scan on 2.0.2.** Nothing to do but watch the page.
-3. **Housekeeping:** 5.9 GB of payloads in `bin64`; the installed INI is a test
+2. **Housekeeping:** 5.9 GB of payloads in `bin64`; the installed INI is a test
    configuration; `docs/API.md` still describes the pre-update state and its link on
    Nexus points at unpushed `main`.
 
