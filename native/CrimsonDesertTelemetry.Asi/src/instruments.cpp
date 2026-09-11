@@ -185,7 +185,7 @@ void RunImpl(HANDLE stopEvent)
     else overlay::ClearLocalFault("native-capture");
     const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
         GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
-    const bool spatialProbe = captureEnabled && (hudOcclusion ||
+    const bool spatialProbe = captureEnabled && (hudOcclusion || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 ||
         GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0);
     const bool spatialReadback = GetPrivateProfileIntW(L"Research", L"SpatialReadback", 0, iniPath.c_str()) != 0;
     const bool persistDistanceReadback = GetPrivateProfileIntW(L"Research", L"SignedDistanceReadback", 0, iniPath.c_str()) != 0;
@@ -201,7 +201,7 @@ void RunImpl(HANDLE stopEvent)
     const unsigned spatialVisibilitySeconds =
         GetPrivateProfileIntW(L"Research", L"SpatialVisibilitySeconds", 0, iniPath.c_str());
     const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
-        std::filesystem::path(moduleDirectory).c_str(),spatialReadback,spatialTransactions,spatialInterval,
+        std::filesystem::path(moduleDirectory).c_str(),spatialReadback || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0,spatialTransactions,spatialInterval,
         spatialVisibilitySeconds,distanceReadback,persistDistanceReadback,hudOcclusion);
     if(spatialProbe && !spatialStarted)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
