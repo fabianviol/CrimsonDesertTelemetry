@@ -42,6 +42,26 @@ detection. No game process/API was available during this read-only check.
 
 ## Current result — Ambient Occlusion complete; per-light production in progress
 
+**Current focused test, `.4` installed by the user through DMM:** PID 34380.
+The code DLLs, ASI and INI match `.4`; DMM still retained the old deps.cfg version
+labels with unchanged runtime assets. A stationary 12-second control has 720/720
+available raw messages and 24 progressing SDF volumes. The user's room screenshot
+identifies four sources, reportedly two visible and two blocked; all four remain
+CLEAR in all 720 messages. The exact two blocked labels still need the user's
+identification. A fresh retained CPU volume 1970/context 55044 is paired with API
+capture 15359, and all four offline trace minima reproduce the live values.
+Even minima of the complete piecewise trilinear paths remain positive, so neither
+HUD filtering nor the known forced-step skip explains this particular captured
+case. This does not yet establish whether the relevant geometry is absent or
+represented incorrectly. Evidence and limits are in the new `.4` room section of
+[live regression](SOURCE_VISIBILITY_REGRESSION.md).
+
+**Next step:** identify which two screenshot labels are blocked, then compare ONE
+of those same sources across a user-controlled clear/blocked pose with fresh paired
+geometry. No trace threshold or production code was changed for this diagnosis.
+Keep the user's later camera-sky-visibility wording/orientation complaint queued
+behind this source test, as explicitly requested. No consumer or new AV research.
+
 **Latest live result: the user's `.3` camp test FAILED per-light recognition and
 light-view continuity.** Opaque boxes/structures conceal lamps labelled visible;
 the open fire is excluded from that report. A 20-second capture proves 18/1,197
@@ -127,7 +147,7 @@ changes or unrelated root diagnostic scripts with this work.
 The fixes, tests, descriptions and exact `.4` evidence were committed and pushed
 as `fd3bf54`. Its GitHub CI run is in progress; no release or tag was created.
 
-**Immediate next action:** the user closes the game and installs `.4` through DMM;
+**Earlier `.4` installation checkpoint (completed; see current test above):** the user closes the game and installs `.4` through DMM;
 verify installed companions, then capture a stationary raw/EMA window and fresh
 SDF update controls at the same camp. Resolve the remaining trace/geometry false
 clears with a fresh controlled target; do not equate the continuity fixes with

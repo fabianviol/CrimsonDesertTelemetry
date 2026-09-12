@@ -1,5 +1,67 @@
 # Live source-visibility regressions — 2026-09-12
 
+## Current `.4` room test: fresh paired field still reports four clear sources
+
+User installed `.4` via DMM, PID 34380, started 16:12:57 CEST. The ASI, code DLLs
+and INI match the candidate; DMM retained older deps.cfg version labels with the
+same runtime target and DLL asset names. Full package equality is not claimed.
+
+The user reports two candles and two fires in the room screenshot, two visible
+and two blocked, while all four labels say SOURCE VISIBLE. Which two labels are
+blocked is pending explicit identification; neither GPU slots nor point/spot kind
+provides that ground truth or a candle/fire classification.
+
+Evidence is under
+`artifacts/light-research/source-visibility-focused-20260912/room-four-lights-01/`.
+`user-view.png` preserves the screenshot. The stationary 12-second raw stream has
+720/720 available messages, 168 distinct light captures and 24 SDF volumes
+(1268–1291); raw age is 0–110 ms. Player position is unchanged. Each of the four
+nearest matching source positions reports CLEAR in every message. This measured
+window has no shared light-feed dropout, but does not establish long-run continuity.
+
+`current-sdf-02/` retains a bounded read-only copy of the exact ASI's immutable
+published CPU snapshot: volume 1970, context 55044, SHA256
+`A752E85C95E2F24F3E0EC4ABEC42427F388073D44BFBDE6BA6A7C46C46E739C6`.
+The owner/header/vector are unchanged around the copy. `api-matched.json` references
+that exact volume and frame in light capture 15359, API sequence 58612: raw age
+78 ms, SDF age at capture 109 ms. The source reference camera is
+`(-10536.7568359375,612.9241333007812,-4417.41748046875)`.
+Actual GI row 46 equals stored camera times inverse extents exactly. The derived
+scene fixture contains only stored frame/camera, not original GPU scene bytes.
+
+The first retained CPU copy, volume 1264, is NOT paired to its API before/after
+(volume 1263), and the subsequently started stream begins at 1268. Do not use it
+as an exact live trace comparison. The second copy explicitly waits for matching
+API metadata and is the one used below.
+
+| Screenshot label | Target XYZ in the matched capture | Live closest / offline closest | Complete interpolated path minimum |
+| --- | --- | --- | --- |
+| Top, 11.9 gu | -10520.249, 610.1467, -4423.202 | .012111214 / .012111214 | .005258648 |
+| Left, 3.0 gu | -10529.752, 611.3594, -4420.2944 | .530273438 / .530273438 | .160335741 |
+| Right, 4.2 gu | -10531.063, 610.22504, -4424.199 | .517017484 / .517017470 | .124548416 |
+| Bottom, 3.6 gu | -10528.658, 610.2924, -4421.731 | .019646818 / .019646817 | .016471236 |
+
+HUD distances are from the player; traces originate at the paired camera. Source
+positions, converted back to float32, reproduce the native trace's published float
+closest values. `four-target-profile.json` also retains dense 0.005-gu profiles.
+`piecewise-cubic-minima.json` goes further: it splits the entire camera-to-source
+segment at texel centres, clipmap bounds and Z wraps, then evaluates each cubic
+interpolant's endpoint and derivative-root minima. Four additional evaluations per
+interval differ from the polynomial by at most 2.01e-12. These complete paths,
+including the normally omitted start/end margins, have no nonpositive crossing.
+
+Thus this current field reproduces the incorrect clear classification upstream of
+the HUD. The previously proven forced-step skip is still real, but does not explain
+this particular fresh four-source snapshot. This is a statement about the sampled
+field, not proof that the world is clear or that a particular wall is missing.
+The next controlled comparison must identify one blocked source and its intervening
+geometry. No hit threshold, endpoint or production implementation was changed to fit
+these labels. The user's later sky-HUD wording/orientation complaint is queued after
+the source test at their explicit request. Existing `.4` AV results are unchanged;
+no new binary was built or installed for these read-only measurements.
+
+## Previous `.3` camp failure
+
 The user's camp test of production `v2.1.10-source-visibility.3` failed.
 The screenshot shows opaque boxes/structures between the camera and several
 lamp markers labelled SOURCE VISIBLE; the user excludes the visibly open fire
