@@ -16,8 +16,8 @@ Exact published 2.1.10 artifacts:
 Nexus reports that public file as safe. Do not remove, replace, warn about or
 otherwise change the Nexus 2.1.10 release because of the later research scan.
 
-The higher **ASI 11/71 / ZIP 7/68** results below belong exclusively to the local
-`2.1.11-source-visibility.2` `CDT_RESEARCH=ON` test package built around 23:18.
+The higher **ASI 11/71 / ZIP 7/68** results belong exclusively to the superseded
+local `2.1.11-source-visibility.2` `CDT_RESEARCH=ON` package built around 23:18.
 That package adds SDF readback, a player-to-light IPC bridge and other research
 instrumentation. It was never uploaded to Nexus and must remain private. GitHub
 `main` contains its source and documentation for continued development; this does
@@ -90,12 +90,17 @@ automated checks pass:
 - research ASI compile and expanded/ZIP package validation.
 
 The JSON schema parses successfully. `AGENTS.md` and `CLAUDE.md` are byte-identical.
+The first `.2` game start exposed one compatibility defect: the managed host
+correctly emitted new schema 1.5, but the ASI HUD parser still accepted only
+through 1.4 and therefore labelled the entire stream incompatible. `.3` adds 1.5
+to that strict allowlist and its additive-schema HUD regression. This was not an
+ASI/DLL file mix and has no effect on Nexus production 2.1.10.
 
 ## Exact package for the next tester
 
 Use only:
 
-`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-source-visibility.2-ModManagers.zip`
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-source-visibility.3-ModManagers.zip`
 
 This is a private `CDT_RESEARCH=ON` package for Steam build 25246367, not a public
 release. It contains its own research README and a ready test INI:
@@ -110,21 +115,23 @@ Exact artifacts:
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `CrimsonDesertTelemetry.asi` | 1,591,296 | `0F017D5766556B8CB4DC7E89990032A86CE19AC20902AABF7ABBCE8A4DFD8CE5` |
-| test ZIP | 943,190 | `2AEEA9DE5647F0C2C5F3EA5DAA5078C3A4ED546B6D97200B764B2EC95DAFB22F` |
+| `CrimsonDesertTelemetry.asi` | 1,591,296 | `7C9B007E8DA4F73FDAF8047F5E9C74478E70005A226EBB82D6C6D9B2A37CCC02` |
+| test ZIP | 943,190 | `96AB18A4E9BFF21694F9173CFB50A41F1CCE83A81405A3807DDDA8ED3FD7112E` |
 
 Local Microsoft Defender custom scans passed both exact files with no threats.
-Completed VirusTotal results for these exact research artifacts are **ASI 11/71**
-and **ZIP 7/68** (60 undetected and one analysis failure for the ZIP). This is a
+Completed VirusTotal results for these exact `.3` research artifacts are
+**ASI 11/71** and **ZIP 7/68** (the ZIP has 60 undetected and one analysis
+failure; the ASI has one timeout and one failure). This is a
 significant regression from the stable production build and blocks using this
 architecture as a release candidate. It does not invalidate a private functional
 test, but it must not be published or promoted to `CDT_RESEARCH=OFF` unchanged.
 Investigate it later as a product/build regression without obfuscation or signature
-gaming. The earlier `.1` artifact is superseded and must not be tested.
+gaming. The earlier `.1` and schema-incompatible `.2` artifacts are superseded
+and must not be tested.
 
 ## One next step
 
-With the game closed, install the `.2` ZIP cleanly through DMM. In the known room,
+With the game closed, install the `.3` ZIP cleanly through DMM. In the known room,
 hold one player position where two identified sources are physically clear and two
 are behind solid wood. Keep F11 in show-blocked mode. Verify that all four records
 receive the correct status. Rotate the camera without moving the player and verify

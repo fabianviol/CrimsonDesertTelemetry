@@ -771,7 +771,7 @@ int main(int argc, char** argv)
         Require(sample.cameraHeading && std::abs(*sample.cameraHeading) < 0.01, "Independent camera heading");
         Require(!Heading({0, 1, 0}), "Vertical direction must not produce a heading");
         std::cout << "PASS overlay camera/player separation and vertical projection\n";
-        for (const auto* version : {"1.2", "1.3", "1.4"})
+        for (const auto* version : {"1.2", "1.3", "1.4", "1.5"})
         {
             json["schemaVersion"] = version;
             sample = ParseSample(json.dump(), now);

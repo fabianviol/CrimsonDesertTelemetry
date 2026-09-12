@@ -388,7 +388,7 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
         return true;
     });
     const auto schema = root.at("schemaVersion").get<std::string>();
-    if (schema != "1.1" && schema != "1.2" && schema != "1.3" && schema != "1.4")
+    if (schema != "1.1" && schema != "1.2" && schema != "1.3" && schema != "1.4" && schema != "1.5")
         throw std::runtime_error("Unsupported telemetry schema");
     const auto& axes = root.at("coordinateSystem");
     if (axes.at("upAxis") != "y" || axes.at("handedness") != "right" || axes.at("unit") != "game-unit")
