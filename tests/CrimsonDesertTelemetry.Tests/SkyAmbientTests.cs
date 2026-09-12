@@ -152,16 +152,26 @@ internal static class SkyAmbientTests
     {
         var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var state=new TelemetryServerState(options,60,"1.4");
+        using (var waiting=JsonDocument.Parse(state.LatestSkyBytes))
+            Check(waiting.RootElement.GetProperty("status").GetString()=="unavailable" &&
+                waiting.RootElement.GetProperty("localEnvironmentAmbientEstimateWorking").ValueKind==JsonValueKind.Null,
+                "Unavailable sky must serialize a null local estimate, not a fabricated estimate object.");
         using var raw=state.Subscribe(); using var smooth=state.Subscribe(true); using var sky=state.SubscribeSky();
         state.SetHealth("playing",true,true,"25116796",0,null,null);
-        var sample=new SkyAmbientSnapshot("available",null,1,42,DateTimeOffset.UtcNow,0,SkyAmbientReader.DecodePayload(Payload()));
+        var sample=SkyAmbientReader.Decode(Bridge(),42,123,1100) with {CapturedAt=DateTimeOffset.UtcNow,AgeMilliseconds=0};
         state.PublishSky(sample);
         Check(sky.Reader.TryRead(out var bytes) && !raw.Reader.TryRead(out _) && !smooth.Reader.TryRead(out _),"Sky leaked into another feed.");
         using var json=JsonDocument.Parse(bytes!);
         Check(json.RootElement.GetProperty("scope").GetString()=="global-upper-hemisphere-sky", "Scope omitted.");
         Check(!json.RootElement.GetProperty("exposureNormalized").GetBoolean(), "False normalization claim.");
+        Check(json.RootElement.GetProperty("localEnvironmentAmbientEstimateWorking").ValueKind==JsonValueKind.Object &&
+            !json.RootElement.GetProperty("localEnvironmentAmbientEstimateWorking").GetProperty("available").GetBoolean(),
+            "Available sky without local visibility must preserve the estimate status object.");
         state.SetHealth("loading",true,true,"25116796",0,null,null);
         Check(state.LatestSky.Sky is null && sky.Reader.TryRead(out _), "Loading retained sky.");
+        using (var loading=JsonDocument.Parse(state.LatestSkyBytes))
+            Check(loading.RootElement.GetProperty("localEnvironmentAmbientEstimateWorking").ValueKind==JsonValueKind.Null,
+                "Loading retained a local estimate in the unavailable envelope.");
         state.PublishSky(sample); Check(state.LatestSky.Sky is null,"Loading accepted available data.");
         state.SetHealth("playing",true,true,"25116796",0,null,null);
         state.PublishSky(sample with {CapturedAt=DateTimeOffset.UtcNow.AddSeconds(-2)});

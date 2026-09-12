@@ -214,13 +214,13 @@ Important boundaries:
 ```powershell
 dotnet build .\CrimsonDesertTelemetry.sln -c Release
 dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release
-.\scripts\Build-ModManagerPackage.ps1 -Version 0.0.0-local.1
+.\scripts\Build-ModManagerPackage.ps1 -Version 0.0.0-local.1 -Research off
 ctest --test-dir build/native-package-release -C Release --output-on-failure
 ```
 
 The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP. The default production package uses `CDT_RESEARCH=OFF`; bounded ambient/SDF acquisition is included, while private probe histories and capture dumps stay in the research build. GitHub CI covers managed/API tests and native capture, guard and UI tests. Current acceptance and outstanding checks are recorded in [the handover](docs/HANDOVER.md); historical test totals are not a result for a new package.
 
-See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), [2.0 release notes](docs/releases/v2.0.0.md) and [Nexus publishing](docs/NEXUS_PUBLISHING.md). Game binaries, memory dumps, private captures and third-party checkout directories do not belong in the public repository.
+See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), [2.0 release notes](docs/releases/v2.0.0.md), [Nexus publishing](docs/NEXUS_PUBLISHING.md) and [current public description drafts](docs/PUBLIC_DESCRIPTIONS.md). Game binaries, memory dumps, private captures and third-party checkout directories do not belong in the public repository.
 
 ## Credits and scope
 

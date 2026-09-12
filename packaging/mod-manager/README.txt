@@ -49,9 +49,9 @@ files as game patches. The bootstrap caches only the runtime configuration text
 under LOCALAPPDATA/CrimsonDesertTelemetry/Runtime, keyed and verified by SHA-256.
 No executable or game data is copied into that cache. Hot-unloading is unsupported.
 
-Known unresolved report (2026-09-12): another user reported missing host/cfg files
-after DMM deployment, then crashes with graphics features enabled after repairing
-the install. Exact plugin/GPU/crash details are pending. This update is not yet a
+Known unresolved report (2026-09-12): a user of public version 2.0.2 reported missing
+host/cfg files after DMM deployment, then crashes with graphics features enabled
+after repairing the install. GPU/driver and crash details are pending. This update is not yet a
 verified fix for that report; complete ZIP contents do not guarantee DMM deployment.
 
 Controls and defaults

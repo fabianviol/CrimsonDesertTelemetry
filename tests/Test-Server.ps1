@@ -69,6 +69,38 @@ try {
     $skySchema = Invoke-WebRequest -Uri "http://127.0.0.1:$port/v1/ambient/schema"
     $skySchemaText = if ($skySchema.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($skySchema.Content) } else { [string]$skySchema.Content }
     if (-not ($sky | ConvertTo-Json -Depth 8 | Test-Json -Schema $skySchemaText)) { throw 'Sky schema mismatch.' }
+    # Exercise both producer branches. Unavailable carries null; a valid sky
+    # capture carries an estimate object even when local visibility is missing.
+    $unavailableSky = $sky | ConvertTo-Json -Depth 8 | ConvertFrom-Json -AsHashtable
+    $unavailableSky.status = 'unavailable'; $unavailableSky.reason = 'test-unavailable'
+    foreach ($field in @('captureSequence','frameNumber','capturedAt','ageMilliseconds','sky','visibility','localEnvironmentAmbientEstimateWorking')) {
+        $unavailableSky[$field] = $null
+    }
+    if (-not (Test-Json -Json ($unavailableSky | ConvertTo-Json -Depth 8) -Schema $skySchemaText)) {
+        throw 'Unavailable sky with a null local estimate violates schema.'
+    }
+    $estimate = @{ rgbWorking = $null; available = $false; stale = $false; basis = 'upperHemisphereMeanWorking * cameraSkyVisibilityWorking, both raw' }
+    $unavailableSky.localEnvironmentAmbientEstimateWorking = $estimate
+    if (Test-Json -Json ($unavailableSky | ConvertTo-Json -Depth 8) -Schema $skySchemaText -ErrorAction SilentlyContinue) {
+        throw 'Unavailable sky incorrectly accepts a local estimate object.'
+    }
+    $availableSky = $unavailableSky | ConvertTo-Json -Depth 8 | ConvertFrom-Json -AsHashtable
+    $availableSky.status = 'available'; $availableSky.reason = $null
+    $availableSky.captureSequence = 1; $availableSky.frameNumber = 42
+    $availableSky.capturedAt = [DateTimeOffset]::UtcNow.ToString('O'); $availableSky.ageMilliseconds = 0
+    $availableSky.sky = @{
+        coefficientsWorking = @([double[]]::new(9), [double[]]::new(9), [double[]]::new(9))
+        upperHemisphereMeanWorking = @(0,0,0); upwardIrradianceOverPiWorking = @(0,0,0)
+        inverseMatrixMean = @(0,0,0); inverseMatrixUpwardIrradianceOverPi = @(0,0,0)
+        rec709MeanLuminanceEstimate = 0
+    }
+    if (-not (Test-Json -Json ($availableSky | ConvertTo-Json -Depth 8) -Schema $skySchemaText)) {
+        throw 'Available sky without local visibility must retain its estimate status object.'
+    }
+    $availableSky.localEnvironmentAmbientEstimateWorking = $null
+    if (Test-Json -Json ($availableSky | ConvertTo-Json -Depth 8) -Schema $skySchemaText -ErrorAction SilentlyContinue) {
+        throw 'Available sky incorrectly accepts a null local estimate.'
+    }
     $skySocket = [System.Net.WebSockets.ClientWebSocket]::new()
     $skyTimeout = [Threading.CancellationTokenSource]::new(5000)
     try {

@@ -115,7 +115,10 @@
       }
     },
     "localEnvironmentAmbientEstimateWorking": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "Derived working-space estimate: global upper-hemisphere sky mean multiplied by local camera sky visibility. This is not an exact renderer term or physical lux; the engine modulates an environment cube while this API modulates an averaged sky value. Both raw inputs and their independent freshness remain available in the response.",
       "properties": {
         "rgbWorking": {
@@ -183,6 +186,9 @@
           },
           "reason": {
             "type": "null"
+          },
+          "localEnvironmentAmbientEstimateWorking": {
+            "type": "object"
           }
         }
       },
@@ -208,6 +214,9 @@
             "type": "null"
           },
           "ageMilliseconds": {
+            "type": "null"
+          },
+          "localEnvironmentAmbientEstimateWorking": {
             "type": "null"
           }
         }

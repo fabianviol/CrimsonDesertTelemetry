@@ -32,12 +32,14 @@ GitHub; do NOT create a GitHub release.
 
 ## Current result — Ambient Occlusion complete; per-light production in progress
 
-**Current candidate:** `v2.1.10-source-visibility.1`, `CDT_RESEARCH=OFF`, prepared
+**Current candidate:** `v2.1.10-source-visibility.2`, `CDT_RESEARCH=OFF`, prepared
 but not installed by Codex. ASI 1,438,208 bytes, SHA256
 `A3722B05408464BA95BB6C1AFED1A1B27B9D6795A43E9311A37B4240DAD2AAE1`;
-ZIP 875,062 bytes, SHA256
-`4F364F7D4824D58F1FAF69914A9DABE50388178DC47678C8E2D467C908BAF988`.
-Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.1-ModManagers.zip`.
+ZIP 875,096 bytes, SHA256
+`A3E956660EBFF749BE94DF26454E5CBF34BD0EED42EB888B88FFEA3CD7B4D808`.
+Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.2-ModManagers.zip`.
+The ASI is byte-identical to `.1`; `.2` fixes the embedded unavailable Ambient
+JSON schema and clarifies the public 2.0.2 compatibility report in the package text.
 Both occlusion INI switches are enabled, research/legacy OcclusionTest off.
 F11 hides/restores fresh blocked HUD/radar sources. All four shortcuts accept
 other virtual-key codes or 0; raw/EMA records remain complete. F9's inherited
@@ -51,27 +53,35 @@ Identical imported DLLs/functions, +44,032 bytes, narrowly required acquisition;
 no causal AV finding or signature changes. Full evidence and bounds are in
 [production validation](PRODUCTION_OCCLUSION_VALIDATION.md).
 
-Current code/docs were committed and pushed as `40bee9f` to main (including all
-seven previously local commits). No release/tag was created. GitHub CI exposed
+Current code/docs were committed and pushed as `40bee9f` and `1ebad86` to main
+(including all seven previously local commits). No release/tag was created. GitHub CI exposed
 an older SDK8 test overload issue at `SmoothedLightTests.cs:92`; explicit
 `Enumerable.Reverse` fixes it. SDK8.0.425 now builds the complete solution with
 zero warnings/errors and all 68 managed tests pass. CI is also set explicitly
 to build the OFF ASI while keeping the direct research regression targets.
+The next CI run exposed the pre-existing unavailable Ambient schema mismatch:
+the producer sends a null local estimate, while the schema required an object.
+The schema now accepts null only when unavailable and requires the existing
+status object when available. Both branches and rejected combinations are
+covered; the full HTTP/WebSocket smoke test passes on isolated port 27312.
+The 68 managed tests also pass. Production port 27311 was untouched.
+GitHub About and repository/package descriptions are updated. The external Nexus
+page was not edited; its prepared English text is in `docs/PUBLIC_DESCRIPTIONS.md`.
 Locally all production-relevant native paths pass;
 the full native suite remains 24/26 due to the two inherited research failures.
 The ON ASI also compiles. Do not commit the inherited `spatial_readback.cpp`
 changes or unrelated root diagnostic scripts with this work.
 
-**Immediate next action:** finish SDK8/remote-CI verification and checkpoint push,
-then perform the real production fireplace test after the user installs the
+**Immediate next action:** verify the updated remote CI, then perform the real
+production fireplace test after the user installs the
 clearly labelled private test package through DMM. Ambient is accepted; per-light
 live acceptance/frame cost and final AV clearance remain outstanding. A separate
 public **2.0.2** DMM/graphics-crash report (Nexus post around 08:30, download
 listing 06:02AM on 2026-09-12) is preserved in COMPATIBILITY_ISSUES; GPU/crash
 evidence and exact package hash are still needed. Do not attribute it to new SDF.
 
-Read Gemini's handover, DecodeReference, current v2.1.8 diagnostic state and log,
-then acquisition in the requested order. The diagnostic at 11:06:34 CEST showed:
+Initial diagnosis read Gemini's handover, DecodeReference, the v2.1.8 diagnostic
+state/log, then acquisition in the requested order. At 11:06:34 CEST it showed:
 
 `L1 Y: wrapped=4000, relative=1, scale=1, origin=1000, cell=4001, bounds=[969,1031)`.
 
@@ -185,12 +195,12 @@ measured separately from that brightness change. Ambient Occlusion is complete
 for this controlled live acceptance on build 25246367; this does not claim an
 exhaustive test of every cave or material. The signal samples CAMERA location.
 
-User additionally confirms the HUD must include per-light visibility. Current
-OFF package still shows raw light markers without per-light occlusion; add that
-HUD presentation with the second product goal, without dropping original API data.
+User additionally confirms the HUD must include per-light visibility. Installed
+v2.1.9 still shows raw light markers without per-light occlusion. The `.2`
+candidate includes status and optional hiding, without dropping original API data.
 
 The installed v2.1.9 OFF build still links `cdt_sdf_disabled`. The next production
-implementation is now in progress: reuse calibrated `sdf_visibility.cpp` via
+implementation is implemented and synthetically tested: calibrated `sdf_visibility.cpp` via
 one current volume, one pending GPU copy and three necessary deferred lifecycle/
 barrier hooks in `sdf_acquire.cpp`. Do not restore root-binding discovery, tracing
 or capture history. Geometry metadata is an additive native v3 bridge tail;
@@ -206,7 +216,7 @@ controlled test. Preserved current-build SDF calibration is in
 `docs/SDF_VARIANT_A.md` and
 `artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
 
-**Next:** finish narrow native acquisition/API/HUD integration, run synthetic
-controls, build a configured OFF DMM package, then let the user install it and
-perform the real fireplace test. Per-light live acceptance and final exact-file
-AV scans remain outstanding. The project is NOT complete or release-ready.
+**Next:** let the user install the configured `.2` OFF DMM package and perform
+the real fireplace test. Its exact ASI/ZIP scans are recorded above; per-light
+live acceptance and final AV clearance remain outstanding. The project is NOT
+complete or release-ready.
