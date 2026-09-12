@@ -61,10 +61,10 @@ game start. No direct game/DMM writes were made by Codex. See
 [stable release validation](STABLE_RELEASE_VALIDATION.md) for evidence.
 After NVIDIA driver32.0.16.1692 installation, the first rc.1 start rebuilt shaders
 and hit capture error258/WAIT_TIMEOUT during the long initial load; the second did
-not reproduce it. The owner reports repeated new shader compilations throughout
-Telemetry development and attributes them to the mod. A later start thought to be
-unmodded also compiled shaders, but deployed files were not verified, so it does
-not isolate the trigger. Final2.1.10 adds a one-shot host `playing` gate before native
+not reproduce it. The owner then reproduced compilation with the mod disabled,
+exited during the compile, activated the mod and restarted directly into the game
+without another compile. Telemetry did not initiate compilation in this observed
+A/B sequence. Final2.1.10 adds a one-shot host `playing` gate before native
 light/sky capture, separates the60-second command-list submission bound from the
 5-second submitted GPU-fence bound, and logs the stage. 70/70 managed and27/27
 selected native controls pass. **Next step is final-package live acceptance and

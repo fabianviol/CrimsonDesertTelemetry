@@ -67,11 +67,11 @@ a clean DMM2.8.1 import deployed all six rc.1 files with exact matching hashes.
 
 After an NVIDIA driver update to32.0.16.1692, the first game start rebuilt shaders
 and native capture hit Windows error258 (WAIT_TIMEOUT) during the long initial
-load. The owner reports that new shader compilations have occurred repeatedly
-since Telemetry development began and attributes them to the mod. A later start
-thought to be unmodded also compiled shaders, but the deployed-file state was not
-verified; it does not isolate the trigger. A second modded start did not reproduce
-the capture failure. Release2.1.10 therefore waits for the
+load. The owner then reproduced a new shader compilation with the mod disabled,
+closed the game during compilation, activated the mod and restarted directly into
+the game without another compilation. In this observed A/B sequence the compile
+was initiated without Telemetry and activation did not initiate one. A second
+modded start did not reproduce the capture failure. Release2.1.10 therefore waits for the
 host's first valid player/render-camera `playing` state before arming light/sky
 GPU capture and separates command-list submission timeout from GPU-fence timeout.
 This local cause is distinct from the unresolved external2.0.2 crash report.
