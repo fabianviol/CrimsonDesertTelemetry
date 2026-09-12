@@ -118,12 +118,20 @@ mean 0.00668928 (about 98% below the outside mean). Player stationary at
 (-11407.994,665.5804,-4219.4927), camera approximately (-11404.833,668.522,-4219.8784).
 The covered and outside windows are clearly separated; reversal is still pending.
 
-**Next:** user goes fully inside, stops with camera inside, and says ready.
-Record `03-inside.json`, then ask for the original outside position/view and record
-return-open. The current signal samples CAMERA location, so distinguish camera
-coverage from only the player's body crossing under the roof. Read APIs only;
-user operates game and provides scene context. Do not mark Ambient complete until
-the enclosed and return-open phases establish the controlled live reversal.
+Interior phase saved as `03-inside.json` plus user screenshot in the same folder.
+Same PID, 16/16 fresh samples and distinct visibility frames, age <=32 ms,
+sequence 84953 -> 85418. Visibility 0..0.000291782, mean 0.000069732. Player fixed
+at (-11411.898,665.8191,-4214.6826); camera approximately
+(-11414.794,668.458,-4213.7515) with <0.004 vertical idle movement. Screenshot shows
+an enclosed room with a solid ceiling and active local lights/fireplace. The
+sky-visibility signal is essentially zero despite those local light contributions.
+
+**Next:** user returns to the initial outside position and approximately the same
+view, stops, and says ready. Record `04-outside-return.json` and compare all stages,
+including fresh/progressing controls and pose differences. Current signal samples
+CAMERA location. Read APIs only; user operates game and provides scene context.
+Do not mark Ambient complete before the return-open phase proves live reversal;
+if it passes, immediately continue mandatory per-light production/HUD occlusion.
 
 User additionally confirms the HUD must include per-light visibility. Current
 OFF package still shows raw light markers without per-light occlusion; add that
