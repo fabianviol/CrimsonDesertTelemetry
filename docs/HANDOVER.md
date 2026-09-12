@@ -1,5 +1,28 @@
 # Current checkpoint — per-light direct visibility, 2026-09-12
 
+## Do not confuse the Nexus release with the research package
+
+The public Nexus release is still the unchanged **2.1.10** production package,
+uploaded on 2026-09-12 at 21:28. Nothing built after that upload was sent to
+Nexus. The authenticated Nexus API confirms 2.1.10 is the active main version.
+
+Exact published 2.1.10 artifacts:
+
+| File | Bytes | SHA-256 | VirusTotal |
+| --- | ---: | --- | --- |
+| production ASI | 1,267,712 | `8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78` | 5/71 |
+| production ZIP | 791,357 | `1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24` | 0/68 |
+
+Nexus reports that public file as safe. Do not remove, replace, warn about or
+otherwise change the Nexus 2.1.10 release because of the later research scan.
+
+The higher **ASI 11/71 / ZIP 7/68** results below belong exclusively to the local
+`2.1.11-source-visibility.2` `CDT_RESEARCH=ON` test package built around 23:18.
+That package adds SDF readback, a player-to-light IPC bridge and other research
+instrumentation. It was never uploaded to Nexus and must remain private. GitHub
+`main` contains its source and documentation for continued development; this does
+not alter the immutable production binary already hosted on Nexus.
+
 ## Active priority
 
 Focus only on this question for each local light already known to the project:
