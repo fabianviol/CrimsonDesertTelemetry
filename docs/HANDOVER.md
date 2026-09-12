@@ -111,9 +111,16 @@ mean 0.33465750. Player unchanged at (-11407.612,665.6101,-4225.9883); camera
 (-11405.418, approximately 667.83,-4228.837), with <0.006 vertical idle movement.
 This is an outdoor reference near the building, not a full acceptance result.
 
-**Next:** user moves under the covered doorway and stops, then says ready.
-Measure a separate covered phase, then inside, then back at the original outside
-position/view. The current signal samples CAMERA location, so distinguish camera
+Covered doorway phase saved as `02-covered-doorway.json` plus user screenshot in
+the same live-aba folder. Same PID 31832, 16/16 fresh samples/16 distinct visibility
+frames, age <=16 ms, sequence 77904 -> 78368. Visibility 0.00578101..0.00736786,
+mean 0.00668928 (about 98% below the outside mean). Player stationary at
+(-11407.994,665.5804,-4219.4927), camera approximately (-11404.833,668.522,-4219.8784).
+The covered and outside windows are clearly separated; reversal is still pending.
+
+**Next:** user goes fully inside, stops with camera inside, and says ready.
+Record `03-inside.json`, then ask for the original outside position/view and record
+return-open. The current signal samples CAMERA location, so distinguish camera
 coverage from only the player's body crossing under the roof. Read APIs only;
 user operates game and provides scene context. Do not mark Ambient complete until
 the enclosed and return-open phases establish the controlled live reversal.
