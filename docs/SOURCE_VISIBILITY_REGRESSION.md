@@ -7,9 +7,11 @@ and INI match the candidate; DMM retained older deps.cfg version labels with the
 same runtime target and DLL asset names. Full package equality is not claimed.
 
 The user reports two candles and two fires in the room screenshot, two visible
-and two blocked, while all four labels say SOURCE VISIBLE. Which two labels are
-blocked is pending explicit identification; neither GPU slots nor point/spot kind
-provides that ground truth or a candle/fire classification.
+and two blocked, while all four labels say SOURCE VISIBLE. The user's subsequent
+identification is the first and third physical markers from the left: the top
+11.9-gu source and bottom 3.6-gu source are blocked. The hanging point light at
+3.0 gu and right spot at 4.2 gu are visible controls. Neither GPU slots nor
+point/spot kind provides a candle/fire classification.
 
 Evidence is under
 `artifacts/light-research/source-visibility-focused-20260912/room-four-lights-01/`.
@@ -54,11 +56,49 @@ Thus this current field reproduces the incorrect clear classification upstream o
 the HUD. The previously proven forced-step skip is still real, but does not explain
 this particular fresh four-source snapshot. This is a statement about the sampled
 field, not proof that the world is clear or that a particular wall is missing.
-The next controlled comparison must identify one blocked source and its intervening
-geometry. No hit threshold, endpoint or production implementation was changed to fit
+The next controlled comparison follows the first/top blocked source. No hit
+threshold, endpoint or production implementation was changed to fit
 these labels. The user's later sky-HUD wording/orientation complaint is queued after
 the source test at their explicit request. Existing `.4` AV results are unchanged;
 no new binary was built or installed for these read-only measurements.
+
+### Same first source exposed by the user
+
+The user moved until the first/top source was visible and confirmed `frei`.
+`room-first-source-visible-01/` retains three fresh, immutable CPU volumes with
+matching API metadata and an eight-second stream (481 raw/480 smoothed messages).
+The tracked source stays near `(-10520.24,610.15,-4423.20)`. Camera X/Z is fixed
+at `(-10536.15625,-4415.99169921875)`, Y 612.6862–612.6961 in the matching samples;
+camera forward is `(0.81005996,-0.20203367,-0.550441)`.
+
+| Volume / context frame | Live closest | Offline closest | Verdict |
+| --- | --- | --- | --- |
+| 3096 / 19932 | .489167005 | .489167016 | CLEAR |
+| 3098 / 19988 | .492633104 | .492633097 | CLEAR |
+| 3100 / 20044 | .493894756 | .493894747 | CLEAR |
+
+`first-source-comparison.json` preserves camera, target, light capture, freshness,
+complete marcher samples and dense minima alongside the original blocked pose.
+This establishes a clear difference in the field at the two labelled poses, while
+the production zero-crossing rule incorrectly gives the same verdict. It does not
+justify fitting a threshold between their values. The user has been asked to return
+to a blocked pose of the same source; confirmation and the return capture are pending.
+
+The first blocked ray crosses a cell whose centre is negative (-.0181884766), but
+its trilinear path stays positive. The local 5x5x5 neighbourhood also contains
+negative samples. Thus there is actual negative field content near the failure;
+these data do not establish that the entire crossed cell is solid. A diagnostic
+nearest-cell control separates this first blocked pose from its three free poses,
+but misses the second/bottom blocked source. It is not promoted to production:
+cell occupancy and grazing behaviour cannot be inferred from a single centre.
+The old uncorrected sampler also leaves both initially blocked sources CLEAR,
+so reverting the half-texel correction is not supported by this case.
+
+The user explicitly requires the camera position and orientation as reference.
+Each replay verifies that source metadata's reference position is the paired raw
+camera position. Camera orientation governs projection; the geometric ray points
+from that camera to the source, including sources outside the view. HUD distances
+in the original screenshot are still player distances, not ray lengths.
 
 ## Previous `.3` camp failure
 

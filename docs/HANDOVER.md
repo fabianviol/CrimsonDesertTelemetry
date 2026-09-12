@@ -1,5 +1,29 @@
 # Current checkpoint — production occlusion, 2026-09-12, Codex
 
+## ACTIVE PRIORITY: stable release of working features, occlusion work paused
+
+The user explicitly changed scope on 2026-09-12: pause further per-light/sky-HUD
+investigation and prepare a release build of what works now. Remove nonworking
+options from the offered production INI; verify the remaining functions together
+with every offered feature enabled, complete DMM deployment, startup/game stability,
+and VirusTotal on the exact ASI and ZIP. Do not resume occlusion research until this
+release work is handled. This overrides the earlier requirement to wait for both
+occlusion goals before releasing any update; those remain the longer-term goals.
+No consumer work. No unsupported claim that the external Nexus 2.0.2 crash is fixed.
+
+Source visibility and its F11/HideOccluded controls are excluded from this release,
+preserved for later development. Ambient's accepted route remains available;
+its camera-sky wording/orientation complaint is pending, not silently declared fixed.
+Planned release scope: raw/EMA lights, player/render camera, Ambient, HUD/radar,
+markers, notices and the configurable F8–F10 controls. Full supported-feature
+startup/live checks and exact artifact scans are required before publication.
+
+Pause backup: `artifacts/recovery/occlusion-pause-20260912-165120/` contains the
+uncommitted patch and inherited untracked files. No source/research/evidence was
+deleted. The room's four labelled sources and three fresh free-pose volumes are
+documented below and in SOURCE_VISIBILITY_REGRESSION.md. The requested return to
+`verdeckt` was cancelled by this scope change; do not infer a completed return test.
+
 ## Mandatory product goal and working rules
 
 Production `CDT_RESEARCH=OFF` is complete only after BOTH controlled live tests
@@ -46,9 +70,11 @@ detection. No game process/API was available during this read-only check.
 The code DLLs, ASI and INI match `.4`; DMM still retained the old deps.cfg version
 labels with unchanged runtime assets. A stationary 12-second control has 720/720
 available raw messages and 24 progressing SDF volumes. The user's room screenshot
-identifies four sources, reportedly two visible and two blocked; all four remain
-CLEAR in all 720 messages. The exact two blocked labels still need the user's
-identification. A fresh retained CPU volume 1970/context 55044 is paired with API
+identifies four sources, two visible and two blocked; all four remain
+CLEAR in all 720 messages. The user identifies the first and third physical markers
+from the left as blocked: top label 11.9 gu and bottom label 3.6 gu. The hanging
+point light (3.0 gu) and right spot (4.2 gu) are the visible controls.
+A fresh retained CPU volume 1970/context 55044 is paired with API
 capture 15359, and all four offline trace minima reproduce the live values.
 Even minima of the complete piecewise trilinear paths remain positive, so neither
 HUD filtering nor the known forced-step skip explains this particular captured
@@ -56,9 +82,16 @@ case. This does not yet establish whether the relevant geometry is absent or
 represented incorrectly. Evidence and limits are in the new `.4` room section of
 [live regression](SOURCE_VISIBILITY_REGRESSION.md).
 
-**Next step:** identify which two screenshot labels are blocked, then compare ONE
-of those same sources across a user-controlled clear/blocked pose with fresh paired
-geometry. No trace threshold or production code was changed for this diagnosis.
+The user then exposed the first/top source and confirmed `frei`. Three fresh paired
+volumes 3096/3098/3100 reproduce its CLEAR verdict, with sampled minima
+.489167/.492633/.493895 versus .012111 in the original blocked pose. Captures are
+under `room-first-source-visible-01/` beside the room evidence. The user requires
+the camera position/orientation as reference; the existing trace uses the paired
+camera position, with orientation used for HUD projection, not an off-screen veto.
+
+**Next step:** the user has been asked to conceal that SAME first/top source again
+and report `verdeckt`; capture three fresh paired volumes once confirmed. No
+trace threshold or production code was changed for this diagnosis.
 Keep the user's later camera-sky-visibility wording/orientation complaint queued
 behind this source test, as explicitly requested. No consumer or new AV research.
 
