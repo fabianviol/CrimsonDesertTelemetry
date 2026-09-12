@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "sequence", "capturedAt", "game", "coordinateSystem", "capabilities", "player", "camera", "quality"],
   "properties": {
-    "schemaVersion": { "enum": ["1.1", "1.2", "1.3", "1.4"] },
+    "schemaVersion": { "enum": ["1.1", "1.2", "1.3", "1.4", "1.5"] },
     "sequence": { "type": "integer", "minimum": 0 },
     "capturedAt": { "type": "string", "format": "date-time" },
     "game": {
@@ -104,12 +104,12 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "schemaVersion": { "enum": ["1.2", "1.3", "1.4"] } }, "required": ["schemaVersion"] },
+      "if": { "properties": { "schemaVersion": { "enum": ["1.2", "1.3", "1.4", "1.5"] } }, "required": ["schemaVersion"] },
       "then": { "required": ["lights"] },
       "else": { "not": { "required": ["lights"] } }
     },
     {
-      "if": { "properties": { "schemaVersion": { "const": "1.4" } }, "required": ["schemaVersion"] },
+      "if": { "properties": { "schemaVersion": { "enum": ["1.4", "1.5"] } }, "required": ["schemaVersion"] },
       "then": { "properties": { "lights": { "required": ["rendered"] } } }
     }
   ],
@@ -168,7 +168,8 @@
         "recordActive": { "type": "boolean" },
         "rendererSelected": { "type": "boolean" },
         "rendererScale": { "type": "number", "exclusiveMinimum": 0 },
-        "rendererRgbLinear": { "$ref": "#/$defs/vector3" }
+        "rendererRgbLinear": { "$ref": "#/$defs/vector3" },
+        "sourceVisibility": { "$ref": "#/$defs/sourceVisibility" }
       }
     },
     "renderLights": {
@@ -224,7 +225,7 @@
     "sourceVisibility": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Optional camera-to-source-center geometric metadata for this rendered capture. Original RGB is unchanged. Add the enclosing light age to volumeAgeMillisecondsAtCapture; use clear/blocked only while their sum is at most 1500 ms. No screen visibility or permanent light identity is implied.",
+      "description": "Optional player-receiver-to-source-center geometric metadata for an authored or rendered local light. Original light fields are unchanged. The receiver is player position plus one game unit on world Y to avoid the ground contact point. No camera direction, screen visibility or permanent light identity is implied.",
       "required": ["status", "attenuationFactor", "reason", "referencePosition", "lightCaptureSequence", "volumeSequence", "contextFrame", "volumeAgeMillisecondsAtCapture", "closestApproach"],
       "properties": {
         "status": { "enum": ["clear", "blocked", "unknown"] },
@@ -245,11 +246,11 @@
         },
         {
           "if": { "properties": { "status": { "const": "clear" } } },
-          "then": { "properties": { "attenuationFactor": { "const": 1 }, "closestApproach": { "exclusiveMinimum": 0 } } }
+          "then": { "properties": { "attenuationFactor": { "const": 1 } } }
         },
         {
           "if": { "properties": { "status": { "const": "blocked" } } },
-          "then": { "properties": { "attenuationFactor": { "const": 0 }, "closestApproach": { "maximum": 0 } } }
+          "then": { "properties": { "attenuationFactor": { "const": 0 } } }
         }
       ]
     },

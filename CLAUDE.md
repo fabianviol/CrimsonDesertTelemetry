@@ -2,12 +2,12 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-12): pause occlusion research and ship a stable
-update of working features, with only supported production INI options, all offered
-features tested together, DMM payload verification and exact ASI/ZIP virus scans.
-Per-light visibility remains unfinished and excluded from this release; preserve
-its code/evidence for later. This release scope supersedes the older both-goals
-release gate below; both remain the long-term product goal. Read HANDOVER first.
+Current user priority (2026-09-12): focus only on direct geometric visibility from
+the player to each local light already known to the authored/rendered feeds. Camera
+direction and screen visibility must not participate. Stable release 2.1.10 is
+complete; do not revisit packaging/hotfix work unless it blocks this research.
+Finish and document the `CDT_RESEARCH=ON` candidate, obtain controlled live tests,
+then move only validated minimal functionality into production. Read HANDOVER first.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.

@@ -3,10 +3,11 @@
 The API carries raw light contributions, a separate [grouped and smoothed
 local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
 [ambient feed](AMBIENT_STREAM.md). Product versions, route versions and JSON
-schema versions are separate. Routes remain **v1**; snapshots use schema **1.4**
-with lights enabled and **1.1** with lights disabled.
+schema versions are separate. Routes remain **v1**; the current development host
+uses schema **1.5** with lights enabled and **1.1** with lights disabled. Stable
+production 2.1.10 uses schema 1.4.
 
-## Current stability-release scope — 2026-09-12
+## Current development scope — 2026-09-12
 
 Camera-local Ambient Occlusion passed a controlled open/enclosed/open route in
 the OFF v2.1.9 package on game build 25246367. `/v1/ambient` carries global sky,
@@ -14,17 +15,17 @@ the camera's independent `visibility` value/frame/age, and
 `localEnvironmentAmbientEstimateWorking`. Global sky RGB itself is unoccluded;
 the product estimate is not measured room brightness or physical illumination.
 
-Per-light geometric visibility failed live acceptance and is excluded from this
-`CDT_RESEARCH=OFF` release. Its additive `sourceVisibility` fields are retained:
-current rendered contributions report `unknown`, reason `disabled`, and a null
-attenuation factor. Smoothed groups preserve that metadata in `contributions`.
-Original records, raw RGB/luminance, grouping and EMA RGB remain unchanged.
-No source is removed or attenuated by this release.
+Stable production 2.1.10 excludes per-light geometric visibility after its failed
+live acceptance. Current source adds a new `CDT_RESEARCH=ON` candidate that traces
+from the player to the union of authored and rendered sources, independently of
+camera direction. Its additive `sourceVisibility` metadata is awaiting live game
+validation. Original records, raw RGB/luminance, grouping and EMA RGB remain
+unchanged; no source is removed or attenuated by the API.
 
-The experimental contract and evidence remain in [source visibility](SOURCE_VISIBILITY.md)
-for later work under `CDT_RESEARCH=ON`. Older packages may omit these fields;
+See [source visibility](SOURCE_VISIBILITY.md) for the exact classifier, bounds,
+offline evidence and required live controls. Older packages may omit these fields;
 legacy native v2 captures remain readable. See [release validation](STABLE_RELEASE_VALIDATION.md)
-for the exact candidate's test status and remaining installation/live checks.
+for the stable package's completed test record.
 
 ## Historical published validation
 
@@ -93,8 +94,9 @@ outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
 metadata unchanged; it is not user configuration. The default shortcuts are F8
 for the corner HUD/radar, F9 for diagnostics and F10 for fullscreen markers.
 All three keys can be reassigned using decimal Windows virtual-key codes, or
-individually disabled with `0`. F11 is unused; geometric source occlusion and
-its display controls are excluded. No API record or RGB is filtered.
+individually disabled with `0`. Stable production 2.1.10 leaves F11 unused and
+excludes geometric source occlusion. The research template adds configurable F11
+for display-only hiding of freshly blocked sources. No API record or RGB is filtered.
 Display radius does not expand API source coverage or its configured nearby radius.
 
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
@@ -107,9 +109,10 @@ left in an old INI. They cannot replace product capture or enable research hooks
 `CrimsonDesertTelemetry.research.ini` template, packaged as the normal INI filename.
 See [configuration dependencies and validation](INI_VALIDATION.md).
 
-The additive `sourceVisibility` schema is retained for compatibility and future
-development. This release publishes `unknown` with reason `disabled`
-and a null attenuation factor; it does not provide a geometric visibility verdict.
+Stable production 2.1.10 publishes additive rendered `sourceVisibility` as
+`unknown` with reason `disabled`. The current schema 1.5 research host attaches
+measured or explicit unknown metadata to both authored and rendered records through
+the independent player-to-source bridge described in [source visibility](SOURCE_VISIBILITY.md).
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed
@@ -198,7 +201,7 @@ as well. A missing host results in a connection failure, not an HTTP 503.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` with lights disabled; additive `1.4` when the light module is requested. |
+| `schemaVersion` | string | `1.1` with lights disabled; additive `1.5` when the current development light module is requested. Stable 2.1.10 emits 1.4. |
 | `status` | string | Sampler status; see below. |
 | `gameRunning` | boolean | Sampler's current process-presence observation, not a guarantee of playable data. |
 | `supportedBuild` | boolean or null | `null` before support is known; `false` when compatibility checks rejected the executable; `true` after a runtime was opened through either compatibility mode. On `error`, do not interpret it as successful live-data validation. |
@@ -289,14 +292,14 @@ and successful CLI `snapshot`/`track` output. The following examples are synthet
 
 ### Envelope and availability
 
-All top-level fields in the 1.1 example are required. Schemas 1.2–1.4 additionally
-require `lights`; 1.4 also requires `lights.rendered`. `vector3` below means an object
+All top-level fields in the 1.1 example are required. Schemas 1.2–1.5 additionally
+require `lights`; 1.4 and 1.5 also require `lights.rendered`. `vector3` below means an object
 with three required, finite JSON numbers: `x`, `y`, `z`. There are no string-encoded
 numbers, NaN values, addresses, process handles or memory blobs in this contract.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry. Compare as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` without lights or `1.5` with current development light telemetry. Stable 2.1.10 emits 1.4. Compare as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -344,6 +347,7 @@ Each source can contain:
 | `recordActive` | Record-maintenance flag; **not** a promise that the light is visibly emitting. |
 | `rendererSelected` | Whether this record is selected for the mapped renderer path. |
 | `rendererScale`, `rendererRgbLinear` | Both present only for a selected record with a positive finite scalar. The scalar is authored renderer data, not physical lumens; RGB is `colorLinear * rendererScale`. |
+| `sourceVisibility` | Optional schema 1.5 research metadata for the player-to-source geometric test. Camera direction and screen projection are absent. See [complete contract](SOURCE_VISIBILITY.md). |
 
 No address, durable ID, range, lumens, generic `enabled` field or fire/effect
 source is exposed. Array order and engine handles must not be used as
@@ -358,7 +362,7 @@ the complete walk again. One complete retry is allowed; no previous light snapsh
 is reused after failure. This protects against scene transitions but is not an
 engine-frame atomicity guarantee.
 
-### Current rendered light contributions (schema 1.4)
+### Current rendered light contributions (schema 1.4/1.5)
 
 `lights.rendered` is independent of the authored reader's availability. It has
 `status`, `source="filtered-manylights"`, and `diagnostics`. An available sample
@@ -380,7 +384,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
-| `sourceVisibility` | Optional development metadata: camera-to-source `clear`/`blocked`/`unknown`, usable attenuation factor, paired light sequence and independent SDF age/context. Omitted with a legacy v2 native bridge. See [complete contract](SOURCE_VISIBILITY.md). |
+| `sourceVisibility` | Optional development metadata: player-to-source `clear`/`blocked`/`unknown`, usable attenuation factor, legacy-named visibility-query sequence and independent SDF age/context. Camera direction and screen projection are absent. Omitted with a legacy v2 native bridge. See [complete contract](SOURCE_VISIBILITY.md). |
 
 Diagnostics count active records, published records, malformed records and records
 outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and
@@ -567,7 +571,7 @@ are diagnostics, not this public snapshot contract.
 ## Compatibility and limits
 
 Ignore unknown optional fields/capability strings and handle null or missing
-optional fields. The published schema is strict for the supported 1.1/1.2/1.3/1.4 shapes
+optional fields. The published schema is strict for the supported 1.1/1.2/1.3/1.4/1.5 shapes
 (`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
 Reject an unsupported API/schema major version explicitly. Breaking contract

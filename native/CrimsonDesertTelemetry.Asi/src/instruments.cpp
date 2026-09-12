@@ -3,6 +3,7 @@
 #include "render_capture.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
+#include "source_visibility_bridge.h"
 #include "sky_bridge.h"
 #include "spatial_probe.h"
 #include "native_contract.generated.h"
@@ -205,7 +206,15 @@ void RunImpl(HANDLE stopEvent)
     // Ignore the switch in older diagnostic INIs as well.
     constexpr bool sourceVisibility = false;
 #endif
-    render::SetSourceVisibilityEnabled(sourceVisibility);
+    // The old render-capture path could only trace renderer-selected records
+    // and used the camera as its origin. The dedicated query bridge below uses
+    // the player receiver and the union of authored and rendered sources.
+    render::SetSourceVisibilityEnabled(false);
+#if CDT_RESEARCH
+    const bool sourceVisibilityBridge = sourceVisibility && source_visibility::Open();
+    if (sourceVisibility && !sourceVisibilityBridge)
+        ch::Log("Source visibility query bridge could not initialize; light records remain available without geometry metadata.");
+#endif
 #if CDT_RESEARCH
     const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
         GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
@@ -226,7 +235,7 @@ void RunImpl(HANDLE stopEvent)
         GetPrivateProfileIntW(L"Research", L"SpatialVisibilitySeconds", 0, iniPath.c_str());
     const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
         std::filesystem::path(moduleDirectory).c_str(),spatialReadback || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0,spatialTransactions,spatialInterval,
-        spatialVisibilitySeconds,distanceReadback,persistDistanceReadback,hudOcclusion);
+        spatialVisibilitySeconds,distanceReadback,persistDistanceReadback,hudOcclusion || sourceVisibility);
 #else
     const bool sampleAmbient = GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0;
     const bool spatialProbe = captureEnabled && (sampleAmbient || sourceVisibility);
@@ -240,6 +249,9 @@ void RunImpl(HANDLE stopEvent)
     while (WaitForSingleObject(stopEvent, 5) == WAIT_TIMEOUT)
     {
         if(spatialStarted) spatial::Poll();
+#if CDT_RESEARCH
+        if(sourceVisibilityBridge) source_visibility::Poll();
+#endif
         if (capturing)
         {
             render::PollCapture();
@@ -253,6 +265,9 @@ void RunImpl(HANDLE stopEvent)
             }
         }
     }
+#if CDT_RESEARCH
+    if(sourceVisibilityBridge) source_visibility::Close();
+#endif
     if(spatialStarted) spatial::Stop();
     if (capturing) render::StopCapture();
     else render::PublishStatus(render::Status::Stopped);

@@ -43,7 +43,7 @@ target_include_directories(cdt_sdf_disabled PUBLIC src)
 option(CDT_RESEARCH "Compile the private research instrumentation into the ASI" ON)
 if(CDT_RESEARCH)
     set(CDT_RESEARCH_SOURCES src/spatial_probe.cpp src/spatial_readback.cpp
-        src/spatial_sample.cpp src/spatial_thunk.asm)
+        src/spatial_sample.cpp src/spatial_thunk.asm src/source_visibility_bridge.cpp)
     set(CDT_SDF_LIBRARY cdt_sdf)
 else()
     set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
@@ -163,6 +163,16 @@ add_executable(CrimsonDesertTelemetrySdfVisibilityTests tests/sdf_visibility_tes
 target_link_libraries(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE cdt_sdf)
 target_compile_options(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE /W4 /WX /permissive-)
 add_test(NAME sdf-variant-a-hud COMMAND CrimsonDesertTelemetrySdfVisibilityTests)
+
+add_executable(CrimsonDesertTelemetrySourceVisibilityBridgeTests
+    tests/source_visibility_bridge_tests.cpp src/source_visibility_bridge.cpp)
+target_compile_features(CrimsonDesertTelemetrySourceVisibilityBridgeTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetrySourceVisibilityBridgeTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetrySourceVisibilityBridgeTests PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetrySourceVisibilityBridgeTests PRIVATE /W4 /WX /permissive-)
+target_link_libraries(CrimsonDesertTelemetrySourceVisibilityBridgeTests PRIVATE cdt_sdf)
+add_test(NAME source-visibility-bridge COMMAND CrimsonDesertTelemetrySourceVisibilityBridgeTests)
 
 add_executable(CrimsonDesertTelemetrySdfAcquireTests tests/sdf_acquire_tests.cpp)
 target_compile_features(CrimsonDesertTelemetrySdfAcquireTests PRIVATE cxx_std_20)

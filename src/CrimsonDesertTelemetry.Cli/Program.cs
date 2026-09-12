@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 const string baseSchemaVersion = "1.1";
-const string lightsSchemaVersion = "1.4";
+const string lightsSchemaVersion = "1.5";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions
@@ -558,7 +558,17 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
             var rendered = lightOptions.Enabled && resolved.Compatibility.Mode == "tested" &&
                            definition.NativeCapture is not null
                 ? new RenderLightReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
-            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered, lightOptions);
+            SourceVisibilityClient? visibility = null;
+            if (lightOptions.Enabled && resolved.Compatibility.Mode == "tested" && definition.NativeCapture is not null)
+            {
+                try { visibility = new SourceVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc()); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    visibility = null;
+                }
+            }
+            return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered,
+                visibility, lightOptions);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -733,6 +743,7 @@ sealed class RuntimeContext(
     EngineCameraReader camera,
     EngineLightReader? lights,
     RenderLightReader? rendered,
+    SourceVisibilityClient? visibility,
     LightOptions lightOptions) : IDisposable
 {
     public Process Process { get; } = process;
@@ -745,6 +756,7 @@ sealed class RuntimeContext(
     public EngineCameraReader Camera { get; } = camera;
     public EngineLightReader? Lights { get; } = lights;
     public RenderLightReader? Rendered { get; } = rendered;
+    public SourceVisibilityClient? Visibility { get; } = visibility;
     /// <summary>
     /// The sky reader attaches on any exactly tested build. It used to require build
     /// 25116796 by name, which silently killed the ambient feed on 25246367 even
@@ -802,8 +814,9 @@ sealed class RuntimeContext(
     {
         if (!LightOptions.Enabled) return null;
         var authored = Lights?.Capture(player, LightOptions.NearbyRadius) ?? UnsupportedLights();
-        return authored with { Rendered = Rendered?.Capture(player, LightOptions.NearbyRadius)
+        var combined = authored with { Rendered = Rendered?.Capture(player, LightOptions.NearbyRadius)
             ?? RenderLightReader.Unavailable("unsupported-build") };
+        return Visibility?.Apply(player, combined) ?? combined;
     }
 
     public EngineLightsSnapshot? UnavailableLights(string reason)
@@ -821,6 +834,7 @@ sealed class RuntimeContext(
     public void Dispose()
     {
         Rendered?.Dispose();
+        Visibility?.Dispose();
         Sky?.Dispose();
         Reader.Dispose();
         Process.Dispose();

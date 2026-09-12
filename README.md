@@ -19,14 +19,13 @@ the sky and environment** and **which individual nearby game lights can actually
 reach it through world geometry**, including sources off-screen or behind the
 camera. Current development targets **Steam build 25246367**.
 
-The current blocker is reliable occlusion in all its forms. Ambient passed a
-controlled open/enclosed/open route, but its camera-orientation semantics still
-need validation. Per-light geometry tests are not yet reliable across fires,
-candles, lamps, walls, buildings and terrain, so production 2.1.10 excludes that
-unfinished path. Markers can include lights behind geometry and F11 is unused.
-The full current development state and preserved evidence are on GitHub; forks
-and contributions are welcome. See [source visibility](docs/SOURCE_VISIBILITY.md)
-and [release validation](docs/STABLE_RELEASE_VALIDATION.md).
+The current blocker is reliable per-light geometric visibility. Production 2.1.10
+excludes that unfinished path. The current research candidate instead traces from
+the player to the union of authored and rendered source positions, without camera
+direction or screen projection, and separates all 17 preserved labelled offline
+controls. Live fire/candle/lamp, wall and behind-camera acceptance is still pending.
+The full method, limits and test route are documented for review and forks in
+[source visibility](docs/SOURCE_VISIBILITY.md).
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
 
@@ -175,11 +174,18 @@ Connect through **HTTP** at `http://127.0.0.1:27311` or **WebSocket** at `ws://1
 Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
-Product versions and API versions are separate: routes remain **HTTP API v1**. With lights enabled the additive snapshot schema is **1.4**; with lights disabled it remains **1.1**. Optional per-light metadata adds no route and changes no original RGB values. Clients should check capability/status fields and freshness instead of assuming every source is always available.
+Product versions and API versions are separate: routes remain **HTTP API v1**.
+Stable production 2.1.10 uses snapshot schema **1.4** with lights enabled; the
+current source-visibility research host uses **1.5** because it adds metadata to
+authored lights. With lights disabled it remains **1.1**. Optional per-light
+metadata adds no route and changes no original RGB values. Clients should check
+capability/status fields and freshness instead of assuming every source is always available.
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
-- The additive `sourceVisibility` metadata is retained as `unknown` / `disabled` in this release. Geometric source occlusion is excluded; original records and RGB smoothing remain unchanged.
+- Stable 2.1.10 retains rendered `sourceVisibility` as `unknown` / `disabled`.
+  Research schema 1.5 can attach player-to-source results to authored and rendered
+  records; original records and RGB smoothing remain unchanged.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
 - The arrays **overlap**; do not add them together. One physical lamp can produce several contributions.
 

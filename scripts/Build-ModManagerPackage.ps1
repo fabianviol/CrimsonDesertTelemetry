@@ -31,6 +31,9 @@ $packageProfile = if ($researchEnabled) { 'research' } else { 'production' }
 $iniTemplate = Join-Path $repoRoot $(if ($researchEnabled) {
     'packaging\mod-manager\CrimsonDesertTelemetry.research.ini'
 } else { 'packaging\mod-manager\CrimsonDesertTelemetry.ini' })
+$readmeTemplate = Join-Path $repoRoot $(if ($researchEnabled) {
+    'packaging\mod-manager\README.research.txt'
+} else { 'packaging\mod-manager\README.txt' })
 $configuredIni = Get-Content -LiteralPath $iniTemplate -Raw
 
 # Resolve overrides before any build or package mutation. A production template
@@ -110,7 +113,7 @@ $files = @(
     @{ Source = (Join-Path $managedPublish 'crimson-desert-telemetry.runtimeconfig.json'); Name = 'crimson-desert-telemetry.runtimeconfig.cfg' },
     @{ Source = (Join-Path $managedPublish 'CrimsonDesertTelemetry.Core.dll'); Name = 'CrimsonDesertTelemetry.Core.dll' },
     @{ Source = $iniTemplate; Name = 'CrimsonDesertTelemetry.ini' },
-    @{ Source = (Join-Path $repoRoot 'packaging\mod-manager\README.txt'); Name = 'README.txt' },
+    @{ Source = $readmeTemplate; Name = 'README.txt' },
     @{ Source = (Join-Path $nativeBuild 'THIRD-PARTY-NOTICES.txt'); Name = 'THIRD-PARTY-NOTICES.txt' },
     @{ Source = (Join-Path $repoRoot 'LICENSE'); Name = 'LICENSE.txt' }
 )

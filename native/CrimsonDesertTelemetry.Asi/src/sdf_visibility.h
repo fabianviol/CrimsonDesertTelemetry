@@ -34,8 +34,9 @@ void Publish(std::vector<std::uint8_t> volume, const std::array<std::uint8_t, 76
 void Clear() noexcept;
 Status CurrentStatus(std::uint64_t nowTick);
 
-// Fixed Variant A parameters from the controlled torch test: tolerance 0,
-// minimum step .05 gu, 400 iterations, .6 gu camera offset and 1 gu end margin.
+// Conservative voxel-segment test. It samples every quarter cell and classifies
+// one connected cell of near-surface distance as blocked. The caller supplies
+// the receiver position; no camera direction or projection participates.
 TraceResult Trace(const std::array<float, 3>& target, std::uint64_t nowTick);
 inline constexpr std::uint32_t ProductionMaximumAgeMilliseconds = 1500;
 inline constexpr unsigned MaximumBatchTargets = 256;
@@ -44,7 +45,7 @@ struct BatchResult
     Status status;
     std::vector<TraceResult> traces;
 };
-// All targets use one immutable volume and the explicit capture-paired camera.
+// All targets use one immutable volume and the explicit receiver position.
 // There is no projection test or retained light identity.
 BatchResult TraceBatch(const std::array<float, 3>& origin,
     std::span<const std::array<float, 3>> targets, std::uint64_t nowTick);

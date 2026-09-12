@@ -70,7 +70,9 @@ public sealed record EngineLightSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CameraVector3? Direction = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    float? ConeHalfAngleDegrees = null);
+    float? ConeHalfAngleDegrees = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SourceVisibilitySnapshot? SourceVisibility = null);
 
 public sealed record EngineLightDiagnosticsSnapshot(
     int SourceRecords,
@@ -107,8 +109,8 @@ public sealed record RenderedLightSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SourceVisibilitySnapshot? SourceVisibility = null);
 
 /// <summary>
-/// A geometric center-segment test attached to one rendered capture. The volume
-/// age is frozen at publication; add the enclosing light capture age when using it.
+/// A geometric player-receiver-to-source-center test. The volume age is frozen
+/// at publication; add the enclosing light capture age when using it.
 /// Unknown never supplies an attenuation factor or removes the original light.
 /// </summary>
 public sealed record SourceVisibilitySnapshot(

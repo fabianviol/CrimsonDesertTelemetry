@@ -35,18 +35,19 @@ void TestNormalizedSampling(const std::array<std::uint8_t,768>& originalConstant
     {
         auto constants=originalConstants;
         for(unsigned earlier=0;earlier<level;++earlier)PutFloat(constants,0x140+16*earlier+12,0);
-        // Use a ray along X so guard-boundary Z stays exact. Subtracting the
-        // fixed .6 offset introduces only float rounding in X (tolerance below).
-        const std::array<float,3> origin{point[0]-.6f,point[1],point[2]};
-        const std::array<float,3> target{point[0]+4,point[1],point[2]};
+        // Use a ray along X so guard-boundary Z stays exact. A .51-gu segment
+        // has room for exactly one sample between the two .25-gu margins; its
+        // closest value therefore exposes the requested analytical sample.
+        const std::array<float,3> origin{point[0]-.25f,point[1],point[2]};
+        const std::array<float,3> target{point[0]+.26f,point[1],point[2]};
         Publish(volume,constants,origin,50,500,true);
         const auto result=Trace(target,500);
         const double expected=-(1024+interpolatedX+2*interpolatedY+3*interpolatedLocalZ+10*level)/128;
-        Require(result.available&&result.verdict==Verdict::Blocked&&result.samples==1&&result.level==level,
-            "Analytical sample must be exposed by the first fixed trace step");
-        if(std::abs(result.value-expected)>0.000002)
+        Require(result.available&&result.verdict==Verdict::Clear&&result.samples==1,
+            "Analytical field must expose exactly one sample");
+        if(std::abs(result.closest-expected)>0.000002)
         {
-            std::cerr<<description<<" expected="<<expected<<" actual="<<result.value<<'\n';
+            std::cerr<<description<<" expected="<<expected<<" actual="<<result.closest<<'\n';
             Require(false,"Normalized linear sampling disagrees with analytical field");
         }
     };
@@ -89,8 +90,8 @@ int main(int argc,char** argv)
             "Uniform positive signed distance must trace clear");
         Publish(Uniform(0xbc00),constants,{0,0,0},43,200,true);
         trace=Trace({5,0,0},200);
-        Require(trace.available&&trace.verdict==Verdict::Blocked&&trace.value==-1&&trace.at==.6,
-            "Uniform negative signed distance must block at the first fixed sample");
+        Require(trace.available&&trace.verdict==Verdict::Blocked&&trace.value==-1&&trace.samples==4,
+            "Uniform negative signed distance must block after one connected cell");
         Require(!CurrentStatus(8201).available&&CurrentStatus(8201).reason=="stale-sdf-volume",
             "Old SDF volume must fail closed");
         Publish(Uniform(0x3c00),constants,{0,0,0},44,300,false);
@@ -116,13 +117,22 @@ int main(int argc,char** argv)
         batch=TraceBatch({4,0,0},std::span(targets).first(1),450);
         Require(batch.traces[0].verdict==Verdict::Clear&&Trace(targets[0],450).verdict==Verdict::Blocked,
             "Production trace must use the explicit fresh reference, not the stored SDF camera");
-        batch=TraceBatch({0,0,0},targets,1901);
+        auto filteredWall=Uniform(0x3c00);
+        for(unsigned z=0;z<1040;++z)for(unsigned y=0;y<64;++y)for(unsigned x=8;x<12;++x)
+        {
+            const size_t at=((size_t{z}*64+y)*128+x)*2;
+            filteredWall[at]=0x66;filteredWall[at+1]=0x2e; // binary16 ~= +0.1 gu
+        }
+        Publish(std::move(filteredWall),constants,{0,0,0},46,425,true);
+        Require(TraceBatch({0,0,0},std::span(targets).first(1),450).traces[0].verdict==Verdict::Blocked,
+            "One voxel-wide connected wall with filtered positive distances was missed");
+        batch=TraceBatch({0,0,0},targets,1926);
         Require(!batch.status.available&&batch.status.reason=="stale-sdf-volume"&&
             batch.traces[0].verdict==Verdict::Unavailable,"Production must reject volumes older than 1500 ms");
         std::vector<std::array<float,3>> excess(MaximumBatchTargets+1);
         Require(!TraceBatch({0,0,0},excess,450).status.available,"Production trace budget must be bounded");
         Clear();Require(!CurrentStatus(300).available,"Cleared SDF bridge retained data");
-        std::cout<<"PASS fixed Variant A clear/blocked, freshness and context fail-closed behavior\n";
+        std::cout<<"PASS voxel-segment clear/blocked, freshness and context fail-closed behavior\n";
         return 0;
     }
     catch(const std::exception& error){std::cerr<<"FAIL "<<error.what()<<'\n';return 1;}
