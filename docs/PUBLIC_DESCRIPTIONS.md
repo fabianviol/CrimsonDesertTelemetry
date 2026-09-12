@@ -11,6 +11,9 @@ Crimson Desert telemetry. Goal: reliable ambient and per-light geometric occlusi
 
 ## Nexus description draft — English
 
+The ready-to-paste Nexus BBCode version is
+[NEXUS_DESCRIPTION.bbcode](NEXUS_DESCRIPTION.bbcode).
+
 ### Crimson Desert Telemetry
 
 Inspect live lights, player position and the render camera in Crimson Desert.

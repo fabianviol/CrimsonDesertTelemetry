@@ -1,0 +1,102 @@
+[size=5][b]Crimson Desert Telemetry 2.1.10[/b][/size]
+
+[b]Live light, player, render-camera and ambient/sky telemetry for Crimson Desert, with local HTTP/WebSocket APIs, fullscreen light markers and a configurable 3D radar.[/b]
+
+Inspect current contributions from fires, candles, lanterns and other game lights: world position, linear HDR RGB, derived luminance, and direction/cone angle for recognized spotlights. Independent player position/root orientation and the native render camera are included. A separate grouped/EMA stream smooths lights without changing or removing the raw records. One ASI starts the local telemetry host automatically.
+
+[url=https://youtu.be/eyRkkTXAU64]Watch the in-game demonstration[/url]
+
+[img]https://raw.githubusercontent.com/fabianviol/CrimsonDesertTelemetry/v2.0.0/media/screenshot1.jpg[/img]
+
+[size=4][b]Project goal and current blocker[/b][/size]
+
+The goal is telemetry that answers both how exposed the player/camera location is to the sky and environment, and which individual nearby lights can reach it through world geometry. Per-light visibility must include off-screen and behind-camera sources rather than relying on screen-space visibility.
+
+The current blocker is consistent occlusion in all its forms. Fires, candles and other lamps still disagree with walls, buildings and terrain in controlled tests. Ambient passed a reversible open -> enclosed -> open test, but its camera-orientation semantics still need validation.
+
+[b]Per-light geometric occlusion is excluded from production 2.1.10.[/b] F11 and occlusion-hiding INI settings are absent because the concealed-source tests failed. Markers can therefore appear through walls. Raw and smoothed light records remain available without hidden filtering; retained visibility metadata reports unknown/disabled.
+
+The complete current development state and preserved research are on [url=https://github.com/fabianviol/CrimsonDesertTelemetry]GitHub[/url]. Everyone is welcome to fork the repository, test alternatives and contribute improvements.
+
+[size=4][b]Install or upgrade[/b][/size]
+
+Requires Windows x64, Microsoft .NET 8 ASP.NET Core Runtime (x64), and one x64 ASI loader installed for the game. The native lighting path supports Steam build 25246367 / EXE 1.0.0.2850. Unknown executables are rejected; a game update can require a new profile.
+
+[list]
+[*]Close Crimson Desert before installing, updating or removing the package.[/*]
+[*]Back up useful INI preferences and disable/delete the previous Telemetry package in DMM.[/*]
+[*]When upgrading through DMM 2.8.1, check bin64 for old Telemetry companions. Local tests showed that DMM can retain the two DLLs and two lowercase CFG files listed below.[/*]
+[*]Delete only old CrimsonDesertTelemetry.Core.dll, crimson-desert-telemetry.dll, crimson-desert-telemetry.deps.cfg and crimson-desert-telemetry.runtimeconfig.cfg. Do not delete the ASI loader.[/*]
+[*]Import and activate/deploy the complete ModManagers ZIP. Importing alone is insufficient. Keep all included files together.[/*]
+[*]Launch the game and load a save. Restart after INI changes; hot-unloading is unsupported.[/*]
+[/list]
+
+The six runtime files beside the game EXE must come from the same version:
+
+[code]
+CrimsonDesertTelemetry.asi
+CrimsonDesertTelemetry.Core.dll
+CrimsonDesertTelemetry.ini
+crimson-desert-telemetry.dll
+crimson-desert-telemetry.deps.cfg
+crimson-desert-telemetry.runtimeconfig.cfg
+[/code]
+
+Keep the .cfg names unchanged; renaming them to .json can make DMM interpret them as game patches. A clean DMM 2.8.1 import of the final ZIP deployed all six files exactly after old leftovers were removed. DMM's automatic dirty upgrade/removal behavior remains under investigation. JSON Mod Manager and manual-loader lifecycle testing remain incomplete.
+
+[size=4][b]Controls and defaults[/b][/size]
+
+[list]
+[*][b]F8:[/b] toggle the corner HUD and 3D radar.[/*]
+[*][b]F9:[/b] toggle detailed diagnostics.[/*]
+[*][b]F10:[/b] toggle fullscreen light markers.[/*]
+[*]Each key is configurable as a decimal Windows virtual-key code in the INI; use 0 to disable a shortcut.[/*]
+[*][b]F11 is unused.[/b][/*]
+[/list]
+
+Every supported feature switch is enabled in the supplied 31-setting production INI. Player/camera publication defaults to 60 Hz; native light capture to 20 Hz. The telemetry radius is 100 game units and the display radius is 35. Hiding the HUD does not stop telemetry. Automatic menu hiding is not implemented; use F8/F10. Research, console, explorer and occlusion switches cannot be enabled through an old INI in this production build.
+
+[size=4][b]HTTP and WebSocket access[/b][/size]
+
+All routes are loopback-only JSON services:
+
+[code]
+HTTP snapshot: http://127.0.0.1:27311/v1/snapshot
+Health: http://127.0.0.1:27311/v1/health
+Snapshot schema: http://127.0.0.1:27311/v1/schema
+Raw WebSocket: ws://127.0.0.1:27311/v1/stream
+Smoothed lights: http://127.0.0.1:27311/v1/lights/smoothed
+Smoothed WebSocket: ws://127.0.0.1:27311/v1/lights/smoothed/stream
+Ambient/sky: http://127.0.0.1:27311/v1/ambient
+Ambient schema: http://127.0.0.1:27311/v1/ambient/schema
+Ambient WebSocket: ws://127.0.0.1:27311/v1/ambient/stream
+[/code]
+
+The raw light routes use schema 1.4. The smoothed feed is separate and groups nearby contributions before applying a configurable 200 ms EMA; proximity grouping is not physical lamp identity. Ambient includes global sky coefficients, camera-local sky exposure and a derived local estimate. It is renderer telemetry, not a physical brightness measurement. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md]API reference and client examples[/url]. The API exposes telemetry and does not control game actions.
+
+[size=4][b]SDR and HDR[/b][/size]
+
+The D3D12 UI supports SDR, HDR10 and FP16 scRGB, selected from the game's output. HdrPaperWhiteNits controls UI white brightness from 80 to 500 nits. The compositor blends the overlay without changing the game's HDR settings. Automated tests cover SDR/HDR10/scRGB; live HDR-display, frame-generation and AMD/Intel game acceptance remain pending. No NVIDIA, DLSS, Streamline, Nsight or PIX runtime dependency is required.
+
+[size=4][b]Startup and compatibility[/b][/size]
+
+Version 2.1.10 waits for the host's first valid playable-world player/render-camera state before arming native light and sky GPU capture. Command-list submission and submitted GPU-fence waits now have separate bounds and report the exact failing stage. The final local start after a graphics-driver update and shader rebuild passed without the earlier long-loading timeout.
+
+Public 2.0.2 users reported incomplete companion deployment and graphics-feature crashes. The deployment and graphics symptoms are separate. The exact external GPU/driver, overlays and faulting module/offset are still unavailable, so 2.1.10 is not presented as a confirmed fix for those systems. Please include the full INI plus bootstrap, host, native and overlay logs when reporting a crash. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md]Current compatibility record[/url].
+
+[size=4][b]What the measurements mean[/b][/size]
+
+The feed contains renderer contributions, not every physical light. Discovery is view-filtered and not a complete world registry. Absence does not prove that a lamp is off. Authored and rendered arrays overlap and must not be summed. One lamp can produce several records. Linear HDR RGB is renderer data, not lumens or final screen pixels. Fast movement can expose projection latency; displayed spotlight lengths are schematic.
+
+The external host reads game memory; the ASI uses guarded renderer/D3D12 hooks and bounded GPU copies. The production build contains only the mechanisms needed for the released telemetry features; larger diagnostics and unfinished occlusion research remain outside it.
+
+[size=4][b]Validation and integrity[/b][/size]
+
+Final validation passed with all six deployed files matching the release ZIP, every supported production feature enabled, live raw/smoothed/ambient HTTP and WebSocket feeds, and F8/F9/F10 toggled off and on in game. Automated checks passed 70/70 managed controls and 27/27 selected production-relevant native controls.
+
+ZIP SHA-256: [code]1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24[/code]
+ASI SHA-256: [code]8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78[/code]
+
+The exact final ZIP reported 0/66 on VirusTotal. The exact ASI reported 5/71, the same five detecting vendors as the preceding release candidate; local Microsoft Defender custom scans reported no threat for either exact file. These results apply only to the hashes above.
+
+[b]Credits:[/b] Created by fabianviol, developed with Claude and Codex (OpenAI). Thanks to the community research sources and libraries credited in the repository. [url=https://github.com/fabianviol/CrimsonDesertTelemetry]Source, documentation and dependency notices[/url]. MIT-licensed unofficial community project; not affiliated with Pearl Abyss.
