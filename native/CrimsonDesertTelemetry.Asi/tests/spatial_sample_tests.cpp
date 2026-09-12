@@ -176,5 +176,81 @@ int main(int argc, char** argv)
     Check(std::fabs(moved.sampled - base.sampled) > 1e-6, "an offset changes the sampled value");
     Check(moved.clipmap == base.clipmap, "an offset reuses the reference clipmap");
 
+    // A real readback has aligned rows. Distinct values in every dimension and
+    // poisoned padding expose treating that allocation as a packed R8 volume.
+    constexpr size_t paddedRowPitch = 256;
+    std::vector<uint8_t> padded(paddedRowPitch * VolumeHeight * VolumeDepth, uint8_t{255});
+    for (unsigned z = 0; z < VolumeDepth; ++z)
+        for (unsigned y = 0; y < VolumeHeight; ++y)
+            for (unsigned x = 0; x < VolumeWidth; ++x)
+            {
+                const auto value = static_cast<uint8_t>((x * 7 + y * 13 + z * 19) % 251);
+                volume[(z * VolumeHeight + y) * VolumeWidth + x] = value;
+                padded[(z * VolumeHeight + y) * paddedRowPitch + x] = value;
+            }
+    const auto packedReference = SampleAtReference(constants.bytes.data(), volume.data());
+    const auto paddedReference = SampleAtReference(constants.bytes.data(), padded.data(), paddedRowPitch);
+    Check(packedReference.status == SampleStatus::Ok && paddedReference.status == SampleStatus::Ok,
+          "packed and padded reference samples valid");
+    Near(paddedReference.sampled, packedReference.sampled, 0.0,
+         "aligned rows preserve the exact reference sample");
+    Check(std::fabs(SampleAtReference(constants.bytes.data(), padded.data()).sampled -
+                    packedReference.sampled) > 1e-6,
+          "poisoned fixture detects incorrectly assuming packed rows");
+
+    Constants paddedWrap = Valid();
+    paddedWrap.Uv(-0.0001f, -0.0001f, -0.125f);
+    const auto packedWrapped = SampleAtReference(paddedWrap.bytes.data(), volume.data());
+    const auto paddedWrapped = SampleAtReference(paddedWrap.bytes.data(), padded.data(), paddedRowPitch);
+    Check(packedWrapped.status == SampleStatus::Ok && paddedWrapped.status == SampleStatus::Ok,
+          "negative coordinates valid with aligned rows");
+    Near(paddedWrapped.sampled, packedWrapped.sampled, 0.0,
+         "aligned rows preserve wrapping across x and y edges");
+
+    const double shiftedAll[3]{decoded.world[0] + 3.0, decoded.world[1] - 5.0, decoded.world[2] + 7.0};
+    const auto packedShifted = SampleAtWorld(constants.bytes.data(), volume.data(), shiftedAll);
+    const auto paddedShifted = SampleAtWorld(constants.bytes.data(), padded.data(), shiftedAll, paddedRowPitch);
+    Check(packedShifted.status == SampleStatus::Ok && paddedShifted.status == SampleStatus::Ok,
+          "shifted world samples valid with aligned rows");
+    Near(paddedShifted.sampled, packedShifted.sampled, 0.0,
+         "aligned rows preserve samples shifted in all dimensions");
+    Check(std::fabs(packedShifted.sampled - packedReference.sampled) > 1e-6,
+          "nonuniform fixture distinguishes shifted world sample");
+    Check(SampleAtReference(constants.bytes.data(), padded.data(), VolumeWidth - 1).status != SampleStatus::Ok,
+          "reference rejects a row pitch narrower than the volume");
+    Check(SampleAtWorld(constants.bytes.data(), padded.data(), shiftedAll, VolumeWidth - 1).status != SampleStatus::Ok,
+          "world sample rejects a row pitch narrower than the volume");
+
+    // All coordinates needed for the reference live beyond the first 256 bytes.
+    // Finite, plausible values in the header and a separate scene snapshot must
+    // not substitute for this part of the complete CPU GI block.
+    Constants fullGi = Valid();
+    fullGi.Wrapped(4, 5, -3);
+    fullGi.Uv(31.25f, 62.5f, -15.625f);
+    fullGi.Clip(1, 2000, 2000, -1000, 2, 1992, 1990, -994);
+    const float headerWrapped[4]{4000, 4000, -2000, 4};
+    const float headerOrigin[4]{1000, 1000, -500, 1};
+    for (unsigned axis = 0; axis < 4; ++axis)
+    {
+        fullGi.Set(0x30, axis, headerWrapped[axis]);
+        fullGi.Set(0x50, axis, headerOrigin[axis]);
+    }
+    const auto fullReference = DecodeReference(fullGi.bytes.data());
+    Check(fullReference.status == SampleStatus::Ok && fullReference.clipmap == 1,
+          "complete GI block selects the covered nonzero reference");
+    Near(fullReference.world[0], 1000, 0.0, "complete GI reference x");
+    Near(fullReference.world[1], 1000, 0.0, "complete GI reference y");
+    Near(fullReference.world[2], -500, 0.0, "complete GI reference z");
+    std::vector<uint8_t> unrelatedScene(512);
+    const float sceneValue = 1.0f;
+    for (size_t offset = 0; offset < unrelatedScene.size(); offset += sizeof(float))
+        std::memcpy(unrelatedScene.data() + offset, &sceneValue, sizeof(sceneValue));
+    std::vector<uint8_t> malformedConstants(1024);
+    std::memcpy(malformedConstants.data(), fullGi.bytes.data(), 256);
+    std::memcpy(malformedConstants.data() + 256, fullGi.bytes.data(), 256);
+    std::memcpy(malformedConstants.data() + 512, unrelatedScene.data(), unrelatedScene.size());
+    Check(DecodeReference(malformedConstants.data()).status == SampleStatus::InvalidClipmap,
+          "duplicated GI header plus scene corrupts a covered reference");
+
     std::cout << "PASS " << checks << " native spatial sampler controls. Synthetic, no game proof.\n";
 }

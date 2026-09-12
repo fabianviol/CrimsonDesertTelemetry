@@ -1,197 +1,107 @@
-# Current checkpoint — production live test PASS, 2026-09-11, Codex
+# Current checkpoint — production occlusion, 2026-09-12, Codex
 
-**The current production build passed the requested Ambient live check and is
-ready for release under that acceptance criterion. Debugging stopped.**
-No new package was created or published during this verification.
+## Mandatory product goal and working rules
 
-## Verified build and configuration
+Production `CDT_RESEARCH=OFF` is complete only after BOTH controlled live tests
+pass on supported build 25246367:
 
-- Tested source: `ce815e0b131d0144d696e8671109581744f083e2` on `main`.
-- Production CMake cache: `CDT_RESEARCH=OFF`, native build `25246367`.
-- Existing package:
-  `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.1-production-ModManagers.zip`.
-- ZIP SHA256:
-  `D849EA21D1EB5D486F0900CE067B61A07D5BA1B9ADCB31C4CA8F6C51E1676A1D`.
-- Installed ASI, expanded package ASI and production build ASI matched SHA256:
-  `EF5F266823D3D110BD517D8A2155690914EB0BF133129ECC2B901F1353351598`.
-- The ZIP was produced at 19:09:16 CEST, before the commit at 19:09:24.
-  It nevertheless contains the initialization fix: `instruments.cpp` was modified
-  at 19:08:43, its object compiled at 19:09:13 and the ASI linked at 19:09:14.
-  Building the current ASI target succeeded and left the ASI hash unchanged.
-- Expanded-package, ZIP payload/hash comparison and package-validator regression
-  checks passed. The existing versioned package was preserved.
+1. Local Ambient / Sky Occlusion: open -> enclosed -> open, with a clear and
+   reversible difference under a solid roof/in a building/cave.
+2. Per-light Source Occlusion: camera/player -> individual fire/lamp, visible ->
+   blocked by geometry -> visible. Include off-screen/behind-camera coverage;
+   screen-space visibility alone is insufficient.
 
-The first live response was `status=unavailable`,
-`reason=capture-disabled-or-stopped`. Contrary to the previous checkpoint, the
-active game INI actually contained `[Ambient] Enabled=0`; the package and DMM
-source INI already contained `Enabled=1`.
+Preserve raw and smoothed light records. Visibility is additional metadata, never
+silent removal/filtering. Do not touch CrimsonHue until both goals pass. Reuse the
+preserved SDF findings; no new PIX/renderer or AV research without a concrete need.
+Keep production minimal; research instrumentation/history stays in the ON path.
+Scan the EXACT final production ASI and release ZIP before release. A significant
+new AV regression blocks release; investigate the product/build, never obfuscate
+or game signatures. The user's earlier 0/75 result is a historical baseline, not
+an assurance about a new binary.
 
-Only the active INI's Ambient setting was changed to `1`, at 19:49:50 CEST:
-`C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesertTelemetry.ini`.
-`SpatialProbe=0`, `SpatialReadback=0`, `AmbientProbe=0` and
-`SignedDistanceReadback=0` were verified. The old INI, native log and previous
-handover are preserved in `artifacts/production-verification/20260911-194926/`.
-No ASI replacement was required. The user restarted the game.
+**User controls the game and installs all packages through DMM. No Computer Use,
+no direct installation or edits in the game directory.** Prepare configured ZIPs
+and give one short, concrete manual step at a time.
 
-## Measured live result
+## Immediate result — input defects fixed, live acceptance pending
 
-On the restarted game, PID **30260**, process start **19:57:31 CEST**, the active
-INI was read again and confirmed **Ambient=1**. Six HTTP GET requests to
-`http://127.0.0.1:27311/v1/ambient` ran from **20:00:34 to 20:00:49 CEST**,
-about three seconds apart. All six returned HTTP 200 and `status=available`.
+Read Gemini's handover, DecodeReference, current v2.1.8 diagnostic state and log,
+then acquisition in the requested order. The diagnostic at 11:06:34 CEST showed:
 
-| Time (CEST) | captureSequence | Sky frame | Sky age (ms) | Visibility valueWorking | Visibility frame | Visibility age (ms) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 20:00:34 | 314 | 8889 | 527 | 1 | 8912 | 31 |
-| 20:00:37 | 321 | 9062 | 32 | 1 | 9062 | 0 |
-| 20:00:40 | 327 | 9209 | 48 | 1 | 9210 | 15 |
-| 20:00:43 | 332 | 9332 | 519 | 1 | 9356 | 0 |
-| 20:00:46 | 338 | 9478 | 485 | 1 | 9500 | 16 |
-| 20:00:49 | 344 | 9625 | 472 | 1 | 9645 | 16 |
+`L1 Y: wrapped=4000, relative=1, scale=1, origin=1000, cell=4001, bounds=[969,1031)`.
 
-`sky.upperHemisphereMeanWorking` changed from
-`[0.03453127514054406, 0.028834992404551375, 0.014501551126998923]` to
-`[0.03161865314667303, 0.02463200846396776, 0.011240911701575937]`.
-Every response included a non-null `visibility` and
-`localEnvironmentAmbientEstimateWorking.available=true`, `stale=false`.
-The six exact API responses were printed in the task; the table above records
-those measurements. This was a 15-second live publication check, not a new
-indoor/outdoor comparison or endurance test. No lamp-output test was performed.
+This did NOT prove an update-induced offset shift. The first defect was the
+producer's input: it captured only 256 GI bytes and constructed
+`gi[:256] + gi[:256] + scene[:512]`. The decoder needs ONE contiguous 768-byte GI
+block at `owner+0x20`. Before/after GI snapshots are compared, not concatenated.
 
-**LIVE TEST: PASS. PRODUCTION RELEASE: READY.**
-Next step: release the verified existing production artifact when requested.
-No further debugging or research is pending under this task. No code, CrimsonHue,
-AV research, renderer research or synchronization changes were made. Pre-existing
-uncommitted source/configuration changes and temporary files remain untouched;
-the handover commit includes only this documentation update.
+| Decoder field | Required bytes | v2.1.8 actually supplied |
+| --- | --- | --- |
+| inverse 0x10 | GI 0x10 | GI 0x10 |
+| wrapped 0x130 | GI 0x130 | GI 0x30 |
+| L1 origin/scale 0x150 | GI 0x150 | GI 0x50 |
+| L1 relative 0x250 | GI 0x250 | scene 0x50 |
+| UV 0x2E0 | GI 0x2E0 | scene 0xE0 |
 
----
+Independent replay of 47 stable CPU contexts from 12 preserved capture folders:
+full GI selects clipmap 1 in all; the v2.1.8 merge fails in all. This establishes
+CPU layout, not GPU pairing; some source runs had rejected GPU pairing.
 
-Historical records below are retained for reference; they are not current blockers
-or instructions to reopen completed work.
+`spatial_acquire.cpp` now retains the complete `ConstantBytes` CPU block through
+submission completion and passes it directly to the sampler. Removed the unused
+scene snapshot and obsolete GPU GI-buffer resolution/copy/allocation tail. Scene
+is still used separately to obtain the frame number. All decoder offsets/math
+are unchanged; no offset was guessed and no synchronization research was reopened.
 
-## Live diagnosis — 20:40 CEST (Historical Baseline)
-Video reviewed in extracted frames:
-`C:\Users\fabia\Videos\NVIDIA\Crimson Desert\Crimson Desert 2026.09.06 - 20.36.51.02.mp4`.
-Player moves without an intentional camera pan. #41/#170/#192 shift together
-by about(-5.96,+0.16,+0.89) world units while a lamp contribution near
-(-10491.68,610.89,-4370.00) remains world-fixed. These are not just jumping labels.
+A second concrete input-layout defect was found before asking for a live test:
+the mapped 64x32x264 R8 volume has 256-byte rows, but production sampled with a
+64-byte stride. The sampler now accepts row pitch and samples mapped rows directly,
+without another volume buffer. Packed research callers keep their 64-byte default.
+The temporary absolute-path logger is removed and the existing null-input guard
+is restored. Original diagnostic source/log and all inherited changes are preserved
+under `artifacts/recovery/codex-ambient-takeover-20260912-111004/`.
 
-Read-only artifact `artifacts/light-research/overlay-static-lamp-diagnostic-20260906-2037.jsonl`
-was actually recorded20:40:01.903..05.791:151/151 playing/available rows,57 distinct
-captures/native frames29329..29521, zero malformed/unavailable. Player XYZ and
-camera X/Z/basis/FOV are constant; camera Y bobs0.01826. Native frame parity
-separates two exact populations:
+## Verification and evidence
 
-| Native frames | Captures | Published / within35 | Frozen tail, indices>=33 |
-|---|---:|---:|---:|
-| Odd | 27 | 332 / 236 | 299 |
-| Even | 30 | 335 / 222 | 302 |
+- OFF package build and package validator passed. No native compiler errors;
+  CMake reports the existing third-party MinHook deprecation warning.
+- 37 native sampler controls pass, including malformed GI assembly, padded XYZ
+  data, poisoned padding, negative wrap, shifted world position and invalid stride.
+- `Verify-NativeSampler.py`: 72 exact comparisons across nine preserved captures,
+  zero mismatches. These are historical/offline results, NOT new live acceptance.
+- Full CTest: 23/25 pass. Two RESEARCH-source tests fail on inherited edits in
+  `spatial_readback.cpp`: `Records`/`LatestRecord`/retention were disabled before
+  takeover. Failures: `spatial-texture-readback` check 37 and
+  `spatial-paired-readback` check 281. That source is excluded from the OFF ASI;
+  its uncommitted changes are preserved, not silently overwritten or included in
+  this fix. Do not call the full suite green.
+- Current diagnostic live API control before fix progressed sequence 24450 ->
+  24527 and sky captures 935 -> 937; visibility stayed null throughout.
+  Saved at `artifacts/light-research/ambient-input-fix-20260912/` alongside log.
+- Current game EXE BCBF623AD5690147DC462AEAED5B4F97BD73296BA0D6AB54663586E7088B1C0E
+  is already preserved at `artifacts/recovery/20260911-build-25246367/`.
 
-Only indices0..32 change RGB. Every tail record has exactly frozen RGB within its
-parity group and camera-relative XYZ spread<=0.0001001; world Y follows camera
-bob. #41/#192 match the video. Known glass anchor(-10493.734,611.61084,-4364.254)
-remains world-fixed57/57. Strong stale-tail/alternating-buffer evidence, not proof
-that every constant-color light is invalid. Actual GPU resource identities/count
-are not exposed yet. Producer+recorded transport age103..349ms; the recorder
-skipped84 API sequences but saw57/58 captures (not proof of HUD packet loss).
+## Package for the next controlled test (not a final release)
 
-Preview.2 code confirmed the gap: native `render_capture.cpp` copied every accepted matching
-48x32768 resource without publishing its identity or valid count. Managed
-`RenderLightReader.cs` scans all32768 slots, treating position.w≈pi as validity.
-The old pi criterion in `GPU_LIGHT_LAYOUTS_25116796.md` came from an UNFILTERED
-buffer observation, not proof of current filtered-tail lifetime. A completed GPU
-copy and paired scene camera do not prove every copied slot was rewritten.
-Separately, HUD focus rank and collision-based label placements are stateless,
-so changing neighbors/indices also make labels jump; fix presentation separately.
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.9-ambient-input-fix-ModManagers.zip`
 
-## Package / controls
+- ZIP SHA256 `69AB40274750A8B104677F5B520EC3465E5C525487D561009B81D53AC83E179F`.
+- ASI SHA256 `2B9BAE0031E962280A92874B318F97E4D8758489C7DC287C08C162F4574F8F17`.
+- ASI 1,394,176 bytes; ZIP 846,788 bytes. `CDT_RESEARCH=OFF`, build 25246367.
+- INI ready: Ambient.Enabled=1, Overlay.ShowAmbient=1; SpatialProbe,
+  SpatialReadback, SignedDistanceReadback, AmbientProbe and OcclusionTest all 0.
+- Package/ZIP equality passed; existing v2.1.8 ZIP unchanged
+  (`DEAD49F6FD561833E0E929662E0D1BFDC89A1F24142549C1B1C9B41E61D5F2DE`).
+- Not installed by Codex, not publicly uploaded, no new AV scan yet.
 
-Immutable ZIP:
-`artifacts/mod-manager/CrimsonDesertTelemetry-v1.3.0-preview.3-ModManagers.zip`
-SHA256 `5F107B18B5B1677A8366F6102503A1077BEF6FA4D8865E452F09C45A8B203372`.
-Expanded:
-`artifacts/mod-manager/v1.3.0-preview.3-20260906-211037-749-5c0dd6b7/CrimsonDesertTelemetry`.
-ASI SHA256 `B45170BD2F1BC691C1902CEF2993ABE28C83443CF79C791893F0F26E66916CF2`.
-Previous preview.1/2 ZIPs remain unchanged for rollback. Never overwrite releases,
-replace the ASI loader/other mods, or install directly instead of the user's DMM.
+**Next:** user closes game, replaces v2.1.8 through DMM with v2.1.9, loads a save
+and stands under open sky. Verify deployed hashes read-only, collect fresh API
+control, then guide enclosed and return-open stages with stationary windows.
+Do not mark Ambient complete until that controlled live test passes.
 
-- F8: corner HUD; F9: diagnostics; F10: fullscreen light markers.
-- Package enables both views. `[Overlay] Radar3D=0` restores the old compass.
-- `[LightOverlay]`: Enabled=1, InitiallyVisible=1, ToggleKey=121, Radius=35,
-  MaxMarkers=512, MaxLabels=6. Configurable bounds: 2048 markers / 16 labels;
-  label placement examines at most 64 candidates. Units are game units, not metres.
-- Missing config defaults UI modules off. Overlay/LightOverlay/Notifications must
-  all be disabled to skip UI hooks/client. HUD-hidden does not stop light capture.
-- Existing notices and single ASI/host/config architecture remain. Console/explorer
-  stay disabled. User wants DMM; settings require restart, no hot-unload.
-
-## Implementation / limits
-
-`native/CrimsonDesertTelemetry.Asi/src/overlay_*.{h,cpp}`:
-strict bounded rendered-record parsing; immutable shared record storage avoids
-copying arrays every Present. Optional invalid/missing feeds clear records, not
-core telemetry. Render freshness includes producer age, transport, parsing and
-time since receipt, capped at 500ms. No historical markers kept as live.
-
-Corner HUD retains XYZ/root/camera numbers; oblique player-centered radar adds
-colored contributions, schematic height stems, root/camera yaw and view guide.
-Fullscreen rings/labels show measured XYZ, linear HDR RGB/luminance, distance,
-sample-local index and spot cone/direction when available. Center-priority labels
-avoid HUD/reticle/other rings. Fixed-length arrows are schematic, not light range.
-
-Only current **filtered rendered** records are used; do not sum authored+rendered.
-Radar can show behind-camera records only if the feed retains them, not complete
-360-degree coverage. No scene-depth test: markers may show through walls. HDR
-swatches are SDR visualization, not the game's tone mapping. No physical lumens,
-stable object IDs, generic OFF field or sun/sky/emissive completeness claimed.
-
-World coordinates already use capture-paired reconstruction; screen projection
-uses the latest published camera basis/FOV/aspect, rejecting near/behind/invalid
-points. It is not a Present-synchronous camera: fast-motion latency/alignment is
-the primary live-check risk. Drawing still requires D3D12 / 8-bit SDR.
-
-## Previous preview.2 HUD verification
-
-Release build and **6/6 native UI/client tests pass**: overlay-model, overlay-d3d12,
-notifications-d3d12, light-overlay-d3d12, light-overlay-only-d3d12, overlay-websocket.
-Real D3D12 readback tests cover height-sensitive radar, projected rings/spot arrow,
-behind/near clipping, stale/missing clearing, initially-hidden then shown,
-independent toggles, Present/Present1, both resize paths, 4K and center detail card.
-The center card initially failed visual QA because its placement gap intersected
-the reticle margin; fixed and protected by a dedicated pixel regression.
-
-Visually inspected small/4K test images: `build/light-overlay-*.bmp` (synthetic).
-WebSocket test covers marker-only startup, >64KiB fragmented light payload,
-immutable shared storage and loading invalidation. Actual recorded A2 JSONL
-accepted by `CrimsonDesertTelemetryOverlayTests --snapshot <file>`: 337 records,
-178 in front of its camera, 77 inside viewport. ZIP/expanded nine-file payload,
-configuration and no-loose-JSON/no-second-ASI validation passed.
-
-## Established baseline / preserved research
-
-Previous detailed integration checkpoint is preserved in Git:
-`git show 0d7ac9b:docs/HANDOVER.md`. Implementation `afcc1cc`; recorder fix
-`73aea96`. That preview.1 passed cold start, real camera/player movement and
-physical lamp A-B-A in PID27140 (now closed): target88/88 → 0/87 → 89/89;
-three controls always present, B/A2 same view. 900 API rows, max rendered age79ms.
-Artifacts: `artifacts/light-research/unified-lamp-aba-pid27140-20260906-*.jsonl`.
-
-Movement artifact `unified-camera-movement-pid27140-20260906-01.jsonl` in the same
-folder: 917 distinct captures, two static anchors stable throughout; filtered
-crystal omissions are not OFF. Twelve transient bridge-changing rows and38
-captures with one rejected record remain bounded reliability follow-ups.
-Light capture/source itself is unchanged in preview.2.
-
-Exact native-supported Steam build25116796, EXE SHA256
-`4D99C15C58BD20A94D354D10AE395D1FAC777D59EF52CBA8080DC3FC8DC6F454`.
-Native instrumentation fails closed on other hashes; automatic relocation and
-combined real-game console startup validation remain separate tasks.
-
-Product is this repository. `research/` is the preserved independent Git repo
-(migration commit af5485b); `external/`, `artifacts/`, and original workspace under
-`archive/crimsonhue-workspace-20260906/` are preserved/ignored. CrimsonHue is only
-the future Hue consumer. No original files were deleted. Research entry points:
-`research/light-source-tests/CODEX_HANDOVER_FIRE.md`,
-`GPU_LIGHT_LAYOUTS_25116796.md` beside it, and
-`research/console-enabler/HANDOVER.md`. Do not restart resolved research paths.
+After Ambient passes, proceed directly to per-light geometry visibility. The OFF
+build currently links `cdt_sdf_disabled`; research SDF/HUD tests passing is not
+production per-light completion. Relevant preserved implementation is
+`src/sdf_visibility.cpp` and research acquisition in `src/spatial_probe.cpp`.
+Neither mandatory live acceptance nor final release readiness is established yet.

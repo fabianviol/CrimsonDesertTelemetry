@@ -26,8 +26,10 @@ Microsoft::WRL::ComPtr<ID3D12Fence> readbackFence;
 uint64_t fenceValue = 0;
 bool acquisitionInFlight = false;
 uint32_t latestFrame = 0;
-uint64_t giOffset = 0;
+size_t activeRowPitch = 0;
 ID3D12GraphicsCommandList* activeList = nullptr;
+// The sampler consumes the complete CPU GI upload-source block, not scene data.
+std::array<uint8_t, ConstantBytes> activeGi{};
 std::mutex acquireMutex;
 
 template<class T> bool Read(uint64_t address, T& value)
@@ -35,11 +37,10 @@ template<class T> bool Read(uint64_t address, T& value)
     return address >= 0x10000 && ch::mem::SafeRead(reinterpret_cast<void*>(address), &value, sizeof(value));
 }
 
-bool Resolve(uint64_t owner, uint64_t command, ID3D12Resource*& resource, ID3D12Resource*& gi, ID3D12GraphicsCommandList*& nativeList, uint32_t& frame)
+bool Resolve(uint64_t owner, uint64_t command, ID3D12Resource*& resource, ID3D12GraphicsCommandList*& nativeList, uint32_t& frame, std::array<uint8_t, ConstantBytes>& giArray)
 {
-    uint64_t renderer{}, back{}, outer{}, storage{}, holder{}, sceneOwner{}, sceneData{}, cbWrapper{}, cbOuter{}, cbStorage{};
+    uint64_t renderer{}, back{}, outer{}, storage{}, holder{}, sceneOwner{}, sceneData{};
     uint32_t width{}, height{}, depth{};
-    uint8_t bank{};
     if (!Read(owner + 0x10, renderer) || !Read(renderer + 0x660, back) || back != owner ||
         !Read(owner + 0x4B8, outer) || !Read(outer + 0x30, storage) ||
         !Read(storage + 0x10, back) || back != outer || !Read(storage + 0x100, reinterpret_cast<uint64_t&>(resource)) || !resource ||
@@ -47,10 +48,7 @@ bool Resolve(uint64_t owner, uint64_t command, ID3D12Resource*& resource, ID3D12
         width != 64 || height != 32 || depth != 264 || !Read(command + 0x800, holder) ||
         !Read(holder + 8, reinterpret_cast<uint64_t&>(nativeList)) || !nativeList ||
         !Read(owner + 8, sceneOwner) || !Read(sceneOwner + 0x428, sceneData) ||
-        !Read(sceneData + 0x20, frame) ||
-        !Read(owner + 0x705, bank) ||
-        !Read(owner + (bank ? 0x568 : 0x560), cbWrapper) || !Read(cbWrapper + 0x18, cbOuter) ||
-        !Read(cbOuter + 0x30, cbStorage) || !Read(cbStorage + 0x168, reinterpret_cast<uint64_t&>(gi)) || !gi) return false;
+        !Read(sceneData + 0x20, frame) || !Read(owner + 0x20, giArray)) return false;
     
     auto desc = resource->GetDesc();
     if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE3D || desc.Width != 64 || desc.Format != DXGI_FORMAT_R8_TYPELESS) return false;
@@ -85,11 +83,11 @@ uint64_t Dispatch(uint64_t command, uint32_t x, uint32_t y, uint32_t z, uint64_t
     if (acquisitionInFlight) return result;
     
     ID3D12Resource* resource{};
-    ID3D12Resource* gi{};
     ID3D12GraphicsCommandList* list{};
     uint32_t frame{};
+    std::array<uint8_t, ConstantBytes> giArray{};
     
-    if (x == 2 && y == 1 && z == 1 && Resolve(owner, command, resource, gi, list, frame))
+    if (x == 2 && y == 1 && z == 1 && Resolve(owner, command, resource, list, frame, giArray))
     {
         Microsoft::WRL::ComPtr<ID3D12Device> device;
         if (SUCCEEDED(resource->GetDevice(IID_PPV_ARGS(&device))))
@@ -102,24 +100,27 @@ uint64_t Dispatch(uint64_t command, uint32_t x, uint32_t y, uint32_t z, uint64_t
                 auto desc = resource->GetDesc();
                 device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, &rows, &rowBytes, &totalBytes);
                 
-                giOffset = (totalBytes + 511) & ~UINT64{511};
-                uint64_t allocationSize = giOffset + ConstantBytes;
-                
                 D3D12_RESOURCE_DESC bufferDesc{};
                 bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-                bufferDesc.Width = allocationSize;
+                bufferDesc.Alignment = 0;
+                bufferDesc.Width = totalBytes;
                 bufferDesc.Height = 1;
                 bufferDesc.DepthOrArraySize = 1;
                 bufferDesc.MipLevels = 1;
+                bufferDesc.Format = DXGI_FORMAT_UNKNOWN;
                 bufferDesc.SampleDesc.Count = 1;
+                bufferDesc.SampleDesc.Quality = 0;
                 bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+                bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
                 
-                D3D12_HEAP_PROPERTIES heap{};
-                heap.Type = D3D12_HEAP_TYPE_READBACK;
-                heap.CreationNodeMask = 1;
-                heap.VisibleNodeMask = 1;
+                D3D12_HEAP_PROPERTIES heapProperties{};
+                heapProperties.Type = D3D12_HEAP_TYPE_READBACK;
+                heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+                heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+                heapProperties.CreationNodeMask = 1;
+                heapProperties.VisibleNodeMask = 1;
                 
-                if (SUCCEEDED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readbackBuffer))))
+                if (SUCCEEDED(device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readbackBuffer))))
                 {
                     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&readbackFence));
                 }
@@ -143,11 +144,12 @@ uint64_t Dispatch(uint64_t command, uint32_t x, uint32_t y, uint32_t z, uint64_t
                 src.SubresourceIndex = 0;
                 
                 list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-                list->CopyBufferRegion(readbackBuffer.Get(), giOffset, gi, 0, ConstantBytes);
                 
-                acquisitionInFlight = true;
-                latestFrame = frame;
                 activeList = list;
+                activeRowPitch = footprint.Footprint.RowPitch;
+                activeGi = giArray;
+                latestFrame = frame;
+                acquisitionInFlight = true;
             }
         }
     }
@@ -187,10 +189,9 @@ void Poll()
         void* mappedData = nullptr;
         if (SUCCEEDED(readbackBuffer->Map(0, nullptr, &mappedData)))
         {
-            uint8_t* constants = static_cast<uint8_t*>(mappedData) + giOffset;
             uint8_t* volume = static_cast<uint8_t*>(mappedData);
             
-            auto reference = SampleAtReference(constants, volume);
+            auto reference = SampleAtReference(activeGi.data(), volume, activeRowPitch);
             auto state = reference.status == SampleStatus::Ok ? sky::Visibility::Valid 
                        : reference.status == SampleStatus::Fallback ? sky::Visibility::Fallback 
                        : sky::Visibility::Unavailable;

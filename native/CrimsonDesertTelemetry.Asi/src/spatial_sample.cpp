@@ -29,7 +29,7 @@ double Lane(const uint8_t* constants, size_t offset, unsigned index)
 
 bool Finite(double value) { return std::isfinite(value); }
 
-SpatialSample Trilinear(SpatialSample result, const uint8_t* volume)
+SpatialSample Trilinear(SpatialSample result, const uint8_t* volume, size_t rowPitch)
 {
     constexpr long long dims[3]{VolumeWidth, VolumeHeight, VolumeDepth};
     double frac[3]{};
@@ -59,7 +59,8 @@ SpatialSample Trilinear(SpatialSample result, const uint8_t* volume)
                     xyz[axis] = index;
                     weight *= bits[axis] ? frac[axis] : 1.0 - frac[axis];
                 }
-                const uint8_t raw = volume[(xyz[2] * dims[1] + xyz[1]) * dims[0] + xyz[0]];
+                const uint8_t raw = volume[(static_cast<size_t>(xyz[2]) * VolumeHeight +
+                    static_cast<size_t>(xyz[1])) * rowPitch + static_cast<size_t>(xyz[0])];
                 value += weight * raw / 255.0;
             }
     result.sampled = value;
@@ -68,7 +69,7 @@ SpatialSample Trilinear(SpatialSample result, const uint8_t* volume)
 }
 
 SpatialSample Coordinates(SpatialSample result, const uint8_t* constants,
-    const uint8_t* volume, const double uv[3])
+    const uint8_t* volume, const double uv[3], size_t rowPitch)
 {
     const double scale = 1.0 / (1 << result.clipmap);
     const double z = f32(uv[2] * scale);
@@ -78,13 +79,13 @@ SpatialSample Coordinates(SpatialSample result, const uint8_t* constants,
     result.coordinates[1] = f32(uv[1] * scale);
     result.coordinates[2] = f32(f32(static_cast<double>(result.clipmap * 66 + 1) +
         f32(fraction * 64.0)) * ZScale);
-    if (!volume)
+    if (!volume || rowPitch < VolumeWidth || rowPitch > SIZE_MAX / (VolumeHeight * VolumeDepth))
     {
         result.status = SampleStatus::NoVolume;
         return result;
     }
     (void)constants;
-    return Trilinear(result, volume);
+    return Trilinear(result, volume, rowPitch);
 }
 }
 
@@ -138,15 +139,15 @@ SpatialSample DecodeReference(const uint8_t* constants)
     return result;
 }
 
-SpatialSample SampleAtReference(const uint8_t* constants, const uint8_t* volume)
+SpatialSample SampleAtReference(const uint8_t* constants, const uint8_t* volume, size_t rowPitch)
 {
     SpatialSample result = DecodeReference(constants);
     if (result.status != SampleStatus::Ok) return result;
     const double uv[3]{Lane(constants, 0x2E0, 0), Lane(constants, 0x2E0, 1), Lane(constants, 0x2E0, 2)};
-    return Coordinates(result, constants, volume, uv);
+    return Coordinates(result, constants, volume, uv, rowPitch);
 }
 
-SpatialSample SampleAtWorld(const uint8_t* constants, const uint8_t* volume, const double world[3])
+SpatialSample SampleAtWorld(const uint8_t* constants, const uint8_t* volume, const double world[3], size_t rowPitch)
 {
     SpatialSample result = DecodeReference(constants);
     if (result.status != SampleStatus::Ok || !world) return result;
@@ -161,6 +162,6 @@ SpatialSample SampleAtWorld(const uint8_t* constants, const uint8_t* volume, con
             return result;
         }
     }
-    return Coordinates(result, constants, volume, uv);
+    return Coordinates(result, constants, volume, uv, rowPitch);
 }
 }

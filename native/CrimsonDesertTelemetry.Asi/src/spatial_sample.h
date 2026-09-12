@@ -37,7 +37,10 @@ SpatialSample DecodeReference(const uint8_t* constants);
 
 // Samples at the reference position itself, using the constants' own normalized
 // coordinates. This is the exact path; prefer it when no offset is wanted.
-SpatialSample SampleAtReference(const uint8_t* constants, const uint8_t* volume);
+// rowPitch supports a mapped D3D12 footprint without allocating a packed copy.
+// Rows in a slice and slices are contiguous; padding bytes are never sampled.
+SpatialSample SampleAtReference(const uint8_t* constants, const uint8_t* volume,
+    size_t rowPitch = VolumeWidth);
 
 // Samples at an arbitrary world position, which is how a directional read works.
 // The clipmap selected for the reference is REUSED rather than recomputed, since
@@ -45,5 +48,6 @@ SpatialSample SampleAtReference(const uint8_t* constants, const uint8_t* volume)
 // offsets well inside the clipmap and is not valid for arbitrary distances.
 // Neighbouring offsets can also fall in different amortised update blocks, so
 // results from several offsets are not necessarily of the same age.
-SpatialSample SampleAtWorld(const uint8_t* constants, const uint8_t* volume, const double world[3]);
+SpatialSample SampleAtWorld(const uint8_t* constants, const uint8_t* volume, const double world[3],
+    size_t rowPitch = VolumeWidth);
 }
