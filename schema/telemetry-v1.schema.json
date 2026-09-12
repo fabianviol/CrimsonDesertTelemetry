@@ -217,8 +217,41 @@
         "luminanceLinear": { "type": "number", "minimum": 0 },
         "kind": { "enum": ["point", "spot"] },
         "direction": { "$ref": "#/$defs/vector3" },
-        "coneHalfAngleDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 90 }
+        "coneHalfAngleDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 90 },
+        "sourceVisibility": { "$ref": "#/$defs/sourceVisibility" }
       }
+    },
+    "sourceVisibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional camera-to-source-center geometric metadata for this rendered capture. Original RGB is unchanged. Add the enclosing light age to volumeAgeMillisecondsAtCapture; use clear/blocked only while their sum is at most 1500 ms. No screen visibility or permanent light identity is implied.",
+      "required": ["status", "attenuationFactor", "reason", "referencePosition", "lightCaptureSequence", "volumeSequence", "contextFrame", "volumeAgeMillisecondsAtCapture", "closestApproach"],
+      "properties": {
+        "status": { "enum": ["clear", "blocked", "unknown"] },
+        "attenuationFactor": { "type": ["number", "null"], "enum": [0, 1, null] },
+        "reason": { "type": ["string", "null"], "minLength": 1 },
+        "referencePosition": { "$ref": "#/$defs/vector3" },
+        "lightCaptureSequence": { "type": "integer", "minimum": 1 },
+        "volumeSequence": { "type": ["integer", "null"], "minimum": 1 },
+        "contextFrame": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295 },
+        "volumeAgeMillisecondsAtCapture": { "type": ["integer", "null"], "minimum": 0 },
+        "closestApproach": { "type": ["number", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "unknown" } } },
+          "then": { "properties": { "attenuationFactor": { "type": "null" }, "closestApproach": { "type": "null" }, "reason": { "type": "string" } } },
+          "else": { "properties": { "reason": { "type": "null" }, "volumeSequence": { "type": "integer" }, "contextFrame": { "type": "integer" }, "volumeAgeMillisecondsAtCapture": { "type": "integer", "maximum": 1500 }, "closestApproach": { "type": "number" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "clear" } } },
+          "then": { "properties": { "attenuationFactor": { "const": 1 }, "closestApproach": { "exclusiveMinimum": 0 } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "blocked" } } },
+          "then": { "properties": { "attenuationFactor": { "const": 0 }, "closestApproach": { "maximum": 0 } } }
+        }
+      ]
     },
     "renderLightDiagnostics": {
       "type": "object",

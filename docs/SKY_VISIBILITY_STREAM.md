@@ -1,4 +1,13 @@
-# Sky-visibility stream — contract draft
+# Sky-visibility stream — historical contract draft
+
+**Current status, 2026-09-12:** the separate `/v1/sky-visibility` routes and
+52-neighbor payload proposed below are still not implemented. Current production
+publishes camera-local `visibility` and a working local ambient estimate through
+[`/v1/ambient`](AMBIENT_STREAM.md). That camera sample passed the OFF v2.1.9
+open/enclosed/open live test on build 25246367. The [per-light implementation](SOURCE_VISIBILITY.md)
+uses the separately calibrated R16 signed-distance field; its controlled live
+acceptance remains pending. The text below is preserved as the earlier proposal
+and research interpretation, not the current API contract or production cadence.
 
 **Draft, not implemented and not published.** This fixes the shape and the promises
 before any code, so the guarantees come from what was measured rather than from

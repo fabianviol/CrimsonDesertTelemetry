@@ -1,13 +1,17 @@
-# Smoothed local-light stream (development)
+# Smoothed local-light stream
 
-The combined `2.0.1-sky.1` preview also includes this feed; keep
-Research/AmbientProbe=0. See [global sky stream](AMBIENT_STREAM.md).
+An additional vendor-neutral consumer signal alongside raw `/v1/snapshot` and
+`/v1/stream`. It groups and smooths current local-light RGB; ambient is provided
+by the separate [ambient feed](AMBIENT_STREAM.md). Install one complete telemetry
+package through DMM and keep research switches at `0` for production use.
 
-An additional consumer signal for CrimsonHue; **raw `/v1/snapshot` and
-`/v1/stream` payloads and their schema versions remain unchanged.** Not ambient.
-Available in private `2.0.1-local-lights.1`; not in the published 2.0.0 or
-ambient-probe.2 ZIP. Install the local-lights preview alone through DMM for the
-normal ManyLights/Hue test. Do not simultaneously activate the ambient package.
+Current production development adds optional [per-light source visibility](SOURCE_VISIBILITY.md)
+to each group's original `contributions`. Raw records, RGB/luminance and EMA
+group RGB are unchanged, and blocked contributions remain present. Metadata is
+not averaged into a group verdict or automatically multiplied into its color.
+The per-light implementation has synthetic coverage; live visible/blocked/visible
+and behind-camera acceptance remains pending. Camera-local ambient already passed
+its separate open/enclosed/open test in OFF v2.1.9 on build 25246367.
 
 - HTTP: `GET http://127.0.0.1:27311/v1/lights/smoothed`
 - WebSocket: `ws://127.0.0.1:27311/v1/lights/smoothed/stream`
@@ -17,7 +21,7 @@ Both return the same separate envelope, `schemaVersion: "1.0"`. HTTP returns
 WebSocket shares the existing loopback-only browser-origin policy and bounded,
 latest-only queue. Enabling `[Lights] Enabled=1` is required for its source.
 
-## Contract for CrimsonHue
+## Consumer contract
 
 Envelope fields: `schemaVersion`, `status` (`available`/`unavailable`), `source`
 (`spatially-grouped-filtered-manylights`), `coverage`
@@ -35,12 +39,20 @@ Each source group contains:
 | `colorLinear` | Smoothed sum of contributing linear HDR RGB values (`x/y/z` = R/G/B). No clamping to 0..1. |
 | `luminanceLinear` | Weighted luminance of that smoothed RGB, same weights as raw light decoder; NOT lumens/nits. |
 | `rawSumColorLinear` | Sum before temporal filtering, useful for diagnostics. |
-| `contributions` | Current raw rendered records including sample index, position, RGB, kind, direction and cone. These are NOT additional lights to add again. |
+| `contributions` | Current raw rendered records including sample index, position, RGB, kind, direction, cone and optional `sourceVisibility`. These are NOT additional lights to add again. |
 
-For a simple Hue signal, consume each group's **`colorLinear` once** at its
+For a grouped color signal, consume each group's **`colorLinear` once** at its
 position. Do not add its `contributions` again, or also add the raw light stream.
-Hue gamut mapping, exposure/brightness scaling, lamp geometry and output-rate
-limits belong to CrimsonHue. No physical lamps are driven by telemetry.
+Physical output mapping, exposure/brightness scaling, lamp geometry and output
+rate limits belong to the consumer. No physical lamps are driven by telemetry.
+
+For visibility-aware processing, inspect each contribution's metadata separately:
+members of a group may have different visibility. The existing group EMA includes
+all members; applying one member's verdict to that whole color is not valid.
+Require matching capture sequence and fresh usable metadata as specified in the
+[source-visibility contract](SOURCE_VISIBILITY.md). Unknown or stale metadata does
+not invalidate healthy raw or smoothed light data. Optional HUD hiding (default
+F11) affects only the display, never this feed.
 
 Do not average conflicting spot directions into a fabricated cone. Contributions
 retain their own directions; the aggregate has no single `kind`/cone/direction.
@@ -83,7 +95,7 @@ fresh **`capturedAt`/`sourceCaptureSequence`** progress. `publishedAt` can advan
 while the source sample is repeated. Network silence/host failure cannot deliver
 an explicit error message, so a local freshness watchdog remains mandatory.
 
-## Live validation
+## Historical smoothing validation
 
 Private local-lights.1 passed a 12-second stationary game capture on build25116796
 (PID23572, 2026-09-07): 717 messages on each WebSocket,188 matched GPU captures,
@@ -98,7 +110,7 @@ current product handover; raw captures remain private ignored artifacts.
 
 ## Configuration
 
-In future packages (restart after edits):
+Current configuration (restart after edits):
 
 ```ini
 [LightSmoothing]
@@ -115,6 +127,7 @@ Standalone development host:
 dotnet run --project C:\DEV\CrimsonDesertTelemetry\src\CrimsonDesertTelemetry.Cli -- serve 27311 60 --lights --light-smoothing-ms 200 --light-group-radius 0.15
 ```
 
-Do not run a second host on an occupied port. The ambient diagnostic deliberately
-pauses ManyLights, so this stream is unavailable during that experiment. A live
-game/Hue acceptance test must use restored normal ManyLights capture.
+Do not run a second host on an occupied port. Normal production ambient and
+per-light visibility run alongside ManyLights/smoothing. The preserved research
+`AmbientProbe` diagnostic is exclusive and can pause normal publication; it must
+remain disabled for production validation.

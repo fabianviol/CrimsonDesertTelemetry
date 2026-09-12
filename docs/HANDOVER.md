@@ -24,7 +24,13 @@ an assurance about a new binary.
 no direct installation or edits in the game directory.** Prepare configured ZIPs
 and give one short, concrete manual step at a time.
 
-## Immediate result — input defects fixed, live acceptance pending
+User additionally requests ongoing virus checks of each new ASI AND DMM ZIP,
+an optional HUD/radar mode that hides freshly blocked lights, and configurable
+or individually disabled shortcuts for all four HUD functions (defaults F8-F11).
+Update all current product descriptions. Commit and push completed changes to
+GitHub; do NOT create a GitHub release.
+
+## Current result — Ambient Occlusion complete; per-light production in progress
 
 Read Gemini's handover, DecodeReference, current v2.1.8 diagnostic state and log,
 then acquisition in the requested order. The diagnostic at 11:06:34 CEST showed:
@@ -95,7 +101,7 @@ under `artifacts/recovery/codex-ambient-takeover-20260912-111004/`.
   (`DEAD49F6FD561833E0E929662E0D1BFDC89A1F24142549C1B1C9B41E61D5F2DE`).
 - Not installed by Codex, not publicly uploaded, no new AV scan yet.
 
-## Live A-B-A in progress — user installed v2.1.9 through DMM
+## Ambient live A-B-A PASSED — user installed v2.1.9 through DMM
 
 Game PID 31832, started 12:30:33 CEST. Read-only hashes verify ASI, both DLLs,
 INI and runtimeconfig against v2.1.9. DMM retained v2.1.8 `deps.cfg`; only version
@@ -109,14 +115,14 @@ User screenshot saved beside it. 16/16 fresh samples, 16 distinct visibility
 frames, age <=31 ms, API sequence 59727 -> 60190. Visibility 0.24005465..0.38915721,
 mean 0.33465750. Player unchanged at (-11407.612,665.6101,-4225.9883); camera
 (-11405.418, approximately 667.83,-4228.837), with <0.006 vertical idle movement.
-This is an outdoor reference near the building, not a full acceptance result.
+This is the outdoor reference near the building.
 
 Covered doorway phase saved as `02-covered-doorway.json` plus user screenshot in
 the same live-aba folder. Same PID 31832, 16/16 fresh samples/16 distinct visibility
 frames, age <=16 ms, sequence 77904 -> 78368. Visibility 0.00578101..0.00736786,
 mean 0.00668928 (about 98% below the outside mean). Player stationary at
 (-11407.994,665.5804,-4219.4927), camera approximately (-11404.833,668.522,-4219.8784).
-The covered and outside windows are clearly separated; reversal is still pending.
+The covered and outside windows are clearly separated.
 
 Interior phase saved as `03-inside.json` plus user screenshot in the same folder.
 Same PID, 16/16 fresh samples and distinct visibility frames, age <=32 ms,
@@ -126,19 +132,43 @@ at (-11411.898,665.8191,-4214.6826); camera approximately
 an enclosed room with a solid ceiling and active local lights/fireplace. The
 sky-visibility signal is essentially zero despite those local light contributions.
 
-**Next:** user returns to the initial outside position and approximately the same
-view, stops, and says ready. Record `04-outside-return.json` and compare all stages,
-including fresh/progressing controls and pose differences. Current signal samples
-CAMERA location. Read APIs only; user operates game and provides scene context.
-Do not mark Ambient complete before the return-open phase proves live reversal;
-if it passes, immediately continue mandatory per-light production/HUD occlusion.
+Return-open phase is saved as `04-outside-return.json` with the user screenshot;
+`stage-summary.json` compares all four phases. Same PID, 16/16 fresh samples and
+distinct visibility frames, age <=47 ms, sequence 93834 -> 94298. Visibility
+0.18810925..0.20661667, mean 0.19967639. Player (-11408.836,665.57056,-4224.0977),
+camera approximately (-11404.971,667.79535,-4227.664), about 1.25 game units from
+the initial camera position. It is a nearby return location, not identical pose.
+
+All 64 samples are fresh with progressing controls. Ambient visibility reverses
+from 0.33466 outside to 0.00669 under the roof, 0.00006973 inside, then 0.19968
+outside again. The user's screenshots show sunrise during this route: mean sky
+luminance rose from 0.00194 to 0.75966. The geometric visibility reversal is
+measured separately from that brightness change. Ambient Occlusion is complete
+for this controlled live acceptance on build 25246367; this does not claim an
+exhaustive test of every cave or material. The signal samples CAMERA location.
 
 User additionally confirms the HUD must include per-light visibility. Current
 OFF package still shows raw light markers without per-light occlusion; add that
 HUD presentation with the second product goal, without dropping original API data.
 
-After Ambient passes, proceed directly to per-light geometry visibility. The OFF
-build currently links `cdt_sdf_disabled`; research SDF/HUD tests passing is not
-production per-light completion. Relevant preserved implementation is
-`src/sdf_visibility.cpp` and research acquisition in `src/spatial_probe.cpp`.
-Neither mandatory live acceptance nor final release readiness is established yet.
+The installed v2.1.9 OFF build still links `cdt_sdf_disabled`. The next production
+implementation is now in progress: reuse calibrated `sdf_visibility.cpp` via
+one current volume, one pending GPU copy and three necessary deferred lifecycle/
+barrier hooks in `sdf_acquire.cpp`. Do not restore root-binding discovery, tracing
+or capture history. Geometry metadata is an additive native v3 bridge tail;
+legacy v2 remains readable, raw/EMA RGB and source records remain unchanged.
+`docs/SOURCE_VISIBILITY.md` describes pairing, bounds and freshness.
+
+The Warspike fireplace at (-11402.502,666.559,-4216.367) is present in all 64
+saved current source captures. It is behind the paired camera in all 16 covered
+doorway samples (depth approximately -0.735), in-frustum inside, off-frustum in
+both outdoor stages. Use this target for visible -> blocked -> visible plus
+behind-camera validation; no history or new source registry is needed for that
+controlled test. Preserved current-build SDF calibration is in
+`docs/SDF_VARIANT_A.md` and
+`artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
+
+**Next:** finish narrow native acquisition/API/HUD integration, run synthetic
+controls, build a configured OFF DMM package, then let the user install it and
+perform the real fireplace test. Per-light live acceptance and final exact-file
+AV scans remain outstanding. The project is NOT complete or release-ready.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Crimson Desert global sky ambient v1",
+  "title": "Crimson Desert sky ambient and local camera visibility v1",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -96,7 +96,7 @@
         "object",
         "null"
       ],
-      "description": "Camera sky visibility from the spatial probe, on ITS own cadence. Present only when the voxel texture was actually sampled: the shader fallback branch is one by definition and is deliberately not reported here as a measurement. Null when no run is in progress.",
+      "description": "Local camera sky visibility from production spatial sampling, on its own cadence. Present only for a valid voxel texture sample; the shader fallback branch is deliberately not reported as a measurement. Null when disabled or unavailable. Its freshness is independent of the global sky sample.",
       "properties": {
         "valueWorking": {
           "type": "number",
@@ -116,7 +116,7 @@
     },
     "localEnvironmentAmbientEstimateWorking": {
       "type": "object",
-      "description": "Working product estimate: the global upper-hemisphere sky mean times raw camera visibility. NOT an exact renderer term — the engine multiplies an environment cube by that factor, while this multiplies an already averaged sky value, so the final scaling is an open measurement question. Both raw inputs stay on this response so it can be settled from data. Not a public API surface.",
+      "description": "Derived working-space estimate: global upper-hemisphere sky mean multiplied by local camera sky visibility. This is not an exact renderer term or physical lux; the engine modulates an environment cube while this API modulates an averaged sky value. Both raw inputs and their independent freshness remain available in the response.",
       "properties": {
         "rgbWorking": {
           "type": [

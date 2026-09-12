@@ -67,6 +67,18 @@ float DistanceSquared(Vec3 a, Vec3 b)
     const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
     return x*x + y*y + z*z;
 }
+const char* VisibilityReasonText(const std::string& reason)
+{
+    if(reason=="stale-volume"||reason=="stale-source")return "waiting for fresh data";
+    if(reason=="waiting-for-volume")return "waiting for data";
+    if(reason=="disabled")return "disabled";
+    if(reason=="uncovered")return "outside geometry coverage";
+    if(reason=="outside-trace-radius")return "out of range";
+    if(reason=="too-short")return "source too close";
+    if(reason=="trace-budget-exceeded"||reason=="iteration-limit")return "processing limit";
+    if(reason.starts_with("invalid"))return "invalid data";
+    return "not available";
+}
 
 void ScreenArrow(ImDrawList* draw, ImVec2 from, ImVec2 to, ImU32 color, float scale,
     float thickness = 1.5f)
@@ -83,11 +95,9 @@ void ScreenArrow(ImDrawList* draw, ImVec2 from, ImVec2 to, ImU32 color, float sc
         to.y - uy*head - ux*head*.55f), color, thickness * scale);
 }
 
-std::string LightKey(const Config& config)
+std::string ShortcutAction(const int key,const std::string& action)
 {
-    return config.lightToggleKey >= 0x70 && config.lightToggleKey <= 0x87
-        ? std::format("F{}", config.lightToggleKey - 0x70 + 1)
-        : std::format("VK {:02X}", config.lightToggleKey);
+    return key?ShortcutLabel(key)+" "+action:action+" shortcut off";
 }
 std::string Angle(const std::optional<float>& angle)
 {
@@ -165,9 +175,11 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
             for (const auto& light : *sample.renderedLights.records)
             {
                 if (DistanceSquared(light.position,*sample.playerPosition) > radius*radius) continue;
+                if(HideOccludedLight(light,view,now,config.hideOccluded))continue;
                 const auto delta = relative(light.position);
+                const bool blocked=CurrentSourceVisibility(light,view,now).status=="blocked";
                 dots.push_back({ground(delta.x,delta.z),project(delta),
-                    LightColor(light.colorLinear),LightColor(light.colorLinear,40)});
+                    LightColor(light.colorLinear,blocked?90:255),LightColor(light.colorLinear,blocked?15:40)});
                 if (dots.size() >= markerLimit) break;
             }
             std::sort(dots.begin(),dots.end(),[](const Dot& a,const Dot& b){return a.base.y < b.base.y;});
@@ -241,9 +253,12 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
     text(20,375,lightLive && sample.playerPosition ? Muted : Amber,
         !lightLive ? LightFeedStatus(view,now,config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
         std::format("Radius {:.0f} gu / filtered coverage (not 360 complete)",radius),11);
-    text(20,394,frustum ? Muted : Amber,frustum
-        ? std::format("Camera frustum: {:.1f} gu displayed depth (schematic length)",frustumLength)
-        : "Camera frustum unavailable: camera basis / projection missing",10);
+    const auto counts=CountSourceVisibility(view,now,radius);
+    const auto hidden=config.hideOccluded?counts.blocked:0;
+    text(20,394,lightLive ? Muted : Amber,lightLive
+        ? std::format("Visible {} / blocked {} / unknown {} / {} hidden / ",counts.visible,counts.blocked,counts.unknown,hidden)+
+            ShortcutAction(config.occlusionToggleKey,config.hideOccluded?"show blocked":"hide blocked")
+        : "Source visibility unavailable",10);
 }
 }
 
@@ -355,7 +370,7 @@ void DrawHud(const View& view, const Config& config, const bool details)
         (config.occlusionTest?"  |  instrumented SDF test":"  |  passive HUD")+"  |  no mouse capture",13);
     text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
     const bool ambientLive=config.showAmbient&&AmbientLive(view,now);
-    text(20,diagnostics+251,Cyan,"AMBIENT TEST VALUES",12);
+    text(20,diagnostics+251,Cyan,"AMBIENT / SKY EXPOSURE",12);
     text(20,diagnostics+272,ambientLive?White:Amber,config.showAmbient
         ? ambientLive?std::format("Global sky frame {}  |  age {:.0f} ms",
             view.ambient.frameNumber.value_or(0),AmbientAgeMs(view,now))
@@ -374,17 +389,19 @@ void DrawHud(const View& view, const Config& config, const bool details)
             ? std::format("Camera sky visibility {:.4f}  |  own age {:.0f} ms  |  frame {}",
                 *view.ambient.cameraSkyVisibilityWorking,view.ambient.visibilityAgeMilliseconds.value_or(0),
                 view.ambient.visibilityFrameNumber.value_or(0))
-            : "Camera sky visibility unavailable (separate R8 acquisition)",12);
+            : "Camera sky visibility unavailable",12);
     text(20,diagnostics+356,ambientLive&&view.ambient.localEnvironmentAmbientEstimateWorking?White:Amber,
         "Local estimate RGB  "+VectorText(ambientLive?view.ambient.localEnvironmentAmbientEstimateWorking:std::nullopt,4)+
         (ambientLive&&view.ambient.localEstimateStale?"  |  STALE":""),12);
-    const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
-    text(20,diagnostics+381,Cyan,"VARIANT A SDF TEST",12);
-    text(20,diagnostics+402,sdfStatus.available?White:Amber,config.occlusionTest
-        ? sdfStatus.available?std::format("Volume #{}  |  age {} ms  |  CPU context frame {}",
-            sdfStatus.sequence,sdfStatus.ageMilliseconds,sdfStatus.contextFrame)
-            : "SDF test unavailable: "+sdfStatus.reason
-        : "SDF test disabled; set [LightOverlay] OcclusionTest=1",12);
+    if (config.occlusionTest)
+    {
+        const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
+        text(20,diagnostics+381,Cyan,"RESEARCH SDF TRACE",12);
+        text(20,diagnostics+402,sdfStatus.available?White:Amber,sdfStatus.available
+            ? std::format("Volume #{}  |  age {} ms  |  CPU context frame {}",
+                sdfStatus.sequence,sdfStatus.ageMilliseconds,sdfStatus.contextFrame)
+            : "SDF test unavailable: "+sdfStatus.reason,12);
+    }
 }
 
 void DrawLightOverlay(const View& view, const Config& config)
@@ -408,7 +425,8 @@ void DrawLightOverlay(const View& view, const Config& config)
         float distance, crosshairDistance;
     };
     std::vector<Marker> markers;
-    size_t inRange = 0;
+    const auto visibilityCounts=CountSourceVisibility(view,now,radius);
+    const size_t inRange=visibilityCounts.visible+visibilityCounts.blocked+visibilityCounts.unknown;
     bool cameraReady = false;
     if (live && sample.cameraPosition && sample.cameraForward)
     {
@@ -426,7 +444,7 @@ void DrawLightOverlay(const View& view, const Config& config)
         {
             const float distanceSquared = DistanceSquared(light.position,*sample.playerPosition);
             if (distanceSquared > radius*radius) continue;
-            ++inRange;
+            if(HideOccludedLight(light,view,now,config.hideOccluded))continue;
             const auto p = ProjectWorld(light.position,sample,display.x,display.y);
             if (!p || p->x < 8*scale || p->y < 8*scale ||
                 p->x > display.x-8*scale || p->y > display.y-8*scale ||
@@ -452,18 +470,28 @@ void DrawLightOverlay(const View& view, const Config& config)
     }
     else if (!sample.playerPosition) headline = "RENDERED LIGHTS  /  player position unavailable";
     else if (!cameraReady) headline = "RENDERED LIGHTS  /  camera projection unavailable";
-    else headline = std::format("RENDERED LIGHTS  /  {} in range  /  {} on screen",inRange,markers.size());
-    const std::string controls = std::format("{} hide  /  radius {:.0f} game units  /  aim to inspect",LightKey(config),radius);
+    else
+    {
+        const auto hidden=config.hideOccluded?visibilityCounts.blocked:0;
+        headline=std::format("RENDERED LIGHTS  /  {} shown  /  {} hidden  /  {} on screen",inRange-hidden,hidden,markers.size());
+    }
+    const std::string controls=std::format("{}  /  {}  /  radius {:.0f} gu",
+        ShortcutAction(config.lightToggleKey,"lights"),
+        ShortcutAction(config.occlusionToggleKey,config.hideOccluded?"show blocked":"hide blocked"),radius);
+    const std::string visibilityLine=live&&sample.playerPosition
+        ? std::format("SOURCE VISIBILITY  /  {} visible  /  {} blocked  /  {} unknown  /  includes off-screen",
+            visibilityCounts.visible,visibilityCounts.blocked,visibilityCounts.unknown)
+        : "SOURCE VISIBILITY  /  unavailable";
     const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
     const std::string caveat = config.occlusionTest
         ? sdfStatus.available?std::format("SDF A volume age {} ms / aim at a light for LOS",sdfStatus.ageMilliseconds)
             : "SDF A UNKNOWN / "+sdfStatus.reason
-        : "Filtered / no depth test / HDR swatches / spot arrows schematic";
+        : "Captured light sources / HDR swatches / spot arrows schematic";
     float legendWidth = 0;
-    for (const auto* line : std::array<const std::string*,3>{&headline,&controls,&caveat})
+    for (const auto* line : std::array<const std::string*,4>{&headline,&controls,&visibilityLine,&caveat})
         legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
     legendWidth = std::min(display.x-2*margin,legendWidth+28*scale);
-    const float legendHeight = 70*scale;
+    const float legendHeight = 89*scale;
     Rect legend{ImVec2(margin,display.y-margin-legendHeight),
         ImVec2(margin+legendWidth,display.y-margin)};
     if (hud && legend.Intersects(*hud,12*scale))
@@ -500,10 +528,11 @@ void DrawLightOverlay(const View& view, const Config& config)
         const bool selected = wantedLabels > 0 && !detailGroups.empty() &&
             std::find(detailGroups.front().begin(),detailGroups.front().end(),i) != detailGroups.front().end();
         const float ring = (selected ? 9.f : 6.f)*scale;
-        draw->AddCircle(p,ring+3*scale,LightColor(light.colorLinear,42),24,5*scale);
+        const bool blocked=CurrentSourceVisibility(light,view,now).status=="blocked";
+        draw->AddCircle(p,ring+3*scale,LightColor(light.colorLinear,blocked?16:42),24,5*scale);
         draw->AddCircle(p,ring,IM_COL32(4,12,19,235),24,4*scale);
-        draw->AddCircle(p,ring,LightColor(light.colorLinear),24,2*scale);
-        draw->AddCircleFilled(p,1.4f*scale,White,8);
+        draw->AddCircle(p,ring,LightColor(light.colorLinear,blocked?90:255),24,2*scale);
+        draw->AddCircleFilled(p,1.4f*scale,blocked?Muted:White,8);
         if (selected)
         {
             draw->AddCircle(p,ring+4*scale,IM_COL32(230,244,247,170),32,scale);
@@ -578,7 +607,14 @@ void DrawLightOverlay(const View& view, const Config& config)
                 value.position.y,value.position.z),Muted});
             lines.push_back({std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}   |   L {:.4g}",
                 value.colorLinear.x,value.colorLinear.y,value.colorLinear.z,value.luminanceLinear),White});
-            if(config.occlusionTest)
+            const auto visibility=CurrentSourceVisibility(value,view,now);
+            if(visibility.status=="clear")
+                lines.push_back({"SOURCE VISIBLE  /  contribution 100%",Cyan});
+            else if(visibility.status=="blocked")
+                lines.push_back({"SOURCE BLOCKED  /  contribution 0%",Amber});
+            else
+                lines.push_back({std::string("SOURCE UNKNOWN  /  ")+VisibilityReasonText(visibility.reason),Muted});
+            if(config.occlusionTest&&visibility.status=="unknown")
             {
                 const auto trace=sdf::Trace({value.position.x,value.position.y,value.position.z},GetTickCount64());
                 if(!trace.available)
@@ -646,7 +682,8 @@ void DrawLightOverlay(const View& view, const Config& config)
     };
     legendText(10,live && cameraReady && sample.playerPosition ? Cyan : Amber,headline);
     legendText(29,White,controls);
-    legendText(48,Muted,caveat);
+    legendText(48,Cyan,visibilityLine);
+    legendText(67,Muted,caveat);
     draw->PopClipRect();
 }
 

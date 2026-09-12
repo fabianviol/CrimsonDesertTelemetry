@@ -33,25 +33,17 @@ target_compile_features(cdt_sdf PUBLIC cxx_std_20)
 target_compile_options(cdt_sdf PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_sdf PUBLIC src)
 
-# The private research instrumentation -- the spatial probe's GPU readback and
-# barrier observation, and the experimental Variant A line-of-sight test -- is
-# reached by no released feature. Release packages are built with this OFF so a
-# published binary does not carry hooking and copying machinery it never runs.
-# Nothing is removed from the tree: the real sources stay, every research test
-# below keeps building against them directly, and ON remains the default for
-# development builds. src/research_disabled.cpp explains the stand-ins.
+# Production uses the narrow ambient/SDF acquisition and the calibrated geometry
+# sampler. General binding discovery, tracing and retained research captures stay
+# in the ON path. Research tests still build their preserved sources directly.
 option(CDT_RESEARCH "Compile the private research instrumentation into the ASI" ON)
 if(CDT_RESEARCH)
     set(CDT_RESEARCH_SOURCES src/spatial_probe.cpp src/spatial_readback.cpp
         src/spatial_sample.cpp src/spatial_thunk.asm)
     set(CDT_SDF_LIBRARY cdt_sdf)
 else()
-    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
-    add_library(cdt_sdf_disabled STATIC src/sdf_disabled.cpp)
-    target_compile_features(cdt_sdf_disabled PUBLIC cxx_std_20)
-    target_compile_options(cdt_sdf_disabled PRIVATE /W4 /WX /permissive-)
-    target_include_directories(cdt_sdf_disabled PUBLIC src)
-    set(CDT_SDF_LIBRARY cdt_sdf_disabled)
+    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/sdf_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
+    set(CDT_SDF_LIBRARY cdt_sdf)
     message(STATUS "CDT_RESEARCH=OFF: research instrumentation excluded from the ASI")
 endif()
 
@@ -168,6 +160,15 @@ target_link_libraries(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE cdt_sdf)
 target_compile_options(CrimsonDesertTelemetrySdfVisibilityTests PRIVATE /W4 /WX /permissive-)
 add_test(NAME sdf-variant-a-hud COMMAND CrimsonDesertTelemetrySdfVisibilityTests)
 
+add_executable(CrimsonDesertTelemetrySdfAcquireTests tests/sdf_acquire_tests.cpp)
+target_compile_features(CrimsonDesertTelemetrySdfAcquireTests PRIVATE cxx_std_20)
+target_include_directories(CrimsonDesertTelemetrySdfAcquireTests PRIVATE src)
+target_compile_definitions(CrimsonDesertTelemetrySdfAcquireTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(CrimsonDesertTelemetrySdfAcquireTests PRIVATE /W4 /WX /permissive-)
+target_link_libraries(CrimsonDesertTelemetrySdfAcquireTests PRIVATE minhook d3d12 dxgi)
+add_test(NAME sdf-production-acquire COMMAND CrimsonDesertTelemetrySdfAcquireTests)
+set_tests_properties(sdf-production-acquire PROPERTIES TIMEOUT 45)
+
 add_executable(CrimsonDesertTelemetrySpatialThunkTests tests/spatial_thunk_tests.cpp tests/spatial_thunk_fixture.asm src/spatial_thunk.asm)
 target_compile_features(CrimsonDesertTelemetrySpatialThunkTests PRIVATE cxx_std_20)
 target_compile_options(CrimsonDesertTelemetrySpatialThunkTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
@@ -190,6 +191,7 @@ target_compile_features(CrimsonDesertTelemetryRenderBridgeTests PRIVATE cxx_std_
 target_include_directories(CrimsonDesertTelemetryRenderBridgeTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetryRenderBridgeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(CrimsonDesertTelemetryRenderBridgeTests PRIVATE /W4 /WX /permissive-)
+target_link_libraries(CrimsonDesertTelemetryRenderBridgeTests PRIVATE cdt_sdf)
 add_test(NAME render-bridge COMMAND CrimsonDesertTelemetryRenderBridgeTests)
 add_executable(CrimsonDesertTelemetryRenderCaptureSmoke tests/render_capture_smoke.cpp
     src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/ambient_thunk.asm src/console/mem.cpp src/console/util.cpp)
@@ -198,7 +200,7 @@ target_include_directories(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE CDT_RENDER_CAPTURE_TEST
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
-target_link_libraries(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE minhook d3d12 dxgi psapi user32)
+target_link_libraries(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE cdt_sdf minhook d3d12 dxgi psapi user32)
 add_test(NAME render-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke)
 set_tests_properties(render-capture-d3d12 PROPERTIES TIMEOUT 20)
 add_test(NAME ambient-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --ambient)
@@ -212,7 +214,7 @@ target_compile_features(CrimsonDesertTelemetryRenderContractTests PRIVATE cxx_st
 target_include_directories(CrimsonDesertTelemetryRenderContractTests PRIVATE src)
 target_compile_definitions(CrimsonDesertTelemetryRenderContractTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(CrimsonDesertTelemetryRenderContractTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
-target_link_libraries(CrimsonDesertTelemetryRenderContractTests PRIVATE minhook d3d12 dxgi psapi user32)
+target_link_libraries(CrimsonDesertTelemetryRenderContractTests PRIVATE cdt_sdf minhook d3d12 dxgi psapi user32)
 add_test(NAME render-contract-preflight COMMAND CrimsonDesertTelemetryRenderContractTests)
 set_tests_properties(render-contract-preflight PROPERTIES TIMEOUT 15)
 add_executable(CrimsonDesertTelemetryFilterThunkTests tests/filter_thunk_tests.cpp

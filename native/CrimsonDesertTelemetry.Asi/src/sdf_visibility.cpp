@@ -96,16 +96,24 @@ double Sample(const Snapshot& snapshot, unsigned level, const std::array<double,
     return result;
 }
 std::shared_ptr<const Snapshot> Read() { std::lock_guard guard(mutex); return latest; }
-Status Describe(const std::shared_ptr<const Snapshot>& snapshot, std::uint64_t now)
+Status Describe(const std::shared_ptr<const Snapshot>& snapshot, std::uint64_t now,
+    std::uint64_t maximumAge = MaximumAgeMilliseconds)
 {
     Status result;
     if (!snapshot) return result;
     result.sequence = snapshot->sequence; result.contextFrame = snapshot->frame;
+    result.capturedTickMilliseconds = snapshot->tick;
     result.cpuContextBracketed = snapshot->bracketed;
     if (now < snapshot->tick) { result.reason = "invalid-sdf-clock"; return result; }
     result.ageMilliseconds = now - snapshot->tick;
-    if (result.ageMilliseconds > MaximumAgeMilliseconds) { result.reason = "stale-sdf-volume"; return result; }
+    if (result.ageMilliseconds > maximumAge) { result.reason = "stale-sdf-volume"; return result; }
     if (!snapshot->bracketed) { result.reason = "unbracketed-sdf-context"; return result; }
+    for(unsigned axis=0;axis<3;++axis)
+    {
+        const float inverse=Lane(snapshot->constants,0x10,axis);
+        if(!std::isfinite(inverse)||inverse<=0||inverse>1)
+        {result.reason="invalid-sdf-context";return result;}
+    }
     result.available = true; result.reason.clear();
     return result;
 }
@@ -124,14 +132,19 @@ void Publish(std::vector<std::uint8_t> volume, const std::array<std::uint8_t,768
 void Clear() noexcept { try { std::lock_guard guard(mutex); latest.reset(); } catch (...) {} }
 Status CurrentStatus(std::uint64_t now) { return Describe(Read(),now); }
 
-TraceResult Trace(const std::array<float,3>& target, std::uint64_t now)
+namespace
+{
+TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const Status& status,
+    const std::array<float,3>& origin, const std::array<float,3>& target)
 {
     constexpr double StartOffset=.6, EndMargin=1.0, MinimumStep=.05;
-    auto snapshot=Read(); TraceResult result;
-    static_cast<Status&>(result)=Describe(snapshot,now);
-    if(!result.available||!snapshot||!Finite(target))return result;
+    TraceResult result;
+    static_cast<Status&>(result)=status;
+    if(!result.available||!snapshot)return result;
+    if(!Finite(origin)||!Finite(target))
+    {result.available=false;result.reason="invalid-trace-position";return result;}
     std::array<double,3> delta{};
-    for(unsigned axis=0;axis<3;++axis)delta[axis]=target[axis]-snapshot->camera[axis];
+    for(unsigned axis=0;axis<3;++axis)delta[axis]=target[axis]-origin[axis];
     result.length=std::sqrt(delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2]);
     if(!(result.length>StartOffset+EndMargin)){result.verdict=Verdict::TooShort;return result;}
     for(auto& lane:delta)lane/=result.length;
@@ -139,7 +152,7 @@ TraceResult Trace(const std::array<float,3>& target, std::uint64_t now)
     for(unsigned iteration=0;iteration<400;++iteration)
     {
         std::array<double,3> point{};
-        for(unsigned axis=0;axis<3;++axis)point[axis]=snapshot->camera[axis]+delta[axis]*travelled;
+        for(unsigned axis=0;axis<3;++axis)point[axis]=origin[axis]+delta[axis]*travelled;
         const int level=FinestLevel(*snapshot,point);
         if(level<0){result.verdict=Verdict::Uncovered;result.at=travelled;result.samples=iteration;return result;}
         const double value=Sample(*snapshot,static_cast<unsigned>(level),point);
@@ -152,6 +165,23 @@ TraceResult Trace(const std::array<float,3>& target, std::uint64_t now)
         if(travelled>=result.length-EndMargin){result.verdict=Verdict::Clear;return result;}
     }
     result.verdict=Verdict::IterationBound;result.at=travelled;return result;
+}
+}
+TraceResult Trace(const std::array<float,3>& target, std::uint64_t now)
+{
+    const auto snapshot=Read();
+    return TraceSnapshot(snapshot,Describe(snapshot,now),snapshot?snapshot->camera:std::array<float,3>{},target);
+}
+BatchResult TraceBatch(const std::array<float,3>& origin,
+    std::span<const std::array<float,3>> targets,std::uint64_t now)
+{
+    const auto snapshot=Read();
+    BatchResult batch{Describe(snapshot,now,ProductionMaximumAgeMilliseconds),{}};
+    if(targets.size()>MaximumBatchTargets||!Finite(origin))
+    {batch.status.available=false;batch.status.reason="invalid-trace-request";return batch;}
+    batch.traces.reserve(targets.size());
+    for(const auto& target:targets)batch.traces.push_back(TraceSnapshot(snapshot,batch.status,origin,target));
+    return batch;
 }
 const char* VerdictName(Verdict verdict) noexcept
 {

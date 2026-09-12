@@ -1,47 +1,39 @@
 # API reference
 
-Development addition (not in public 2.0.0): a separate
-[grouped and smoothed local-light HTTP/WebSocket feed](SMOOTHED_LIGHTS.md).
-The raw contract documented below is unchanged; the derived feed is not ambient.
+The API carries raw light contributions, a separate [grouped and smoothed
+local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
+[ambient feed](AMBIENT_STREAM.md). Product versions, route versions and JSON
+schema versions are separate. Routes remain **v1**; snapshots use schema **1.4**
+with lights enabled and **1.1** with lights disabled.
 
-Private `2.0.1-sky.1` adds a separate [global sky HTTP/WebSocket feed](AMBIENT_STREAM.md)
-at `/v1/ambient`, `/v1/ambient/stream` and `/v1/ambient/schema`. It runs alongside
-raw/smoothed local lights, but is not roof-occluded player-local illumination.
+## Current development status — 2026-09-12
 
-## Planned requirement: source visibility and occlusion (not implemented)
+Camera-local Ambient Occlusion passed a controlled open/enclosed/open route in
+the OFF v2.1.9 package on game build 25246367. `/v1/ambient` carries global sky,
+the camera's independent `visibility` value/frame/age, and
+`localEnvironmentAmbientEstimateWorking`. Global sky RGB itself is unoccluded;
+the product estimate is not measured room brightness or physical illumination.
 
-Research progress: [local sky-visibility/exposure diagnostics](LOCAL_ILLUMINATION_RESEARCH.md).
-This is not a new API, not complete local illumination and not per-source occlusion.
+The new OFF per-light implementation adds optional `sourceVisibility` to each
+rendered contribution and preserves it in each smoothed group's `contributions`.
+Original records, raw RGB/luminance, grouping and EMA RGB remain unchanged; a
+blocked light is never removed from either API feed. No separate filtered route
+is introduced. See [source visibility](SOURCE_VISIBILITY.md) for the complete
+metadata, capture pairing, 1500 ms freshness rule and explicit unknown reasons.
 
-User requirement2026-09-08: retain the current captured-source feeds without an
-additional visibility filter, AND provide a separately visibility-filtered stream.
-Current ManyLights filtering is not evidence that a source is unoccluded from the
-camera. The present overlay explicitly performs no depth test. Neither view is
-promised to be a complete registry of every light in the game.
+The geometric segment runs from the camera paired with the light capture to its
+source center. It accepts off-screen/behind-camera targets that remain in the
+current source list, but source discovery is not a complete 360-degree registry.
+It does not test the player root or the light's entire illuminated region. A
+blocked source may still illuminate a visible surface, and grouped contributions
+can have different verdicts. Unknown/stale metadata must not become a false OFF.
 
-Define camera-relative source visibility separately from lighting contributions
-on visible surfaces and incident lighting at the player. A hidden source can
-still light a visible surface. Offscreen is different from behind geometry;
-partial visibility and unknown/unavailable tests must not become false OFF states.
-A visibility test of a source center alone must not be labeled visibility of its
-entire illuminated region. Grouped sources can contain differently visible members.
+Synthetic production controls exist; live visible/blocked/visible and
+behind-camera acceptance of the new per-light path is still pending. Both
+ambient and per-light goals must pass before final release. Older packages may
+omit these development fields; legacy native v2 light captures remain readable.
 
-Any future derived stream must identify its reference camera/sample, freshness,
-test method/limitations, unknown handling, and relation to original contributions;
-do not use ephemeral indices as permanent object identity. Existing raw/smoothed
-payloads remain intact. No new route, fields, shadow factor or visibility guarantee
-is specified until the measurement method is established. Exposure/global sky is
-not a substitute for source occlusion. This section is a requirement, not an API
-that clients can already call.
-
-## Current published contract
-
-Public contract for Crimson Desert Telemetry **2.0.0**: current rendered light
-contributions, separate authored light records, and independent player/camera
-poses through local **HTTP and WebSocket APIs** with JSON snapshot schemas
-**1.1–1.4**. Routes remain **v1**. Product, route and
-schema versions are separate. Lights are enabled in the supplied package, which
-publishes additive schema 1.4; disabling lights retains schema 1.1.
+## Historical published validation
 
 The installed 2.0.0 package passed a fresh-start, progressing live-data check on
 exact Steam build 25116796. Earlier native-capture checks covered cold start,
@@ -64,8 +56,8 @@ The server listens on IPv4 loopback only. There is no API key, authentication,
 TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it to
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
-Configure the ASI before starting the game. These relevant settings match the
-included 2.0.0 INI; the complete file also contains display and research options:
+Configure the ASI before starting the game. These settings describe current
+production development; the complete INI also contains disabled research options:
 
 ```ini
 [Server]
@@ -79,9 +71,17 @@ NearbyRadius=100
 ManyLights=1
 ManyLightsSampleRateHz=20
 
+[Ambient]
+Enabled=1
+
+[SourceVisibility]
+Enabled=1
+
 [Overlay]
 Enabled=1
 InitiallyVisible=1
+ToggleKey=119
+DetailsKey=120
 Radar3D=1
 ShowAmbient=1
 HdrPaperWhiteNits=200
@@ -89,6 +89,9 @@ HdrPaperWhiteNits=200
 [LightOverlay]
 Enabled=1
 InitiallyVisible=1
+ToggleKey=121
+HideOccluded=0
+OcclusionToggleKey=122
 Radius=35
 OcclusionTest=0
 
@@ -100,18 +103,20 @@ DurationMilliseconds=6000
 `Port` supports 1024–65535; `SampleRateHz` supports 1–240. `NearbyRadius` supports
 1–100000 game units and `ManyLightsSampleRateHz` supports 1–60. The ASI clamps values
 outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
-metadata unchanged; it is not user configuration. F8 toggles the corner HUD,
-F9 diagnostics and F10 fullscreen markers. Display radius does not expand the
-API's source coverage or its configured nearby radius.
+metadata unchanged; it is not user configuration. The default shortcuts are F8
+for the corner HUD/radar, F9 for diagnostics, F10 for fullscreen markers and F11
+for hiding/showing fresh geometrically blocked sources in both light views.
+All four keys can be reassigned using decimal Windows virtual-key codes, or
+individually disabled with `0`. `HideOccluded=1` starts in that optional display
+mode. Unknown or stale sources stay visible, and no API record or RGB is changed.
+Display radius does not expand API source coverage or its configured nearby radius.
 
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
 display global sky, camera sky visibility and the local estimate with their separate
-ages. `OcclusionTest=1` is an experimental native HUD diagnostic: it starts one bounded
-120-copy R16 run, retains only the newest logical volume (with bounded readback/staging
-copies) and shows the fixed
-Variant A CLEAR/BLOCKED/UNKNOWN result when a rendered light is inspected. It writes no
-R16 evidence files. The measured 0.31-0.48 fresh volumes/s is too slow for a responsive
-production lighting gate; this switch exists to measure reliability and runtime cost.
+ages. `[SourceVisibility] Enabled=1` enables continuous, bounded production SDF
+acquisition and additional per-light metadata independently of HUD visibility.
+Both paths require native ManyLights capture. Keep `OcclusionTest=0` and research
+switches at `0`; the preserved experimental run is not required by production.
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed
@@ -295,7 +300,7 @@ numbers, NaN values, addresses, process handles or memory blobs in this contract
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry in 2.0.0. Compare as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` without lights or `1.4` with requested light telemetry. Compare as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -324,8 +329,8 @@ a validity check. Require `game.state == "playing"` and the objects you need.
 
 ### Authored engine lights
 
-The authored reader is gated to the exact validated Steam build `25050808` or
-`25116796` executable hashes. Requesting it on another build produces
+The authored reader uses an exact validated build profile, including the current
+`25246367` profile and preserved older definitions. An unsupported profile produces
 `lights.status="unavailable"` with reason `unsupported-build`; it never guesses
 offsets. A changing or unreadable scene walk likewise publishes no source array.
 
@@ -351,8 +356,8 @@ identity across snapshots or restarts. Multiple records at one position are reta
 Diagnostics distinguish malformed records, valid records outside the configured
 radius, unknown kind encodings, unavailable renderer fields and non-positive renderer
 scales. `walkChanged`, `walkRetrySucceeded` and `walkUnavailable` are cumulative for
-the current game runtime. The reader resolves `module → P → C → S → A` afresh,
-checks its backlink and vector bounds, copies the contiguous records, then resolves
+the current game runtime. The reader resolves the profile's scene/array walk afresh,
+checks its identity/backlinks and vector bounds, copies the contiguous records, then resolves
 the complete walk again. One complete retry is allowed; no previous light snapshot
 is reused after failure. This protects against scene transitions but is not an
 engine-frame atomicity guarantee.
@@ -379,6 +384,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
+| `sourceVisibility` | Optional development metadata: camera-to-source `clear`/`blocked`/`unknown`, usable attenuation factor, paired light sequence and independent SDF age/context. Omitted with a legacy v2 native bridge. See [complete contract](SOURCE_VISIBILITY.md). |
 
 Diagnostics count active records, published records, malformed records and records
 outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and
@@ -569,8 +575,8 @@ optional fields. The published schema is strict for the supported 1.1/1.2/1.3/1.
 (`additionalProperties: false`); do not use an old strict
 schema to reject a future additive revision that your consumer can otherwise handle.
 Reject an unsupported API/schema major version explicitly. Breaking contract
-changes require a new major contract version; product 2.0.0 retains API v1 and
-does not imply schema 2.0. Build offsets are not part of the public API.
+changes require a new major contract version. Product version numbers do not
+imply the same API/schema number. Build offsets are not part of the public API.
 
 Not included: complete global/emissive lighting, weather/time of day, durable worldspace
 identifiers, bones, animated pose, event history or GPU timestamps. The current build's
@@ -608,13 +614,18 @@ unit. Pixels without UI are preserved, with no whole-scene tone mapping.
 
 HDR rendering uses two extra full-resolution GPU textures plus a scene copy and
 composite while UI is drawn. SDR retains the existing direct rendering path.
-All 14 native tests passed, including the three new HDR paths and transitions
-between SDR and scRGB on the same swapchain. This is not live HDR-display/game
-validation. No API route, schema or raw light value changes accompany the UI work.
+Historical HDR validation passed 14 native tests, including three HDR paths and
+transitions between SDR and scRGB on the same swapchain. This is not live
+HDR-display/game validation or a current full-suite result. The HDR compositor
+does not change API RGB values.
 Frame-generation/coexistence coverage remains incomplete.
 Marker projection uses the latest published camera, not a Present-synchronous
-camera, and performs no scene-depth test. Display swatches are a visualization,
-not game tone mapping. Generic light-exposure normalization remains unfinished.
+camera, and performs no screen-depth test. Optional HUD geometry hiding uses
+fresh SDF metadata instead; missing, stale and unknown verdicts remain visible.
+Its current production live acceptance is pending. Display swatches are a
+visualization, not game tone mapping. Generic light-exposure normalization remains
+unfinished. See [current compatibility reports](COMPATIBILITY_ISSUES.md) for the
+separate DMM deployment and graphics-crash reports with unproven root causes.
 
 ## Troubleshooting
 

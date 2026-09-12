@@ -52,6 +52,31 @@ int main(int argc,char** argv)
         Publish(Uniform(0x3c00),constants,{0,0,0},44,300,false);
         Require(!Trace({5,0,0},300).available&&CurrentStatus(300).reason=="unbracketed-sdf-context",
             "Unbracketed CPU context must not produce a LOS verdict");
+        // The production path uses this light capture's camera, not the older
+        // camera stored with the SDF. A wall separates x=0 from x=8, but not x=4.
+        auto wall=Uniform(0x3c00);
+        for(unsigned z=0;z<1040;++z)for(unsigned y=0;y<64;++y)for(unsigned x=8;x<12;++x)
+        {
+            const size_t at=((size_t{z}*64+y)*128+x)*2;
+            wall[at]=0;wall[at+1]=0xbc;
+        }
+        Publish(std::move(wall),constants,{0,0,0},45,400,true);
+        const std::array<std::array<float,3>,2> targets{{{8,0,0},{-8,0,0}}};
+        auto batch=TraceBatch({0,0,0},targets,450);
+        Require(batch.status.available&&batch.traces.size()==2&&
+            batch.traces[0].verdict==Verdict::Blocked&&batch.traces[1].verdict==Verdict::Clear,
+            "Production batch must preserve a geometric wall and a clear opposite-direction target");
+        const auto retainedSequence=batch.status.sequence;
+        Require(batch.traces[0].sequence==retainedSequence&&batch.traces[1].sequence==retainedSequence&&
+            batch.status.capturedTickMilliseconds==400,"One batch must use one volume identity");
+        batch=TraceBatch({4,0,0},std::span(targets).first(1),450);
+        Require(batch.traces[0].verdict==Verdict::Clear&&Trace(targets[0],450).verdict==Verdict::Blocked,
+            "Production trace must use the explicit fresh reference, not the stored SDF camera");
+        batch=TraceBatch({0,0,0},targets,1901);
+        Require(!batch.status.available&&batch.status.reason=="stale-sdf-volume"&&
+            batch.traces[0].verdict==Verdict::Unavailable,"Production must reject volumes older than 1500 ms");
+        std::vector<std::array<float,3>> excess(MaximumBatchTargets+1);
+        Require(!TraceBatch({0,0,0},excess,450).status.available,"Production trace budget must be bounded");
         Clear();Require(!CurrentStatus(300).available,"Cleared SDF bridge retained data");
         std::cout<<"PASS fixed Variant A clear/blocked, freshness and context fail-closed behavior\n";
         return 0;

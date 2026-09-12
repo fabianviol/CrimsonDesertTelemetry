@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — production ambient and per-light occlusion
+
+- Fix ambient input layout: retain the full contiguous 768-byte GI context and
+  respect padded GPU readback rows. Decoder offsets/math stay unchanged. Camera-local
+  Ambient Occlusion passed a controlled open/enclosed/open route in OFF v2.1.9
+  on Steam build 25246367 on 2026-09-12.
+- Add bounded production SDF acquisition and per-contribution
+  `sourceVisibility` metadata. Raw light records, RGB/luminance and the smoothed
+  feed's EMA values remain intact. Off-screen/behind-camera targets are supported
+  when present in the current captured source list; it remains view-filtered.
+- Add clear/blocked/unknown HUD/radar presentation and optional hiding of fresh
+  blocked sources, toggled by default F11. All four HUD shortcuts (F8-F11) can be
+  reassigned using decimal Windows virtual-key codes or disabled separately with
+  `0`. Display hiding does not filter either API feed.
+- Keep production acquisition in `CDT_RESEARCH=OFF` with bounded current data;
+  private probe histories and capture dumps remain in the preserved research path.
+- The new per-light path has synthetic coverage; real visible/blocked/visible
+  and behind-camera acceptance and exact final ASI/ZIP virus checks remain
+  outstanding. This entry is development status, not a published or final release.
+
 ## 2.0.2 - 2026-09-11
 
 Compatibility release for Crimson Desert Steam build `25246367` (executable
@@ -92,7 +112,7 @@ on the updated game and adds no new promised behavior.
 
 The entries below preserve the behavior and evidence of earlier releases.
 Old HUD defaults, light exclusions and preview acceptance gates are historical;
-the 2.0.0 entry and current validation documents describe the present package.
+the Unreleased section and current validation documents describe development status.
 
 ## 1.2.1 - 2026-09-04
 

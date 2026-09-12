@@ -1,19 +1,25 @@
 # Crimson Desert Telemetry
 
-**Live light, player and camera data for Crimson Desert — with local HTTP and WebSocket APIs, fullscreen light markers and a 3D light radar.**
+**Live light, player and camera data for Crimson Desert, with local HTTP/WebSocket APIs, fullscreen light markers and a 3D radar. Current development adds camera-local ambient occlusion and per-light geometry metadata.**
 
-Version **2.0.0** brings lighting to the foreground: inspect the positions, colors and brightness of current light contributions from fires, candles, lanterns and glass/crystal lamps, alongside the player and render camera. Use the data in your own overlays, tools and lighting integrations.
+Inspect positions, colors and brightness of current light contributions from fires, candles, lanterns and glass/crystal lamps, alongside the player and render camera. Use the data in your own overlays, tools and lighting integrations.
 
-[Download 2.0.0](https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.0.0)
+[Published downloads](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
 · [Watch the demo](https://youtu.be/eyRkkTXAU64)
 · [API reference](docs/API.md)
 · [Client examples](examples)
 
-Development preview: [grouped and smoothed local-light stream](docs/SMOOTHED_LIGHTS.md)
-for lighting consumers, alongside unchanged raw data. Not included in public 2.0.0.
+The [grouped and smoothed local-light stream](docs/SMOOTHED_LIGHTS.md) retains
+the original contributions. The separate [ambient feed](docs/AMBIENT_STREAM.md)
+carries global sky, camera-local sky visibility and their working product estimate.
+Global sky RGB itself remains unoccluded.
 
-Also in development: a separate [global sky ambient stream](docs/AMBIENT_STREAM.md),
-alongside local lights. It does **not** include local room/roof occlusion.
+Current development targets **Steam build 25246367**. Ambient Occlusion passed a
+controlled open/enclosed/open route with the OFF v2.1.9 package on 2026-09-12.
+The new [per-light source visibility](docs/SOURCE_VISIBILITY.md) implementation
+has synthetic coverage; its real visible/blocked/visible and behind-camera test
+is still pending. Both goals must pass before a final release. These development
+features must not be assumed present in an older downloaded package.
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
 
@@ -29,13 +35,15 @@ alongside local lights. It does **not** include local room/roof occlusion.
 | **Fullscreen light overlay** | Markers at projected light positions; aim toward a source to inspect position, color, brightness and distance |
 | **3D light radar** | Nearby light contributions with height, player heading and a camera frustum that follows pitch and roll |
 | **Local API** | HTTP snapshots and health, WebSocket streaming, JSON Schema and JSON Lines recordings |
+| **Ambient occlusion (development)** | Camera-local sky visibility with independent frame/age, alongside global sky RGB; controlled live acceptance passed on build 25246367 |
+| **Per-light visibility (development)** | Additional clear/blocked/unknown geometry metadata in raw and smoothed contributions; optional HUD/radar hiding of fresh blocked sources; live acceptance pending |
 | **Status notices** | Brief success when data becomes ready; actionable startup/build/capture errors |
 
 Lighting, both HUD views and status notices are enabled in the supplied configuration. Each can be configured separately; the HUD is not required to consume the API.
 
 **No NVIDIA or DLSS requirement.** The camera is read directly from the engine, not from a DLSS/Streamline data stream. Light capture and the overlay use standard DirectX 12 interfaces. Neither Nsight nor PIX is needed to run the mod. AMD/Intel game compatibility has not yet been tested.
 
-**SDR and HDR overlays.** The DirectX 12 renderer supports 8-bit and 10-bit SDR, HDR10 (10-bit PQ/Rec.2020), and FP16 scRGB. It automatically uses the game's buffer format and color space for the HUD, light markers and notices. All 14 native tests pass, including three new HDR tests, real ImGui rendering and SDR/scRGB transitions; no live HDR-display/game test has been performed. [Validation details](docs/OVERLAY_VALIDATION.md).
+**SDR and HDR overlays.** The DirectX 12 renderer supports 8-bit and 10-bit SDR, HDR10 (10-bit PQ/Rec.2020), and FP16 scRGB. It automatically uses the game's buffer format and color space for the HUD, light markers and notices. The recorded HDR validation includes real ImGui rendering and SDR/scRGB transitions; no live HDR-display/game test has been performed. [Validation details](docs/OVERLAY_VALIDATION.md).
 
 ## Install or upgrade
 
@@ -62,8 +70,11 @@ Do not merge old binaries or metadata into the new package. Preserve your INI pr
 | **F8** | Show/hide the corner HUD and 3D radar |
 | **F9** | Toggle additional diagnostics |
 | **F10** | Show/hide fullscreen light markers |
+| **F11** | Show/hide fresh, geometrically blocked lights in both HUD light views |
 
 The HUD does not capture mouse input. Hiding it does not stop telemetry.
+These are defaults: all four shortcuts can be reassigned in the INI using decimal
+Windows virtual-key codes, or individually disabled with `0`.
 
 Edit `CrimsonDesertTelemetry.ini` before starting the game:
 
@@ -79,13 +90,28 @@ NearbyRadius=100
 ManyLights=1
 ManyLightsSampleRateHz=20
 
+[Ambient]
+Enabled=1
+
+[SourceVisibility]
+Enabled=1
+
 [Overlay]
 Enabled=1
+InitiallyVisible=1
+ShowDetails=0
+ToggleKey=119
+DetailsKey=120
 Radar3D=1
+ShowAmbient=1
 HdrPaperWhiteNits=200
 
 [LightOverlay]
 Enabled=1
+InitiallyVisible=1
+ToggleKey=121
+HideOccluded=0
+OcclusionToggleKey=122
 Radius=35
 MaxMarkers=512
 MaxLabels=6
@@ -96,11 +122,13 @@ DurationMilliseconds=6000
 ```
 
 - `[Lights] Enabled=0` disables both authored and rendered light feeds. `ManyLights=0` disables only the native GPU light capture.
+- `[Ambient] Enabled=1` enables the separate sky/ambient path; `[SourceVisibility] Enabled=1` enables per-light geometry metadata. Both require native ManyLights capture. Keep research switches and the historical `OcclusionTest` diagnostic at `0` for production use.
 - `NearbyRadius` controls the API's player-centered light radius; `LightOverlay.Radius` controls both light views. Distances are **game units**, not a claimed metre conversion.
 - Disable **Overlay, LightOverlay and Notifications** to skip all UI hooks/client. The server and light capture have their own switches.
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
 - `HdrPaperWhiteNits` controls all HDR UI brightness, including markers and notices with the corner HUD disabled. The default is 200 nits, clamped to 80–500. It does not change the game's HDR settings or metadata.
 - Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
+- `HideOccluded=1` initially hides only fresh, geometrically blocked lights in the HUD/radar. Unknown or stale visibility stays visible; raw and smoothed API records remain complete. `OcclusionToggleKey` changes this display mode during play. The production implementation is under live validation; see [source visibility](docs/SOURCE_VISIBILITY.md).
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
 
 ### Startup and errors
@@ -131,10 +159,11 @@ Connect through **HTTP** at `http://127.0.0.1:27311` or **WebSocket** at `ws://1
 Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
-Version **2.0.0** is the product version; routes remain **HTTP API v1**. With lights enabled the additive snapshot schema is **1.4**. With lights disabled it remains **1.1**. Clients should check capability/status fields and freshness instead of assuming every source is always available.
+Product versions and API versions are separate: routes remain **HTTP API v1**. With lights enabled the additive snapshot schema is **1.4**; with lights disabled it remains **1.1**. Optional per-light metadata adds no route and changes no original RGB values. Clients should check capability/status fields and freshness instead of assuming every source is always available.
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
+- In the current development build, each rendered contribution can carry `sourceVisibility`; the smoothed feed preserves it in `contributions`. Blocked sources stay in both feeds and RGB smoothing is unchanged.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
 - The arrays **overlap**; do not add them together. One physical lamp can produce several contributions.
 
@@ -154,7 +183,12 @@ The external host alone can read player/camera and supported authored lights. **
 
 ## Compatibility and limits
 
-The complete 2.0 lighting path targets **Steam build 25116796 / EXE 1.0.0.2760**, using its exact validated SHA-256. Player/camera profiles for builds 24994088 and 25050808 remain preserved; those historical checks do not establish current full-light support on old builds.
+Current production development targets **Steam build 25246367 / EXE 1.0.0.2850**, using its exact validated SHA-256. The historical 2.0.0 package targets build 25116796 / EXE 1.0.0.2760. Older player/camera profiles remain preserved; those historical checks do not establish compatibility of a current native package with an older or unknown build.
+
+Current user reports, including missing DMM host companion files and a separately
+reported graphics crash with unproven cause, are tracked in
+[compatibility issues](docs/COMPATIBILITY_ISSUES.md). These reports do not establish
+a shared cause or a verified fix.
 
 Native capture validates the EXE, hook instructions and surrounding caller/binding contexts before instrumentation. Shared build contracts and the read-only command below help recover after updates:
 
@@ -170,7 +204,7 @@ Important boundaries:
 - A missing contribution is **not** a permanent physical OFF state. Stable lamp IDs, physical lumens and validated light ranges are not supplied.
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
 - The radar can show behind-camera contributions still present in the feed, but is **not** a complete 360-degree registry.
-- Fullscreen markers have **no scene-depth test** and can appear through walls. Fast motion can expose the latency between a light capture and the latest projection camera.
+- Fullscreen markers have no screen-depth test. The new optional geometry mode hides only sources with fresh SDF-blocked metadata; unknown, stale and absent results are never treated as blocked. The geometry test supports behind-camera/off-screen targets present in the feed, while source discovery remains view-filtered. Fast motion can expose capture/projection latency, and production live acceptance is pending.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
 - The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The bundled research console can change debug values when explicitly enabled and is off by default.
@@ -180,11 +214,11 @@ Important boundaries:
 ```powershell
 dotnet build .\CrimsonDesertTelemetry.sln -c Release
 dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release
-.\scripts\Build-ModManagerPackage.ps1 -Version 2.0.0
-ctest --test-dir build/native-package -C Release --output-on-failure
+.\scripts\Build-ModManagerPackage.ps1 -Version 0.0.0-local.1
+ctest --test-dir build/native-package-release -C Release --output-on-failure
 ```
 
-The native build requires Visual Studio C++/Windows SDK/CMake. Package builds refuse to overwrite an existing versioned ZIP. GitHub CI covers managed/API tests and native capture, guard and UI tests.
+The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP. The default production package uses `CDT_RESEARCH=OFF`; bounded ambient/SDF acquisition is included, while private probe histories and capture dumps stay in the research build. GitHub CI covers managed/API tests and native capture, guard and UI tests. Current acceptance and outstanding checks are recorded in [the handover](docs/HANDOVER.md); historical test totals are not a result for a new package.
 
 See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), [2.0 release notes](docs/releases/v2.0.0.md) and [Nexus publishing](docs/NEXUS_PUBLISHING.md). Game binaries, memory dumps, private captures and third-party checkout directories do not belong in the public repository.
 

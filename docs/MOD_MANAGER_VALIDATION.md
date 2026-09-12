@@ -1,6 +1,19 @@
 # Mod-manager validation
 
-## Current: 2.0.0 HDR validation package (2026-09-07)
+## Current checkpoint (2026-09-12)
+
+The user installed v2.1.9-ambient-input-fix through DMM; the ASI, both DLLs, INI
+and runtimeconfig matched the package. DMM retained v2.1.8 deps.cfg with older
+version labels but the same dependency structure. Ambient passed the controlled
+open/enclosed/open route on game build 25246367. Current per-light production
+work remains under live validation; see [handover](HANDOVER.md).
+
+An external Nexus report from around 08:30 on 2026-09-12 describes incomplete DMM
+deployment and a separate graphics-feature crash. Its exact package version and
+crash environment remain unverified. See [current compatibility reports](COMPATIBILITY_ISSUES.md).
+No complete DMM/JSON Mod Manager lifecycle or cross-hardware acceptance is claimed.
+
+## Historical: 2.0.0 HDR validation package (2026-09-07)
 
 The HDR follow-up passes the native Release build and all14 CTests, including
 software GPU pixel-readback and scRGB ImGui/notification/resize tests. See

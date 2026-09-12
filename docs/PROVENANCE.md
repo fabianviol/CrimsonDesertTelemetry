@@ -20,6 +20,23 @@ capture was additionally derived and verified through scoped native renderer hoo
 GPU readback and shader inspection. Those instrumented runs are not untouched
 baselines. No community light-mod code supplies the runtime light reader.
 
+The ambient sampler and per-source geometry test were derived from this project's
+preserved shader, buffer-layout and controlled game observations. See
+[ambient derivation](AMBIENT_DECODE.md), [SDF calibration](SDF_VARIANT_A.md) and
+[source visibility](SOURCE_VISIBILITY.md). Production reuses those findings with
+bounded acquisition of current data; it does not require research capture runs,
+binding histories or binary dumps. The new SDF acquisition adds three necessary
+barrier/lifecycle callbacks and reuses the existing exposure context and queue
+submission observer. Research source and historical evidence remain preserved.
+
+Validation status as of 2026-09-12: camera-local ambient visibility passed a
+controlled open/enclosed/open route in the OFF v2.1.9 package on build 25246367.
+The production per-light implementation has synthetic coverage; its controlled
+live visible/blocked/visible and behind-camera acceptance remains pending. Those
+are separate results, and the preserved SDF research does not establish release
+readiness for the new production implementation. Neither telemetry feed drives
+physical lamps.
+
 CrimsonForge is used as a tool/dependency in a separate checkout, not as pasted
 runtime source. The original wrappers in `tools/update-recovery/` were preserved
 from this project's independent research repository at `af5485b`; they require

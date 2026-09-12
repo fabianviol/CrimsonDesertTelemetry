@@ -103,7 +103,19 @@ public sealed record RenderedLightSnapshot(
     float LuminanceLinear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CameraVector3? Direction,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] float? ConeHalfAngleDegrees);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] float? ConeHalfAngleDegrees,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SourceVisibilitySnapshot? SourceVisibility = null);
+
+/// <summary>
+/// A geometric center-segment test attached to one rendered capture. The volume
+/// age is frozen at publication; add the enclosing light capture age when using it.
+/// Unknown never supplies an attenuation factor or removes the original light.
+/// </summary>
+public sealed record SourceVisibilitySnapshot(
+    string Status, double? AttenuationFactor, string? Reason,
+    CameraVector3 ReferencePosition, ulong LightCaptureSequence,
+    ulong? VolumeSequence, uint? ContextFrame, long? VolumeAgeMillisecondsAtCapture,
+    double? ClosestApproach);
 
 public sealed record RenderLightDiagnosticsSnapshot(
     int ActiveRecords, int PublishedRecords, int Malformed, int OutsideRadius);

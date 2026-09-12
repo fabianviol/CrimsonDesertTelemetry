@@ -49,6 +49,8 @@ var tests = new (string Name, Action Run)[]
     ("render lights reject malformed data", RenderLightReaderTests.Validation),
     ("render lights exclude retained tails using paired GPU count", RenderLightReaderTests.ValidPrefix),
     ("render bridge protocol and freshness", RenderLightReaderTests.ProtocolAndFreshness),
+    ("source visibility metadata preserves raw records and fails unknown", RenderLightReaderTests.VisibilityMetadata),
+    ("source visibility mapping and smoothed capture preservation", RenderLightReaderTests.VisibilityMappingAndSmoothing),
     ("smoothed local lights group/sum without mutating raw data", SmoothedLightTests.Grouping),
     ("smoothed local lights rate-independent EMA and spatial tracking", SmoothedLightTests.Smoothing),
     ("smoothed local lights fail closed and remove missing groups", SmoothedLightTests.Freshness),

@@ -14,12 +14,16 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     public const int CounterBytes = 256;
     public const int CounterOffset = HeaderBytes + SceneBytes + RawCount * Stride;
     public const int TotalBytes = CounterOffset + CounterBytes;
+    public const int VisibilityEntryBytes = 8;
+    public const int VisibilityTotalBytes = TotalBytes + RawCount * VisibilityEntryBytes;
+    public const long MaximumVisibilityAgeMilliseconds = 1500;
     public const long MaximumAgeMilliseconds = 500;
     private MemoryMappedFile? _mapping;
     private MemoryMappedViewAccessor? _view;
     private byte[]? _lastBytes;
     private ulong _lastLock;
     private long _retryAfter;
+    private int _mappingBytes;
 
     public RenderLightsSnapshot Capture((float X, float Y, float Z) player, float radius)
     {
@@ -30,7 +34,11 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 if (Environment.TickCount64 < _retryAfter) return Unavailable("bridge-missing");
                 _mapping = MemoryMappedFile.OpenExisting($"Local\\CrimsonDesertTelemetry.Render.{processId}",
                     MemoryMappedFileRights.Read);
-                _view = _mapping.CreateViewAccessor(0, TotalBytes, MemoryMappedFileAccess.Read);
+                // Read the fixed header before choosing one of the two bounded
+                // layouts. Never trust a shared-memory length for allocation.
+                using (var header = _mapping.CreateViewAccessor(0, HeaderBytes, MemoryMappedFileAccess.Read))
+                    _mappingBytes = MappingSize(header.ReadUInt32(4), header.ReadUInt32(12));
+                _view = _mapping.CreateViewAccessor(0, _mappingBytes, MemoryMappedFileAccess.Read);
             }
             for (var attempt = 0; attempt < 3; attempt++)
             {
@@ -39,7 +47,7 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 Thread.MemoryBarrier();
                 if (_lastBytes is not null && before == _lastLock)
                     return Decode(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
-                var bytes = new byte[TotalBytes];
+                var bytes = new byte[_mappingBytes];
                 if (_view.ReadArray(0, bytes, 0, bytes.Length) != bytes.Length)
                     throw new InvalidDataException("Truncated native render bridge.");
                 Thread.MemoryBarrier();
@@ -74,9 +82,10 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     public static RenderLightsSnapshot Decode(byte[] snapshot, int expectedPid, long expectedStartFileTime,
         long nowTickMs, (float X, float Y, float Z) player, float nearbyRadius)
     {
-        if (snapshot.Length != TotalBytes || BitConverter.ToUInt32(snapshot, 0) != 0x52445443 ||
-            BitConverter.ToUInt32(snapshot, 4) != 2 || BitConverter.ToUInt32(snapshot, 8) != HeaderBytes ||
-            BitConverter.ToUInt32(snapshot, 12) != TotalBytes || (BitConverter.ToUInt64(snapshot, 16) & 1) != 0 ||
+        if (snapshot.Length < HeaderBytes ||
+            snapshot.Length != MappingSize(BitConverter.ToUInt32(snapshot, 4), BitConverter.ToUInt32(snapshot, 12)) ||
+            BitConverter.ToUInt32(snapshot, 0) != 0x52445443 || BitConverter.ToUInt32(snapshot, 8) != HeaderBytes ||
+            (BitConverter.ToUInt64(snapshot, 16) & 1) != 0 ||
             BitConverter.ToUInt32(snapshot, 24) != expectedPid ||
             BitConverter.ToInt64(snapshot, 32) != expectedStartFileTime ||
             BitConverter.ToUInt32(snapshot, 68) != SceneBytes ||
@@ -169,7 +178,9 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                     direction = new CameraVector3(look.X, look.Y, look.Z);
                 }
             }
-            sources.Add(new RenderedLightSnapshot(index, world, rgb, luminance, kind, direction, halfAngle));
+            var visibility = snapshot.Length == VisibilityTotalBytes
+                ? DecodeVisibility(snapshot, index, publishedTick, sequence, camera.Position) : null;
+            sources.Add(new RenderedLightSnapshot(index, world, rgb, luminance, kind, direction, halfAngle, visibility));
         }
         return new RenderLightsSnapshot("available", SourceName, sequence, scene.FrameNumber,
             DateTimeOffset.UtcNow.AddMilliseconds(-age), age,
@@ -177,6 +188,54 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 camera.NearPlane, camera.FarPlane == float.MaxValue ? null : camera.FarPlane,
                 camera.FieldOfViewRadians * 180 / MathF.PI, camera.AspectRatio),
             sources, new(active, sources.Count, malformed, outside));
+    }
+
+    private static int MappingSize(uint version, uint totalBytes) => (version, totalBytes) switch
+    {
+        (2, TotalBytes) => TotalBytes,
+        (3, VisibilityTotalBytes) => VisibilityTotalBytes,
+        _ => throw new InvalidDataException("Unsupported native render bridge layout.")
+    };
+
+    private static SourceVisibilitySnapshot DecodeVisibility(byte[] bytes, int index, long publishedTick,
+        ulong lightSequence, CameraVector3 referencePosition)
+    {
+        SourceVisibilitySnapshot Unknown(string reason, ulong? volume = null, uint? frame = null, long? age = null) =>
+            new("unknown", null, reason, referencePosition, lightSequence, volume, frame, age, null);
+
+        // An invalid optional block must not discard healthy raw source records.
+        if (BitConverter.ToUInt32(bytes, 120) != 1 || BitConverter.ToUInt32(bytes, 124) != VisibilityEntryBytes ||
+            BitConverter.ToUInt32(bytes, 148) != MaximumVisibilityAgeMilliseconds ||
+            BitConverter.ToUInt32(bytes, 152) != 256 || BitConverter.ToUInt32(bytes, 156) != 0)
+            return Unknown("invalid-metadata");
+        var volumeSequence = BitConverter.ToUInt64(bytes, 128);
+        var volumeTick = BitConverter.ToUInt64(bytes, 136);
+        var frame = BitConverter.ToUInt32(bytes, 144);
+        if ((volumeSequence == 0) != (volumeTick == 0) || volumeTick > (ulong)publishedTick ||
+            (volumeSequence == 0 && frame != 0))
+            return Unknown("invalid-metadata");
+        ulong? volume = volumeSequence == 0 ? null : volumeSequence;
+        uint? contextFrame = volume is null ? null : frame;
+        long? age = volume is null ? null : publishedTick - (long)volumeTick;
+        var offset = TotalBytes + index * VisibilityEntryBytes;
+        var code = BitConverter.ToUInt32(bytes, offset);
+        if (code > 11) return Unknown("invalid-metadata");
+        if (code is 1 or 2)
+        {
+            if (age is null) return Unknown("invalid-metadata");
+            if (age > MaximumVisibilityAgeMilliseconds) return Unknown("stale-volume", volume, contextFrame, age);
+            var closest = BitConverter.ToSingle(bytes, offset + 4);
+            if (!float.IsFinite(closest) || (code == 1 && closest <= 0) || (code == 2 && closest > 0))
+                return Unknown("invalid-metadata", volume, contextFrame, age);
+            return new(code == 1 ? "clear" : "blocked", code == 1 ? 1 : 0, null,
+                referencePosition, lightSequence, volume, contextFrame, age, closest);
+        }
+        return Unknown(code switch
+        {
+            0 => "waiting-for-volume", 3 => "uncovered", 4 => "too-short", 5 => "iteration-limit",
+            6 => "invalid-sdf-sample", 7 => "trace-budget-exceeded", 8 => "outside-trace-radius",
+            9 => "stale-volume", 10 => "invalid-context", 11 => "disabled", _ => "invalid-metadata"
+        }, volume, contextFrame, age);
     }
 
     private static bool Plausible(CameraVector3 value) =>
@@ -188,6 +247,7 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     private void Reset()
     {
         _lastBytes = null;
+        _mappingBytes = 0;
         _view?.Dispose();
         _view = null;
         _mapping?.Dispose();

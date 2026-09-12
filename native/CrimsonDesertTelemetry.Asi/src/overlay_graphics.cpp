@@ -280,6 +280,7 @@ struct State
     ComPtr<ID3D12CommandQueue> queue;
     HWND window{};
     bool visible{}, details{}, lightVisible{}, toggleDown{}, detailsDown{}, lightToggleDown{}, resizing{}, failed{};
+    bool hideOccluded{}, occlusionToggleDown{};
     bool changingColorSpace{}, explicitColorSpace{};
     DXGI_COLOR_SPACE_TYPE outputColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
     std::atomic<const char*> outputLabel{"D3D12 / waiting"};
@@ -295,17 +296,17 @@ void SetReadyStatus(State& state, hdr::OutputMode mode)
     if (mode == hdr::OutputMode::Hdr10)
     {
         state.outputLabel = "D3D12 / HDR10";
-        state.status = "Overlay ready: D3D12 / HDR10 (PQ/BT.2020). F8 HUD, F9 diagnostics, F10 lights.";
+        state.status = "Overlay ready: D3D12 / HDR10 (PQ/BT.2020).";
     }
     else if (mode == hdr::OutputMode::ScRgb)
     {
         state.outputLabel = "D3D12 / scRGB";
-        state.status = "Overlay ready: D3D12 / scRGB (linear FP16). F8 HUD, F9 diagnostics, F10 lights.";
+        state.status = "Overlay ready: D3D12 / scRGB (linear FP16).";
     }
     else
     {
         state.outputLabel = "D3D12 / SDR";
-        state.status = "Overlay ready: D3D12 / SDR. F8 HUD, F9 diagnostics, F10 world lights (defaults).";
+        state.status = "Overlay ready: D3D12 / SDR.";
     }
 }
 template<class T> bool Hook(void* target, void* replacement, T& original, size_t slot)
@@ -335,17 +336,20 @@ bool Draw(IDXGISwapChain* chain, UINT flags) noexcept
         const bool detail = state.config.enabled && state.config.detailsKey && (GetAsyncKeyState(state.config.detailsKey) & 0x8000);
         const bool lightToggle = state.config.lightOverlay && state.config.lightToggleKey &&
             (GetAsyncKeyState(state.config.lightToggleKey) & 0x8000);
-        if (foreground && toggle && !state.toggleDown) state.visible = !state.visible;
-        if (foreground && detail && !state.detailsDown) state.details = !state.details;
-        if (foreground && lightToggle && !state.lightToggleDown) state.lightVisible = !state.lightVisible;
-        state.toggleDown = toggle; state.detailsDown = detail; state.lightToggleDown = lightToggle;
+        const bool occlusionToggle=(state.config.enabled||state.config.lightOverlay)&&state.config.occlusionToggleKey&&
+            (GetAsyncKeyState(state.config.occlusionToggleKey)&0x8000);
+        UpdateShortcutToggle(state.visible,state.toggleDown,state.config.toggleKey,toggle,foreground);
+        UpdateShortcutToggle(state.details,state.detailsDown,state.config.detailsKey,detail,foreground);
+        UpdateShortcutToggle(state.lightVisible,state.lightToggleDown,state.config.lightToggleKey,lightToggle,foreground);
+        UpdateShortcutToggle(state.hideOccluded,state.occlusionToggleDown,state.config.occlusionToggleKey,occlusionToggle,foreground);
         const bool hudVisible = state.config.enabled && state.visible;
         const bool lightVisible = state.config.lightOverlay && state.lightVisible;
         if ((!hudVisible && !lightVisible && !state.config.notifications) || !state.renderer) return false;
         // Color-space changes are rebuilt on the worker after our GPU fence, not
         // in Present. Never draw an SDR/PQ pipeline into the newly selected space.
         if (hdr::ResolveOutput(state.renderer->outputFormat, state.outputColorSpace) != state.renderer->outputMode) return false;
-        if (state.renderer->Draw(state.config, state.details, hudVisible, lightVisible)) { ++state.rendered; return true; }
+        auto drawingConfig=state.config;drawingConfig.hideOccluded=state.hideOccluded;
+        if (state.renderer->Draw(drawingConfig, state.details, hudVisible, lightVisible)) { ++state.rendered; return true; }
     }
     catch (...)
     {
@@ -538,6 +542,7 @@ bool InstallGraphics(const Config& config) noexcept
         state.visible = config.visible;
         state.details = config.details;
         state.lightVisible = config.lightOverlayVisible;
+        state.hideOccluded = config.hideOccluded;
         const auto hookInit = MH_Initialize();
         if (hookInit != MH_OK && hookInit != MH_ERROR_ALREADY_INITIALIZED) return false;
         ComPtr<IDXGIFactory2> factory;
@@ -605,5 +610,11 @@ void SetLightVisibleForTest(bool visible) noexcept
     auto& state = Data();
     std::lock_guard lock(state.mutex);
     state.lightVisible = visible;
+}
+void SetHideOccludedForTest(bool hidden) noexcept
+{
+    auto& state=Data();
+    std::lock_guard lock(state.mutex);
+    state.hideOccluded=hidden;
 }
 }

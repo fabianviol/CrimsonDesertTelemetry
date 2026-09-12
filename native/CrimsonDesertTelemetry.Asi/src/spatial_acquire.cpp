@@ -2,6 +2,8 @@
 #include "spatial_sample.h"
 #include "sky_bridge.h"
 #include "submission_observer.h"
+#include "sdf_acquire.h"
+#include "render_bridge.h"
 #include "console/mem.h"
 #include <windows.h>
 #include <d3d12.h>
@@ -16,10 +18,13 @@ namespace cdt::spatial
 namespace
 {
 constexpr uint32_t DispatchRva = 0x37B6520;
+constexpr uint32_t ExposureReturnRva = 0x3547264;
 constexpr std::array<uint8_t, 14> Signature{0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x57, 0x41, 0x56};
 using DispatchFn = uint64_t(*)(uint64_t, uint32_t, uint32_t, uint32_t);
 DispatchFn originalDispatch{};
 void* dispatchTarget{};
+uint64_t gameBase{};
+bool sampleAmbient{}, sampleSources{};
 
 Microsoft::WRL::ComPtr<ID3D12Resource> readbackBuffer;
 Microsoft::WRL::ComPtr<ID3D12Fence> readbackFence;
@@ -57,6 +62,7 @@ bool Resolve(uint64_t owner, uint64_t command, ID3D12Resource*& resource, ID3D12
 
 void OnSubmission(ID3D12CommandQueue* queue, UINT count, ID3D12CommandList* const* lists, bool after)
 {
+    if(sampleSources)sdf::acquire::Submission(queue,count,lists,after);
     std::lock_guard<std::mutex> lock(acquireMutex);
     if (!acquisitionInFlight || !after || !readbackFence || !activeList) return;
     
@@ -76,11 +82,10 @@ void OnSubmission(ID3D12CommandQueue* queue, UINT count, ID3D12CommandList* cons
 
 uint64_t Dispatch(uint64_t command, uint32_t x, uint32_t y, uint32_t z, uint64_t owner, uint64_t caller)
 {
-    (void)caller;
+    std::array<uint8_t,ConstantBytes> giBefore{};
+    const bool observeSources=sampleSources&&caller==gameBase+ExposureReturnRva&&
+        x==2&&y==1&&z==1&&Read(owner+0x20,giBefore);
     auto result = originalDispatch(command, x, y, z);
-    std::lock_guard<std::mutex> lock(acquireMutex);
-    
-    if (acquisitionInFlight) return result;
     
     ID3D12Resource* resource{};
     ID3D12GraphicsCommandList* list{};
@@ -89,6 +94,14 @@ uint64_t Dispatch(uint64_t command, uint32_t x, uint32_t y, uint32_t z, uint64_t
     
     if (x == 2 && y == 1 && z == 1 && Resolve(owner, command, resource, list, frame, giArray))
     {
+        if(observeSources)
+        {
+            uint64_t sceneOwner{},sceneData{};std::array<float,3> camera{};
+            if(Read(owner+8,sceneOwner)&&Read(sceneOwner+0x428,sceneData)&&Read(sceneData+0x80,camera))
+                sdf::acquire::ObserveContext(list,giArray,camera,frame,GetTickCount64(),giBefore==giArray);
+        }
+        std::lock_guard<std::mutex> lock(acquireMutex);
+        if(!sampleAmbient||acquisitionInFlight)return result;
         Microsoft::WRL::ComPtr<ID3D12Device> device;
         if (SUCCEEDED(resource->GetDevice(IID_PPV_ARGS(&device))))
         {
@@ -165,15 +178,19 @@ extern "C" uint64_t CdtSpatialDispatch(uint64_t command, uint32_t x, uint32_t y,
 
 namespace cdt::spatial
 {
-bool Start(uint64_t moduleBase, const wchar_t*, bool enableReadback, unsigned, unsigned, unsigned, bool, bool, bool)
+bool Start(uint64_t moduleBase, const wchar_t*, bool enableReadback, unsigned, unsigned, unsigned,
+    bool enableDistanceReadback, bool, bool)
 {
-    if (!enableReadback) return false;
+    if (!enableReadback&&!enableDistanceReadback) return false;
     std::array<uint8_t, Signature.size()> bytes{};
     if (!Read(moduleBase + DispatchRva, bytes) || bytes != Signature) return false;
     
     dispatchTarget = reinterpret_cast<void*>(moduleBase + DispatchRva);
+    gameBase=moduleBase;sampleAmbient=enableReadback;sampleSources=enableDistanceReadback;
     if (MH_CreateHook(dispatchTarget, reinterpret_cast<void*>(CdtSpatialThunk), reinterpret_cast<void**>(&originalDispatch)) != MH_OK) return false;
-    if (MH_EnableHook(dispatchTarget) != MH_OK) return false;
+    if(sampleSources)sdf::acquire::Start();
+    if (MH_EnableHook(dispatchTarget) != MH_OK)
+    {if(sampleSources)sdf::acquire::Stop();return false;}
     
     render::submissionObserver = OnSubmission;
     return true;
@@ -181,6 +198,7 @@ bool Start(uint64_t moduleBase, const wchar_t*, bool enableReadback, unsigned, u
 
 void Poll()
 {
+    if(sampleSources)sdf::acquire::Poll();
     std::lock_guard<std::mutex> lock(acquireMutex);
     if (!acquisitionInFlight || !readbackFence || !readbackBuffer || activeList) return;
     
@@ -213,6 +231,7 @@ void Stop()
 {
     render::submissionObserver = nullptr;
     if (dispatchTarget) MH_DisableHook(dispatchTarget);
+    if(sampleSources)sdf::acquire::Stop();
     readbackBuffer.Reset();
     readbackFence.Reset();
     acquisitionInFlight = false;
@@ -221,6 +240,7 @@ void Stop()
 
 bool OwnsCodeAddress(uint64_t address)
 {
-    return dispatchTarget && address >= reinterpret_cast<uint64_t>(dispatchTarget) && address < reinterpret_cast<uint64_t>(dispatchTarget) + 32;
+    return (dispatchTarget && address >= reinterpret_cast<uint64_t>(dispatchTarget) && address < reinterpret_cast<uint64_t>(dispatchTarget) + 32)||
+        (sampleSources&&sdf::acquire::OwnsCodeAddress(address));
 }
 }

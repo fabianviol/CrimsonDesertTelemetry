@@ -8,11 +8,10 @@ param(
     # already exist in the template. A version without a prerelease suffix is
     # treated as a release and refuses overrides outright.
     [hashtable]$IniOverrides,
-    # The private research instrumentation -- the spatial probe's GPU readback and
-    # the experimental line-of-sight test -- is reached by no released feature.
-    # 'auto' compiles it out of release versions and keeps it in prerelease ones,
-    # which is what every private diagnostic build wants. Nothing is deleted; the
-    # sources and their tests are untouched either way.
+    # The general research instrumentation is separate from the narrow production
+    # ambient/SDF acquisition. 'auto' includes research in prerelease versions;
+    # pass 'off' explicitly when validating a production implementation privately.
+    # All research sources and their direct tests remain preserved.
     [ValidateSet('auto', 'on', 'off')]
     [string]$Research = 'auto'
 )

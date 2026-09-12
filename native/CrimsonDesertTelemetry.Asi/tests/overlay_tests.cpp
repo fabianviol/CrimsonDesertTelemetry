@@ -248,6 +248,109 @@ void LightDetailGroupingTests()
     for (const auto index : bounded.front()) Require(index < 64, "Grouping read beyond its selected-record cap");
     std::cout << "PASS bounded complete-link detail groups, raw-member preservation and index/color-independent ordering\n";
 }
+void SourceVisibilityTests(nlohmann::json json,std::chrono::system_clock::time_point now)
+{
+    using Json=nlohmann::json;
+    auto point=Json::parse(R"({"sampleIndex":3,"position":{"x":1,"y":2,"z":13},
+        "colorLinear":{"x":2.5,"y":0.75,"z":0.1},"luminanceLinear":1.25,"kind":"point"})");
+    const Json cameraPosition={{"x",1},{"y",2},{"z",3}};
+    const Json metadata={{"status","clear"},{"attenuationFactor",1},{"reason",nullptr},
+        {"referencePosition",cameraPosition},{"lightCaptureSequence",7},{"volumeSequence",12},
+        {"contextFrame",41},{"volumeAgeMillisecondsAtCapture",1200},{"closestApproach",.25}};
+    point["sourceVisibility"]=metadata;
+    auto blocked=point;blocked["sampleIndex"]=4;blocked["position"]["z"]=-7;
+    blocked["sourceVisibility"]["status"]="blocked";blocked["sourceVisibility"]["attenuationFactor"]=0;
+    blocked["sourceVisibility"]["closestApproach"]=-.03;
+    auto legacy=point;legacy["sampleIndex"]=5;legacy["position"]["z"]=17;legacy.erase("sourceVisibility");
+    json["schemaVersion"]="1.4";json["player"]["position"]=cameraPosition;
+    json["camera"]["aspectRatio"]=2.0;json["camera"]["nearPlane"]=.1;
+    json["lights"]={{"status","available"},{"sources",Json::array()},
+        {"rendered",{{"status","available"},{"captureSequence",7},{"ageMilliseconds",125},
+            {"camera",{{"position",cameraPosition}}},{"sources",Json::array({point,blocked,legacy})}}}};
+    View view;view.sample=ParseSample(json.dump(),now);view.connected=true;view.hasSample=true;view.received=Clock::now();
+    const auto& records=*view.sample.renderedLights.records;
+    Require(records.size()==3&&records[0].sourceVisibility&&records[0].sourceVisibility->status=="clear"&&
+        records[1].sourceVisibility->attenuationFactor==0&&!records[2].sourceVisibility,
+        "Optional source visibility or legacy compatibility lost");
+    Require(records[0].colorLinear.x==2.5f&&records[1].colorLinear.x==2.5f&&records[1].luminanceLinear==1.25f,
+        "Visibility changed raw HUD source colors or removed blocked records");
+    Require(CurrentSourceVisibility(records[0],view,view.received).status=="clear"&&
+        CurrentSourceVisibility(records[1],view,view.received).status=="blocked"&&
+        CurrentSourceVisibility(records[2],view,view.received).status=="unknown",
+        "HUD visibility verdicts lost or legacy source invented a verdict");
+    Require(!ProjectWorld(records[1].position,view.sample,1000,500),"Behind-camera visibility fixture must be off-screen");
+    const auto counts=CountSourceVisibility(view,view.received,35);
+    Require(counts.visible==1&&counts.blocked==1&&counts.unknown==1,
+        "Visibility legend excluded the off-screen blocked source");
+    Require(!HideOccludedLight(records[1],view,view.received,false)&&
+        HideOccludedLight(records[1],view,view.received,true)&&
+        !HideOccludedLight(records[0],view,view.received,true)&&!HideOccludedLight(records[2],view,view.received,true),
+        "Hide option must remove only a fresh known blocker from presentation");
+    Require(records.size()==3&&records[1].colorLinear.x==2.5f&&
+        CountSourceVisibility(view,view.received,35).blocked==1,
+        "Presentation hide mutated raw records or visibility counts");
+    const auto nearbyCounts=CountSourceVisibility(view,view.received,12);
+    Require(nearbyCounts.visible==1&&nearbyCounts.blocked==1&&nearbyCounts.unknown==0,"Visibility count ignored configured radius");
+    Require(CurrentSourceVisibility(records[0],view,view.received+std::chrono::milliseconds(175)).status=="clear",
+        "Exact 1500 ms visibility boundary rejected");
+    const auto stale=CurrentSourceVisibility(records[1],view,view.received+std::chrono::milliseconds(176));
+    Require(stale.status=="unknown"&&stale.reason=="stale-volume"&&!stale.attenuationFactor&&
+        RenderedLightsLive(view,view.received+std::chrono::milliseconds(176),1000),
+        "Expired visibility removed fresh raw data or retained a blocked contribution factor");
+    Require(!HideOccludedLight(records[1],view,view.received+std::chrono::milliseconds(176),true),
+        "A stale blocker remained hidden instead of becoming visible unknown");
+    const auto expiredCounts=CountSourceVisibility(view,view.received+std::chrono::milliseconds(176),35);
+    Require(expiredCounts.visible==0&&expiredCounts.blocked==0&&expiredCounts.unknown==3,
+        "Legend retained expired visibility counts");
+    auto delayed=view;delayed.sample.sourceAgeMs=176;
+    Require(CurrentSourceVisibility(records[0],delayed,view.received).status=="unknown",
+        "Visibility ignored transport age");
+    auto checkInvalid=[&](Json changed)
+    {
+        const auto parsed=ParseSample(changed.dump(),now);
+        Require(parsed.renderedLights.status=="available"&&parsed.renderedLights.records&&
+            parsed.renderedLights.records->size()==3&&parsed.renderedLights.records->at(0).colorLinear.x==2.5f,
+            "Malformed optional visibility discarded healthy raw HUD records");
+        const auto& visibility=parsed.renderedLights.records->at(0).sourceVisibility;
+        Require(visibility&&visibility->status=="unknown"&&visibility->reason=="invalid-metadata"&&
+            !visibility->attenuationFactor,"Malformed visibility invented suppression or a known verdict");
+    };
+    for(const auto& bad: {Json(nullptr),Json(true),Json("bad"),Json(-1),Json(.5),Json(1e100)})
+    {
+        auto invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["attenuationFactor"]=bad;
+        checkInvalid(invalid);
+    }
+    for(const auto& bad: {Json(nullptr),Json(-1),Json(1e100)})
+    {
+        auto invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["volumeAgeMillisecondsAtCapture"]=bad;
+        checkInvalid(invalid);
+    }
+    auto invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["lightCaptureSequence"]=8;checkInvalid(invalid);
+    invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["referencePosition"]["x"]=99;checkInvalid(invalid);
+    invalid=json;invalid["lights"]["rendered"].erase("captureSequence");checkInvalid(invalid);
+    invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["status"]="unknown";checkInvalid(invalid);
+    invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]=nullptr;checkInvalid(invalid);
+    std::cout<<"PASS HUD source visibility metadata, off-screen counts, independent freshness and malformed preservation\n";
+}
+void ShortcutTests()
+{
+    for(const int key:{119,120,121,122,72})
+    {
+        bool value=false,wasDown=false;
+        UpdateShortcutToggle(value,wasDown,key,true,true);Require(value,"Shortcut did not toggle on press");
+        UpdateShortcutToggle(value,wasDown,key,true,true);Require(value,"Held shortcut repeatedly toggled");
+        UpdateShortcutToggle(value,wasDown,key,false,true);
+        UpdateShortcutToggle(value,wasDown,key,true,true);Require(!value,"Shortcut did not reverse on second press");
+        UpdateShortcutToggle(value,wasDown,key,false,true);
+        UpdateShortcutToggle(value,wasDown,key,true,false);Require(!value,"Background shortcut changed a view");
+        UpdateShortcutToggle(value,wasDown,key,true,true);Require(!value,"Focus arrival consumed a held background key");
+        UpdateShortcutToggle(value,wasDown,key,false,true);
+        UpdateShortcutToggle(value,wasDown,0,true,true);Require(!value&&!wasDown,"Disabled shortcut accepted a press");
+    }
+    Require(ShortcutLabel(0)=="shortcut off"&&ShortcutLabel(122)=="F11"&&ShortcutLabel(72)=="H",
+        "Shortcut labels ignored disabled or remapped keys");
+    std::cout<<"PASS F8-F11 edge toggles, background isolation, remapping and disabled shortcuts\n";
+}
 void RenderedLightTests(nlohmann::json json, std::chrono::system_clock::time_point now)
 {
     using Json = nlohmann::json;
@@ -558,15 +661,15 @@ int main(int argc, char** argv)
             ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=60000\n").notificationDurationMs == 10000,
             "Configured ready duration must remain between five and ten seconds");
         Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121 &&
-            config.showAmbient && !config.occlusionTest,
+            config.showAmbient && !config.occlusionTest && !config.hideOccluded && config.occlusionToggleKey==122,
             "World markers must default off and retain independent visibility/hotkey defaults");
         const auto markers = ReadTestConfig("[Overlay]\nEnabled=0\nAutoScale=0\nScale=1.5\nRadar3D=0\n"
             "[Notifications]\nEnabled=0\n[LightOverlay]\nEnabled=1\nInitiallyVisible=0\nToggleKey=122\n"
-            "MaxMarkers=200\nMaxLabels=4\nRadius=42.5\nOcclusionTest=1\n[Server]\nPort=27329\n");
+            "MaxMarkers=200\nMaxLabels=4\nRadius=42.5\nOcclusionTest=1\nHideOccluded=1\nOcclusionToggleKey=72\n[Server]\nPort=27329\n");
         Require(markers.lightOverlay && !markers.enabled && !markers.notifications && !markers.lightOverlayVisible &&
             markers.lightToggleKey == 122 && markers.lightMaxMarkers == 200 && markers.lightMaxLabels == 4 &&
             markers.lightRadius == 42.5f && !markers.autoScale && markers.scale == 1.5f && !markers.radar3D &&
-            markers.port == 27329 && markers.occlusionTest,
+            markers.port == 27329 && markers.occlusionTest && markers.hideOccluded && markers.occlusionToggleKey==72,
             "World markers alone must retain client, scale and independent toggle configuration");
         const auto largeMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=99999\nMaxLabels=999\nRadius=99999\nToggleKey=999\n");
         Require(largeMarkers.lightMaxMarkers == 2048 && largeMarkers.lightMaxLabels == 16 &&
@@ -576,6 +679,18 @@ int main(int argc, char** argv)
             smallMarkers.lightToggleKey == 0, "Small/negative marker settings must be bounded");
         Require(ReadTestConfig("[LightOverlay]\nEnabled=1\nRadius=nan\n").lightRadius == 35,
             "Nonfinite marker radius must use the safe default");
+        const auto remapped=ReadTestConfig("[Overlay]\nEnabled=1\nToggleKey=65\nDetailsKey=66\n"
+            "[LightOverlay]\nEnabled=1\nToggleKey=67\nOcclusionToggleKey=68\n");
+        Require(remapped.toggleKey==65&&remapped.detailsKey==66&&remapped.lightToggleKey==67&&remapped.occlusionToggleKey==68,
+            "All four view shortcuts must use their INI remapping");
+        const auto disabledKeys=ReadTestConfig("[Overlay]\nEnabled=1\nToggleKey=0\nDetailsKey=0\n"
+            "[LightOverlay]\nEnabled=1\nToggleKey=0\nOcclusionToggleKey=0\n");
+        Require(disabledKeys.toggleKey==0&&disabledKeys.detailsKey==0&&disabledKeys.lightToggleKey==0&&disabledKeys.occlusionToggleKey==0,
+            "All four view shortcuts must support disabling with zero");
+        Require(ReadTestConfig("[LightOverlay]\nEnabled=1\nOcclusionToggleKey=999\n").occlusionToggleKey==255&&
+            ReadTestConfig("[LightOverlay]\nEnabled=1\nOcclusionToggleKey=-1\n").occlusionToggleKey==0,
+            "Occlusion shortcut must use the bounded virtual-key range");
+        ShortcutTests();
         std::cout << "PASS HUD defaults off, missing configuration, explicit opt-in and hidden mode\n";
         Require(std::abs(HudScale(1920, 1080, config, false) - 1.0f) < 0.001f, "1080p HUD scale");
         Require(std::abs(HudScale(3840, 2160, config, false) - 2.0f) < 0.001f, "4K HUD scale");
@@ -613,6 +728,7 @@ int main(int argc, char** argv)
         ProjectionTests();
         FrustumTests();
         LightDetailGroupingTests();
+        SourceVisibilityTests(json, now);
         RenderedLightTests(json, now);
         Require(sample.playerPosition && sample.playerPosition->x == 123, "Player position");
         Require(sample.playerHeading && std::abs(*sample.playerHeading - 90) < 0.01, "Independent player heading");

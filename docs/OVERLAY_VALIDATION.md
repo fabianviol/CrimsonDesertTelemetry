@@ -1,6 +1,21 @@
 # In-game overlay validation
 
-## Current: 2.0.0 HDR compositor, 2026-09-07
+## Current development: ambient and per-light display, 2026-09-12
+
+Camera-local ambient passed the controlled open/enclosed/open test in OFF v2.1.9
+on build 25246367; the diagnostics page reports its age separately from global
+sky. Current per-light production metadata has synthetic coverage, but real
+visible/blocked/visible and behind-camera acceptance is still pending.
+
+The HUD/radar display clear/blocked/unknown per-source metadata. Optional
+`HideOccluded=1` hides only fresh known blocked sources; stale/unknown results stay
+visible. Default F11 toggles this mode without changing any raw or smoothed API
+record or RGB. All four default shortcuts F8/F9/F10/F11 can be reassigned in the
+INI or individually disabled with `0`; see [controls](../README.md#controls-and-configuration)
+and [source visibility](SOURCE_VISIBILITY.md). These current changes do not inherit
+live acceptance from the historical tests below, and no final release is claimed.
+
+## Historical: 2.0.0 HDR compositor, 2026-09-07
 
 The D3D12 UI now supports HDR10 and scRGB, in addition to 8-bit and 10-bit SDR.
 The radar, fullscreen markers and notifications automatically follow the game's
@@ -263,7 +278,7 @@ acceptance and remaining coverage are recorded above and below.
 9. Repeat install/deploy/start/disable/uninstall with JSON Mod Manager before claiming
    full JMM compatibility. Prior manager tests do not establish new HUD compatibility.
 
-## Current limitations / release wording
+## Historical 2.0.0 limitations / release wording
 
 - **D3D12: 8-bit/10-bit SDR, HDR10 and scRGB**. Other format/color-space combinations,
   alternate render APIs and multi-queue presentation remain unsupported. HDR has

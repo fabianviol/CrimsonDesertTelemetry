@@ -191,6 +191,123 @@ internal static class RenderLightReaderTests
         ExpectInvalid(() => Decode(bytes), "A negative/wrapped GPU count was accepted.");
     }
 
+    public static void VisibilityMetadata()
+    {
+        var legacy = Snapshot();
+        Record(legacy, 0, (1, 0, 0), (4, 2, 1), -1, (0, 0, 1));
+        var oldLight = Decode(legacy).Sources!.Single();
+        Check(oldLight.SourceVisibility is null, "Legacy v2 invented visibility metadata.");
+        using (var json = JsonDocument.Parse(JsonSerializer.Serialize(oldLight, JsonOptions)))
+            Check(!json.RootElement.TryGetProperty("sourceVisibility", out _), "Legacy JSON acquired a visibility field.");
+
+        var bytes = VisibilitySnapshot();
+        Record(bytes, 0, (1, 0, 0), (4, 2, 1), -1, (0, 0, 1));
+        Record(bytes, 1, (2, 0, 0), (3, 1, 2), -1, (0, 0, 1));
+        U32(bytes, TotalBytes, 1); F(bytes, TotalBytes + 4, .25f);
+        U32(bytes, TotalBytes + 8, 2); F(bytes, TotalBytes + 12, -.03f);
+        var result = Decode(bytes);
+        var visible = result.Sources![0];
+        var blocked = result.Sources[1];
+        Check(visible with { SourceVisibility = null } == oldLight, "Visibility changed raw light data.");
+        Check(visible.SourceVisibility is { Status: "clear", AttenuationFactor: 1, Reason: null,
+                LightCaptureSequence: 7, VolumeSequence: 12, ContextFrame: 41,
+                VolumeAgeMillisecondsAtCapture: 110, ClosestApproach: .25 } &&
+            visible.SourceVisibility.ReferencePosition == result.Camera!.Position,
+            "Clear metadata lost its paired camera, source capture or volume provenance.");
+        Check(blocked.SourceVisibility is { Status: "blocked", AttenuationFactor: 0 } &&
+            blocked.ColorLinear == new CameraVector3(3, 1, 2), "Blocked source was removed or its RGB was attenuated.");
+        Check(Decode(bytes, CapturedTick + 200).Sources!.SequenceEqual(result.Sources),
+            "A repeated GPU capture changed its visibility metadata while aging.");
+
+        void Unknown(byte[] candidate, string? expectedReason = null)
+        {
+            var decoded = Decode(candidate);
+            var actual = decoded.Sources![0];
+            Check(decoded.Status == "available" && decoded.Sources.Count == 2 &&
+                actual with { SourceVisibility = null } == oldLight,
+                "Malformed optional visibility damaged healthy raw records.");
+            Check(actual.SourceVisibility is { Status: "unknown", AttenuationFactor: null, ClosestApproach: null } &&
+                (expectedReason is null || actual.SourceVisibility.Reason == expectedReason),
+                "Unknown visibility supplied a false factor or lost its reason.");
+        }
+        foreach (var code in new uint[] { 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, uint.MaxValue })
+        {
+            var changed = (byte[])bytes.Clone(); U32(changed, TotalBytes, code); Unknown(changed);
+        }
+        foreach (var (offset, value) in new (int, uint)[] { (120, 2), (124, 4), (148, 8000), (152, 257), (156, 1) })
+        {
+            var changed = (byte[])bytes.Clone(); U32(changed, offset, value); Unknown(changed, "invalid-metadata");
+        }
+        foreach (var bad in new[] { float.NaN, float.PositiveInfinity, 0f, -.1f })
+        {
+            var changed = (byte[])bytes.Clone(); F(changed, TotalBytes + 4, bad); Unknown(changed, "invalid-metadata");
+        }
+        var wrongBlockedSign = (byte[])bytes.Clone();
+        U32(wrongBlockedSign, TotalBytes, 2); F(wrongBlockedSign, TotalBytes + 4, .1f);
+        Unknown(wrongBlockedSign, "invalid-metadata");
+        var stale = (byte[])bytes.Clone(); U64(stale, 136, CapturedTick + 10 - 1501); Unknown(stale, "stale-volume");
+        var boundary = (byte[])bytes.Clone(); U64(boundary, 136, CapturedTick + 10 - 1500);
+        Check(Decode(boundary).Sources![0].SourceVisibility!.Status == "clear", "Exactly 1500 ms volume rejected.");
+        var future = (byte[])bytes.Clone(); U64(future, 136, CapturedTick + 11); Unknown(future, "invalid-metadata");
+        var absent = (byte[])bytes.Clone(); U64(absent, 128, 0); U64(absent, 136, 0); U32(absent, 144, 0);
+        Unknown(absent, "invalid-metadata");
+        U32(absent, TotalBytes, 11); Unknown(absent, "disabled");
+        Check(Decode(absent).Sources![0].SourceVisibility is { VolumeSequence: null, ContextFrame: null,
+            VolumeAgeMillisecondsAtCapture: null }, "Missing volume invented provenance.");
+        var partial = (byte[])bytes.Clone(); U64(partial, 128, 0); Unknown(partial, "invalid-metadata");
+        ExpectInvalid(() => Decode(bytes[..^1]), "Truncated v3 mapping accepted.");
+        ExpectInvalid(() => Decode([.. bytes, 0]), "Oversized v3 mapping accepted.");
+        var wrongLayout = (byte[])bytes.Clone(); U32(wrongLayout, 4, 2);
+        ExpectInvalid(() => Decode(wrongLayout), "V2 header accepted with v3 payload size.");
+    }
+
+    public static void VisibilityMappingAndSmoothing()
+    {
+        var bytes = VisibilitySnapshot();
+        Record(bytes, 0, (1, 0, 0), (4, 2, 1), -1, (0, 0, 1));
+        Record(bytes, 1, (1.04f, 0, 0), (3, 1, 2), -1, (0, 0, 1));
+        U32(bytes, TotalBytes, 1); F(bytes, TotalBytes + 4, .25f);
+        U32(bytes, TotalBytes + 8, 2); F(bytes, TotalBytes + 12, -.03f);
+        var timestamp = DateTimeOffset.UtcNow.AddMilliseconds(-100);
+        var first = Decode(bytes) with { CapturedAt = timestamp };
+        var later = Decode(bytes, CapturedTick + 200) with { CapturedAt = timestamp };
+        var rawBytes = JsonSerializer.SerializeToUtf8Bytes(first, JsonOptions);
+        var smoother = new SmoothedLightProcessor();
+        var smooth = smoother.Process(first, timestamp.AddMilliseconds(100));
+        var repeated = smoother.Process(later, timestamp.AddMilliseconds(200));
+        Check(smooth.Status == "available" && repeated.Status == "available" && smooth.Sources!.Count == 1 &&
+            repeated.Sources!.Single().ColorLinear == new CameraVector3(7, 3, 3),
+            "Visibility changed smoothing or repeated capture validity.");
+        Check(smooth.Sources![0].Contributions.SequenceEqual(first.Sources!) &&
+            repeated.Sources![0].Contributions.SequenceEqual(first.Sources!), "Smoothed contributions lost per-source visibility.");
+        Check(rawBytes.SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(first, JsonOptions)), "Smoothing mutated the raw payload.");
+        using (var json = JsonDocument.Parse(JsonSerializer.Serialize(repeated, JsonOptions)))
+            Check(json.RootElement.GetProperty("sources")[0].GetProperty("contributions")[1]
+                .GetProperty("sourceVisibility").GetProperty("status").GetString() == "blocked",
+                "Smoothed JSON omitted source visibility.");
+
+        U32(bytes, 24, (uint)Environment.ProcessId);
+        var now = (ulong)Environment.TickCount64;
+        U64(bytes, 48, now); U64(bytes, 56, now); U64(bytes, 136, now - 100);
+        using var mapping = MemoryMappedFile.CreateNew($"Local\\CrimsonDesertTelemetry.Render.{Environment.ProcessId}",
+            bytes.Length, MemoryMappedFileAccess.ReadWrite);
+        using var writer = mapping.CreateViewAccessor(); writer.WriteArray(0, bytes, 0, bytes.Length);
+        using var reader = new RenderLightReader(Environment.ProcessId, ProcessStart);
+        var live = reader.Capture((10, 20, 30), 10);
+        Check(live.Status == "available" && live.Sources![0].SourceVisibility?.Status == "clear",
+            "Reader did not open the bounded v3 mapping from its header.");
+        Check(reader.Capture((10, 20, 30), 10).Sources!.SequenceEqual(live.Sources!), "V3 mapping cache changed metadata.");
+    }
+
+    private static byte[] VisibilitySnapshot()
+    {
+        var bytes = new byte[RenderLightReader.VisibilityTotalBytes];
+        Snapshot().CopyTo(bytes, 0); U32(bytes, 4, 3); U32(bytes, 12, (uint)bytes.Length);
+        U32(bytes, 120, 1); U32(bytes, 124, 8); U64(bytes, 128, 12);
+        U64(bytes, 136, CapturedTick - 100); U32(bytes, 144, 41); U32(bytes, 148, 1500); U32(bytes, 152, 256);
+        return bytes;
+    }
+
     private static RenderLightsSnapshot Decode(byte[] bytes, long now = CapturedTick + 100,
         (float X, float Y, float Z)? player = null, float nearbyRadius = 10) =>
         RenderLightReader.Decode(bytes, ProcessId, ProcessStart, now, player ?? (10, 20, 30), nearbyRadius);

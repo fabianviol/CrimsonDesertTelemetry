@@ -90,10 +90,13 @@ View LightFixture(float aspect)
     // Five visible contributions, including a close pair with independent RGB,
     // one behind the camera and one before its near plane. Slots are not IDs.
     const std::vector<LightRecord> records{
-        {0, position(0, 0, 10), {0.85f, 0.30f, 0.08f}, 0.40f, "point", std::nullopt, std::nullopt},
-        {1, position(-3, 2, 12), {1.20f, 0.65f, 0.12f}, 0.74f, "point", std::nullopt, std::nullopt},
+        {0, position(0, 0, 10), {0.85f, 0.30f, 0.08f}, 0.40f, "point", std::nullopt, std::nullopt,
+            SourceVisibility{"clear", "", 1.0, 20.0}},
+        {1, position(-3, 2, 12), {1.20f, 0.65f, 0.12f}, 0.74f, "point", std::nullopt, std::nullopt,
+            SourceVisibility{"blocked", "", 0.0, 20.0}},
         {2, position(4, 1, 14), {0.30f, 0.60f, 1.80f}, 0.63f, "spot", Vec3{0, -1, 0}, 27.0f},
-        {3, position(-4, -2, -8), {0.85f, 0.05f, 1.20f}, 0.30f, "point", std::nullopt, std::nullopt},
+        {3, position(-4, -2, -8), {0.85f, 0.05f, 1.20f}, 0.30f, "point", std::nullopt, std::nullopt,
+            SourceVisibility{"blocked", "", 0.0, 20.0}},
         {4, position(0.01f, 0.005f, 0.02f), {0, 2, 0}, 1.40f, "point", std::nullopt, std::nullopt},
         {5, position(2, -2, 8), {0.06f, 0.15f, 0.85f}, 0.19f, "point", std::nullopt, std::nullopt},
         {6, position(0, .03f, 10), {2.4f, .75f, .19f}, 1.05f, "point", std::nullopt, std::nullopt}
@@ -464,6 +467,52 @@ int wmain(int argc, wchar_t** argv)
         if (lightsMode)
         {
             RequireLightPixels(hiddenHud, config, false);
+            // Runtime hide state must reach both draw passes even though the
+            // startup config remains HideOccluded=0. Do not mutate the feed.
+            auto occludedOnly=LightFixture(960.0f/720.0f);
+            std::vector<LightRecord> oneBlocked{occludedOnly.sample.renderedLights.records->at(1)};
+            occludedOnly.sample.renderedLights.records=std::make_shared<const std::vector<LightRecord>>(oneBlocked);
+            occludedOnly.sample.renderedLights.publishedRecords=1u;
+            const float hideFocal=720/(2*std::tan(std::numbers::pi_v<float>/6));
+            const float blockedX=480-hideFocal*3/12,blockedY=360-hideFocal*2/12;
+            Require(frame(false,nullptr,&occludedOnly,true).Around(blockedX,blockedY,14)>10,
+                "Fresh blocked fixture must start visible when hide is off");
+            SetHideOccludedForTest(true);
+            const auto suppressed=frame(false,nullptr,&occludedOnly,true);
+            Require(suppressed.Around(blockedX,blockedY,14)==0&&suppressed.Changed(0,0,960,600)==0,
+                "Hide option left a blocked marker or its detail card visible");
+            Require(occludedOnly.sample.renderedLights.records->size()==1&&
+                occludedOnly.sample.renderedLights.records->front().colorLinear.x==1.20f&&
+                CountSourceVisibility(occludedOnly,Clock::now(),35).blocked==1,
+                "HUD hide altered raw records or raw visibility counts");
+            for(const bool staleVisibility:{false,true})
+            {
+                auto unknown=occludedOnly;
+                auto unknownRecords=oneBlocked;
+                unknownRecords.front().sourceVisibility=staleVisibility
+                    ? SourceVisibility{"blocked","",0.0,2000.0}
+                    : SourceVisibility{"unknown","uncovered",std::nullopt,std::nullopt};
+                unknown.sample.renderedLights.records=std::make_shared<const std::vector<LightRecord>>(unknownRecords);
+                unknown.received=Clock::now();
+                Require(frame(false,nullptr,&unknown,true).Around(blockedX,blockedY,14)>10,
+                    "Hide option suppressed an unknown or stale visibility result");
+            }
+            SetHideOccludedForTest(false);occludedOnly.received=Clock::now();
+            Require(frame(false,nullptr,&occludedOnly,true).Around(blockedX,blockedY,14)>10,
+                "Showing blocked sources again did not restore marker geometry");
+            if(!lightsOnly)
+            {
+                SetVisibleForTest(true);
+                const auto shownRadar=frame(false,nullptr,nullptr,true);
+                SetHideOccludedForTest(true);
+                const auto hiddenRadar=frame(false,nullptr,nullptr,true);
+                const float radarScale=HudScale(960,720,config,true);
+                Require(shownRadar.Different(hiddenRadar,static_cast<int>(36*radarScale),static_cast<int>(138*radarScale),
+                    static_cast<int>(514*radarScale),static_cast<int>(386*radarScale))>10,
+                    "Runtime hide state did not remove blocked radar markers");
+                SetHideOccludedForTest(false);SetVisibleForTest(false);
+            }
+            std::cout<<"PASS runtime blocked-source hiding/restoration, radar propagation and unknown/raw preservation\n";
             // Isolate each excluded source with the HUD hidden. A legitimate
             // detail card in the mixed scene can otherwise occupy its would-be
             // projection, making a blank-pixel clipping assertion invalid.
@@ -484,7 +533,7 @@ int wmain(int argc, wchar_t** argv)
                 Require(excludedImage.Around(excludedWidth/2+focal/2,excludedHeight/2-focal/4,12) == 0,
                     "An isolated behind-camera or near-plane light produced its screen ghost");
                 Require(excludedImage.Changed(0,0,static_cast<int>(excludedImage.width),
-                    static_cast<int>(excludedImage.height)-100) == 0,
+                    static_cast<int>(excludedImage.height)-120) == 0,
                     "An excluded-only fixture painted a marker or detail card outside the status legend");
             }
             auto centerOnly = LightFixture(960.0f / 720.0f);

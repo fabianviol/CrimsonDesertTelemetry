@@ -30,4 +30,5 @@ const char* GraphicsOutputLabel() noexcept;
 unsigned long long RenderedFrames() noexcept;
 void SetVisibleForTest(bool visible) noexcept;
 void SetLightVisibleForTest(bool visible) noexcept;
+void SetHideOccludedForTest(bool hidden) noexcept;
 }

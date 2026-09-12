@@ -185,11 +185,13 @@ void RunImpl(HANDLE stopEvent)
     else overlay::ClearLocalFault("native-capture");
     const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
         GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
-    const bool spatialProbe = captureEnabled && (hudOcclusion || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 ||
+    const bool sourceVisibility = GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+    render::SetSourceVisibilityEnabled(sourceVisibility);
+    const bool spatialProbe = captureEnabled && (sourceVisibility || hudOcclusion || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 ||
         GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0);
     const bool spatialReadback = GetPrivateProfileIntW(L"Research", L"SpatialReadback", 0, iniPath.c_str()) != 0;
     const bool persistDistanceReadback = GetPrivateProfileIntW(L"Research", L"SignedDistanceReadback", 0, iniPath.c_str()) != 0;
-    const bool distanceReadback = persistDistanceReadback || hudOcclusion;
+    const bool distanceReadback = persistDistanceReadback || hudOcclusion || sourceVisibility;
     const bool readbackAllowed = !(spatialReadback||distanceReadback) || (capturing&&
         GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) == 0);
     const unsigned spatialTransactions = hudOcclusion&&!persistDistanceReadback ? 120u :

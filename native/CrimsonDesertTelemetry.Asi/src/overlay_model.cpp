@@ -85,7 +85,53 @@ Vec3 LightVector(const Json& value)
         throw std::runtime_error("Invalid optional light vector");
     return result;
 }
-LightRecord ReadLightRecord(const Json& value)
+SourceVisibility ReadSourceVisibility(const Json& value, const Json& capture)
+{
+    try
+    {
+        SourceVisibility result;
+        result.status=value.at("status").get<std::string>();
+        const auto& sequence=value.at("lightCaptureSequence");
+        const auto& pairedSequence=capture.at("captureSequence");
+        if(!sequence.is_number_integer()||sequence<=0||!pairedSequence.is_number_integer()||
+            sequence!=pairedSequence)throw std::runtime_error("Unpaired source visibility");
+        const auto reference=LightVector(value.at("referencePosition"));
+        const auto camera=LightVector(capture.at("camera").at("position"));
+        if(reference.x!=camera.x||reference.y!=camera.y||reference.z!=camera.z)
+            throw std::runtime_error("Mismatched visibility origin");
+        if(!value.at("volumeAgeMillisecondsAtCapture").is_null())
+        {
+            result.volumeAgeMillisecondsAtCapture=Number(value.at("volumeAgeMillisecondsAtCapture"));
+            if(*result.volumeAgeMillisecondsAtCapture<0)throw std::runtime_error("Invalid visibility age");
+        }
+        if(result.status=="unknown")
+        {
+            result.reason=value.at("reason").get<std::string>();
+            if(result.reason.empty()||result.reason.size()>128||!value.at("attenuationFactor").is_null())
+                throw std::runtime_error("Invalid unknown visibility");
+        }
+        else if(result.status=="clear"||result.status=="blocked")
+        {
+            const auto& volume=value.at("volumeSequence");
+            const auto& frame=value.at("contextFrame");
+            if(!volume.is_number_integer()||volume<=0||!frame.is_number_integer()||frame<0||
+                frame>std::numeric_limits<std::uint32_t>::max()||!result.volumeAgeMillisecondsAtCapture||
+                !value.at("reason").is_null())throw std::runtime_error("Invalid visibility provenance");
+            result.attenuationFactor=Number(value.at("attenuationFactor"));
+            const double closest=Number(value.at("closestApproach"));
+            if(*result.attenuationFactor!=(result.status=="clear"?1.0:0.0)||
+                (result.status=="clear"?closest<=0:closest>0))throw std::runtime_error("Invalid visibility verdict");
+            result.reason.clear();
+        }
+        else throw std::runtime_error("Unknown visibility state");
+        return result;
+    }
+    catch(const std::exception&)
+    {
+        SourceVisibility result;result.reason="invalid-metadata";return result;
+    }
+}
+LightRecord ReadLightRecord(const Json& value, const Json& capture)
 {
     LightRecord result;
     const auto& index = value.at("sampleIndex");
@@ -116,6 +162,8 @@ LightRecord ReadLightRecord(const Json& value)
         if (result.kind != "spot" || *result.coneHalfAngleDegrees <= 0 || *result.coneHalfAngleDegrees > 90)
             throw std::runtime_error("Invalid optional spotlight cone");
     }
+    if(value.contains("sourceVisibility"))
+        result.sourceVisibility=ReadSourceVisibility(value.at("sourceVisibility"),capture);
     return result;
 }
 LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered = false)
@@ -148,7 +196,7 @@ LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered 
                 std::bitset<MaximumRenderedRecords> seen;
                 for (const auto& source : sources)
                 {
-                    auto record = ReadLightRecord(source);
+                    auto record = ReadLightRecord(source,value);
                     const auto index = static_cast<size_t>(record.sampleIndex);
                     if (seen.test(index)) throw std::runtime_error("Duplicate optional light index");
                     seen.set(index);
@@ -316,7 +364,8 @@ std::vector<std::vector<size_t>> GroupLightDetails(const std::span<const LightRe
 
 float HudNaturalHeight(const Config& config, const bool details)
 {
-    return config.radar3D ? (details ? 930.f : 550.f) : (details ? 724.f : 344.f);
+    const float base = config.radar3D ? 550.f : 344.f;
+    return base + (details ? 380.f + (config.occlusionTest ? 44.f : 0.f) : 0.f);
 }
 
 float HudScale(float width, float height, const Config& config, bool details)
@@ -472,6 +521,58 @@ bool RenderedLightsLive(const View& view, const Clock::time_point now, const int
     // transport and time in this client; its camera timestamp slightly predates
     // light decoding, so the resulting freshness bound is conservative.
     return *lights.ageMilliseconds + AgeMs(view, now) <= 500.0;
+}
+SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& view,const Clock::time_point now)
+{
+    auto result=light.sourceVisibility.value_or(SourceVisibility{});
+    if(result.status!="clear"&&result.status!="blocked")return result;
+    const auto unknown=[&](const char* reason)
+    {
+        result.status="unknown";result.reason=reason;result.attenuationFactor.reset();return result;
+    };
+    if(!RenderedLightsLive(view,now,1000))return unknown("stale-source");
+    if(!result.volumeAgeMillisecondsAtCapture||!std::isfinite(*result.volumeAgeMillisecondsAtCapture)||
+        *result.volumeAgeMillisecondsAtCapture<0)return unknown("invalid-metadata");
+    // Include transport age as well as time spent in this view. This is a
+    // conservative bound; metadata itself remains frozen with its capture.
+    if(*result.volumeAgeMillisecondsAtCapture+*view.sample.renderedLights.ageMilliseconds+AgeMs(view,now)>1500)
+        return unknown("stale-volume");
+    return result;
+}
+SourceVisibilityCounts CountSourceVisibility(const View& view,const Clock::time_point now,const float radius)
+{
+    SourceVisibilityCounts counts;
+    if(!RenderedLightsLive(view,now,1000)||!view.sample.playerPosition||!std::isfinite(radius)||radius<=0)return counts;
+    const auto player=*view.sample.playerPosition;
+    for(const auto& light:*view.sample.renderedLights.records)
+    {
+        const Vec3 delta{light.position.x-player.x,light.position.y-player.y,light.position.z-player.z};
+        if(Dot(delta,delta)>double{radius}*radius)continue;
+        const auto value=CurrentSourceVisibility(light,view,now);
+        if(value.status=="clear")++counts.visible;
+        else if(value.status=="blocked")++counts.blocked;
+        else ++counts.unknown;
+    }
+    return counts;
+}
+bool HideOccludedLight(const LightRecord& light,const View& view,const Clock::time_point now,const bool hideOccluded)
+{
+    if(!hideOccluded)return false;
+    const auto visibility=CurrentSourceVisibility(light,view,now);
+    return visibility.status=="blocked"&&visibility.attenuationFactor==0;
+}
+void UpdateShortcutToggle(bool& value,bool& wasDown,const int key,const bool isDown,const bool foreground)
+{
+    const bool down=key>0&&key<=255&&isDown;
+    if(foreground&&down&&!wasDown)value=!value;
+    wasDown=down;
+}
+std::string ShortcutLabel(const int key)
+{
+    if(key<=0||key>255)return "shortcut off";
+    if(key>=0x70&&key<=0x87)return "F"+std::to_string(key-0x70+1);
+    if((key>='A'&&key<='Z')||(key>='0'&&key<='9'))return std::string(1,static_cast<char>(key));
+    return "VK "+std::to_string(key);
 }
 double AmbientAgeMs(const View& view,const Clock::time_point now)
 {

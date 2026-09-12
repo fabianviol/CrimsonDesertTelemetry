@@ -1,4 +1,12 @@
-# Live validation
+# Historical basic-telemetry live validation
+
+The results below describe the 2026-08-29/30 basic-telemetry implementation and
+build 24994088. They are preserved evidence, not current production occlusion
+acceptance. Camera-local ambient passed the controlled open/enclosed/open route
+in OFF v2.1.9 on build 25246367 on 2026-09-12. The new per-light production path
+has synthetic coverage, with its live visible/blocked/visible and behind-camera
+test still pending. See [current evidence and next step](HANDOVER.md),
+[ambient](AMBIENT_STREAM.md) and [source visibility](SOURCE_VISIBILITY.md).
 
 ## Test environment
 

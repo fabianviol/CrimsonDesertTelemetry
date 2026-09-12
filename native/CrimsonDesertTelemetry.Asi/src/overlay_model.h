@@ -14,6 +14,11 @@ namespace cdt::overlay
 {
 using Clock = std::chrono::steady_clock;
 struct Vec3 { float x{}, y{}, z{}; };
+struct SourceVisibility
+{
+    std::string status = "unknown", reason = "not-reported";
+    std::optional<double> attenuationFactor, volumeAgeMillisecondsAtCapture;
+};
 struct LightRecord
 {
     // Sample-local renderer index, never a persistent physical-light identity.
@@ -23,6 +28,7 @@ struct LightRecord
     std::string kind;
     std::optional<Vec3> direction;
     std::optional<float> coneHalfAngleDegrees;
+    std::optional<SourceVisibility> sourceVisibility;
 };
 struct LightSummary
 {
@@ -84,10 +90,11 @@ struct Config
     bool notifications = false;
     bool lightsExpected = false, renderedExpected = false;
     bool lightOverlay = false, lightOverlayVisible = true, radar3D = true;
-    bool showAmbient = true, occlusionTest = false;
+    bool showAmbient = true, occlusionTest = false, hideOccluded = false;
     int notificationDurationMs = 6000;
     int toggleKey = 0x77, detailsKey = 0x78, corner = 0, staleMs = 1000;
     int lightToggleKey = 0x79, lightMaxMarkers = 512, lightMaxLabels = 6;
+    int occlusionToggleKey = 0x7a;
     float scale = 1.0f, opacity = 0.92f;
     // SDR UI reference white for HDR10/scRGB output; does not alter API RGB.
     float hdrPaperWhiteNits = 200.0f;
@@ -136,6 +143,13 @@ std::vector<std::vector<size_t>> GroupLightDetails(std::span<const LightRecord* 
 double AgeMs(const View& view, Clock::time_point now);
 bool IsLive(const View& view, Clock::time_point now, int staleMs);
 bool RenderedLightsLive(const View& view, Clock::time_point now, int staleMs);
+SourceVisibility CurrentSourceVisibility(const LightRecord& light, const View& view, Clock::time_point now);
+bool HideOccludedLight(const LightRecord& light,const View& view,Clock::time_point now,bool hideOccluded);
+void UpdateShortcutToggle(bool& value,bool& wasDown,int key,bool isDown,bool foreground);
+std::string ShortcutLabel(int key);
+struct SourceVisibilityCounts { size_t visible{}, blocked{}, unknown{}; };
+// Counts current in-radius records, including off-screen/behind-camera records.
+SourceVisibilityCounts CountSourceVisibility(const View& view, Clock::time_point now, float radius);
 bool AmbientLive(const View& view, Clock::time_point now);
 double AmbientAgeMs(const View& view, Clock::time_point now);
 std::string LightFeedStatus(const View& view, Clock::time_point now, int staleMs);
