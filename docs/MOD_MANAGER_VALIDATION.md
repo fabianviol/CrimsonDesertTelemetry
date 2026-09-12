@@ -9,8 +9,8 @@ open/enclosed/open route on game build 25246367. Current per-light production
 work remains under live validation; see [handover](HANDOVER.md).
 
 An external Nexus report from around 08:30 on 2026-09-12 describes incomplete DMM
-deployment and a separate graphics-feature crash. Its exact package version and
-crash environment remain unverified. See [current compatibility reports](COMPATIBILITY_ISSUES.md).
+deployment and a separate graphics-feature crash with public version 2.0.2. Its
+exact file hashes and crash environment remain unverified. See [current compatibility reports](COMPATIBILITY_ISSUES.md).
 No complete DMM/JSON Mod Manager lifecycle or cross-hardware acceptance is claimed.
 
 ## Historical: 2.0.0 HDR validation package (2026-09-07)

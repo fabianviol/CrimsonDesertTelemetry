@@ -89,7 +89,7 @@ internal static class SmoothedLightTests
             result.Sources[0].ColorLinear.X==RenderLightReader.RawCount,"bounded dense pool lost contributions");
         Check(timer.Elapsed < TimeSpan.FromSeconds(5),"dense-pool grouping unbounded/quadratic");
         var separated=Enumerable.Range(0,4096).Select(i=>Light(i,i*2)).ToArray();
-        var a=Step(p,2,50,separated); var b=Step(p,3,100,separated.Reverse().ToArray());
+        var a=Step(p,2,50,separated); var b=Step(p,3,100,Enumerable.Reverse(separated).ToArray());
         Check(a.Sources!.Count==4096 && a.Sources.Select(g=>g.TrackingId).SequenceEqual(b.Sources!.Select(g=>g.TrackingId)),"large stable group tracking");
     }
     public static void TransportIsolation()

@@ -32,6 +32,44 @@ GitHub; do NOT create a GitHub release.
 
 ## Current result — Ambient Occlusion complete; per-light production in progress
 
+**Current candidate:** `v2.1.10-source-visibility.1`, `CDT_RESEARCH=OFF`, prepared
+but not installed by Codex. ASI 1,438,208 bytes, SHA256
+`A3722B05408464BA95BB6C1AFED1A1B27B9D6795A43E9311A37B4240DAD2AAE1`;
+ZIP 875,062 bytes, SHA256
+`4F364F7D4824D58F1FAF69914A9DABE50388178DC47678C8E2D467C908BAF988`.
+Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.1-ModManagers.zip`.
+Both occlusion INI switches are enabled, research/legacy OcclusionTest off.
+F11 hides/restores fresh blocked HUD/radar sources. All four shortcuts accept
+other virtual-key codes or 0; raw/EMA records remain complete. F9's inherited
+overflowing disabled research section was corrected after synthetic image review.
+
+Exact current VirusTotal: ASI **5/70**, ZIP **0/68**. Immediate v2.1.9 ASI is
+**4/71**, so historical 0/75 was already lost before the new per-light work.
+Current extra engine: Bkav; CrowdStrike/Cynet/McAfeeD/Microsoft flag both. Final
+release clearance remains open; do not call this a clean ASI or bypass AV.
+Identical imported DLLs/functions, +44,032 bytes, narrowly required acquisition;
+no causal AV finding or signature changes. Full evidence and bounds are in
+[production validation](PRODUCTION_OCCLUSION_VALIDATION.md).
+
+Current code/docs were committed and pushed as `40bee9f` to main (including all
+seven previously local commits). No release/tag was created. GitHub CI exposed
+an older SDK8 test overload issue at `SmoothedLightTests.cs:92`; explicit
+`Enumerable.Reverse` fixes it. SDK8.0.425 now builds the complete solution with
+zero warnings/errors and all 68 managed tests pass. CI is also set explicitly
+to build the OFF ASI while keeping the direct research regression targets.
+Locally all production-relevant native paths pass;
+the full native suite remains 24/26 due to the two inherited research failures.
+The ON ASI also compiles. Do not commit the inherited `spatial_readback.cpp`
+changes or unrelated root diagnostic scripts with this work.
+
+**Immediate next action:** finish SDK8/remote-CI verification and checkpoint push,
+then perform the real production fireplace test after the user installs the
+clearly labelled private test package through DMM. Ambient is accepted; per-light
+live acceptance/frame cost and final AV clearance remain outstanding. A separate
+public **2.0.2** DMM/graphics-crash report (Nexus post around 08:30, download
+listing 06:02AM on 2026-09-12) is preserved in COMPATIBILITY_ISSUES; GPU/crash
+evidence and exact package hash are still needed. Do not attribute it to new SDF.
+
 Read Gemini's handover, DecodeReference, current v2.1.8 diagnostic state and log,
 then acquisition in the requested order. The diagnostic at 11:06:34 CEST showed:
 

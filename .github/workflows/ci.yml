@@ -25,7 +25,8 @@ jobs:
       - name: Configure and build native plugin/tests
         shell: pwsh
         run: |
-          cmake -S native/CrimsonDesertTelemetry.Asi -B build/native-package -A x64
+          # Build the production ASI; direct research regression targets remain included.
+          cmake -S native/CrimsonDesertTelemetry.Asi -B build/native-package -A x64 -DCDT_RESEARCH=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Native configure failed.' }
           cmake --build build/native-package --config Release -- /m:2
           if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }

@@ -2,10 +2,12 @@
 
 ## Report relayed on 2026-09-12, posted around 08:30
 
-A Nexus user reported two separate problems. The post text was provided by the
-project owner; its link, exact plugin version, GPU/driver, other mods and crash
-details are not yet available. This is external user evidence, not a reproduced
-local failure or proof of a particular D3D12 hook defect.
+A Nexus user reported two separate problems with the public **2.0.2 ASI package**.
+The project owner supplied the post text and confirmed the download listing
+`12 Sep 2026, 6:02AM ... version 2.0.2` (timezone not specified). Its direct link,
+GPU/driver, other mods and crash details are not yet available. This is external
+user evidence, not a reproduced local failure or proof of a particular D3D12
+hook defect. It predates the new production per-light implementation.
 
 1. DMM deployed `CrimsonDesertTelemetry.asi`, `CrimsonDesertTelemetry.Core.dll`
    and the INI, but omitted `crimson-desert-telemetry.dll` and both lowercase
@@ -22,7 +24,7 @@ The successful server-only case narrows the affected enabled paths. It does not
 identify the faulting module, hook, GPU interface or resource lifecycle, and a
 single disabled option does not isolate other still-enabled features.
 
-Required next evidence: exact package and DMM versions, installed companion-file
+Required next evidence: exact package hash and DMM version, installed companion-file
 hashes, full INI, GPU/driver and other graphics mods/overlays/frame generation,
 the native/bootstrap logs and faulting module/exception offset. Reproduce one
 feature combination at a time before changing graphics code. Do not claim that
@@ -33,3 +35,8 @@ payload; it does not prove DMM deployment on every system. This machine has also
 retained older `.deps.cfg` metadata on upgrades. Preserve useful INI preferences,
 and verify all six runtime files after deployment. Keep historical packages and
 their evidence intact. See [mod-manager validation](MOD_MANAGER_VALIDATION.md).
+
+Read-only inspection of the preserved local v2.0.2 ZIP on 2026-09-12 confirms that
+all three reportedly omitted companions are present under its expected package
+root, alongside the other six files. The reporter's downloaded ZIP hash is not
+available, so equality with that preserved archive is not yet proven.
