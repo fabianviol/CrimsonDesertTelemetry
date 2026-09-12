@@ -34,8 +34,25 @@ Packaged bootstrap passes in an isolated non-game process with all switches on.
 Exact VT: ASI5/70, ZIP0/67, same five detecting vendors as .4 (Microsoft now C!ml).
 Local Defender custom scans find no threats in either file; that is not a clean VT
 ASI verdict. Nexus publication dry run passes; nothing is uploaded/published.
-User-operated DMM/cold-start/live checks remain pending; see
-[stable release validation](STABLE_RELEASE_VALIDATION.md) for hashes and evidence.
+**First candidate game run verified:** PID7260, started2026-09-12 19:26:27 CEST.
+ASI, both DLLs, INI and runtimeconfig.cfg match the candidate; deps.cfg remains
+2.1.8 metadata with identical runtime assets (only version labels differ).
+Two 30-second captures have3596/3596 raw and3597/3597 smoothed/ambient available
+messages, no empty light frames or malformed records, and33816 matching original
+contributions in the smoothed feed. User confirms F8/F9/F10 toggling and menu entry/
+exit work without flicker/crash. Automatic menu hiding is explicitly cancelled:
+do not investigate it further. The debug console remains excluded from OFF.
+Candidate Ambient route now PASS:8seconds per user-labelled phase, mean exposure
+0.477526 outside ->0 indoors ->0.490643 outside,1442/1442 available ambient samples
+with progressing sky/visibility frames. User then exited and deleted the package
+through DMM; both game/host are gone and port27311 is free. DMM removed ASI/INI/logs
+but left both DLLs and both CFG files. Reimport/activation repeats the deps.cfg
+mismatch: DMM library6/6 correct, bin64 still5/6 exact. User confirms DMM1.9.4 and
+requires proper removal of old package files. Official DMM2.7 notes include ASI
+package/update fixes; current page lists2.8.1. User has been asked to update DMM
+while the game stays closed, then repeat deployment/removal before the second
+game start. No direct game/DMM writes were made by Codex. See
+[stable release validation](STABLE_RELEASE_VALIDATION.md) for evidence.
 **Next step is that release acceptance, not the paused source experiment below.**
 
 ## Mandatory product goal and working rules
@@ -74,11 +91,9 @@ and together; unsupported/broken options must be documented, rejected or removed
 from the product profile. See `docs/INI_VALIDATION.md` for all 60 original options,
 the original 34-setting intermediate profile and current 31-setting release profile,
 concrete exclusions and the still-pending live matrix.
-Automatic HUD/marker hiding in every menu is also requested. It is NOT implemented:
-`playing` means valid telemetry, not a proven menu state; the old console UI value
-is not a general menu flag. No reliable menu signal was found in existing code or
-preserved evidence. Do not implement an Escape-key/FOV/frame-stall guess as menu
-detection. No game process/API was available during this read-only check.
+Automatic HUD/marker hiding in menus was explicitly cancelled by the user after
+the first rc.1 game test. It is not implemented and must not be pursued further.
+`playing` remains telemetry availability, not a menu-state contract.
 
 ## Current result — Ambient Occlusion complete; per-light production in progress
 

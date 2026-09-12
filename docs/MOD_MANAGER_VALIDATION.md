@@ -7,6 +7,27 @@ Per-light occlusion is paused and excluded. All six runtime files, including bot
 CFG companions, must match that candidate after user-operated DMM deployment.
 The earlier checks below do not accept the new package automatically.
 
+rc.1 installed/live at19:26:27 CEST: all six runtime files in the DMM library match
+the ZIP. In bin64, five match; deps.cfg retains2.1.8-diagnostic-final labels.
+Replacing only the version labels makes its JSON structure identical to rc.1:
+runtime filenames and dependencies are unchanged. This local mismatch therefore
+occurs between the correctly updated DMM library and deployed game metadata.
+The new host runs, all feeds are available and the supplied all-enabled INI matches.
+The reason DMM retains that one file is not established; no exact six-file deploy
+or fix for the external missing-companions report is claimed.
+
+The user then exited the game and deleted the package in DMM. At19:43:05 CEST,
+ASI/INI/logs are absent, but both DLLs and both CFG companions remain in bin64.
+Game/ASI-managed host are absent and port27311 is free. Functional deactivation
+therefore succeeds; complete file cleanup is not established. User-operated
+reimport and restart are the next check.
+
+Reimport through user-confirmed DMM1.9.4 reproduced the mismatch: library6/6
+correct, bin64 deps.cfg still old. The user requires complete runtime-file removal.
+An updated-manager test is next: official DMM2.7 notes describe ASI-package and
+installed-copy update fixes;2.8.1 is current on the [official page](https://www.nexusmods.com/crimsondesert/mods/633).
+No claim that the new manager fixes this issue is made before testing it.
+
 The user installed v2.1.9-ambient-input-fix through DMM; the ASI, both DLLs, INI
 and runtimeconfig matched the package. DMM retained v2.1.8 deps.cfg with older
 version labels but the same dependency structure. Ambient passed the controlled

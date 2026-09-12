@@ -28,6 +28,10 @@ does not automatically pass through the package validator.
   all-enabled release needs separate live acceptance: [release ledger](STABLE_RELEASE_VALIDATION.md).
 - The native tests below are synthetic: configuration parsing, model behavior,
   acquisition and graphics fixtures. A unit-test result is not a live game result.
+- rc.1 first SDR game start now passes with all offered booleans1; two30-second
+  stream controls have no unavailable light/ambient samples. User confirms
+  F8/F9/F10 toggling and menu entry/exit without flicker/crash. This does not cover
+  every numeric value, remapped hardware key, HDR, or a new quit/restart cycle.
 - The historic combined template allowed genuine conflicting research behavior in
   OFF. The profile split removes those offered controls from production; native
   OFF gating of old research INIs is a separate required check.
@@ -62,7 +66,7 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Server.Enabled | 0/1; controls ASI-owned host launch. Does not disable independent UI/native capture. UI requires an available host. | B covers enabled launch; disabled/combined startup needs explicit orchestration coverage. |
 | Server.Port | Integer 1024-65535; shared host/UI loopback port. | B covers a nondefault port;20 O port cases now pass after signed host/UI clamp parity was corrected. |
 | Server.SampleRateHz | Integer 1-240; host publication, not GPU sampling rate. Runtime clamps. | B covers launch; boundary INI forwarding lacks direct controls; P. |
-| Notifications.Enabled | 0/1; separate UI owner, works with both views disabled. | O/G notices-only and new all-three-UI SDR/scRGB controls pass; live combination pending. |
+| Notifications.Enabled | 0/1; separate UI owner, works with both views disabled. | O/G notices-only/all-three-UI SDR/scRGB pass; rc.1 all-enabled SDR startup logs report ready. |
 | Notifications.DurationMilliseconds | Integer 5000-10000; success-notice duration, not persistent-fault duration. Runtime clamps. | O tests short/long and nondefault values; G notice rendering; P. |
 | Lights.Enabled | 0/1; authored host lights and prerequisite for native rendered capture. | B schema selection; O readiness expectations; live default. Isolation combinations pending. |
 | Lights.NearbyRadius | Integer 1-100000 game units around player; cannot discover omitted rendered sources. Runtime clamps. | Decoder radius tests; direct INI boundary forwarding pending; P. |
@@ -75,8 +79,8 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Overlay.InitiallyVisible | 0/1; initial display only when Enabled=1; does not stop capture/client. | O/G hidden startup and later display. |
 | Overlay.ShowDetails | 0/1; initial diagnostics, changed by DetailsKey. | O/model/layout and G details rendering. |
 | Overlay.ShowAmbient | 0/1; if Overlay.Enabled, polls ambient every 500 ms even while hidden/details closed (`overlay_client.cpp:244`). Needs Ambient.Enabled for data. | O default/model values; individual INI off/poll-suppression integration pending. |
-| Overlay.Radar3D | 0/1; 0 uses legacy compass, 1 light radar. | O covers both layouts/scales; current all-on game acceptance pending. |
-| Overlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default119/F8; requires Overlay.Enabled. | O remap/disable and shortcut state machine; hardware/game key acceptance pending. |
+| Overlay.Radar3D | 0/1; 0 uses legacy compass, 1 light radar. | O covers both layouts/scales; user confirms rc.1 radar/HUD with all features on. |
+| Overlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default119/F8; requires Overlay.Enabled. | O remap/disable and shortcut state machine; user confirms rc.1 default F8/F9/F10 off/on twice. Remapped physical keys remain untested live. |
 | Overlay.DetailsKey | Integer 0-255 Windows VK; 0 disables; default120/F9; requires Overlay.Enabled. | O remap/disable; same key limits below. |
 | Overlay.Corner | Integer 0-3: TL/TR/BL/BR. Runtime clamps. | O/G default rendering; all four anchors/boundaries need explicit controls; P. |
 | Overlay.AutoScale | 0/1; resolution scaling in addition to Scale; fit-to-display limit remains. | O tests manual/automatic across resolutions. |
@@ -84,7 +88,7 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Overlay.Opacity | Decimal 0.2-1; corner HUD panel background alpha. Malformed/nonfinite runtime input defaults to0.92. | G default pixels; direct min/max alpha controls pending; P. |
 | Overlay.HdrPaperWhiteNits | Decimal 80-500; shared HDR UI reference white, even with corner HUD off. Does not alter game HDR/API values. | O clamp/nonfinite/notices-only; HDR synthetic pixel controls; live HDR pending. |
 | Overlay.StaleMilliseconds | Integer 100-10000; HUD envelope timeout. Separate rendered-light limit remains500 ms, visibility1500 ms. | O freshness models; direct INI boundaries pending; P. |
-| LightOverlay.Enabled | 0/1; independent fullscreen markers; radar belongs to Overlay. | O/G markers-only, HUD+markers and all-three-UI synthetic modes pass; live combination pending. |
+| LightOverlay.Enabled | 0/1; independent fullscreen markers; radar belongs to Overlay. | O/G markers-only, HUD+markers/all-three-UI pass; rc.1 all-enabled SDR and user F10 control pass without reported flicker. |
 | LightOverlay.InitiallyVisible | 0/1; initial marker state, changed by ToggleKey; requires Enabled. | O/G hidden startup and toggle regression. |
 | LightOverlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default121/F10. | O remap/disable/bounds and G runtime display state. |
 | LightOverlay.Radius | Decimal 1-500 game units for radar/markers; cannot extend Lights.NearbyRadius or source discovery. | O nondefault/bounds/nonfinite; G views; P. |

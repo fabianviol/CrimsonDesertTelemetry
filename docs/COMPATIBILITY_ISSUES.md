@@ -40,3 +40,22 @@ Read-only inspection of the preserved local v2.0.2 ZIP on 2026-09-12 confirms th
 all three reportedly omitted companions are present under its expected package
 root, alongside the other six files. The reporter's downloaded ZIP hash is not
 available, so equality with that preserved archive is not yet proven.
+
+## Local stability candidate control — later on2026-09-12
+
+rc.1 OFF started successfully on the local RTX3080/SDR setup with all offered
+feature switches enabled. Raw/smoothed/ambient streams remain available across
+two30-second windows; user confirms F8–F10 and menu entry/exit without flicker or
+crash. The debug console is excluded from this production package. This local
+result is not evidence that the external2.0.2 crash has the same cause or is fixed.
+
+All six runtime companions in DMM's library match rc.1. Deployed bin64 files match
+except deps.cfg, which still has2.1.8 version labels but the identical dependency/
+runtime asset structure. The new host runs using it. This proves a local metadata
+replacement discrepancy after import, not missing binaries in the ZIP. See
+[the release ledger](STABLE_RELEASE_VALIDATION.md) for exact evidence and limits.
+
+User-confirmed DMM1.9.4 deletion removes ASI/INI/logs but leaves both DLLs and CFGs.
+Reimport still leaves the old deps.cfg in bin64 despite all six current library
+files. The user requires clean removal. An updated-DMM test is pending; no direct
+file cleanup was performed to hide this deployment behavior.

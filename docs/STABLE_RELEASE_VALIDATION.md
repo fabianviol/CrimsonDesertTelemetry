@@ -38,13 +38,16 @@ Evidence: `artifacts/validation/stable-release-20260912/` (local, not committed)
 | Exact ASI and ZIP VirusTotal | Completed: ASI **5/70**, ZIP **0/67**. Same five detecting vendors as prior .4; Microsoft label changed from B!ml to C!ml. This is not a clean ASI verdict. |
 | Local Windows Defender | Exact ASI and ZIP: no threats, exit0. Custom scans with remediation disabled; hashes unchanged. Signature1.459.170.0, last updated2026-09-12 02:59:22 CEST. This does not cancel the VT findings. |
 | Nexus publication preflight | Read-only dry run PASS against existing file7891854; latest public version2.0.2. No upload, changelog mutation or release publication performed. |
-| DMM clean deployment | Pending: user imports/enables, all six runtime files must match. |
-| All-enabled game cold start/live | Pending on user's RTX 3080; no new compatibility claim yet. |
-| F8/F9/F10, menu behavior, quit/restart | Pending user-operated checks. Automatic menu hiding is not implemented. |
+| DMM deployment | All six runtime files present. Five exact matches; deps.cfg retains2.1.8 version labels with identical runtime assets. Exact metadata replacement remains open; do not call this an exact six-file match. |
+| All-enabled game cold start/live | First local SDR start/live PASS: PID7260 since19:26:27 CEST, supported build25246367, all offered INI feature switches1. RTX3080. Two30-second capture windows have no unavailable/empty light frames; details below. This does not resolve the external crash report. |
+| F8/F9/F10 and menus | User confirms twice toggling each key and menu entry/exit work without flicker/crash. Automatic menu hiding explicitly cancelled by the user; do not pursue. |
+| New Ambient route | PASS: user-labelled8-second open/enclosed/open windows, mean0.477526 ->0 ->0.490643,1442/1442 available samples; details below. |
+| Quit and DMM deletion | User confirms exiting/deleting package. Game/host absent, port27311 free. ASI/INI/logs removed; both DLLs and CFGs remain. No orphan host observed; this is not complete file cleanup. |
+| Reimport in DMM1.9.4 | Reproduced: library6/6 correct, bin64 still5/6 exact; deps.cfg stays2.1.8. Second game start deferred while testing current DMM. |
 | Live HDR / other GPUs / frame generation | Not validated. Automated coverage is not hardware/game acceptance. |
 
-Ambient alone passed a controlled OFF v2.1.9 open/enclosed/open route. The new
-candidate still needs its own live regression check. Per-light occlusion remains
+Ambient passed a controlled OFF v2.1.9 route and the current candidate's new
+open/enclosed/open regression. Per-light occlusion remains
 unfinished and is not part of this scoped release.
 
 ## Deployment and external report
@@ -66,7 +69,80 @@ backed up under `artifacts/recovery/occlusion-pause-20260912-165120/`.
 The labelled room sources, blocked/free paired volumes, trace comparisons and
 limits are in [SOURCE_VISIBILITY_REGRESSION](SOURCE_VISIBILITY_REGRESSION.md).
 The return-to-blocked step was cancelled; no completed ABA test is claimed.
-Camera-sky wording/orientation and automatic menu visibility remain queued.
+Camera-sky wording/orientation remains queued. Automatic menu visibility was
+explicitly cancelled by the user during this run and must not be pursued further.
+
+## First candidate game run
+
+Game PID7260, start2026-09-12 19:26:27 CEST; ASI-managed host PID37428 has that
+game as parent. The loaded ASI path and current file hash match this candidate.
+SDR overlay/native startup report ready with no subsequent errors in captured logs.
+Bootstrap also logged one suppressed duplicate-launch attempt. Current module/
+process enumeration finds one telemetry ASI and one host, not two active hosts;
+the initiating duplicate attempt was not identified and is not assigned as a
+crash cause.
+
+Evidence folders: `live-all-enabled-01/`, `streams-all-enabled-01/` and
+`streams-all-enabled-controls-01/` under the validation directory. Raw logs/JSONL,
+installed INI/deps metadata and a reusable read-only analysis script are preserved.
+
+| 30-second window | Raw available | Smoothed available | Ambient available | Unique light captures |
+| --- | --- | --- | --- | --- |
+| First | 1799/1799 | 1800/1800 | 1800/1800 | 446 |
+| Second | 1797/1797 | 1797/1797 | 1797/1797 | 441 |
+
+Both windows:9–13 raw lights, zero empty available light frames, zero malformed
+records, zero sequence regressions. Maximum light age110ms; maximum publication
+gap below36ms. All33816 compared smoothed contributions exactly match original
+raw records from the same capture; none missing and no raw-sum errors.
+Source metadata is consistently unknown/disabled with null attenuation.
+Each ambient window advances60 sky captures; maximum sky age547ms, visibility
+age47ms, no unavailable/stale local estimates. No world-space occlusion claim
+follows from this availability control.
+
+The retained deps.cfg becomes structurally identical after substituting only
+2.1.8-diagnostic-final/2.1.8.0 version labels with2.1.10-rc.1/2.1.10.0. Actual
+dependency/runtime asset sets are unchanged, and the new host is running. This
+explains the scope of the mismatch, not why DMM retained it or the Nexus crash.
+All six files in DMM's own library match the candidate ZIP, so import is complete;
+the version-label mismatch is in the subsequent bin64 deployment.
+
+## Candidate Ambient route and shutdown
+
+The user confirmed each phase before its8-second capture; raw/smoothed lights and
+ambient were collected together. No game input or Computer Use was performed.
+Evidence: `ambient-route-open-01/`, `ambient-route-enclosed-01/`,
+`ambient-route-open-return-01/` and `ambient-route-complete.json`.
+
+| User-labelled phase | Mean exposure | Available ambient | New sky captures | Max visibility age |
+| --- | --- | --- | --- | --- |
+| Open | 0.477526 | 480/480 | 16 | 47ms |
+| Enclosed, camera indoors | 0 | 481/481 | 16 | 32ms |
+| Open return | 0.490643 | 481/481 | 16 | 47ms |
+
+Visibility frames progress in every phase, including the zero-valued enclosed
+phase. No stale/unavailable local estimates or lost raw/smoothed availability.
+Return mean is2.75% above the first open mean; return camera differs by about2.5
+game units, so this is a reversible environment route, not an identical-pose or
+orientation-invariance test. The separate camera-orientation complaint stays open.
+
+User-confirmed normal exit and DMM package deletion were followed by absence of
+PID7260/host37428 and no port27311 listener at19:43:05 CEST. The observer started
+after process exit, so no exact cleanup latency is claimed. DMM leaves both DLLs
+and both CFG companions in bin64. With ASI absent, no plugin/host is active;
+full file cleanup and metadata update are separate deployment concerns.
+
+The user reimported and activated the same ZIP with the game closed. The library
+again matches all six files, while bin64 retains the old deps.cfg. Thus deleting
+and reimporting with1.9.4 does not resolve the mismatch. User explicitly confirms
+DMM's UI version1.9.4 and expects all owned runtime files to be removed.
+
+The [official DMM changelog](https://www.nexusmods.com/crimsondesert/mods/633),
+checked2026-09-12, lists2.8.1 as current and records improved multi-file ASI package
+handling/installed-copy replacement in2.7. This makes an updated-manager test
+appropriate; it does not prove the observed leftover/CFG issue is fixed.
+User has been asked to update DMM while leaving the game closed. Do not change
+Telemetry filenames or add installer behavior on an unverified ownership theory.
 
 ## Exact candidate files
 
@@ -95,8 +171,7 @@ No new detecting vendor versus .4 is observed. Equal counts do not establish
 benignness; no AV attribution, obfuscation or signature-oriented rebuild was made.
 The clean ZIP/local Defender checks must not be represented as a clean VT ASI.
 
-Next required step: user closes the game, disables the previous package and imports/
-enables this ZIP through DMM. Verify all six deployed hashes before the first
-all-enabled cold start. Then test progressing raw/EMA/ambient data, F8–F10,
-menus and quit/restart. Do not publish while required live checks remain open.
+Next required step: verify updated DMM version, repeat owned-file removal/import
+and exact payload comparison, then second cold start and bounded live stream check.
+Do not publish while required live checks remain open.
 Never replace an existing versioned archive.

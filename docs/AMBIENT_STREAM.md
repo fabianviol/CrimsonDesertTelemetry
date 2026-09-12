@@ -16,6 +16,11 @@ The camera-sky HUD wording/orientation complaint remains pending; exposure is a
 local volume sample, not the fraction of sky pixels on screen. Older packages
 must not be assumed to include current behavior.
 
+The OFF stability candidate2.1.10-rc.1 also passed a user-labelled8-second-per-phase
+open/enclosed/open route: mean visibility0.477526 ->0 ->0.490643,1442/1442 ambient
+messages available with progressing control frames. This confirms reversible
+environment response on that route; it does not establish orientation invariance.
+
 - HTTP: `GET http://127.0.0.1:27311/v1/ambient`
 - WebSocket: `ws://127.0.0.1:27311/v1/ambient/stream`
 - JSON Schema: `GET http://127.0.0.1:27311/v1/ambient/schema`

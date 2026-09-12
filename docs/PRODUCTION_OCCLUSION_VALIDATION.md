@@ -129,8 +129,8 @@ Old packages are immutable. No GitHub/Nexus release has been created.
 - Test each supported INI function and the all-production-functions configuration
   live. Boundaries, dependencies and known research exclusions are recorded in
   INI_VALIDATION; synthetic parsing/graphics checks do not complete this matrix.
-- Establish a reliable menu-state signal before implementing automatic HUD/marker
-  hiding in all menus. Current `playing/loading` describes data availability only.
+- Automatic menu hiding was later cancelled by the user; do not pursue it.
+  `playing/loading` still describes data availability only.
 - Diagnose the separate public 2.0.2 DMM/graphics report when logs, fault details,
   GPU/driver and DMM version are available; see [compatibility reports](COMPATIBILITY_ISSUES.md).
 - Update final acceptance/package/scan evidence only for the exact files actually
