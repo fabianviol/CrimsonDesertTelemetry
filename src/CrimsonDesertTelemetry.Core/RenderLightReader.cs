@@ -59,7 +59,11 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 _lastLock = after;
                 return decoded;
             }
-            return Unavailable("bridge-changing");
+            // A writer in progress does not invalidate the preceding complete
+            // capture. Reuse the existing one-capture cache, with its original
+            // timestamp and the same 500 ms freshness limit, never partial bytes.
+            return _lastBytes is null ? Unavailable("bridge-changing") :
+                Decode(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
         }
         catch (FileNotFoundException)
         {

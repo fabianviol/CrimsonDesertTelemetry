@@ -1,8 +1,11 @@
 """Variant A: sphere-trace camera to light through the live distance clipmap.
 
-The field is a signed distance in game units, clamped per level at 1.5*sqrt(2)
-cell sizes, so a sample is a safe step: in the unsaturated band it is the true
-distance, and the clamp truncates downward. Level selection matters because each
+The field stores approximate signed distance in game units, clamped per level at
+1.5*sqrt(2) cell sizes. Neither conservatism of its interpolated distance nor the
+forced minimum step is guaranteed: the 2026-09-12 camp regression skips a negative
+interval. This script reproduces Variant A for diagnosis; a CLEAR verdict is not
+a geometric acceptance proof. See docs/SOURCE_VISIBILITY_REGRESSION.md.
+Level selection matters because each
 level wraps toroidally over its own window, so a point outside that window aliases
 onto the wrong texels; the finest level whose window contains the point is used.
 

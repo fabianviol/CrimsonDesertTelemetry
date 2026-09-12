@@ -42,12 +42,35 @@ detection. No game process/API was available during this read-only check.
 
 ## Current result — Ambient Occlusion complete; per-light production in progress
 
-**Current candidate:** `v2.1.10-source-visibility.3`, `CDT_RESEARCH=OFF`, prepared
-but not installed by Codex. ASI 1,303,040 bytes, SHA256
-`76B0D0B1DAFA15F233D94DAD92BE11FE4FD01DE2DDB20162423F314932E9605D`;
-ZIP 811,399 bytes, SHA256
-`C00F23DF90910C9ACF211A920A52B32F5E446BE40FFF9D1E2806F4F4B71D2E74`.
-Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.3-ModManagers.zip`.
+**Latest live result: the user's `.3` camp test FAILED per-light recognition and
+light-view continuity.** Opaque boxes/structures conceal lamps labelled visible;
+the open fire is excluded from that report. A 20-second capture proves 18/1,197
+raw and smoothed frames unavailable with `bridge-changing` while playing. Metadata
+tracing under the native write sequence caused these shared HUD/radar gaps; its
+preparation has been moved before atomic publication and a concurrency regression
+passes. A separately proven normalized-sampling half-texel fix is also tested, but
+does not solve all camp false clears. The SDF later stopped at volume 1853;
+read-only live state is Ready/no failure with progressing GI and a frozen original
+command-list generation. Menu state is awaiting the user's answer. Exact evidence,
+limits and next test are in [live regression](SOURCE_VISIBILITY_REGRESSION.md).
+The forced 0.05-gu trace step also demonstrably skips a negative interval; dense
+sampling leaves other false-clear paths positive. These are still unresolved,
+not permission to tune a hit threshold or declare source occlusion complete.
+No live fix acceptance is claimed at this checkpoint.
+
+**Current candidate:** `v2.1.10-source-visibility.4`, `CDT_RESEARCH=OFF`, prepared
+but not installed by Codex. ASI 1,304,576 bytes, SHA256
+`DF66EEB1D64230FD9A690B48580CC6CCFBAAC800A36CA0F08594CBEE739FE462`;
+ZIP 812,304 bytes, SHA256
+`2780A21D4C74BC9D5F21CC0393B2B8B6FE2E84218F2B4B2533DB78E99863EEA9`.
+Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.4-ModManagers.zip`.
+This candidate shortens native publication, reuses the reader's existing single
+complete cache only within its unchanged 500-ms limit, corrects SDF half-texel
+sampling, and permits narrowly guarded replacement of a stale completed SDF
+binding. OFF suite: 26/28 pass, only the same inherited research failures.
+Managed SDK8/9: 69/69; Python sampler: 10/10; production SDF acquisition: 691 WARP
+controls without GPU debug errors/warnings. HTTP/WebSocket smoke passes on 27312.
+These are synthetic/build results; the camp geometry and live restart remain open.
 All production feature switches are on, including ShowDetails=1 and
 HideOccluded=1 for the private all-functions test. Numeric settings retain their
 bounded defaults; this is not a maximum-load or all-values acceptance claim.
@@ -55,7 +78,10 @@ F11 hides/restores fresh blocked HUD/radar sources. All four shortcuts accept
 other virtual-key codes or 0; raw/EMA records remain complete. F9's inherited
 overflowing disabled research section was corrected after synthetic image review.
 
-Exact `.3` VirusTotal: ASI **5/70**, ZIP **0/67**. Previous `.2` ASI was
+Exact `.4` VirusTotal: ASI **5/71**, ZIP **0/67**; same five detecting engines as
+`.3` (Bkav, CrowdStrike, Cynet, McAfeeD, Microsoft). Raw responses are in
+`artifacts/validation/source-regression-20260912/`. Research ON ASI also builds.
+Previous `.3`: ASI **5/70**, ZIP **0/67**. `.2` ASI was
 **5/70**, ZIP **0/68**; v2.1.9 ASI was **4/71**. Historical 0/75 is not current
 clearance; final release remains blocked. Do not call this a clean ASI or bypass AV; see
 [production validation](PRODUCTION_OCCLUSION_VALIDATION.md).
@@ -97,9 +123,11 @@ the previous full native suite was 24/26 due to the two inherited research failu
 The ON ASI also compiles. Do not commit the inherited `spatial_readback.cpp`
 changes or unrelated root diagnostic scripts with this work.
 
-**Immediate next action:** verify the updated remote CI, then perform the real
-production fireplace/all-functions test after the user installs the
-clearly labelled private test package through DMM. Ambient is accepted; per-light
+**Immediate next action:** the user closes the game and installs `.4` through DMM;
+verify installed companions, then capture a stationary raw/EMA window and fresh
+SDF update controls at the same camp. Resolve the remaining trace/geometry false
+clears with a fresh controlled target; do not equate the continuity fixes with
+per-light acceptance. CI at `505f5ca` passed. Ambient is accepted; per-light
 live acceptance/frame cost and final AV clearance remain outstanding. A separate
 public **2.0.2** DMM/graphics-crash report (Nexus post around 08:30, download
 listing 06:02AM on 2026-09-12) is preserved in COMPATIBILITY_ISSUES; GPU/crash

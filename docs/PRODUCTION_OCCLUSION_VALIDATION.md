@@ -5,17 +5,32 @@ v2.1.9 on game build 25246367. Per-light production visibility is implemented
 and synthetically tested; real visible/blocked/visible, behind-camera and frame
 cost acceptance are still pending. This is not a final release.
 
+The subsequent `.3` live camp test failed: concealed lamps were marked visible,
+both light views intermittently disappeared, and SDF updates later stopped.
+See [live evidence and corrections](SOURCE_VISIBILITY_REGRESSION.md). Synthetic
+passes below do not override these observed failures.
+
 ## Current private test package
 
-`CrimsonDesertTelemetry-v2.1.10-source-visibility.3-ModManagers.zip`
+`CrimsonDesertTelemetry-v2.1.10-source-visibility.4-ModManagers.zip`
 
 | Exact file | Bytes | SHA-256 |
 | --- | ---: | --- |
-| ASI | 1,303,040 | `76B0D0B1DAFA15F233D94DAD92BE11FE4FD01DE2DDB20162423F314932E9605D` |
-| ZIP | 811,399 | `C00F23DF90910C9ACF211A920A52B32F5E446BE40FFF9D1E2806F4F4B71D2E74` |
+| ASI | 1,304,576 | `DF66EEB1D64230FD9A690B48580CC6CCFBAAC800A36CA0F08594CBEE739FE462` |
+| ZIP | 812,304 | `2780A21D4C74BC9D5F21CC0393B2B8B6FE2E84218F2B4B2533DB78E99863EEA9` |
 
-Expanded folder: `artifacts/mod-manager/v2.1.10-source-visibility.3-20260912-150632-956-f22a0e90/CrimsonDesertTelemetry`.
-The new package fixes the negative-port host/HUD mismatch and separates the
+Expanded folder: `artifacts/mod-manager/v2.1.10-source-visibility.4-20260912-160248-403-e03d9028/CrimsonDesertTelemetry`.
+The `.4` package addresses publication races and permits guarded replacement of a
+stale completed SDF binding. It also corrects normalized half-texel sampling;
+the remaining camp false clears and skipped negative interval are still open.
+All 69 managed tests pass on SDK8/9, the API smoke passes on 27312, and the Python
+sampler passes 10 controls. Native: 26/28, only the two inherited research failures;
+all nine graphics/UI tests pass, acquisition 691 controls without GPU debug errors.
+Evidence: `artifacts/validation/source-regression-20260912/`. Exact VT: ASI **5/71**,
+ZIP **0/67**, same detecting engines as `.3`. Research ON ASI also builds.
+Live acceptance is still pending.
+
+The preceding `.3` package fixed the negative-port host/HUD mismatch and separated the
 production INI from research. All production feature switches are enabled,
 including the private overrides ShowDetails=1 and HideOccluded=1. Numeric values
 retain their normal bounded defaults. All four HUD shortcuts remain configurable
@@ -71,8 +86,10 @@ scanner categories, excluding unsupported formats. They do not establish cause.
 | `.1` / `.2` identical ASI, `A3722B05...DAD2AAE1` | 5/70 |
 | Preserved `.1` ZIP, `4F364F7D...08BAF988` | 0/68 |
 | Preserved `.2` ZIP, `A3E95666...D7B4D808` | 0/68 |
-| Current `.3` ASI, `76B0D0B1...32E9605D` | 5/70 |
-| Current `.3` ZIP, `C00F23DF...B71D2E74` | 0/67 |
+| Previous `.3` ASI, `76B0D0B1...32E9605D` | 5/70 |
+| Previous `.3` ZIP, `C00F23DF...B71D2E74` | 0/67 |
+| Current `.4` ASI, `DF66EEB1...739FE462` | 5/71 |
+| Current `.4` ZIP, `2780A21D...9863EEA9` | 0/67 |
 
 The immediate predecessor is flagged by CrowdStrike, Cynet, McAfeeD and Microsoft;
 the current candidate additionally by Bkav. The current Microsoft result is
@@ -94,6 +111,8 @@ Raw VT responses, exact hashes, native CTest results and synthetic UI images are
 preserved under `artifacts/validation/v2.1.10-source-visibility-20260912/`.
 The `.3` package/profile/full-native-test logs, exact hashes and both full VT
 responses are in `artifacts/validation/ini-profiles-20260912/`.
+The `.4` exact hashes, full VT responses, SDK8/9 build/tests, HTTP/WebSocket smoke,
+native suite and ON build logs are in `artifacts/validation/source-regression-20260912/`.
 Old packages are immutable. No GitHub/Nexus release has been created.
 
 ## Remaining work

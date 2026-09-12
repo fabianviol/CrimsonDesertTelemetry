@@ -33,6 +33,8 @@ void STDMETHODCALLTYPE ForwardBarrier(ID3D12GraphicsCommandList7* list, UINT cou
     ++forwarded;
     list->Barrier(count, groups);
 }
+void STDMETHODCALLTYPE CountBarrier(ID3D12GraphicsCommandList7*, UINT, const D3D12_BARRIER_GROUP*)
+{ ++forwarded; }
 HRESULT STDMETHODCALLTYPE ForwardReset(ID3D12GraphicsCommandList* list,
     ID3D12CommandAllocator* allocator, ID3D12PipelineState* pipeline)
 { return list->Reset(allocator, pipeline); }
@@ -99,13 +101,17 @@ struct Gpu
     D3D12_RESOURCE_DESC description{};
     std::vector<uint8_t> expected;
 
-    Gpu()
+    explicit Gpu(ID3D12Device* sharedDevice = nullptr, unsigned pattern = 0)
     {
-        ComPtr<IDXGIFactory4> factory;
-        Hr(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "DXGI factory");
-        ComPtr<IDXGIAdapter> warp;
-        Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)), "WARP adapter");
-        Hr(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)), "WARP device");
+        if (sharedDevice) device = sharedDevice;
+        else
+        {
+            ComPtr<IDXGIFactory4> factory;
+            Hr(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "DXGI factory");
+            ComPtr<IDXGIAdapter> warp;
+            Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)), "WARP adapter");
+            Hr(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)), "WARP device");
+        }
         Hr(device.As(&info), "D3D12 info queue");
         D3D12_COMMAND_QUEUE_DESC queueDescription{};
         queueDescription.Type = D3D12_COMMAND_LIST_TYPE_COMPUTE;
@@ -161,7 +167,7 @@ struct Gpu
             for (size_t y = 0; y < 64; ++y)
                 for (size_t x = 0; x < 256; ++x)
                 {
-                    const auto value = static_cast<uint8_t>((x * 7 + y * 13 + z * 17) % 256);
+                    const auto value = static_cast<uint8_t>((x * 7 + y * 13 + z * 17 + pattern) % 256);
                     expected[(z * 64 + y) * 256 + x] = value;
                     static_cast<uint8_t*>(mapped)[footprint.Offset + (z * 64 + y) * footprint.Footprint.RowPitch + x] = value;
                 }
@@ -215,12 +221,12 @@ struct Gpu
         else
             Hr(list->Reset(allocator.Get(), nullptr), "unobserved Reset");
     }
-    void AcquireShaderResource()
+    void AcquireShaderResource(ID3D12Resource* resource = nullptr)
     {
         // Discovery/rejection controls still need actual work in their submitted
         // lists. D3D12 flags barrier-only lists as ineffective synchronization.
         list->CopyBufferRegion(workloadSink.Get(), 0, upload.Get(), 0, 4);
-        auto barrier = Release(texture.Get());
+        auto barrier = Release(resource ? resource : texture.Get());
         barrier.SyncBefore = D3D12_BARRIER_SYNC_NONE;
         barrier.SyncAfter = D3D12_BARRIER_SYNC_COMPUTE_SHADING;
         barrier.AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS;
@@ -521,6 +527,257 @@ void RecenteredMapping(Gpu& gpu)
     Stop();
 }
 
+void FinishCopy(Gpu& gpu, uint32_t nextFrame)
+{
+    using namespace cdt::sdf::acquire;
+    SubmitCopy(gpu);
+    gpu.WaitIdle();
+    Poll();
+    ObserveContext(gpu.contextList.Get(), Constants(), {100.f, -25.f, 50.f}, nextFrame, FollowingTick(), true);
+    Poll();
+    Check(state.phase == Phase::Ready && volume == gpu.expected && frame == nextFrame,
+        "completed replacement copy has exact source bytes and following context");
+}
+void AgeCompletedCopy(Gpu& gpu)
+{
+    using namespace cdt::sdf::acquire;
+    Check(state.phase == Phase::Ready && state.fence && state.fenceValue &&
+        state.fence->GetCompletedValue() >= state.fenceValue, "recovery fixture starts with a real completed GPU transaction");
+    // Advance only the fixture's age, keeping the real completed fence and
+    // resources. No wall-clock sleeps or production timeout overrides needed.
+    state.releaseTick = GetTickCount64() - cdt::sdf::ProductionMaximumAgeMilliseconds - 1;
+    state.lastCompletedTick = state.releaseTick + 1;
+    ObserveContext(gpu.contextList.Get(), Constants(), {100.f, -25.f, 50.f}, 501, GetTickCount64(), true);
+}
+void ReleaseWithoutCopy(Gpu& gpu)
+{
+    gpu.Reset(false);
+    gpu.AcquireShaderResource();
+    ForwardRelease(gpu);
+    Hr(gpu.list->Close(), "close replacement discovery/rejection");
+    gpu.ExecuteAndWait();
+}
+
+void CompletedBindingReplacement(Gpu& gpu)
+{
+    using namespace cdt::sdf::acquire;
+    for (unsigned mode = 0; mode < 3; ++mode)
+    {
+        Gpu replacement(gpu.device.Get(), 29);
+        if (mode == 0) // Retired list, same texture.
+        { replacement.texture = gpu.texture; replacement.expected = gpu.expected; }
+        else if (mode == 1) // Retired texture, same list and allocator.
+        { replacement.list = gpu.list; replacement.allocator = gpu.allocator; }
+        StartSynthetic();
+        Discover(gpu);
+        RecordCopy(gpu, Constants(), 500);
+        FinishCopy(gpu, 501);
+        const auto* oldList = state.list.Get();
+        const auto* oldSource = state.source.Get();
+        const auto* oldDestination = state.destination.Get();
+        const auto* oldFence = state.fence.Get();
+        const auto calls = published;
+
+        ReleaseWithoutCopy(replacement);
+        Check(state.phase == Phase::Ready && state.list.Get() == oldList && state.source.Get() == oldSource,
+            "fresh completed binding must not follow a different list/resource");
+        AgeCompletedCopy(gpu);
+        Check(CanReplaceCompletedBinding(GetTickCount64()), "stale completed fixture permits bounded replacement");
+        ReleaseWithoutCopy(replacement);
+        Check(state.phase == Phase::Preparing && state.list.Get() == replacement.list.Get() &&
+            state.source.Get() == replacement.texture.Get() && !state.generationKnown &&
+            state.destination.Get() == oldDestination && state.fence.Get() == oldFence && published == calls,
+            "unique same-device replacement only discovers; completed readback retained until preparation");
+        Poll();
+        Check(state.phase == Phase::Ready && !state.generationKnown && !state.fenceValue && !state.lastCompletedTick &&
+            state.destination.Get() != oldDestination && state.fence.Get() != oldFence,
+            "replacement prepares fresh readback/fence without inheriting the old Reset proof");
+        ReleaseWithoutCopy(replacement);
+        Check(state.phase == Phase::Ready && !state.generationKnown && !state.fenceValue && published == calls,
+            "unobserved Reset on new binding cannot record a copy");
+        RecordCopy(replacement, Constants(), 502);
+        FinishCopy(replacement, 503);
+        Check(published == calls + 1, "replacement publishes once after new observed Reset/Close/Submit/fence/context");
+        Stop();
+        state = State{};
+    }
+}
+
+void AmbiguousAndDeviceMismatchReplacement(Gpu& gpu)
+{
+    using namespace cdt::sdf::acquire;
+    Gpu replacement(gpu.device.Get(), 37);
+    StartSynthetic();
+    Discover(gpu);
+    RecordCopy(gpu, Constants(), 600);
+    FinishCopy(gpu, 601);
+    AgeCompletedCopy(gpu);
+    const auto* oldList = state.list.Get();
+    const auto* oldSource = state.source.Get();
+    replacement.Reset(false);
+    replacement.AcquireShaderResource();
+    replacement.AcquireShaderResource(gpu.texture.Get());
+    std::array<D3D12_TEXTURE_BARRIER, 2> releases{Release(replacement.texture.Get()), Release(gpu.texture.Get())};
+    auto group = Group(releases.data(), 2);
+    const auto forwards = forwarded;
+    BarrierHook(replacement.list.Get(), 1, &group);
+    Check(state.phase == Phase::Ready && state.list.Get() == oldList && state.source.Get() == oldSource &&
+        forwarded == forwards + 1, "two exact release candidates cannot rebind or inject a copy");
+    Hr(replacement.list->Close(), "close ambiguous release");
+    replacement.ExecuteAndWait();
+
+    // D3D12CreateDevice for the same WARP adapter shares a device identity.
+    // Use another real COM object's identity as the deliberately mismatched
+    // verified owner instead of claiming a second WARP construction is foreign.
+    const auto verifiedDevice = state.deviceIdentity;
+    ComPtr<IUnknown> mismatchedIdentity;
+    Hr(replacement.queue.As(&mismatchedIdentity), "different COM identity for device rejection control");
+    Check(mismatchedIdentity.Get() != verifiedDevice.Get(), "device mismatch fixture actually differs");
+    state.deviceIdentity = mismatchedIdentity;
+    AgeCompletedCopy(gpu);
+    ReleaseWithoutCopy(replacement);
+    Check(state.phase == Phase::Ready && state.list.Get() == oldList && state.source.Get() == oldSource &&
+        state.deviceIdentity.Get() == mismatchedIdentity.Get(),
+        "exact-shaped release whose device differs from verified owner cannot replace binding");
+    state.deviceIdentity = verifiedDevice;
+    Stop();
+    state = State{};
+}
+
+void ReplacementPacketAndBudgetControls(Gpu& gpu)
+{
+    using namespace cdt::sdf::acquire;
+    Gpu replacement(gpu.device.Get(), 39);
+    StartSynthetic();
+    Discover(gpu);
+    RecordCopy(gpu, Constants(), 650);
+    FinishCopy(gpu, 651);
+    const auto* oldList = state.list.Get();
+    const auto* oldSource = state.source.Get();
+    const auto* oldDestination = state.destination.Get();
+    const auto* oldFence = state.fence.Get();
+    const auto* oldDevice = state.deviceIdentity.Get();
+    const auto* oldQueue = state.queue.Get();
+    const auto ownersUnchanged = [&] {
+        return state.list.Get() == oldList && state.source.Get() == oldSource &&
+            state.destination.Get() == oldDestination && state.fence.Get() == oldFence &&
+            state.deviceIdentity.Get() == oldDevice && state.queue.Get() == oldQueue;
+    };
+    for (bool known : {false, true})
+        for (unsigned mode = 0; mode < 3; ++mode)
+        {
+            AgeCompletedCopy(gpu);
+            auto& candidate = known ? gpu : replacement;
+            candidate.Reset(known);
+            candidate.AcquireShaderResource();
+            std::array<D3D12_TEXTURE_BARRIER, 2> barriers{
+                Release(candidate.texture.Get()), Release(candidate.texture.Get())};
+            barriers[1].SyncBefore = D3D12_BARRIER_SYNC_ALL;
+            std::array<D3D12_BARRIER_GROUP, 2> groups{Group(barriers.data()), Group(nullptr)};
+            if (mode == 0) groups[0].NumBarriers = 2;
+            if (mode == 2) groups[1] = Group(barriers.data(), 4097);
+            const auto forwards = forwarded;
+            // Malformed packets must never reach the real runtime. Exercise
+            // observer rejection with real owners, then submit the one legal
+            // release directly so the GPU texture retains its normal layout.
+            originalBarrier = CountBarrier;
+            BarrierHook(candidate.list.Get(), mode == 0 ? 1 : 2, groups.data());
+            originalBarrier = ForwardBarrier;
+            Check(state.phase == Phase::Ready && ownersUnchanged() && forwarded == forwards + 1,
+                "mixed same-resource/invalid/oversized packets retain every completed binding owner");
+            auto legal = Group(barriers.data());
+            candidate.list->Barrier(1, &legal);
+            Hr(CloseHook(candidate.list.Get()), "close rejected candidate packet");
+            candidate.ExecuteAndWait();
+        }
+    AgeCompletedCopy(gpu);
+    state.inspections = 20000;
+    ReleaseWithoutCopy(replacement);
+    Check(state.phase == Phase::Ready && ownersUnchanged() && state.inspections == 20000,
+        "exhausted discovery budget rejects replacement without changing completed owners");
+    RecordCopy(gpu, Constants(), 652);
+    Check(state.phase == Phase::Recorded && ownersUnchanged() && state.inspections == 20000,
+        "returning known binding still records after replacement discovery budget is exhausted");
+    FinishCopy(gpu, 653);
+    Stop();
+    state = State{};
+}
+
+void PendingAndFailedReplacement(Gpu& gpu)
+{
+    using namespace cdt::sdf::acquire;
+    Gpu replacement(gpu.device.Get(), 41);
+    StartSynthetic();
+    Discover(gpu);
+    RecordCopy(gpu, Constants(), 700);
+    FinishCopy(gpu, 701);
+    AgeCompletedCopy(gpu);
+    const auto savedPhase = state.phase;
+    for (const auto phase : {Phase::Idle, Phase::Preparing, Phase::Recorded, Phase::Closed,
+        Phase::Submitting, Phase::WaitingGpu, Phase::AwaitContext, Phase::Failed})
+    {
+        state.phase = phase;
+        Check(!CanReplaceCompletedBinding(GetTickCount64()), "replacement forbidden outside completed Ready phase");
+    }
+    state.phase = savedPhase;
+    for (auto* pending : {&state.preparing, &state.mapping, &state.resetPending, &state.closePending})
+    {
+        *pending = true;
+        Check(!CanReplaceCompletedBinding(GetTickCount64()), "pending CPU lifecycle work blocks replacement");
+        *pending = false;
+    }
+    ++state.fenceValue;
+    Check(!CanReplaceCompletedBinding(GetTickCount64()), "unsignalled completed-fence claim cannot rebind");
+    const auto* unsignalledDestination = state.destination.Get();
+    const auto* unsignalledFence = state.fence.Get();
+    ReleaseWithoutCopy(replacement);
+    Check(state.phase == Phase::Ready && state.list.Get() == gpu.list.Get() &&
+        state.source.Get() == gpu.texture.Get() && state.destination.Get() == unsignalledDestination &&
+        state.fence.Get() == unsignalledFence, "unsignalled fence retains original binding on a real replacement release");
+    --state.fenceValue;
+
+    RecordCopy(gpu, Constants(), 702);
+    ComPtr<ID3D12Fence> hold;
+    Hr(gpu.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&hold)), "replacement GPU hold fence");
+    Hr(gpu.queue->Wait(hold.Get(), 1), "hold pending original queue");
+    SubmitCopy(gpu);
+    const auto* pendingDestination = state.destination.Get();
+    replacement.Reset(false);
+    replacement.AcquireShaderResource();
+    ForwardRelease(replacement);
+    Hr(replacement.list->Close(), "close ignored release while original pending");
+    Check(state.phase == Phase::WaitingGpu && state.list.Get() == gpu.list.Get() &&
+        state.source.Get() == gpu.texture.Get() && state.destination.Get() == pendingDestination,
+        "real GPU-pending transaction keeps original list/resource/readback despite replacement release");
+    Hr(hold->Signal(1), "release original pending queue");
+    gpu.WaitIdle();
+    replacement.ExecuteAndWait();
+    Poll();
+    ObserveContext(gpu.contextList.Get(), Constants(), {100.f, -25.f, 50.f}, 703, FollowingTick(), true);
+    Poll();
+    Check(state.phase == Phase::Ready, "original pending copy completes normally after ignored replacement");
+
+    AgeCompletedCopy(gpu);
+    const auto* completedDestination = state.destination.Get();
+    const auto* completedFence = state.fence.Get();
+    ReleaseWithoutCopy(replacement);
+    Check(state.phase == Phase::Preparing, "valid replacement enters deferred preparation");
+    // Force preparation validation failure without releasing or modifying any
+    // GPU resource. The old completed readback/fence must remain quarantined.
+    state.source = replacement.workloadSink;
+    Poll();
+    Check(state.phase == Phase::Failed && state.failure && std::strcmp(state.failure, "readback-preparation-failed") == 0 &&
+        state.destination.Get() == completedDestination && state.fence.Get() == completedFence,
+        "failed replacement preparation preserves prior completed resources");
+    const auto* failedSource = state.source.Get();
+    ReleaseWithoutCopy(replacement);
+    Check(state.phase == Phase::Failed && state.source.Get() == failedSource &&
+        state.destination.Get() == completedDestination && state.fence.Get() == completedFence,
+        "later exact release cannot reset Failed quarantine");
+    Stop();
+    state = State{};
+}
+
 void IllegalReset(Gpu& gpu)
 {
     using namespace cdt::sdf::acquire;
@@ -555,6 +812,10 @@ int main()
     test::RejectedBeforeContexts(gpu);
     test::FencedPublication(gpu);
     test::RecenteredMapping(gpu);
+    test::CompletedBindingReplacement(gpu);
+    test::AmbiguousAndDeviceMismatchReplacement(gpu);
+    test::ReplacementPacketAndBudgetControls(gpu);
+    test::PendingAndFailedReplacement(gpu);
     test::IllegalReset(gpu);
     gpu.CheckDebug();
     // Every submitted list is idle, and the final rejected recording was discarded.

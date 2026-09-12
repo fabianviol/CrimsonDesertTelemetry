@@ -25,6 +25,8 @@ jobs:
       - name: INI and package profile validation
         shell: pwsh
         run: .\tests\Test-ModManagerPackage.ps1 -SelfTest
+      - name: Signed-distance sampler regression tests
+        run: python tests/Test-SignedDistanceSampler.py
       - name: Configure and build native plugin/tests
         shell: pwsh
         run: |

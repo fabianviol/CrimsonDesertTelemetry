@@ -111,6 +111,27 @@ void Fail(const char* reason)
     state.failure = reason; state.phase = Phase::Failed;
     sdf::Clear();
 }
+bool CanReplaceCompletedBinding(std::uint64_t now)
+{
+    if (state.phase != Phase::Ready || state.preparing || state.mapping || state.resetPending || state.closePending ||
+        !state.packed.empty() || !state.lastCompletedTick || !state.releaseTick || !state.fence || !state.fenceValue ||
+        now < state.releaseTick || now - state.releaseTick <= sdf::ProductionMaximumAgeMilliseconds ||
+        !state.latest.valid || now < state.latest.tick || now - state.latest.tick > ContextAgeMs)
+        return false;
+    // Every published volume is at most as new as this last recorded copy.
+    // A stale completed transaction can be replaced; pending/failed work cannot.
+    const auto completed = state.fence->GetCompletedValue();
+    return completed != std::numeric_limits<std::uint64_t>::max() && completed >= state.fenceValue;
+}
+bool SameCaptureDevice(ID3D12Resource* source, ID3D12GraphicsCommandList7* list)
+{
+    ComPtr<ID3D12Device> sourceDevice, listDevice;
+    ComPtr<IUnknown> sourceIdentity, listIdentity;
+    return state.deviceIdentity && SUCCEEDED(source->GetDevice(IID_PPV_ARGS(&sourceDevice))) &&
+        SUCCEEDED(list->GetDevice(IID_PPV_ARGS(&listDevice))) &&
+        SUCCEEDED(sourceDevice.As(&sourceIdentity)) && SUCCEEDED(listDevice.As(&listIdentity)) &&
+        sourceIdentity.Get() == state.deviceIdentity.Get() && listIdentity.Get() == state.deviceIdentity.Get();
+}
 
 void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list, UINT count, const D3D12_BARRIER_GROUP* groups)
 {
@@ -119,36 +140,77 @@ void STDMETHODCALLTYPE BarrierHook(ID3D12GraphicsCommandList7* list, UINT count,
         if (state.enabled && state.hooksReady && state.phase != Phase::Failed && list && groups &&
             count <= 64 && list->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE)
         {
+            const auto now = GetTickCount64();
+            const bool replaceCompletedBinding = CanReplaceCompletedBinding(now);
             const D3D12_TEXTURE_BARRIER* match{};
             unsigned hits{};
+            bool completeCandidates = true;
             for (UINT group = 0; group < count; ++group)
             {
                 const auto& packet = groups[group];
-                if (packet.Type != D3D12_BARRIER_TYPE_TEXTURE || packet.NumBarriers > 4096 ||
-                    !packet.pTextureBarriers) continue;
+                if (packet.Type != D3D12_BARRIER_TYPE_TEXTURE) continue;
+                if (packet.NumBarriers > 4096 || !packet.pTextureBarriers)
+                { completeCandidates = false; continue; }
                 for (UINT i = 0; i < packet.NumBarriers; ++i)
                 {
                     const auto& b = packet.pTextureBarriers[i];
-                    if (state.source)
+                    if (state.source && b.pResource == state.source.Get()) { match = &b; ++hits; }
+                }
+            }
+            // A returning known binding retains its original all-occurrences
+            // check and never depends on the bounded replacement search budget.
+            const bool knownBinding = state.source && Tracked(list) && hits != 0;
+            if (completeCandidates && !knownBinding && (!state.source || replaceCompletedBinding))
+            {
+                match = nullptr; hits = 0;
+                for (UINT group = 0; group < count; ++group)
+                {
+                    const auto& packet = groups[group];
+                    if (packet.Type != D3D12_BARRIER_TYPE_TEXTURE) continue;
+                    for (UINT i = 0; i < packet.NumBarriers; ++i)
                     {
-                        if (b.pResource == state.source.Get()) { match = &b; ++hits; }
-                    }
-                    else if (MatchesRelease(b) && state.inspections < 20000)
-                    {
+                        const auto& b = packet.pTextureBarriers[i];
+                        if (!MatchesRelease(b)) continue;
+                        if (state.inspections >= 20000) { completeCandidates = false; continue; }
                         ++state.inspections;
                         if (ValidShape(b.pResource->GetDesc())) { match = &b; ++hits; }
                     }
                 }
+                // An exact release plus another barrier for that same resource
+                // is still ambiguous: our copy would precede the entire packet.
+                if (completeCandidates && hits == 1)
+                {
+                    unsigned occurrences{};
+                    for (UINT group = 0; group < count; ++group)
+                    {
+                        const auto& packet = groups[group];
+                        if (packet.Type != D3D12_BARRIER_TYPE_TEXTURE) continue;
+                        for (UINT i = 0; i < packet.NumBarriers; ++i)
+                            if (packet.pTextureBarriers[i].pResource == match->pResource) ++occurrences;
+                    }
+                    completeCandidates = occurrences == 1;
+                }
             }
-            if (hits == 1 && MatchesRelease(*match))
+            if (completeCandidates && hits == 1 && MatchesRelease(*match))
             {
                 if (state.phase == Phase::Idle)
                 {
                     state.source = match->pResource; state.list = list;
                     state.phase = Phase::Preparing;
                 }
-                const auto now = GetTickCount64();
-                if (state.phase == Phase::Ready && Tracked(list) && state.generationKnown &&
+                else if (replaceCompletedBinding &&
+                    (match->pResource != state.source.Get() || !Tracked(list)) && SameCaptureDevice(match->pResource, list))
+                {
+                    state.source = match->pResource; state.list = list;
+                    state.generation = state.recordedGeneration = 0;
+                    state.generationKnown = state.resetPending = state.closed = state.closePending = false;
+                    state.before = {};
+                    // Keep the completed readback/fence until Prepare succeeds.
+                    // This discovery release itself never establishes Reset.
+                    state.phase = Phase::Preparing;
+                    sdf::Clear();
+                }
+                if (state.phase == Phase::Ready && match->pResource == state.source.Get() && Tracked(list) && state.generationKnown &&
                     !state.resetPending && !state.closed && !state.closePending && state.latest.valid &&
                     now >= state.latest.tick && now - state.latest.tick <= ContextAgeMs &&
                     (!state.lastCompletedTick || now - state.lastCompletedTick >= IntervalMs))
@@ -307,6 +369,9 @@ void Prepare()
     if (!state.enabled || state.phase != Phase::Preparing) return;
     if (FAILED(hr)) { Fail("readback-preparation-failed"); return; }
     state.destination = destination; state.fence = fence; state.deviceIdentity = identity;
+    state.queue.Reset();
+    state.nextFence = state.fenceValue = 0;
+    state.releaseTick = state.submitTick = state.completedTick = state.lastCompletedTick = 0;
     state.footprint = footprint; state.phase = Phase::Ready;
 }
 }

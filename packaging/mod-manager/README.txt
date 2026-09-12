@@ -5,10 +5,13 @@ Live light, player and camera data for Crimson Desert: local HTTP and WebSocket 
 local ambient/sky exposure, fullscreen light markers and a 3D light radar.
 This validation build adds per-source geometry visibility to the raw and smoothed
 light streams, with optional hiding of blocked HUD markers. Original source records
-and RGB are preserved. Per-light production live acceptance is still outstanding.
+and RGB are preserved. Per-light production live acceptance is still outstanding:
+the current camp test exposed concealed lamps incorrectly reported as clear.
+This test package does not claim to resolve all geometric false-clear cases.
 Inspect current light positions, linear HDR color and brightness, plus direction
-and cone angles for spot contributions. Fires, candles, lanterns and glass/crystal
-lamps were tested in game. Multiple contributions can belong to one physical lamp.
+and cone angles for spot contributions. Position/color capture for fires, candles,
+lanterns and glass/crystal lamps was tested in game; this is not an occlusion pass
+for those light types. Multiple contributions can belong to one physical lamp.
 
 Download, documentation and support:
 https://github.com/fabianviol/CrimsonDesertTelemetry

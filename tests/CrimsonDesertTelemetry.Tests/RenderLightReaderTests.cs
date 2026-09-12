@@ -299,6 +299,56 @@ internal static class RenderLightReaderTests
         Check(reader.Capture((10, 20, 30), 10).Sources!.SequenceEqual(live.Sources!), "V3 mapping cache changed metadata.");
     }
 
+    public static void PublicationRaces()
+    {
+        var bytes = VisibilitySnapshot();
+        U32(bytes, 24, (uint)Environment.ProcessId);
+        Record(bytes, 0, (1, 0, 0), (4, 2, 1), -1, (0, 0, 1));
+        U32(bytes, TotalBytes, 2); F(bytes, TotalBytes + 4, -.03f);
+        var now = (ulong)Environment.TickCount64;
+        U64(bytes, 48, now); U64(bytes, 56, now); U64(bytes, 136, now - 100);
+        using var mapping = MemoryMappedFile.CreateNew($"Local\\CrimsonDesertTelemetry.Render.{Environment.ProcessId}",
+            bytes.Length, MemoryMappedFileAccess.ReadWrite);
+        using var writer = mapping.CreateViewAccessor();
+        writer.WriteArray(0, bytes, 0, bytes.Length);
+        using var reader = new RenderLightReader(Environment.ProcessId, ProcessStart);
+        var first = reader.Capture((10, 20, 30), 10);
+        Check(first.Status == "available" && first.Sources?.Count == 1, "Race fixture has no fresh capture.");
+
+        // Leave the publication deliberately incomplete with changed RGB/geometry.
+        U64(bytes, 16, 3); U64(bytes, 40, 8);
+        F(bytes, RecordOffset(0) + 16, 99); U32(bytes, TotalBytes, 1); F(bytes, TotalBytes + 4, .25f);
+        writer.WriteArray(0, bytes, 0, bytes.Length);
+        using (var coldReader = new RenderLightReader(Environment.ProcessId, ProcessStart))
+            Check(coldReader.Capture((10, 20, 30), 10).UnavailableReason == "bridge-changing",
+                "A cold reader invented a capture from an unfinished publication.");
+        var racing = reader.Capture((10, 20, 30), 10);
+        Check(racing.Status == "available" && racing.CaptureSequence == first.CaptureSequence &&
+              racing.Sources!.SequenceEqual(first.Sources!) && racing.AgeMilliseconds >= first.AgeMilliseconds,
+            "A publication race dropped fresh lights, mixed metadata/RGB or refreshed their age.");
+        U64(bytes, 16, 4); writer.WriteArray(0, bytes, 0, bytes.Length);
+        var next = reader.Capture((10, 20, 30), 10);
+        Check(next.CaptureSequence == 8 && next.Sources![0].ColorLinear.X == 99 &&
+              next.Sources[0].SourceVisibility?.Status == "clear",
+            "A completed new capture was hidden by the previous cache.");
+
+        // A completed fault must replace the active cache even during a later race.
+        U64(bytes, 16, 6); U32(bytes, 28, 3); writer.WriteArray(0, bytes, 0, bytes.Length);
+        Check(reader.Capture((10, 20, 30), 10).UnavailableReason == "native-fault", "A stable fault was masked.");
+        writer.Write(16, 7UL);
+        Check(reader.Capture((10, 20, 30), 10).UnavailableReason == "native-fault", "An older active cache revived after fault.");
+
+        U64(bytes, 16, 8); U32(bytes, 28, 1);
+        now = (ulong)Environment.TickCount64;
+        U64(bytes, 48, now); U64(bytes, 56, now); U64(bytes, 136, now - 100);
+        writer.WriteArray(0, bytes, 0, bytes.Length);
+        Check(reader.Capture((10, 20, 30), 10).Status == "available", "New valid publication did not recover.");
+        writer.Write(16, 9UL);
+        Thread.Sleep((int)RenderLightReader.MaximumAgeMilliseconds + 25);
+        Check(reader.Capture((10, 20, 30), 10).UnavailableReason == "bridge-stale",
+            "A prolonged publication race extended capture freshness.");
+    }
+
     private static byte[] VisibilitySnapshot()
     {
         var bytes = new byte[RenderLightReader.VisibilityTotalBytes];

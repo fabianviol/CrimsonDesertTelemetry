@@ -1,5 +1,6 @@
 #include "sdf_visibility.h"
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -16,6 +17,48 @@ std::vector<std::uint8_t> Uniform(std::uint16_t half)
     std::vector<std::uint8_t> bytes(size_t{128}*64*1040*2);
     for(size_t i=0;i<bytes.size();i+=2){bytes[i]=static_cast<std::uint8_t>(half);bytes[i+1]=static_cast<std::uint8_t>(half>>8);}
     return bytes;
+}
+void TestNormalizedSampling(const std::array<std::uint8_t,768>& originalConstants)
+{
+    // An exactly representable negative affine field ensures Trace exposes its
+    // first sample directly. Every axis and level contributes; the Z guards
+    // deliberately differ from the opposite interior slices.
+    auto volume=Uniform(0);
+    for(unsigned z=0;z<1040;++z)for(unsigned y=0;y<64;++y)for(unsigned x=0;x<128;++x)
+    {
+        const auto half=static_cast<std::uint16_t>(0xc800 + x + 2*y + 3*(z%130) + 10*(z/130));
+        const size_t at=((size_t{z}*64+y)*128+x)*2;
+        volume[at]=static_cast<std::uint8_t>(half);volume[at+1]=static_cast<std::uint8_t>(half>>8);
+    }
+    const auto check=[&](unsigned level,const std::array<float,3>& point,
+        double interpolatedX,double interpolatedY,double interpolatedLocalZ,const char* description)
+    {
+        auto constants=originalConstants;
+        for(unsigned earlier=0;earlier<level;++earlier)PutFloat(constants,0x140+16*earlier+12,0);
+        // Use a ray along X so guard-boundary Z stays exact. Subtracting the
+        // fixed .6 offset introduces only float rounding in X (tolerance below).
+        const std::array<float,3> origin{point[0]-.6f,point[1],point[2]};
+        const std::array<float,3> target{point[0]+4,point[1],point[2]};
+        Publish(volume,constants,origin,50,500,true);
+        const auto result=Trace(target,500);
+        const double expected=-(1024+interpolatedX+2*interpolatedY+3*interpolatedLocalZ+10*level)/128;
+        Require(result.available&&result.verdict==Verdict::Blocked&&result.samples==1&&result.level==level,
+            "Analytical sample must be exposed by the first fixed trace step");
+        if(std::abs(result.value-expected)>0.000002)
+        {
+            std::cerr<<description<<" expected="<<expected<<" actual="<<result.value<<'\n';
+            Require(false,"Normalized linear sampling disagrees with analytical field");
+        }
+    };
+    check(0,{.125f,.125f,.125f},0,0,1,"First texel centres");
+    check(0,{.3125f,.1875f,.3125f},.75,.25,1.75,"Affine trilinear interpolation");
+    check(0,{0,0,0},63.5,31.5,.5,"XY wrap and stored low Z guard");
+    check(0,{-.125f,-.125f,-.125f},127,63,128,"Negative texel centres");
+    check(0,{-.0625f,-.0625f,-.0625f},95.25,47.25,128.25,"Negative wrap and stored high Z guard");
+    check(0,{.0625f,.0625f,.0625f},31.75,15.75,.75,"Positive boundary interpolation");
+    check(3,{1,1,1},0,0,1,"Selected level texel centres");
+    check(7,{0,0,0},63.5,31.5,.5,"Final level low guard");
+    check(7,{-8,-8,-8},95.25,47.25,128.25,"Final level high guard");
 }
 int main(int argc,char** argv)
 {
@@ -39,6 +82,7 @@ int main(int argc,char** argv)
         std::array<std::uint8_t,768> constants{};
         PutFloat(constants,0x10,1.f/32);PutFloat(constants,0x14,1.f/16);PutFloat(constants,0x18,1.f/32);
         for(unsigned level=0;level<8;++level)PutFloat(constants,0x140+16*level+12,1.f);
+        TestNormalizedSampling(constants);
         Publish(Uniform(0x3c00),constants,{0,0,0},42,100,true);
         auto trace=Trace({5,0,0},100);
         Require(trace.available&&trace.verdict==Verdict::Clear&&trace.closest==1,

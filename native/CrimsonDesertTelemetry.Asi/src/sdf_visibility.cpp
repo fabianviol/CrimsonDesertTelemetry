@@ -69,14 +69,17 @@ double Sample(const Snapshot& snapshot, unsigned level, const std::array<double,
     double normalised[3]{};
     for (unsigned axis = 0; axis < 3; ++axis)
         normalised[axis] = world[axis] * Lane(snapshot.constants, 0x10, axis) / static_cast<double>(1u << level);
-    const unsigned dims[3]{Width,Height,ContentDepth};
-    unsigned low[3]{};
+    // The shader uses a normalized, linear WRAP sampler at LOD 0. Texel
+    // centres are n + .5, including the two stored Z guard slices per level.
+    const unsigned dims[3]{Width,Height,LevelDepth * Levels};
+    int low[3]{};
     double fraction[3]{};
     for (unsigned axis = 0; axis < 3; ++axis)
     {
-        double wrapped = normalised[axis] - std::floor(normalised[axis]);
-        const double texel = wrapped * dims[axis];
-        low[axis] = static_cast<unsigned>(texel) % dims[axis];
+        const double wrapped = normalised[axis] - std::floor(normalised[axis]);
+        const double texel = axis == 2 ? level * LevelDepth + .5 + wrapped * ContentDepth :
+            wrapped * dims[axis] - .5;
+        low[axis] = static_cast<int>(std::floor(texel));
         fraction[axis] = texel - std::floor(texel);
     }
     double result{};
@@ -84,8 +87,11 @@ double Sample(const Snapshot& snapshot, unsigned level, const std::array<double,
         for (unsigned dy = 0; dy < 2; ++dy)
             for (unsigned dx = 0; dx < 2; ++dx)
             {
-                const unsigned x = (low[0] + dx) % Width, y = (low[1] + dy) % Height;
-                const unsigned z = level * LevelDepth + 1 + (low[2] + dz) % ContentDepth;
+                // low can be -1 at an X/Y wrap boundary. Offset into the
+                // positive range before converting to unsigned/modulo.
+                const unsigned x = (static_cast<unsigned>(low[0] + static_cast<int>(Width)) + dx) % Width;
+                const unsigned y = (static_cast<unsigned>(low[1] + static_cast<int>(Height)) + dy) % Height;
+                const unsigned z = (static_cast<unsigned>(low[2]) + dz) % dims[2];
                 const size_t offset = ((size_t{z} * Height + y) * Width + x) * 2;
                 const auto& bytes = *snapshot.volume;
                 const std::uint16_t raw = static_cast<std::uint16_t>(bytes[offset] | bytes[offset + 1] << 8);

@@ -17,6 +17,18 @@ HANDLE mappingHandle{};
 Mapping* mapping{};
 SRWLOCK publishLock = SRWLOCK_INIT;
 std::atomic<bool> sourceVisibilityEnabled{};
+struct PreparedVisibility
+{
+    uint64_t volumeSequence{}, volumeTickMs{};
+    uint32_t contextFrame{};
+    std::array<VisibilityEntry, RecordCount> entries{};
+};
+// One bounded working buffer, protected by publishLock like all other writers.
+// Readers keep seeing the preceding complete capture while geometry is computed.
+PreparedVisibility preparedVisibility;
+#ifdef CDT_RENDER_BRIDGE_TEST
+std::atomic<void(*)()> beforeVisibilityTrace{};
+#endif
 template<class T> T At(const void* bytes, size_t offset)
 {
     T value{};
@@ -26,15 +38,12 @@ template<class T> T At(const void* bytes, size_t offset)
 void BeginWrite() { InterlockedIncrement64(&mapping->header.seqlock); MemoryBarrier(); }
 void EndWrite() { MemoryBarrier(); InterlockedIncrement64(&mapping->header.seqlock); }
 
-void PublishVisibility(const void* scene, const void* lights, const void* counters, uint64_t now)
+void PrepareVisibility(const void* scene, const void* lights, const void* counters, uint64_t now)
 {
-    auto& h=mapping->header;
-    h.visibilityVersion=1;h.visibilityEntryBytes=sizeof(VisibilityEntry);
-    h.visibilityMaximumAgeMs=sdf::ProductionMaximumAgeMilliseconds;
-    h.visibilityTraceBudget=sdf::MaximumBatchTargets;
-    h.visibilityVolumeSequence=0;h.visibilityVolumeTickMs=0;h.visibilityContextFrame=0;
+    auto& prepared=preparedVisibility;
+    prepared.volumeSequence=0;prepared.volumeTickMs=0;prepared.contextFrame=0;
     const bool enabled=sourceVisibilityEnabled.load(std::memory_order_relaxed);
-    std::fill(std::begin(mapping->visibility),std::end(mapping->visibility),VisibilityEntry{enabled?0u:11u,0});
+    prepared.entries.fill(VisibilityEntry{enabled?0u:11u,0});
     if(!enabled)return;
     const auto camera=At<std::array<float,3>>(scene,native_contract::PositionOffset);
     struct Target{uint32_t index;std::array<float,3> world;double distanceSquared;};
@@ -55,9 +64,9 @@ void PublishVisibility(const void* scene, const void* lights, const void* counte
             valid=valid&&std::isfinite(relative[axis])&&std::isfinite(world[axis]);
             distanceSquared+=double{relative[axis]}*relative[axis];
         }
-        if(!valid){mapping->visibility[index].code=6;continue;}
-        if(distanceSquared>100.0*100.0){mapping->visibility[index].code=8;continue;}
-        mapping->visibility[index].code=7;
+        if(!valid){prepared.entries[index].code=6;continue;}
+        if(distanceSquared>100.0*100.0){prepared.entries[index].code=8;continue;}
+        prepared.entries[index].code=7;
         candidates.push_back({index,world,distanceSquared});
     }
     const auto retained=std::min(candidates.size(),size_t{sdf::MaximumBatchTargets});
@@ -66,13 +75,16 @@ void PublishVisibility(const void* scene, const void* lights, const void* counte
             (a.distanceSquared==b.distanceSquared&&a.index<b.index);});
     std::vector<std::array<float,3>> targets;targets.reserve(retained);
     for(size_t i=0;i<retained;++i)targets.push_back(candidates[i].world);
+#ifdef CDT_RENDER_BRIDGE_TEST
+    if(const auto observer=beforeVisibilityTrace.load())observer();
+#endif
     const auto batch=sdf::TraceBatch(camera,targets,now);
-    h.visibilityVolumeSequence=batch.status.sequence;
-    h.visibilityVolumeTickMs=batch.status.capturedTickMilliseconds;
-    h.visibilityContextFrame=batch.status.contextFrame;
+    prepared.volumeSequence=batch.status.sequence;
+    prepared.volumeTickMs=batch.status.capturedTickMilliseconds;
+    prepared.contextFrame=batch.status.contextFrame;
     for(size_t i=0;i<batch.traces.size();++i)
     {
-        const auto& trace=batch.traces[i];auto& entry=mapping->visibility[candidates[i].index];
+        const auto& trace=batch.traces[i];auto& entry=prepared.entries[candidates[i].index];
         if(!trace.available)
             entry.code=trace.reason=="stale-sdf-volume"?9u:
                 trace.reason=="unbracketed-sdf-context"||trace.reason=="invalid-sdf-clock"||
@@ -85,6 +97,9 @@ void PublishVisibility(const void* scene, const void* lights, const void* counte
 }
 
 void SetSourceVisibilityEnabled(bool enabled){sourceVisibilityEnabled.store(enabled,std::memory_order_relaxed);}
+#ifdef CDT_RENDER_BRIDGE_TEST
+void SetBeforeVisibilityTraceForTest(void(*observer)()){beforeVisibilityTrace.store(observer);}
+#endif
 
 bool OpenBridge()
 {
@@ -135,13 +150,29 @@ void PublishSample(const void* scene, const void* lights, const void* counters, 
 {
     if (!mapping) return;
     AcquireSRWLockExclusive(&publishLock);
+    const auto publishedTickMs = GetTickCount64();
+    try
+    {
+        PrepareVisibility(scene, lights, counters, publishedTickMs);
+    }
+    catch (...)
+    {
+        // Optional geometry failure must not retain partial or previous metadata.
+        preparedVisibility.volumeSequence = 0;
+        preparedVisibility.volumeTickMs = 0;
+        preparedVisibility.contextFrame = 0;
+        preparedVisibility.entries.fill(VisibilityEntry{10, 0});
+    }
+    // Only fixed-size copies and header updates belong in the inter-process
+    // seqlock. SDF tracing must not make healthy raw lights temporarily unreadable.
     BeginWrite();
     memcpy(mapping->scene, scene, SceneBytes);
     memcpy(mapping->lights, lights, LightBytes);
     memcpy(mapping->counters, counters, CounterBytes);
+    memcpy(mapping->visibility, preparedVisibility.entries.data(), sizeof(mapping->visibility));
     ++mapping->header.sampleSequence;
     mapping->header.capturedTickMs = capturedTickMs;
-    mapping->header.publishedTickMs = GetTickCount64();
+    mapping->header.publishedTickMs = publishedTickMs;
     mapping->header.frameNumber = At<uint32_t>(scene, native_contract::FrameOffset);
     mapping->header.error = 0;
     mapping->header.flags = ExactBuild | FenceCompleted | PairedScene | PairedCounter;
@@ -150,19 +181,13 @@ void PublishSample(const void* scene, const void* lights, const void* counters, 
     mapping->header.owner = owner;
     mapping->header.bufferIndex = bufferIndex;
     mapping->header.state = Status::Active;
-    try
-    {
-        PublishVisibility(scene, lights, counters, mapping->header.publishedTickMs);
-    }
-    catch (...)
-    {
-        // Optional geometry failure must not leave the raw capture locked or
-        // retain a partial visibility result from this or an earlier sample.
-        mapping->header.visibilityVolumeSequence = 0;
-        mapping->header.visibilityVolumeTickMs = 0;
-        mapping->header.visibilityContextFrame = 0;
-        std::fill(std::begin(mapping->visibility), std::end(mapping->visibility), VisibilityEntry{10, 0});
-    }
+    mapping->header.visibilityVersion = 1;
+    mapping->header.visibilityEntryBytes = sizeof(VisibilityEntry);
+    mapping->header.visibilityMaximumAgeMs = sdf::ProductionMaximumAgeMilliseconds;
+    mapping->header.visibilityTraceBudget = sdf::MaximumBatchTargets;
+    mapping->header.visibilityVolumeSequence = preparedVisibility.volumeSequence;
+    mapping->header.visibilityVolumeTickMs = preparedVisibility.volumeTickMs;
+    mapping->header.visibilityContextFrame = preparedVisibility.contextFrame;
     EndWrite();
     ReleaseSRWLockExclusive(&publishLock);
 }

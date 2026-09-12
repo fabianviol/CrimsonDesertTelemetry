@@ -42,6 +42,13 @@ void Light(std::vector<uint8_t>& bytes, unsigned index, const std::array<float, 
     memcpy(record + 16, rgb.data(), sizeof(rgb));
     memcpy(record + 38, &pointKind, sizeof(pointKind));
 }
+HANDLE traceEntered{}, traceContinue{};
+void BlockVisibilityTrace()
+{
+    Check(SetEvent(traceEntered) != FALSE, "visibility preparation entry event failed");
+    Check(WaitForSingleObject(traceContinue, 5000) == WAIT_OBJECT_0, "visibility preparation release timed out");
+}
+void FailVisibilityTrace() { throw std::bad_alloc(); }
 
 void VisibilityControls(const cdt::render::Mapping* source,
     std::array<uint8_t, cdt::render::SceneBytes> scene)
@@ -197,6 +204,80 @@ void VisibilityControls(const cdt::render::Mapping* source,
     SetSourceVisibilityEnabled(false);
     sdf::Clear();
 }
+void VisibilityPreparationKeepsPreviousCaptureReadable(const cdt::render::Mapping* source,
+    std::array<uint8_t, cdt::render::SceneBytes> scene)
+{
+    using namespace cdt::render;
+    namespace sdf = cdt::sdf;
+    Put(scene, 0x80, std::array<float, 4>{0, 0, 0, 0});
+    Put(scene, 0x20, uint32_t{3000});
+    std::vector<uint8_t> lights(LightBytes);
+    std::array<uint8_t, CounterBytes> counters{};
+    Put(counters, 4, uint32_t{1});
+    Light(lights, 0, {0, 0, 5});
+    SetSourceVisibilityEnabled(true);
+    sdf::Publish(Field(0x3c00), GiConstants(), {0, 0, 0}, 4000, GetTickCount64(), true);
+    PublishSample(scene.data(), lights.data(), counters.data(), GetTickCount64(), 7000, 8000, 9000, 0);
+    auto previous = std::make_unique<Mapping>();
+    memcpy(previous.get(), source, MappingBytes);
+    Check(previous->visibility[0].code == 1, "previous readable-capture fixture must be clear");
+
+    // Block inside preparation immediately before tracing, rather than relying
+    // on CPU speed or a timing threshold to catch a long SDF calculation.
+    sdf::Publish(Field(0xbc00), GiConstants(), {0, 0, 0}, 4001, GetTickCount64(), true);
+    const auto volume = sdf::CurrentStatus(GetTickCount64());
+    Put(scene, 0x20, uint32_t{3001});
+    Light(lights, 0, {2, 0, 5});
+    traceEntered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    traceContinue = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    Check(traceEntered && traceContinue, "visibility preparation events failed");
+    SetBeforeVisibilityTraceForTest(BlockVisibilityTrace);
+    std::thread writer([&]
+    {
+        PublishSample(scene.data(), lights.data(), counters.data(), GetTickCount64(), 7001, 8001, 9001, 1);
+    });
+    Check(WaitForSingleObject(traceEntered, 5000) == WAIT_OBJECT_0, "writer never entered visibility preparation");
+    auto copy = std::make_unique<Mapping>();
+    for (unsigned attempt = 0; attempt < 3; ++attempt)
+    {
+        const LONG64 before = source->header.seqlock;
+        MemoryBarrier();
+        Check(!(before & 1), "SDF preparation made the preceding healthy capture unreadable");
+        memcpy(copy.get(), source, MappingBytes);
+        MemoryBarrier();
+        Check(before == source->header.seqlock && memcmp(copy.get(), previous.get(), MappingBytes) == 0,
+            "SDF preparation changed a previously published raw/visibility pair");
+    }
+    Check(SetEvent(traceContinue) != FALSE, "visibility preparation release event failed");
+    writer.join();
+    SetBeforeVisibilityTraceForTest(nullptr);
+    CloseHandle(traceEntered); CloseHandle(traceContinue);
+    traceEntered = traceContinue = nullptr;
+    Check(!(source->header.seqlock & 1) && source->header.sampleSequence == previous->header.sampleSequence + 1 &&
+        source->header.frameNumber == 3001 && source->header.outputResource == 7001 && source->header.counterResource == 8001 &&
+        memcmp(source->scene, scene.data(), SceneBytes) == 0 && memcmp(source->lights, lights.data(), LightBytes) == 0 &&
+        memcmp(source->counters, counters.data(), CounterBytes) == 0 &&
+        source->header.visibilityVolumeSequence == volume.sequence && source->header.visibilityContextFrame == 4001 &&
+        source->visibility[0].code == 2 && source->visibility[0].closest == -1,
+        "prepared metadata was not committed with its exact matching raw capture");
+
+    // A preparation allocation failure still publishes new healthy raw data
+    // with unknown metadata; it must not reuse the preceding blocked verdict.
+    Put(scene, 0x20, uint32_t{3002});
+    Light(lights, 0, {3, 0, 5});
+    SetBeforeVisibilityTraceForTest(FailVisibilityTrace);
+    PublishSample(scene.data(), lights.data(), counters.data(), GetTickCount64(), 7002, 8002, 9002, 0);
+    SetBeforeVisibilityTraceForTest(nullptr);
+    Check(!(source->header.seqlock & 1) && source->header.frameNumber == 3002 &&
+        source->header.sampleSequence == previous->header.sampleSequence + 2 &&
+        memcmp(source->lights, lights.data(), LightBytes) == 0 && source->header.visibilityVolumeSequence == 0 &&
+        source->header.visibilityVolumeTickMs == 0 && source->header.visibilityContextFrame == 0 &&
+        source->visibility[0].code == 10 && source->visibility[RecordCount - 1].code == 10,
+        "failed visibility preparation damaged raw publication or retained earlier metadata");
+    SetSourceVisibilityEnabled(false);
+    sdf::Clear();
+    std::cout << "PASS prior capture remains readable during SDF preparation; paired commit and failure fallback\n";
+}
 }
 int main()
 {
@@ -261,6 +342,7 @@ int main()
     }
     writer.join();
     VisibilityControls(source, scene);
+    VisibilityPreparationKeepsPreviousCaptureReadable(source, scene);
     PublishStatus(Status::Fault, WAIT_TIMEOUT, ExactBuild);
     Check(source->header.state == Status::Fault && source->header.error == WAIT_TIMEOUT && !(source->header.seqlock & 1),
         "fault failed to invalidate old sample");

@@ -58,6 +58,9 @@ void SetSourceVisibilityEnabled(bool enabled);
 void PublishStatus(Status state, uint32_t error = 0, uint32_t flags = 0);
 void PublishSample(const void* scene, const void* lights, const void* counters, uint64_t capturedTickMs,
     uint64_t outputResource, uint64_t counterResource, uint64_t owner, uint32_t bufferIndex);
+#ifdef CDT_RENDER_BRIDGE_TEST
+void SetBeforeVisibilityTraceForTest(void(*observer)());
+#endif
 // Validation independent of game pointers, also used by the smoke test.
 bool ValidateScene(const void* scene);
 bool SameScene(const void* first, const void* second);

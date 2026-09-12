@@ -3,6 +3,11 @@
 Production implementation under validation; this document does not establish live
 acceptance or final release readiness. Ambient acceptance is a separate goal.
 
+The current `.3` camp test exposed false-clear lamp verdicts, intermittent shared
+light-view dropouts and stopped SDF updates. Corrections are in progress; see the
+[measured regressions](SOURCE_VISIBILITY_REGRESSION.md). F11 hiding follows the
+geometry metadata and cannot correct an inaccurate clear verdict.
+
 HUD and radar display visible/blocked/unknown metadata. `[LightOverlay] HideOccluded=1`
 starts both light views with fresh known blocked sources hidden; `0` shows all.
 `OcclusionToggleKey=122` toggles this display mode during play (default F11).

@@ -1,8 +1,9 @@
 """Sample the engine's signed distance clipmap from a live R16 copy.
 
 Addressing follows the sky-visibility volume's, at double resolution. The consumer
-shader builds the z texel as `level*130 + 1 + frac(z)*128` over a total depth of
-1040, and the world-to-normalised step reuses the same inverse extents at 0x10 of
+shader builds normalized z as `(level*130 + 1 + frac(z)*128)/1040`. Its linear
+sampler subtracts half a texel on all axes, and reads the stored Z guard slices.
+The world-to-normalised step reuses the same inverse extents at 0x10 of
 the 768-byte GI constants, so a level spans 32 x 16 x 32 game units across
 128 x 64 x 128 texels.
 
@@ -71,7 +72,7 @@ def anchor(constants):
 
 
 def sample(volume, constants, level, world):
-    """Trilinear sample at a world position, wrapping toroidally like the shader."""
+    """Normalized linear WRAP sample at LOD 0, including actual Z guard slices."""
     inverse = inverse_extents(constants)
     scale = 1.0 / (1 << level)
     normalised = [world[j] * inverse[j] * scale for j in range(3)]
@@ -80,11 +81,10 @@ def sample(volume, constants, level, world):
         fraction = value - math.floor(value)
         return fraction * count
 
-    fx, fy = wrapped(normalised[0], WIDTH), wrapped(normalised[1], HEIGHT)
-    fz = wrapped(normalised[2], CONTENT)
-    x0, y0, z0 = int(fx), int(fy), int(fz)
+    fx, fy = wrapped(normalised[0], WIDTH) - 0.5, wrapped(normalised[1], HEIGHT) - 0.5
+    fz = level * DEPTH_PER_LEVEL + 0.5 + wrapped(normalised[2], CONTENT)
+    x0, y0, z0 = math.floor(fx), math.floor(fy), math.floor(fz)
     tx, ty, tz = fx - x0, fy - y0, fz - z0
-    base = level * DEPTH_PER_LEVEL + 1
     total = 0.0
     for dz in (0, 1):
         for dy in (0, 1):
@@ -95,7 +95,7 @@ def sample(volume, constants, level, world):
                 total += weight * texel(volume,
                                         (x0 + dx) % WIDTH,
                                         (y0 + dy) % HEIGHT,
-                                        base + (z0 + dz) % CONTENT)
+                                        (z0 + dz) % TOTAL_DEPTH)
     return total
 
 

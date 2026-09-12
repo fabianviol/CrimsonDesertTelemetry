@@ -64,8 +64,9 @@ current source list; the source feed is still view-filtered and is not a complet
 off or blocked. A source-center result also does not describe its entire
 illuminated region.
 
-The implementation has synthetic test coverage. Its real
-visible/blocked/visible and behind-camera acceptance is still pending. Both
+The implementation has synthetic test coverage. The current camp test exposed
+falsely clear concealed lamps; corrections and live validation remain in progress.
+Its real visible/blocked/visible and behind-camera acceptance is still pending. Both
 ambient and per-light goals must pass before a final release. Production uses
 bounded current-data acquisition; private research capture runs and histories
 are not required.
