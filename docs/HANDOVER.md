@@ -95,10 +95,32 @@ under `artifacts/recovery/codex-ambient-takeover-20260912-111004/`.
   (`DEAD49F6FD561833E0E929662E0D1BFDC89A1F24142549C1B1C9B41E61D5F2DE`).
 - Not installed by Codex, not publicly uploaded, no new AV scan yet.
 
-**Next:** user closes game, replaces v2.1.8 through DMM with v2.1.9, loads a save
-and stands under open sky. Verify deployed hashes read-only, collect fresh API
-control, then guide enclosed and return-open stages with stationary windows.
-Do not mark Ambient complete until that controlled live test passes.
+## Live A-B-A in progress — user installed v2.1.9 through DMM
+
+Game PID 31832, started 12:30:33 CEST. Read-only hashes verify ASI, both DLLs,
+INI and runtimeconfig against v2.1.9. DMM retained v2.1.8 `deps.cfg`; only version
+labels differ, with identical runtime target, DLL asset names and dependency
+structure. Record this discrepancy; full installation equality is not claimed.
+The running new native/managed code now supplies valid, fresh visibility.
+
+Outside phase recorded at 12:48 CEST:
+`artifacts/light-research/ambient-input-fix-20260912/live-aba-20260912-124843/01-outside.json`.
+User screenshot saved beside it. 16/16 fresh samples, 16 distinct visibility
+frames, age <=31 ms, API sequence 59727 -> 60190. Visibility 0.24005465..0.38915721,
+mean 0.33465750. Player unchanged at (-11407.612,665.6101,-4225.9883); camera
+(-11405.418, approximately 667.83,-4228.837), with <0.006 vertical idle movement.
+This is an outdoor reference near the building, not a full acceptance result.
+
+**Next:** user moves under the covered doorway and stops, then says ready.
+Measure a separate covered phase, then inside, then back at the original outside
+position/view. The current signal samples CAMERA location, so distinguish camera
+coverage from only the player's body crossing under the roof. Read APIs only;
+user operates game and provides scene context. Do not mark Ambient complete until
+the enclosed and return-open phases establish the controlled live reversal.
+
+User additionally confirms the HUD must include per-light visibility. Current
+OFF package still shows raw light markers without per-light occlusion; add that
+HUD presentation with the second product goal, without dropping original API data.
 
 After Ambient passes, proceed directly to per-light geometry visibility. The OFF
 build currently links `cdt_sdf_disabled`; research SDF/HUD tests passing is not
