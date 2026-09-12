@@ -14,13 +14,19 @@ the original contributions. The separate [ambient feed](docs/AMBIENT_STREAM.md)
 carries global sky, camera-local sky visibility and their working product estimate.
 Global sky RGB itself remains unoccluded.
 
-Current development targets **Steam build 25246367**. Ambient Occlusion passed a
-controlled open/enclosed/open route with the OFF v2.1.9 package on 2026-09-12.
-The current stability release excludes unfinished [per-light source visibility](docs/SOURCE_VISIBILITY.md).
-Markers include lights behind geometry; F11 is unused. That work and its test
-evidence are preserved for a later update. Current release validation is recorded
-in [the release checklist](docs/STABLE_RELEASE_VALIDATION.md). These features must
-not be assumed present in an older downloaded package.
+The product goal is to answer both **how exposed the player/camera location is to
+the sky and environment** and **which individual nearby game lights can actually
+reach it through world geometry**, including sources off-screen or behind the
+camera. Current development targets **Steam build 25246367**.
+
+The current blocker is reliable occlusion in all its forms. Ambient passed a
+controlled open/enclosed/open route, but its camera-orientation semantics still
+need validation. Per-light geometry tests are not yet reliable across fires,
+candles, lamps, walls, buildings and terrain, so production 2.1.10 excludes that
+unfinished path. Markers can include lights behind geometry and F11 is unused.
+The full current development state and preserved evidence are on GitHub; forks
+and contributions are welcome. See [source visibility](docs/SOURCE_VISIBILITY.md)
+and [release validation](docs/STABLE_RELEASE_VALIDATION.md).
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
 
@@ -55,11 +61,15 @@ Requirements:
 
 1. Close Crimson Desert.
 2. Download the **ModManagers.zip** asset from the release — not GitHub's source-code archive.
-3. Disable the previous telemetry package and any separate **CrimsonHueConsole** package in your mod manager.
+3. Disable the previous telemetry package and any separate legacy console ASI in your mod manager.
 4. Import **and activate/deploy** the new package in Definitive Mod Manager (DMM) or JSON Mod Manager. Keep all included files together.
 5. Start the game and load a save. The local host starts automatically.
 
-DMM deployment and a packaged cold start were verified locally before the HDR addition. A complete install/uninstall test matrix for both managers and other systems is still open; see the [validation record](docs/MOD_MANAGER_VALIDATION.md).
+DMM 2.8.1 clean deployment was verified locally. Its upgrade/removal path can
+leave both Telemetry DLLs and both lowercase CFG files behind. With the game
+closed, remove the old package, verify and delete only those four leftover
+Telemetry files, then import the new ZIP. Do not delete your ASI loader. A complete
+matrix for other systems remains open; see the [validation record](docs/MOD_MANAGER_VALIDATION.md).
 
 Do not merge old binaries or metadata into the new package. Preserve your INI preferences, but migrate them into the current sections. Replace both `.cfg` companions together with the DLLs; they contain .NET metadata and must **not** be renamed to `.json`, which DMM can interpret as game patches. Do not leave the former console ASI in a loader search path.
 
@@ -132,7 +142,11 @@ template. See [configuration dependencies and validation](docs/INI_VALIDATION.md
 
 ### Startup and errors
 
-There is no persistent "loading" notification. A success notice appears for six seconds once requested data is available, **which can already happen during the visible loading sequence**. The duration is configurable from 5–10 seconds. Actionable errors may appear immediately and remain until resolved.
+There is no persistent "loading" notification. A success notice appears for six
+seconds once valid player and render-camera data establish a playable world. The
+native light/sky capture waits for this one-shot signal, so initial menu and shader
+loading cannot consume a GPU capture transaction. The duration is configurable
+from 5–10 seconds. Actionable errors may appear immediately and remain until resolved.
 
 The status display starts independently of game-memory validation, so an unknown EXE or missing host/runtime can still produce an explanation. If the graphics overlay itself cannot run, consult the logs beside the plugin:
 
@@ -169,7 +183,7 @@ Product versions and API versions are separate: routes remain **HTTP API v1**. W
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
 - The arrays **overlap**; do not add them together. One physical lamp can produce several contributions.
 
-See [API fields, examples and freshness rules](docs/API.md) and the [client examples](examples). This is a local data API, not an API for controlling the game. CrimsonHue is a separate, future Philips Hue integration built on this telemetry.
+See [API fields, examples and freshness rules](docs/API.md) and the [client examples](examples). This is a local data API, not an API for controlling the game.
 
 ### Running from source
 

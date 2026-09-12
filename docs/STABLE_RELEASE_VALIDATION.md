@@ -1,6 +1,33 @@
 # Stable feature release — 2026-09-12
 
-## Scope and status
+## Final 2.1.10 package and current gate
+
+Final production package prepared: **2.1.10**, `CDT_RESEARCH=OFF`.
+ZIP: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-ModManagers.zip`,
+791,357 bytes, SHA-256
+`1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24`.
+Expanded payload:
+`artifacts/mod-manager/v2.1.10-20260912-204830-358-a7c66c8d/CrimsonDesertTelemetry/`.
+ASI:1,267,712bytes, SHA-256
+`8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78`.
+
+After NVIDIA driver32.0.16.1692 installation, the first rc.1 start rebuilt shaders
+and capture stopped with Windows error258/WAIT_TIMEOUT during the long initial
+load. The second start did not reproduce it. Final2.1.10 waits for the host's
+first valid player/render-camera `playing` state before arming native light/sky
+capture. Recorded-but-not-submitted work now has a separate60-second bound; the
+post-submit GPU fence retains5seconds. The timeout stage is logged explicitly.
+The named-event gate is covered by native and managed controls.
+
+Final automated result:70/70 managed controls and27/27 selected native controls
+PASS. Package validation confirms the31-setting production profile, nine exact
+files and expanded/ZIP equality. Exact final VirusTotal: ASI **5/71**, the same
+five detecting vendors as rc.2 and no new vendor; ZIP **0/66**. Local Defender
+custom scans return0 for both exact files with remediation disabled and unchanged
+hashes. The final package still requires one user-run DMM/game acceptance before
+Nexus publication.
+
+## Historical rc.1 scope and acceptance
 
 Candidate built: **2.1.10-rc.1**, production **CDT_RESEARCH=OFF**.
 Not published or accepted for release yet. The user paused occlusion work to
@@ -31,7 +58,7 @@ Evidence: `artifacts/validation/stable-release-20260912/` (local, not committed)
 | Research-only CTest exclusions | Existing spatial-texture-readback and spatial-paired-readback failures excluded from this run; no change or pass claim for those paths. They are not linked into the OFF product. |
 | INI/profile validation | PASS: 31 production / 60 research keys; source/HideOccluded/F11 rejected in OFF; range and companion negative controls. |
 | Legacy source switches | PASS: forcing enable cannot activate tracing, publish a volume or alter raw scene/light bytes; metadata remains disabled. |
-| Managed build/tests and HTTP/WS | PASS: Release build, 69/69 managed tests and HTTP/WebSocket smoke on separate port27312. |
+| Managed build/tests and HTTP/WS | rc.1 PASS: Release build, 69/69 managed tests and HTTP/WebSocket smoke on separate port27312. Final2.1.10:70/70 after adding the playable-world signal control. |
 | ON preservation build/model | PASS: ON ASI/overlay targets build; overlay-model CTest passes with legacy controls retained. |
 | Immutable ZIP / full payload equality | PASS: nine-file production payload, exact expanded/ZIP equality and profile/companion controls. |
 | Packaged ASI bootstrap | PASS: isolated payload copy, all offered switches ON, only port changed to27312. Host starts from CFG companions; health/schema/smoothing respond. The smoke EXE is correctly rejected for native game hooks; this is not a game graphics-start pass. |
@@ -137,12 +164,11 @@ again matches all six files, while bin64 retains the old deps.cfg. Thus deleting
 and reimporting with1.9.4 does not resolve the mismatch. User explicitly confirms
 DMM's UI version1.9.4 and expects all owned runtime files to be removed.
 
-The [official DMM changelog](https://www.nexusmods.com/crimsondesert/mods/633),
-checked2026-09-12, lists2.8.1 as current and records improved multi-file ASI package
-handling/installed-copy replacement in2.7. This makes an updated-manager test
-appropriate; it does not prove the observed leftover/CFG issue is fixed.
-User has been asked to update DMM while leaving the game closed. Do not change
-Telemetry filenames or add installer behavior on an unverified ownership theory.
+After updating to DMM2.8.1, deletion still left both Telemetry DLLs and both CFGs;
+reimport retained the older deps.cfg. The user removed those four owned leftovers
+with the game closed. A subsequent clean DMM2.8.1 import deployed all six rc.1
+runtime files with exact hashes. Release instructions preserve this manual upgrade
+cleanup instead of claiming the manager now removes/replaces every owned file.
 
 ## Exact candidate files
 

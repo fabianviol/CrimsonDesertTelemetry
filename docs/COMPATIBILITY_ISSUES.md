@@ -59,3 +59,19 @@ User-confirmed DMM1.9.4 deletion removes ASI/INI/logs but leaves both DLLs and C
 Reimport still leaves the old deps.cfg in bin64 despite all six current library
 files. The user requires clean removal. An updated-DMM test is pending; no direct
 file cleanup was performed to hide this deployment behavior.
+
+The same behavior was reproduced after updating to DMM2.8.1: package removal left
+both Telemetry DLLs and both CFG files, and reimport retained the older deps.cfg.
+After the user manually removed those four owned leftovers with the game closed,
+a clean DMM2.8.1 import deployed all six rc.1 files with exact matching hashes.
+
+After an NVIDIA driver update to32.0.16.1692, the first game start rebuilt shaders
+and native capture hit Windows error258 (WAIT_TIMEOUT) during the long initial
+load. A second start did not reproduce it. Release2.1.10 therefore waits for the
+host's first valid player/render-camera `playing` state before arming light/sky
+GPU capture and separates command-list submission timeout from GPU-fence timeout.
+This local cause is distinct from the unresolved external2.0.2 crash report.
+
+Windows Explorer/taskbar has also displayed “not responding” while the local game
+continued normally. During the report, `IsHungAppWindow` was false and the process
+reported `Responding=true`; no actual application hang was established.

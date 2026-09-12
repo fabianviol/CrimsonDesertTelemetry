@@ -79,6 +79,7 @@ var tests = new (string Name, Action Run)[]
     ("compatibility requires unique multi-slot vtable fingerprints", BuildCompatibilityTests.VtableGuards),
     ("compatibility rejects malformed PE images", BuildCompatibilityTests.MalformedImages),
     ("compatibility requires one opted-in guarded layout", BuildCompatibilityTests.TemplateGuards),
+    ("native capture waits for and consumes the playable-world signal", NativeCaptureReadyGate),
     ("telemetry JSON contract", TelemetryJsonContract)
 };
 var failures = 0;
@@ -92,6 +93,16 @@ return failures == 0 ? 0 : 1;
 static void SignatureExact() => Assert(
     SignaturePattern.Parse("48 8B 01 FF").FindAll([0, 0x48, 0x8B, 0x01, 0xFF, 0]).SequenceEqual([1]),
     "Exact signature mismatch.");
+
+static void NativeCaptureReadyGate()
+{
+    var processId = Environment.ProcessId;
+    Assert(!NativeCaptureReadySignal.TrySet(processId), "A missing native capture gate was reported as signalled.");
+    using var gate = new EventWaitHandle(false, EventResetMode.AutoReset, NativeCaptureReadySignal.Name(processId));
+    Assert(NativeCaptureReadySignal.TrySet(processId), "The existing native capture gate was not signalled.");
+    Assert(gate.WaitOne(0), "The native capture gate did not receive the signal.");
+    Assert(!gate.WaitOne(0), "The one-shot native capture signal was not consumed.");
+}
 
 static void SignatureWildcard() => Assert(
     SignaturePattern.Parse("48 8B ?? FF").FindAll([0x48, 0x8B, 0xAC, 0xFF]).SequenceEqual([0]),

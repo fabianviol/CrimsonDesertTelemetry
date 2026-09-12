@@ -24,9 +24,12 @@ reimport and restart are the next check.
 
 Reimport through user-confirmed DMM1.9.4 reproduced the mismatch: library6/6
 correct, bin64 deps.cfg still old. The user requires complete runtime-file removal.
-An updated-manager test is next: official DMM2.7 notes describe ASI-package and
-installed-copy update fixes;2.8.1 is current on the [official page](https://www.nexusmods.com/crimsondesert/mods/633).
-No claim that the new manager fixes this issue is made before testing it.
+The user updated to DMM2.8.1. The same removal/deployment problem remained: package
+deletion left both Telemetry DLLs and both CFG files, and reimport retained the old
+deps.cfg. After the user manually removed those four owned leftovers with the game
+closed, a clean DMM2.8.1 import deployed all six rc.1 files with exact hashes.
+Release instructions therefore require this cleanup when upgrading; the manager's
+enabled/deleted state alone is insufficient evidence of exact deployment.
 
 The user installed v2.1.9-ambient-input-fix through DMM; the ASI, both DLLs, INI
 and runtimeconfig matched the package. DMM retained v2.1.8 deps.cfg with older

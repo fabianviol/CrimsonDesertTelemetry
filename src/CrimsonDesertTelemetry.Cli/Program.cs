@@ -448,6 +448,8 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
             var discoveryMilliseconds = tracker.ReferenceResolutionMilliseconds;
             var tickTicks = Math.Max(1, Stopwatch.Frequency / rateHz);
             var nextTick = Stopwatch.GetTimestamp();
+            var nativeCaptureReadySignaled = false;
+            var nextNativeCaptureSignalAttempt = 0L;
 
             while (!cancellationToken.IsCancellationRequested && !runtime.Process.HasExited)
             {
@@ -457,6 +459,11 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
                     PlayerOrientationSnapshot? orientation;
                     (player, orientation) = runtime.ReadPose();
                     var frame = tracker.Capture(player);
+                    if (!nativeCaptureReadySignaled && Environment.TickCount64 >= nextNativeCaptureSignalAttempt)
+                    {
+                        nativeCaptureReadySignaled = NativeCaptureReadySignal.TrySet(runtime.Process.Id);
+                        nextNativeCaptureSignalAttempt = Environment.TickCount64 + 1000;
+                    }
                     var lights = runtime.CaptureLights(player);
                     captureWatch.Stop();
                     var snapshot = ToSnapshot(runtime.GameBuild, sequence++, player, frame,

@@ -24,7 +24,7 @@ deleted. The room's four labelled sources and three fresh free-pose volumes are
 documented below and in SOURCE_VISIBILITY_REGRESSION.md. The requested return to
 `verdeckt` was cancelled by this scope change; do not infer a completed return test.
 
-**Built candidate: 2.1.10-rc.1, explicitly OFF.** The 31-key production INI enables
+**Final 2.1.10 package prepared, explicitly OFF.** The 31-key production INI enables
 all offered boolean features. Source acquisition/trace is excluded at link/compile
 time; raw publication remains intact with disabled additive metadata. Research ON
 build/model and its original INI are preserved. 69 managed tests, API smoke,
@@ -33,7 +33,13 @@ The two existing research readback test failures are excluded, not fixed.
 Packaged bootstrap passes in an isolated non-game process with all switches on.
 Exact VT: ASI5/70, ZIP0/67, same five detecting vendors as .4 (Microsoft now C!ml).
 Local Defender custom scans find no threats in either file; that is not a clean VT
-ASI verdict. Nexus publication dry run passes; nothing is uploaded/published.
+ASI verdict. Final ZIP SHA256 is
+`1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24`;
+ASI SHA256 is
+`8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78`.
+Nexus publication is authorized after one final user-run DMM/game acceptance.
+Exact final scans: VirusTotal ASI5/71 with the same five detecting vendors as rc.2,
+ZIP0/66; local Defender exit0 for both exact files with unchanged hashes.
 **First candidate game run verified:** PID7260, started2026-09-12 19:26:27 CEST.
 ASI, both DLLs, INI and runtimeconfig.cfg match the candidate; deps.cfg remains
 2.1.8 metadata with identical runtime assets (only version labels differ).
@@ -53,7 +59,13 @@ package/update fixes; current page lists2.8.1. User has been asked to update DMM
 while the game stays closed, then repeat deployment/removal before the second
 game start. No direct game/DMM writes were made by Codex. See
 [stable release validation](STABLE_RELEASE_VALIDATION.md) for evidence.
-**Next step is that release acceptance, not the paused source experiment below.**
+After NVIDIA driver32.0.16.1692 installation, the first rc.1 start rebuilt shaders
+and hit capture error258/WAIT_TIMEOUT during the long initial load; the second did
+not reproduce it. Final2.1.10 adds a one-shot host `playing` gate before native
+light/sky capture, separates the60-second command-list submission bound from the
+5-second submitted GPU-fence bound, and logs the stage. 70/70 managed and27/27
+selected native controls pass. **Next step is final-package live acceptance and
+publication, not the paused source experiment below.**
 
 ## Mandatory product goal and working rules
 

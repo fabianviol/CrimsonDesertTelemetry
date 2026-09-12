@@ -1,10 +1,10 @@
-Crimson Desert Telemetry - stability release candidate
-====================================================
+Crimson Desert Telemetry 2.1.10
+==============================
 Live light contributions, player/render-camera telemetry and local ambient data,
 with a corner HUD, 3D light radar, fullscreen markers and startup/error notices.
 Local HTTP/WebSocket APIs support other tools. This mod does not drive lamps.
 
-This CDT_RESEARCH=OFF package excludes per-light geometric visibility after failed
+This CDT_RESEARCH=OFF release excludes per-light geometric visibility after failed
 live acceptance. HideOccluded and F11 are absent. Markers include lights behind
 geometry. No API records or RGB values are filtered or attenuated. Research code
 and evidence remain preserved under CDT_RESEARCH=ON for later development.
@@ -18,7 +18,7 @@ Requirements and installation
 Windows x64, Microsoft .NET 8 ASP.NET Core Runtime (x64), one x64 ASI loader,
 and Steam build 25246367 / EXE 1.0.0.2850. Native capture rejects unknown builds.
 Close the game, back up useful INI preferences and disable previous telemetry
-packages and the separate old CrimsonHueConsole.asi, if installed.
+packages and any separate legacy console ASI, if installed.
 Import and enable the complete ZIP in DMM. Keep your existing loader and other
 mods. Verify ALL six runtime files beside the game EXE, from the SAME version:
 
@@ -28,6 +28,20 @@ CrimsonDesertTelemetry.ini
 crimson-desert-telemetry.dll
 crimson-desert-telemetry.deps.cfg
 crimson-desert-telemetry.runtimeconfig.cfg
+
+Important DMM upgrade/removal note: local tests with DMM 2.8.1 showed that deleting
+this package can leave both Telemetry DLLs and both lowercase CFG files behind,
+and an upgrade can retain an older deps.cfg. With the game closed, remove the old
+package in DMM, then verify and delete only these four leftover Telemetry files
+before importing the new ZIP:
+
+CrimsonDesertTelemetry.Core.dll
+crimson-desert-telemetry.dll
+crimson-desert-telemetry.deps.cfg
+crimson-desert-telemetry.runtimeconfig.cfg
+
+Do not delete your ASI loader. Back up a customized Telemetry INI before replacing
+the package. A clean DMM 2.8.1 import was verified to deploy all six current files.
 
 Keep .cfg names unchanged; some manager versions interpret loose JSON as patches.
 The bootstrap caches only runtime configuration text under
@@ -66,7 +80,9 @@ Radar3D=0 selects the compass. AutoScale/Scale/Opacity/Corner control layout.
 LightOverlay.Radius/MaxMarkers/MaxLabels bound visual clutter, not source discovery.
 HdrPaperWhiteNits=200 sets shared HDR UI white, clamped to80-500 nits.
 Notifications show readiness briefly or persistent actionable errors. Readiness
-can occur during loading. Consult logs if graphics initialization fails.
+requires valid player and render-camera data. Native light/sky capture waits for
+that first playable-world signal, so initial menu/shader loading cannot consume a
+GPU transaction. Consult logs if graphics initialization fails.
 Set Enabled=0 in Overlay, LightOverlay AND Notifications to disable all UI owners
 and UI hooks/client. InitiallyVisible=0 only hides an enabled view. Server and
 native light capture are independently configured.
@@ -111,6 +127,15 @@ CrimsonDesertTelemetry.host.log, CrimsonDesertTelemetry.overlay.log (UI),
 CrimsonDesertTelemetry.native.log (light/ambient capture).
 Exact ASI/ZIP scan and live results belong to the versioned validation record;
 an earlier clean scan is not a verdict for this binary.
+
+Current development goal and blocker
+------------------------------------
+The goal is reliable local ambient/sky occlusion plus geometric visibility for
+each relevant light, including off-screen and behind-camera sources. The current
+blocker is consistent occlusion across fires, candles, lamps, walls, buildings
+and terrain. Ambient has passed an open/enclosed/open route, while camera
+orientation semantics and per-light geometry still need work. The complete
+current source and preserved research are on GitHub. Forks are welcome.
 
 Created by fabianviol, developed with Claude and Codex (OpenAI).
 See THIRD-PARTY-NOTICES.txt for dependency licenses.

@@ -29,7 +29,7 @@ namespace contract = native_contract;
 enum class Phase { Discover, Found, Preparing, Ready, Recorded, Submitting, WaitingGpu, Failed, Stopped };
 SRWLOCK lock = SRWLOCK_INIT;
 Phase phase = Phase::Stopped;
-uint64_t gameBase{}, hookAddress{}, lastAttempt{}, capturedAt{}, issuedAt{}, fenceValue{};
+uint64_t gameBase{}, hookAddress{}, lastAttempt{}, capturedAt{}, issuedAt{}, submittedAt{}, fenceValue{};
 uint32_t intervalMs = 50, capturedFrame{}, lastFrame{}, error{};
 uint64_t capturedOutputResource{}, capturedCounterResource{}, capturedOwner{};
 uint32_t capturedBufferIndex = UINT32_MAX;
@@ -54,6 +54,8 @@ std::atomic<bool> skyHookEnabled{};
 uint64_t lastSkyAttempt{};
 HANDLE ambientFile = INVALID_HANDLE_VALUE;
 HANDLE ambientRequestEvent{};
+HANDLE captureReadyEvent{};
+bool captureReady{};
 std::filesystem::path ambientDirectory;
 uint32_t ambientRun{};
 bool ambientAcceptRequests{};
@@ -64,6 +66,8 @@ uint64_t ambientReportAt{};
 uint32_t ambientSamples{};
 constexpr uint32_t AmbientSampleLimit = 120;
 uint32_t ambientLimit = AmbientSampleLimit;
+constexpr uint64_t SubmissionTimeoutMs = 60000;
+constexpr uint64_t GpuTimeoutMs = 5000;
 
 size_t CopyBytes() { return ambientMode ? AmbientBytes : LightBytes + CounterBytes; }
 void CloseAmbientFile()
@@ -74,6 +78,18 @@ void CloseAmbientControl()
 {
     ambientAcceptRequests = false;
     if (ambientRequestEvent) { CloseHandle(ambientRequestEvent); ambientRequestEvent = nullptr; }
+}
+void CloseCaptureReadyGate()
+{
+    if (captureReadyEvent) { CloseHandle(captureReadyEvent); captureReadyEvent = nullptr; }
+    captureReady = false;
+}
+bool InitializeCaptureReadyGate()
+{
+    const auto name = L"Local\\CrimsonDesertTelemetry.CaptureReady." + std::to_wstring(GetCurrentProcessId());
+    captureReadyEvent = CreateEventW(nullptr, FALSE, FALSE, name.c_str());
+    captureReady = false;
+    return captureReadyEvent != nullptr;
 }
 bool InitializeAmbientControl(const wchar_t* directory)
 {
@@ -180,6 +196,10 @@ void Fail(uint32_t code)
 
 void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner, bool ambientCopy = false)
 {
+    // Production capture is installed at process startup, but the managed host
+    // only opens this one-shot gate after player and render-camera data prove
+    // that a playable world exists. Explicit research probes remain manual.
+    if (!ambientMode && !captureReady) return;
     if (phase != Phase::Discover && phase != Phase::Ready) return;
     const uint64_t now = GetTickCount64();
     auto& attempt = ambientCopy && skyStreaming ? lastSkyAttempt : lastAttempt;
@@ -303,7 +323,7 @@ void STDMETHODCALLTYPE ExecuteHook(ID3D12CommandQueue* queue, UINT count, ID3D12
     const HRESULT hr = compatibleQueue ? queue->Signal(fence, ++fenceValue) : E_INVALIDARG;
     AcquireSRWLockExclusive(&lock);
     if (FAILED(hr)) Fail(static_cast<uint32_t>(hr));
-    else phase = Phase::WaitingGpu;
+    else { submittedAt = GetTickCount64(); phase = Phase::WaitingGpu; }
     ReleaseSRWLockExclusive(&lock);
 }
 
@@ -545,14 +565,16 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled)
     gameBase = moduleBase;
     hookAddress = gameBase + contract::HookRva;
     intervalMs = 1000 / std::clamp(sampleRateHz, 1u, 60u);
+    if (!InitializeCaptureReadyGate())
+    { PublishStatus(Status::Fault, GetLastError(), ExactBuild); return false; }
     const auto init = MH_Initialize();
     if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED)
-    { PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
+    { CloseCaptureReadyGate(); PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
     if (MH_CreateHook(reinterpret_cast<void*>(hookAddress), CdtFilterThunk, &CdtFilterTrampoline) != MH_OK)
-    { PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
+    { CloseCaptureReadyGate(); PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
     phase = Phase::Discover;
     if (MH_EnableHook(reinterpret_cast<void*>(hookAddress)) != MH_OK)
-    { phase = Phase::Stopped; PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
+    { phase = Phase::Stopped; CloseCaptureReadyGate(); PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION, ExactBuild); return false; }
     hookEnabled = true;
     if (skyEnabled)
     {
@@ -573,7 +595,7 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled)
             sky::PublishStatus(Status::Fault, ERROR_INVALID_FUNCTION);
         }
     }
-    ch::Log("ManyLights exact-build/context detour installed at RVA 0x%llX; waiting for renderer.", contract::HookRva);
+    ch::Log("ManyLights exact-build/context detour installed at RVA 0x%llX; waiting for the host's first playable-world signal.", contract::HookRva);
     return true;
 }
 
@@ -581,6 +603,12 @@ void PollCapture()
 {
     AcquireSRWLockExclusive(&lock);
     if (ambientMode) PollAmbientRequest();
+    if (!ambientMode && !captureReady && captureReadyEvent &&
+        WaitForSingleObject(captureReadyEvent, 0) == WAIT_OBJECT_0)
+    {
+        captureReady = true;
+        ch::Log("Playable-world signal received; native light and sky capture armed.");
+    }
     if (phase == Phase::Found)
     {
         phase = Phase::Preparing;
@@ -640,8 +668,18 @@ void PollCapture()
             }
         }
     }
-    if ((phase == Phase::Recorded || phase == Phase::WaitingGpu) && GetTickCount64() - issuedAt > 5000)
+    const auto now = GetTickCount64();
+    if (phase == Phase::Recorded && now - issuedAt > SubmissionTimeoutMs)
+    {
+        ch::Log("Capture submission timeout: recorded command list was not observed within %llu ms.", SubmissionTimeoutMs);
         Fail(WAIT_TIMEOUT);
+    }
+    else if (phase == Phase::WaitingGpu && now - submittedAt > GpuTimeoutMs)
+    {
+        ch::Log("Capture GPU timeout: fence %llu remained incomplete for %llu ms (completed=%llu).",
+            fenceValue, GpuTimeoutMs, fence ? fence->GetCompletedValue() : 0);
+        Fail(WAIT_TIMEOUT);
+    }
     if (phase == Phase::Failed)
     {
         if (!error) error = ERROR_INVALID_DATA;
@@ -678,6 +716,7 @@ void StopCapture()
     AcquireSRWLockExclusive(&lock);
     phase = Phase::Stopped;
     CloseAmbientControl();
+    CloseCaptureReadyGate();
     CloseAmbientFile();
     ReleaseSRWLockExclusive(&lock);
     PublishStatus(Status::Stopped);
@@ -705,14 +744,17 @@ void InitializeCaptureForTest(uint64_t moduleBase)
     // GetTickCount64, so a wall-clock throttle can silently skip a test step.
     // Production StartCapture still derives its interval from the sample rate.
     intervalMs = 0;
+    if (!InitializeCaptureReadyGate()) { phase = Phase::Failed; return; }
     const auto result = MH_Initialize();
     if (result != MH_OK && result != MH_ERROR_ALREADY_INITIALIZED) { phase = Phase::Failed; return; }
     phase = Phase::Discover;
+    captureReady = false;
 }
 bool InitializeAmbientForTest(uint64_t moduleBase, const wchar_t* directory)
 {
     InitializeCaptureForTest(moduleBase);
     ambientMode = true;
+    captureReady = true;
     ambientLimit = 2;
     phase = Phase::Stopped;
     ambientAcceptRequests = InitializeAmbientControl(directory);

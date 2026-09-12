@@ -47,6 +47,15 @@ void CheckSubmissions()
         "passive submission observer missing/unbalanced or arguments changed");
     cdt::render::submissionObserver=nullptr;
 }
+void SignalCaptureReady()
+{
+    const auto name=L"Local\\CrimsonDesertTelemetry.CaptureReady."+std::to_wstring(GetCurrentProcessId());
+    HANDLE event=OpenEventW(EVENT_MODIFY_STATE,FALSE,name.c_str());
+    Check(event!=nullptr,"open native playable-world gate");
+    Check(SetEvent(event)!=FALSE,"signal native playable-world gate");
+    CloseHandle(event);
+    cdt::render::PollCapture();
+}
 template<class T, size_t N> void Put(std::array<uint8_t,N>& data, size_t offset, T value)
 { memcpy(data.data()+offset,&value,sizeof(value)); }
 
@@ -193,6 +202,10 @@ int main(int argc, char** argv)
             else CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
                 reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data()));
         };
+        capture(skyFirst); PollCapture();
+        Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,
+            "capture armed before playable-world signal");
+        SignalCaptureReady();
         CaptureAmbient(reinterpret_cast<uint64_t>(skyOwner.data()),reinterpret_cast<uint64_t>(command.data()),1);
         Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"unvalidated B entered public stream");
         capture(skyFirst); PollCapture(); Sleep(510); // Sky cadence applies to discovery too.
@@ -382,6 +395,10 @@ int main(int argc, char** argv)
         CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
             reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data()));
     };
+    capture(); PollCapture();
+    Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,
+        "capture armed before playable-world signal");
+    SignalCaptureReady();
     // A malformed/missing/undersized counter cannot silently downgrade a pair
     // to the former light-only capture. These calls occur before discovery.
     CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),0,0);

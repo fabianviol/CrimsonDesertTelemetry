@@ -1,15 +1,13 @@
-# Prepared public descriptions — stability release, 2026-09-12
+# Public descriptions — 2.1.10, 2026-09-12
 
-These texts describe candidate 2.1.10-rc.1, not the old Nexus 2.0.2 download.
-They have not been posted to Nexus. Use them only with the corresponding package
-after its [release checks](STABLE_RELEASE_VALIDATION.md). The external graphics
-crash is unresolved; this candidate is not a confirmed fix for that user's system.
-The GitHub About text below was applied on 2026-09-12. Nexus file publication
-preflight passed in read-only dry-run mode; nothing was uploaded or published.
+These texts describe release 2.1.10, not the old Nexus 2.0.2 download. Use them
+only with the exact package and hashes in [release checks](STABLE_RELEASE_VALIDATION.md).
+The external graphics crash remains unresolved; this local release is not a
+confirmed fix for that user's system.
 
 ## GitHub About text
 
-Crimson Desert light, player/camera and ambient telemetry via local HTTP/WebSocket. Configurable HUD, 3D radar and light markers. Per-light occlusion remains experimental.
+Crimson Desert telemetry. Goal: reliable ambient and per-light geometric occlusion, including off-screen sources. Blocker: fire, lamp and world-geometry occlusion.
 
 ## Nexus description draft — English
 
@@ -21,6 +19,19 @@ HTTP/WebSocket APIs for overlays, tools and future lighting integrations.
 It does not drive physical lamps itself.
 
 Target: **Steam build 25246367 / EXE 1.0.0.2850**. Native capture rejects unknown builds.
+
+### Goal and current development blocker
+
+The goal is telemetry that answers both how exposed the player/camera location is
+to the sky/environment and which individual nearby lights can reach it through
+world geometry, including sources off-screen or behind the camera. The current
+blocker is consistent occlusion in all its forms: fires, candles and other lamps
+still disagree with walls, buildings and terrain in controlled tests. Ambient
+passed open/enclosed/open, but camera-orientation semantics still need validation.
+
+The complete current development state and preserved research are on
+[GitHub](https://github.com/fabianviol/CrimsonDesertTelemetry). Everyone is welcome
+to fork the repository, test alternatives and contribute improvements.
 
 - Rendered light positions, linear HDR RGB, luminance and recognized spotlight directions/cone angles; separate authored light records.
 - A separate grouped/EMA light feed preserving the original contributions.
@@ -55,7 +66,8 @@ Each accepts a decimal Windows virtual-key code; **0** disables that shortcut.
 
 Automatic hiding in every menu is not implemented; use F8/F10.
 Layout, scale, opacity, HDR white, marker limits, sampling and smoothing remain
-configurable. INI changes need a game restart. See [configuration](INI_VALIDATION.md).
+configurable. INI changes need a game restart. See
+[configuration](https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md).
 Research, Console, Explorer and occlusion switches cannot activate through an old
 INI in the production build; their separate research profile remains in source.
 
@@ -67,7 +79,7 @@ Automated D3D12 tests cover SDR/HDR10/scRGB; live HDR-display, frame-generation 
 AMD/Intel game acceptance remain pending.
 
 Close the game, back up useful INI preferences, disable previous telemetry packages
-and any separate CrimsonHueConsole ASI, then import and enable the complete ZIP
+and any separate legacy console ASI, then import and enable the complete ZIP
 through DMM. Verify all six runtime files beside the game EXE, from the same version:
 
 ```text
@@ -79,9 +91,12 @@ crimson-desert-telemetry.deps.cfg
 crimson-desert-telemetry.runtimeconfig.cfg
 ```
 
-Keep .cfg names unchanged. Migrate preferences into the supplied INI. Complete ZIP
-contents alone do not prove manager deployment. JSON Mod Manager/manual loader
-installation require the same files; their current full lifecycle matrix is pending.
+Keep .cfg names unchanged. Migrate preferences into the supplied INI. Local DMM
+2.8.1 testing showed that removal/upgrades can leave both Telemetry DLLs and both
+lowercase CFG files behind. With the game closed, remove the old package in DMM,
+delete only those four leftover Telemetry files, then import the new ZIP. Do not
+delete the ASI loader. A clean import then deployed all six current files exactly.
+JSON Mod Manager/manual-loader lifecycle validation remains pending.
 
 ### Known compatibility report
 
@@ -89,7 +104,8 @@ A public 2.0.2 user reported missing DMM host/cfg companions, then a graphics-fe
 crash after manually restoring them. The preserved ZIP contains them, but their
 exact deployed hashes, DMM version, GPU/driver and crash module/offset are unverified.
 **The cause remains unresolved; a local pass does not establish a fix for that
-system.** See [compatibility issues](COMPATIBILITY_ISSUES.md).
+system.** See
+[compatibility issues](https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md).
 
 ### Data limits
 
