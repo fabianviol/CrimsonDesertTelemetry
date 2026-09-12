@@ -61,7 +61,9 @@ game start. No direct game/DMM writes were made by Codex. See
 [stable release validation](STABLE_RELEASE_VALIDATION.md) for evidence.
 After NVIDIA driver32.0.16.1692 installation, the first rc.1 start rebuilt shaders
 and hit capture error258/WAIT_TIMEOUT during the long initial load; the second did
-not reproduce it. Final2.1.10 adds a one-shot host `playing` gate before native
+not reproduce it. A later no-mod control start also initiated in-game shader
+compilation, proving that the rebuild trigger is independent of Telemetry.
+Final2.1.10 adds a one-shot host `playing` gate before native
 light/sky capture, separates the60-second command-list submission bound from the
 5-second submitted GPU-fence bound, and logs the stage. 70/70 managed and27/27
 selected native controls pass. **Next step is final-package live acceptance and
