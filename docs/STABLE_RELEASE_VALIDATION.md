@@ -13,9 +13,11 @@ ASI:1,267,712bytes, SHA-256
 
 After NVIDIA driver32.0.16.1692 installation, the first rc.1 start rebuilt shaders
 and capture stopped with Windows error258/WAIT_TIMEOUT during the long initial
-load. A later no-mod control start also launched an in-game shader compilation,
-showing that the rebuild trigger is independent of Telemetry. The second modded
-start did not reproduce the capture failure. Final2.1.10 waits for the host's
+load. The owner reports repeated new shader compilations during Telemetry
+development and attributes them to the mod. A later start thought to be unmodded
+also compiled shaders, but deployed files were not verified, so it is not a valid
+isolation control. The second modded start did not reproduce the capture failure.
+Final2.1.10 waits for the host's
 first valid player/render-camera `playing` state before arming native light/sky
 capture. Recorded-but-not-submitted work now has a separate60-second bound; the
 post-submit GPU fence retains5seconds. The timeout stage is logged explicitly.
