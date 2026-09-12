@@ -31,13 +31,18 @@ build/model and its original INI are preserved. 69 managed tests, API smoke,
 27 selected native tests, all-UI SDR/scRGB and exact package validation pass.
 The two existing research readback test failures are excluded, not fixed.
 Packaged bootstrap passes in an isolated non-game process with all switches on.
-Exact VT: ASI5/70, ZIP0/67, same five detecting vendors as .4 (Microsoft now C!ml).
+Exact final VT: ASI5/71, ZIP0/66; the ASI has the same five detecting vendors as
+rc.2 and the ZIP has no detections.
 Local Defender custom scans find no threats in either file; that is not a clean VT
 ASI verdict. Final ZIP SHA256 is
 `1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24`;
 ASI SHA256 is
 `8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78`.
-Nexus publication is authorized after one final user-run DMM/game acceptance.
+The final user-run DMM/game acceptance is complete and PASS after manual removal
+of the old bin64 Telemetry files. All six deployed runtime files matched the final
+package; the playable-world gate armed capture without a timeout; HTTP and all
+three WebSocket feeds were live; F8/F9/F10 each toggled off/on successfully with
+the fully enabled production INI. Nexus publication is authorized.
 Exact final scans: VirusTotal ASI5/71 with the same five detecting vendors as rc.2,
 ZIP0/66; local Defender exit0 for both exact files with unchanged hashes.
 **First candidate game run verified:** PID7260, started2026-09-12 19:26:27 CEST.
@@ -67,8 +72,8 @@ without another compile. Telemetry did not initiate compilation in this observed
 A/B sequence. Final2.1.10 adds a one-shot host `playing` gate before native
 light/sky capture, separates the60-second command-list submission bound from the
 5-second submitted GPU-fence bound, and logs the stage. 70/70 managed and27/27
-selected native controls pass. **Next step is final-package live acceptance and
-publication, not the paused source experiment below.**
+selected native controls pass. **Next step is Nexus publication, then the paused
+DMM lifecycle investigation; do not resume the source experiment below yet.**
 
 ## Mandatory product goal and working rules
 

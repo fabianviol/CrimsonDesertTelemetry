@@ -27,8 +27,18 @@ PASS. Package validation confirms the31-setting production profile, nine exact
 files and expanded/ZIP equality. Exact final VirusTotal: ASI **5/71**, the same
 five detecting vendors as rc.2 and no new vendor; ZIP **0/66**. Local Defender
 custom scans return0 for both exact files with remediation disabled and unchanged
-hashes. The final package still requires one user-run DMM/game acceptance before
-Nexus publication.
+hashes.
+
+Final user-run acceptance passed on12 September2026 after manually clearing the
+old bin64 Telemetry files and importing the final ZIP. All six deployed runtime
+files matched the final payload exactly. Native logging showed the new gate wait,
+then the playable-world signal and recurring capture readiness with no fault or
+timeout. `/v1/health` reported `playing`; snapshot, smoothed-light and ambient HTTP
+feeds advanced; all three WebSocket feeds delivered live payloads; both schemas
+returned HTTP200. The supplied production INI had every supported feature enabled.
+The user toggled F8, F9 and F10 off and on successfully. The final runtime/package
+acceptance is PASS. DMM's dirty upgrade/removal ownership behavior remains a
+separate manager-lifecycle issue.
 
 ## Historical rc.1 scope and acceptance
 
@@ -65,7 +75,7 @@ Evidence: `artifacts/validation/stable-release-20260912/` (local, not committed)
 | ON preservation build/model | PASS: ON ASI/overlay targets build; overlay-model CTest passes with legacy controls retained. |
 | Immutable ZIP / full payload equality | PASS: nine-file production payload, exact expanded/ZIP equality and profile/companion controls. |
 | Packaged ASI bootstrap | PASS: isolated payload copy, all offered switches ON, only port changed to27312. Host starts from CFG companions; health/schema/smoothing respond. The smoke EXE is correctly rejected for native game hooks; this is not a game graphics-start pass. |
-| Exact ASI and ZIP VirusTotal | Completed: ASI **5/70**, ZIP **0/67**. Same five detecting vendors as prior .4; Microsoft label changed from B!ml to C!ml. This is not a clean ASI verdict. |
+| Exact ASI and ZIP VirusTotal | Final files: ASI **5/71**, ZIP **0/66**. Same five ASI detecting vendors as rc.2 and no ZIP detections. This is not a clean ASI verdict. |
 | Local Windows Defender | Exact ASI and ZIP: no threats, exit0. Custom scans with remediation disabled; hashes unchanged. Signature1.459.170.0, last updated2026-09-12 02:59:22 CEST. This does not cancel the VT findings. |
 | Nexus publication preflight | Read-only dry run PASS against existing file7891854; latest public version2.0.2. No upload, changelog mutation or release publication performed. |
 | DMM deployment | All six runtime files present. Five exact matches; deps.cfg retains2.1.8 version labels with identical runtime assets. Exact metadata replacement remains open; do not call this an exact six-file match. |

@@ -31,6 +31,13 @@ closed, a clean DMM2.8.1 import deployed all six rc.1 files with exact hashes.
 Release instructions therefore require this cleanup when upgrading; the manager's
 enabled/deleted state alone is insufficient evidence of exact deployment.
 
+For final2.1.10 acceptance, the user again manually removed all old Telemetry
+files from bin64 before import. All six deployed runtime files then matched the
+final ZIP exactly and the live game test passed. Inspection of DMM2.8.1 state found
+older ASI overwrite backups and `.dmm_added` records; the dirty lifecycle had
+restored older DLL backups and retained CFG companions. This explains the local
+stale-file behavior but is not a complete manager-lifecycle fix.
+
 The user installed v2.1.9-ambient-input-fix through DMM; the ASI, both DLLs, INI
 and runtimeconfig matched the package. DMM retained v2.1.8 deps.cfg with older
 version labels but the same dependency structure. Ambient passed the controlled
