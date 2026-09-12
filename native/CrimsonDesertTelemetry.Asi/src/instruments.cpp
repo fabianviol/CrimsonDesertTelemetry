@@ -198,7 +198,13 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
+#if CDT_RESEARCH
     const bool sourceVisibility = GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+#else
+    // The current release does not offer unvalidated per-light occlusion.
+    // Ignore the switch in older diagnostic INIs as well.
+    constexpr bool sourceVisibility = false;
+#endif
     render::SetSourceVisibilityEnabled(sourceVisibility);
 #if CDT_RESEARCH
     const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&

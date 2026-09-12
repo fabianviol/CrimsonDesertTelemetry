@@ -9,10 +9,12 @@ measurement. Neither signal answers whether an individual fire is behind a wall;
 that is the separate [per-light source-visibility contract](SOURCE_VISIBILITY.md).
 
 Camera-local Ambient Occlusion passed controlled open/enclosed/open acceptance
-in the OFF v2.1.9 package on build 25246367 on 2026-09-12. Production per-light
-visibility is implemented with synthetic coverage, but its live acceptance is
-pending. Both goals must pass before a final release; older published packages
-must not be assumed to include current development behavior.
+in the OFF v2.1.9 package on build 25246367 on 2026-09-12. Per-light visibility
+failed live acceptance and is excluded from the current stability release; its
+implementation/evidence are preserved for later work. See [release validation](STABLE_RELEASE_VALIDATION.md).
+The camera-sky HUD wording/orientation complaint remains pending; exposure is a
+local volume sample, not the fraction of sky pixels on screen. Older packages
+must not be assumed to include current behavior.
 
 - HTTP: `GET http://127.0.0.1:27311/v1/ambient`
 - WebSocket: `ws://127.0.0.1:27311/v1/ambient/stream`

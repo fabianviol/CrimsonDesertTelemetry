@@ -24,6 +24,20 @@ deleted. The room's four labelled sources and three fresh free-pose volumes are
 documented below and in SOURCE_VISIBILITY_REGRESSION.md. The requested return to
 `verdeckt` was cancelled by this scope change; do not infer a completed return test.
 
+**Built candidate: 2.1.10-rc.1, explicitly OFF.** The 31-key production INI enables
+all offered boolean features. Source acquisition/trace is excluded at link/compile
+time; raw publication remains intact with disabled additive metadata. Research ON
+build/model and its original INI are preserved. 69 managed tests, API smoke,
+27 selected native tests, all-UI SDR/scRGB and exact package validation pass.
+The two existing research readback test failures are excluded, not fixed.
+Packaged bootstrap passes in an isolated non-game process with all switches on.
+Exact VT: ASI5/70, ZIP0/67, same five detecting vendors as .4 (Microsoft now C!ml).
+Local Defender custom scans find no threats in either file; that is not a clean VT
+ASI verdict. Nexus publication dry run passes; nothing is uploaded/published.
+User-operated DMM/cold-start/live checks remain pending; see
+[stable release validation](STABLE_RELEASE_VALIDATION.md) for hashes and evidence.
+**Next step is that release acceptance, not the paused source experiment below.**
+
 ## Mandatory product goal and working rules
 
 Production `CDT_RESEARCH=OFF` is complete only after BOTH controlled live tests
@@ -52,12 +66,14 @@ User additionally requests ongoing virus checks of each new ASI AND DMM ZIP,
 an optional HUD/radar mode that hides freshly blocked lights, and configurable
 or individually disabled shortcuts for all four HUD functions (defaults F8-F11).
 Update all current product descriptions. Commit and push completed changes to
-GitHub; do NOT create a GitHub release.
+GitHub. The user's latest request authorizes working-feature publication after
+release acceptance; no GitHub release/tag has been created during preparation.
 
 The user additionally requires all offered INI functions to be tested individually
 and together; unsupported/broken options must be documented, rejected or removed
 from the product profile. See `docs/INI_VALIDATION.md` for all 60 original options,
-the 34 production settings, concrete exclusions and the still-pending live matrix.
+the original 34-setting intermediate profile and current 31-setting release profile,
+concrete exclusions and the still-pending live matrix.
 Automatic HUD/marker hiding in every menu is also requested. It is NOT implemented:
 `playing` means valid telemetry, not a proven menu state; the old console UI value
 is not a general menu flag. No reliable menu signal was found in existing code or
@@ -89,7 +105,7 @@ under `room-first-source-visible-01/` beside the room evidence. The user require
 the camera position/orientation as reference; the existing trace uses the paired
 camera position, with orientation used for HUD projection, not an off-screen veto.
 
-**Next step:** the user has been asked to conceal that SAME first/top source again
+**Paused step, do not resume during release work:** the user had been asked to conceal that SAME first/top source again
 and report `verdeckt`; capture three fresh paired volumes once confirmed. No
 trace threshold or production code was changed for this diagnosis.
 Keep the user's later camera-sky-visibility wording/orientation complaint queued

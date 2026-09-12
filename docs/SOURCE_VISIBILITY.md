@@ -1,7 +1,11 @@
 # Per-light source visibility
 
-Production implementation under validation; this document does not establish live
-acceptance or final release readiness. Ambient acceptance is a separate goal.
+**Paused and excluded from the current stability release.** The user requested a
+release of working features first. OFF does not include SDF acquisition/tracing
+or expose SourceVisibility/HideOccluded/OcclusionToggleKey; older INIs cannot
+activate them. The API retains the additive schema with unknown/disabled metadata.
+The following contract describes the preserved experimental implementation, not
+an offered release feature. Ambient acceptance is a separate goal.
 
 The current `.3` camp test exposed false-clear lamp verdicts, intermittent shared
 light-view dropouts and stopped SDF updates. Corrections are in progress; see the

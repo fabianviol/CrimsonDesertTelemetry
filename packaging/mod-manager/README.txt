@@ -1,111 +1,78 @@
-Crimson Desert Telemetry - production occlusion validation
-=============================
+Crimson Desert Telemetry - stability release candidate
+====================================================
+Live light contributions, player/render-camera telemetry and local ambient data,
+with a corner HUD, 3D light radar, fullscreen markers and startup/error notices.
+Local HTTP/WebSocket APIs support other tools. This mod does not drive lamps.
 
-Live light, player and camera data for Crimson Desert: local HTTP and WebSocket APIs,
-local ambient/sky exposure, fullscreen light markers and a 3D light radar.
-This validation build adds per-source geometry visibility to the raw and smoothed
-light streams, with optional hiding of blocked HUD markers. Original source records
-and RGB are preserved. Per-light production live acceptance is still outstanding:
-the current camp test exposed concealed lamps incorrectly reported as clear.
-This test package does not claim to resolve all geometric false-clear cases.
-Inspect current light positions, linear HDR color and brightness, plus direction
-and cone angles for spot contributions. Position/color capture for fires, candles,
-lanterns and glass/crystal lamps was tested in game; this is not an occlusion pass
-for those light types. Multiple contributions can belong to one physical lamp.
+This CDT_RESEARCH=OFF package excludes per-light geometric visibility after failed
+live acceptance. HideOccluded and F11 are absent. Markers include lights behind
+geometry. No API records or RGB values are filtered or attenuated. Research code
+and evidence remain preserved under CDT_RESEARCH=ON for later development.
 
-Download, documentation and support:
-https://github.com/fabianviol/CrimsonDesertTelemetry
-Video demonstration: https://youtu.be/eyRkkTXAU64
-API reference: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md
+Source and support: https://github.com/fabianviol/CrimsonDesertTelemetry
+Validation: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/STABLE_RELEASE_VALIDATION.md
+API: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md
 
-Requirements and compatibility
-------------------------------
-- Windows x64, Microsoft .NET 8 ASP.NET Core Runtime (x64), and an ASI loader.
-- Supported test build: Steam 25246367. Ambient Occlusion passed a controlled
-  open/enclosed/open test. Production per-light visibility still needs live
-  visible/blocked/visible and behind-camera acceptance; this is not a final release.
-- No NVIDIA GPU, DLSS, Streamline, Nsight or PIX dependency in the runtime paths.
-  Upscaling-off operation was tested. Actual AMD/Intel game runs remain untested.
-- DirectX 12 UI supports 8-bit/10-bit SDR, HDR10 (10-bit PQ/Rec.2020) and FP16
-  scRGB. HUD, light markers and notices automatically use the game's buffer
-  format/color space. Unknown combinations remain unsupported. Synthetic native
-  graphics tests cover these paths; a live HDR display/game run is untested. Frame generation
-  remains unvalidated. Telemetry/light capture has no HDR-output gate.
-- Unknown EXEs fail closed for native light instrumentation. A game update may
-  require an updated mod profile; matching an EXE hash alone is not sufficient.
+Requirements and installation
+-----------------------------
+Windows x64, Microsoft .NET 8 ASP.NET Core Runtime (x64), one x64 ASI loader,
+and Steam build 25246367 / EXE 1.0.0.2850. Native capture rejects unknown builds.
+Close the game, back up useful INI preferences and disable previous telemetry
+packages and the separate old CrimsonHueConsole.asi, if installed.
+Import and enable the complete ZIP in DMM. Keep your existing loader and other
+mods. Verify ALL six runtime files beside the game EXE, from the SAME version:
 
-Install or upgrade
-------------------
-1. Close the game. Preserve useful old INI preferences in a backup.
-2. Disable previous telemetry packages and the old CrimsonHueConsole.asi.
-   The old console ASI conflicts with the current telemetry plugin.
-3. Import this ZIP into Definitive Mod Manager or JSON Mod Manager, then enable it.
-   Alternatively, put its payload files beside the game EXE using your ASI loader.
-   Keep your existing loader and other mods. A complete install/uninstall matrix
-   across both managers is still pending; local DMM use before the HDR addition
-   was verified.
-4. Edit CrimsonDesertTelemetry.ini before launch if desired, then restart the game.
-   Merge preferences into the new sections rather than keeping a stale whole INI.
+CrimsonDesertTelemetry.asi
+CrimsonDesertTelemetry.Core.dll
+CrimsonDesertTelemetry.ini
+crimson-desert-telemetry.dll
+crimson-desert-telemetry.deps.cfg
+crimson-desert-telemetry.runtimeconfig.cfg
 
-Keep the .deps.cfg and .runtimeconfig.cfg names unchanged: DMM treats loose JSON
-files as game patches. The bootstrap caches only the runtime configuration text
-under LOCALAPPDATA/CrimsonDesertTelemetry/Runtime, keyed and verified by SHA-256.
+Keep .cfg names unchanged; some manager versions interpret loose JSON as patches.
+The bootstrap caches only runtime configuration text under
+LOCALAPPDATA/CrimsonDesertTelemetry/Runtime, keyed and verified by SHA-256.
 No executable or game data is copied into that cache. Hot-unloading is unsupported.
+Complete ZIP contents do not prove complete manager deployment. JSON Mod Manager
+and manual ASI-loader installation need the same files; their current full
+installation/uninstallation matrix remains pending.
 
-Known unresolved report (2026-09-12): a user of public version 2.0.2 reported missing
-host/cfg files after DMM deployment, then crashes with graphics features enabled
-after repairing the install. GPU/driver and crash details are pending. This update is not yet a
-verified fix for that report; complete ZIP contents do not guarantee DMM deployment.
+Known unresolved report: a public 2.0.2 user reported missing DMM host/cfg files,
+then a separate graphics-feature crash after repairing deployment. The cause and
+affected GPU/driver environment are unverified. This candidate is not a confirmed
+fix for that report. See docs/COMPATIBILITY_ISSUES.md online.
 
-Controls and defaults
---------------------
-F8: corner HUD / 3D radar. F9: diagnostic details. F10: fullscreen light markers.
-F11: show/hide geometrically blocked lights in both HUD light views.
-All four shortcuts are configurable decimal Windows virtual-key codes; 0 disables
-one shortcut. [Overlay] ToggleKey=119 and DetailsKey=120 control F8/F9 defaults.
-[LightOverlay] ToggleKey=121 and OcclusionToggleKey=122 control F10/F11 defaults.
-Template defaults (private test INIs can override these):
-[Overlay] InitiallyVisible=1, ShowDetails=0; [LightOverlay]
-InitiallyVisible=1, HideOccluded=0. HideOccluded=1 hides freshly known blocked
-lights; unknown/stale visibility remains visible. API records are never removed.
-These controls do not capture mouse input. Light capture, both HUD views and status
-notices are enabled in the supplied INI.
+Controls and configuration
+--------------------------
+All offered feature switches are ON in the supplied 31-setting INI, including
+diagnostics. F8: corner HUD/radar. F9: details. F10: fullscreen light markers.
+Each shortcut accepts a decimal Windows virtual-key code; 0 disables that key.
+Defaults: Overlay.ToggleKey=119, Overlay.DetailsKey=120,
+LightOverlay.ToggleKey=121. F11 is unused. Keys do not stop API capture.
+Automatic hiding in every menu is not implemented; use F8/F10 to hide the views.
+INI changes require a game restart; display keys work immediately.
 
-The production CDT_RESEARCH=OFF profile contains product settings only. Research,
-Console, Explorer and the legacy OcclusionTest cannot be activated, even through
-an older INI. Source builds with CDT_RESEARCH=ON preserve the research controls
-and use their own CrimsonDesertTelemetry.research.ini template, packaged as
-CrimsonDesertTelemetry.ini. This separation fixes conflicting or inactive INI
-options; it is not an antivirus mitigation.
-Configuration reference and validation:
+Research, Console, Explorer, SourceVisibility, OcclusionTest, HideOccluded and
+OcclusionToggleKey are absent and cannot activate through an old INI in this
+production build. Merge preferences into the new template.
+Configuration ranges, dependencies and tests:
 https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md
 
-[Lights] Enabled=1 includes authored lights; ManyLights=1 adds filtered renderer
-contributions, captured at 20 Hz by default. NearbyRadius uses game units, not metres.
-[Overlay] Radar3D=1 selects the 3D view; Radar3D=0 restores the original compass.
-[LightOverlay] Radius=35, MaxMarkers=512 and MaxLabels=6 bound visual clutter.
-Nearby contributions share a detail box, but retain their individual raw values.
-AutoScale adapts the HUD to resolution; Scale and Opacity are adjustable in the INI.
-[Overlay] HdrPaperWhiteNits=200 sets white brightness for all HDR UI, clamped to
-80-500 nits. This also applies to markers/notices when the corner HUD is disabled.
-No game HDR settings or metadata are changed. Configuration changes need a restart.
+Lights.Enabled includes authored lights; ManyLights adds renderer contributions
+at 20 Hz by default. Ambient requires both. Server.SampleRateHz defaults to60;
+faster API polling does not create additional GPU samples. NearbyRadius uses game
+units. LightSmoothing controls grouping and EMA; raw values remain unchanged.
+Radar3D=0 selects the compass. AutoScale/Scale/Opacity/Corner control layout.
+LightOverlay.Radius/MaxMarkers/MaxLabels bound visual clutter, not source discovery.
+HdrPaperWhiteNits=200 sets shared HDR UI white, clamped to80-500 nits.
+Notifications show readiness briefly or persistent actionable errors. Readiness
+can occur during loading. Consult logs if graphics initialization fails.
+Set Enabled=0 in Overlay, LightOverlay AND Notifications to disable all UI owners
+and UI hooks/client. InitiallyVisible=0 only hides an enabled view. Server and
+native light capture are independently configured.
 
-[Notifications] shows a brief success notice when requested data is ready (default
-six seconds, clamped to 5-10 seconds). It may appear during the visible loading
-sequence. There is no persistent normal loading message. Actionable errors can
-appear immediately and remain until resolved, including unsupported-EXE errors.
-If graphics initialization itself fails, consult the logs instead.
-
-Set Enabled=0 in Overlay, LightOverlay AND Notifications to disable all UI hooks
-and their client. InitiallyVisible=0 only hides an enabled view. The telemetry host
-is independently controlled by [Server]. Configuration changes require a restart.
-Returning to the title screen may leave data/HUD visible for several seconds before
-they become stale; the user can hide the views with their keys.
-Automatic hiding in every game menu is not implemented. Live validation with all
-production features enabled remains pending; synthetic tests do not establish it.
-
-Local HTTP and WebSocket APIs
-----------------------------
+API and data limits
+-------------------
 HTTP:      http://127.0.0.1:27311/v1/snapshot
 Health:    http://127.0.0.1:27311/v1/health
 Schema:    http://127.0.0.1:27311/v1/schema
@@ -113,51 +80,38 @@ WebSocket: ws://127.0.0.1:27311/v1/stream
 Ambient:   http://127.0.0.1:27311/v1/ambient
 Smoothed:  http://127.0.0.1:27311/v1/lights/smoothed
 
-HTTP snapshots and WebSocket stream messages both carry JSON. The server listens
-on loopback only. HTTP v1 routes remain unchanged. Lights use
-additive JSON schema 1.4; disabling Lights.Enabled restores schema 1.1. The API
-includes player position/root orientation and the independent native render camera.
-Do not start a second host on the same port while the ASI-managed host is running.
+The host listens on loopback only. Do not launch another host on its port.
+Routes remain v1; light-enabled snapshots use additive schema1.4, otherwise1.1.
+SourceVisibility metadata remains unknown/disabled with null attenuation.
+Authored/rendered arrays overlap. One lamp may produce multiple contributions.
+This is not a full360-degree registry; a missing source does not prove OFF.
+Linear HDR RGB/luminance are renderer values, not lumens or final pixels.
+Ambient contains global sky, camera-local sky exposure and their derived estimate.
+Exposure is sampled at the camera location, not the fraction of sky on screen.
+An earlier OFF package passed open/enclosed/open; this candidate's live checks
+are separate. It is not measured room brightness. Camera-orientation sensitivity
+remains under investigation. Root orientation is not body pose; display spot-arrow
+and frustum lengths are schematic. Fast motion can expose projection latency.
 
-What the light values mean
--------------------------
-Authored lights and filtered renderer contributions are overlapping views, not
-arrays to add together. Filtered lights are current render data, not a complete
-world registry or persistent physical-object identity. Absence does not prove OFF.
-Ambient reports global upper-hemisphere sky, local camera sky visibility and a
-derived ambient estimate. It is not physical lux or a complete emissive-light model.
-Raw linear HDR RGB and luminance can change with effects and rendering/exposure;
-they are not normalized lamp colors or a measurement of the final visible pixel.
+Graphics and compatibility
+--------------------------
+Automated D3D12 tests cover SDR/HDR10/scRGB and all UI owners together.
+Live HDR-display, frame-generation and AMD/Intel game acceptance remain pending.
+No NVIDIA, DLSS, Streamline, Nsight or PIX runtime dependency is required.
+Unknown output format/color-space combinations are unsupported. HDR UI uses two
+extra full-resolution textures and a scene composite; SDR has no extra composite.
+Software-GPU tests do not establish compatibility with every game setup.
 
-The radar is filtered, not a complete 360-degree light inventory. Geometric
-sourceVisibility is additional clear/blocked/unknown metadata, independent of
-screen projection for present records. An absent source does not prove occlusion.
-Only fresh known blocked sources can be hidden; unknown/stale ones stay visible.
-World markers have no screen-depth test. Spot-arrow/frustum lengths
-are schematic. Display swatches visualize HDR data, not the game's tone mapping. Fast camera
-movement can expose capture/projection latency. Root orientation is not body pose.
-
-HDR UI is blended over the game in linear light. Pixels outside the UI stay
-unchanged; the compositor does not tone-map the whole scene. HDR rendering uses
-two additional full-resolution GPU textures and a scene copy/composite while UI
-is drawn. The SDR path has no additional compositor pass.
-
-Safety and diagnostics
-----------------------
-The external host reads process memory. The native plugin uses guarded code and
-D3D12 hooks for capture and UI; the package is not wholly read-only instrumentation.
-The console that can change game debug values belongs to CDT_RESEARCH=ON builds.
+Diagnostics
+-----------
+The host reads memory; the plugin uses guarded code/D3D12 hooks and GPU copies.
 No gameplay-control API or anti-cheat bypass is provided.
-
-Logs beside the plugin:
-- CrimsonDesertTelemetry.bootstrap.log: plugin startup and host launch.
-- CrimsonDesertTelemetry.host.log: host diagnostics.
-- CrimsonDesertTelemetry.overlay.log: HUD initialization and status.
-- CrimsonDesertTelemetry.native.log: native light and ambient capture diagnostics.
-
-Source users can run check-update against a new EXE for an offline diagnostic;
-it does not automatically approve that build. See docs/UPDATE_RECOVERY.md.
+Logs beside the plugin: CrimsonDesertTelemetry.bootstrap.log (startup/host),
+CrimsonDesertTelemetry.host.log, CrimsonDesertTelemetry.overlay.log (UI),
+CrimsonDesertTelemetry.native.log (light/ambient capture).
+Exact ASI/ZIP scan and live results belong to the versioned validation record;
+an earlier clean scan is not a verdict for this binary.
 
 Created by fabianviol, developed with Claude and Codex (OpenAI).
-See THIRD-PARTY-NOTICES.txt for bundled library licenses.
+See THIRD-PARTY-NOTICES.txt for dependency licenses.
 Unofficial community project; not affiliated with Pearl Abyss.

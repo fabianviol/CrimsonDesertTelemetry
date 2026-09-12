@@ -2,8 +2,8 @@
 
 This is the option inventory and test ledger, not a claim that every configuration
 has passed in the game. The previous combined template contained **60 settings**.
-The production template now offers **34**; the unchanged research template retains
-all **60**, including the 26 research/console/explorer settings listed below.
+The stability-release production template now offers **31**; the unchanged research
+template retains all **60**, including the 29 excluded settings listed below.
 No research implementation or evidence was removed.
 
 `Build-ModManagerPackage.ps1 -Research off` selects
@@ -23,9 +23,9 @@ does not automatically pass through the package validator.
 
 - Ambient alone has controlled live open/enclosed/open acceptance in OFF v2.1.9,
   build 25246367. That is not acceptance of every INI value or combination.
-- Production per-light visible/blocked/visible and behind-camera live acceptance
-  is pending. The new all-production-features combination also needs its own
-  acceptance. See [handover](HANDOVER.md) for current package/results.
+- Per-light visibility failed live acceptance and is excluded from the stability
+  release, along with HideOccluded/F11. Its code/evidence are preserved. The new
+  all-enabled release needs separate live acceptance: [release ledger](STABLE_RELEASE_VALIDATION.md).
 - The native tests below are synthetic: configuration parsing, model behavior,
   acquisition and graphics fixtures. A unit-test result is not a live game result.
 - The historic combined template allowed genuine conflicting research behavior in
@@ -50,7 +50,8 @@ Test references used in the tables:
 All supported boolean values in packaged profiles are `0` and `1`. Runtime
 readers have historically accepted other nonzero integers; that is not an
 additional advertised boolean syntax. Changes require a game restart except
-the four runtime display toggles. Fractional values use a decimal point.
+the three runtime display toggles. Fractional values use a decimal point.
+Every offered boolean feature is 1 in the release template, including ShowDetails.
 
 Bootstrap settings are read in `src/bootstrap.cpp:252-268`, light/ambient source
 selection in `src/instruments.cpp:110-207`, UI settings in
@@ -65,10 +66,9 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Notifications.DurationMilliseconds | Integer 5000-10000; success-notice duration, not persistent-fault duration. Runtime clamps. | O tests short/long and nondefault values; G notice rendering; P. |
 | Lights.Enabled | 0/1; authored host lights and prerequisite for native rendered capture. | B schema selection; O readiness expectations; live default. Isolation combinations pending. |
 | Lights.NearbyRadius | Integer 1-100000 game units around player; cannot discover omitted rendered sources. Runtime clamps. | Decoder radius tests; direct INI boundary forwarding pending; P. |
-| Lights.ManyLights | 0/1; native rendered capture, requires Lights.Enabled. Also required by Ambient/SourceVisibility. | O expected-feed flags and native capture controls; isolation startup matrix pending. |
+| Lights.ManyLights | 0/1; native rendered capture, requires Lights.Enabled. Also required by Ambient. | O expected-feed flags and native capture controls; isolation startup matrix pending. |
 | Lights.ManyLightsSampleRateHz | Integer 1-60; capture interval is integer `1000 / rate` ms (`render_capture.cpp:547`). | Native copy tests; INI min/max cadence not a measured game result; P. |
 | Ambient.Enabled | 0/1; global sky + camera visibility, requires Lights.Enabled/ManyLights. Independent of HUD visibility. | A plus live ambient default; dependency/combined startup pending. |
-| SourceVisibility.Enabled | 0/1; additional per-contribution metadata, requires Lights.Enabled/ManyLights. Independent of HUD visibility. | V includes disabled/raw-preservation controls; live acceptance pending. |
 | LightSmoothing.TimeConstantMilliseconds | Integer 0-2000; 0 keeps grouping but disables temporal smoothing. | B forwards time; M covers zero/invalid/EMA; P. |
 | LightSmoothing.GroupRadius | Decimal 0.01-1 game units; maximal group extent, not physical identity. Invalid runtime input falls back to 0.15 and logs. | M validates options/grouping; ASI malformed/boundary forwarding pending; P. |
 | Overlay.Enabled | 0/1; corner HUD. Other UI owners can keep graphics/client active when 0. | O/G disabled, enabled and view-isolation controls. |
@@ -87,8 +87,6 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | LightOverlay.Enabled | 0/1; independent fullscreen markers; radar belongs to Overlay. | O/G markers-only, HUD+markers and all-three-UI synthetic modes pass; live combination pending. |
 | LightOverlay.InitiallyVisible | 0/1; initial marker state, changed by ToggleKey; requires Enabled. | O/G hidden startup and toggle regression. |
 | LightOverlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default121/F10. | O remap/disable/bounds and G runtime display state. |
-| LightOverlay.HideOccluded | 0/1; hides only fresh known blocked records in both light views; no effect on raw/EMA API data. Useful with SourceVisibility.Enabled. | O/G blocked, unknown and stale cases; live pending. |
-| LightOverlay.OcclusionToggleKey | Integer 0-255 Windows VK; 0 disables; default122/F11. Works when either light-view owner is enabled. | O remap/disable/bounds; G display state; actual game shortcut pending. |
 | LightOverlay.Radius | Decimal 1-500 game units for radar/markers; cannot extend Lights.NearbyRadius or source discovery. | O nondefault/bounds/nonfinite; G views; P. |
 | LightOverlay.MaxMarkers | Integer 1-2048; bound in both views. 0 clamps to1, does not disable. | O small/large bounds; G rendering; P. |
 | LightOverlay.MaxLabels | Integer 0-16; fullscreen detail-label bound. 0 keeps markers without labels. | O small/large bounds; label-zero render check pending; P. |
@@ -105,12 +103,15 @@ claim unavailable dependent features are active.
 
 ## Research-only options preserved in the ON template
 
-These 26 settings are absent from the production template and rejected as OFF
+These 29 settings are absent from the production template and rejected as OFF
 package overrides. ON retains the original controls, including their existing
 limitations. Their presence is not a promise that all can run together.
 
 | Section / key | ON effect, range and dependency | Test coverage / limit |
 | --- | --- | --- |
+| SourceVisibility.Enabled | 0/1; experimental geometry metadata, requires Lights/ManyLights. | Failed live concealed-source acceptance; excluded from OFF. |
+| LightOverlay.HideOccluded | 0/1; hides fresh known blocked records in the two light views. Raw/EMA remain unchanged. | Model controls pass; underlying geometry verdicts failed live acceptance. |
+| LightOverlay.OcclusionToggleKey | Integer 0-255 Windows VK; 0 disables; default122/F11. | ON remap/disable tested; OFF ignores even a legacy nonzero setting. |
 | Research.AmbientProbe | 0/1; exclusive event-triggered diagnostic, replaces normal ManyLights/sky stream and prevents spatial readback combinations. | R tests event/copy mechanics; incompatible with normal all-on streaming. |
 | Research.SpatialProbe | 0/1; enables passive/event probe when Lights/ManyLights are active. | R; INI orchestration pending. |
 | Research.SpatialReadback | 0/1; guarded R8 readback; requires probe/source prerequisites and AmbientProbe=0. SDF mode takes precedence when also selected. | R; simultaneous modes are not independent output promises. |
@@ -180,7 +181,7 @@ and virus-scan results are recorded separately for each exact artifact.
 The previous complete INI was copied byte-for-byte to the research template:
 SHA256 `3731CD2796F239CE2B7D5815065715DB5BB00FDCB2A67BB5D3FB7E929BEA2593`.
 The standalone package validator's in-memory profile/nondefault/range/companion
-controls pass, as do the actual34-key production and60-key research templates.
+controls passed for the earlier 34-key production and60-key research templates.
 The builder's isolated preflight (repository path supplied to the extracted
 pre-build statements) passes explicit OFF/ON/auto selection and supported
 overrides. Five negative cases reject research/console/explorer/legacy HUD keys
@@ -193,3 +194,14 @@ at720p/1080p/4K. The ON ASI builds and its overlay-model controls, including leg
 OcclusionTest, pass. Those are synthetic/source-build results; installed-game
 combinations and live per-light acceptance remain subject to the current handover.
 No full INI or live all-functions pass is claimed.
+
+## Stability release follow-up
+
+The OFF template now has 31 settings; SourceVisibility.Enabled, HideOccluded and
+OcclusionToggleKey are removed. The ON template retains its original hash above.
+The profile self-test rejects all three removed keys, including zero values.
+The native release-source-disabled control forces enable, publication and tracing:
+OFF still produces disabled metadata, publishes no volume, and preserves raw bytes.
+Overlay-model verifies old hide/F11 switches remain inert in OFF and work as before
+in ON. The 27 selected native tests and ON preservation build/model pass; exact
+package, live and scan status are in [the release ledger](STABLE_RELEASE_VALIDATION.md).

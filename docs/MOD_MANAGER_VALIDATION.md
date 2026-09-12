@@ -2,6 +2,11 @@
 
 ## Current checkpoint (2026-09-12)
 
+The new working-feature candidate is tracked in [stable release validation](STABLE_RELEASE_VALIDATION.md).
+Per-light occlusion is paused and excluded. All six runtime files, including both
+CFG companions, must match that candidate after user-operated DMM deployment.
+The earlier checks below do not accept the new package automatically.
+
 The user installed v2.1.9-ambient-input-fix through DMM; the ASI, both DLLs, INI
 and runtimeconfig matched the package. DMM retained v2.1.8 deps.cfg with older
 version labels but the same dependency structure. Ambient passed the controlled

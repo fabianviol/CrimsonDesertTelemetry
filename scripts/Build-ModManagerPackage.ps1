@@ -9,7 +9,7 @@ param(
     # treated as a release and refuses overrides outright.
     [hashtable]$IniOverrides,
     # The general research instrumentation is separate from the narrow production
-    # ambient/SDF acquisition. 'auto' includes research in prerelease versions;
+    # ambient acquisition. 'auto' includes research in prerelease versions;
     # pass 'off' explicitly when validating a production implementation privately.
     # All research sources and their direct tests remain preserved.
     [ValidateSet('auto', 'on', 'off')]

@@ -6,7 +6,7 @@ local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
 schema versions are separate. Routes remain **v1**; snapshots use schema **1.4**
 with lights enabled and **1.1** with lights disabled.
 
-## Current development status — 2026-09-12
+## Current stability-release scope — 2026-09-12
 
 Camera-local Ambient Occlusion passed a controlled open/enclosed/open route in
 the OFF v2.1.9 package on game build 25246367. `/v1/ambient` carries global sky,
@@ -14,24 +14,17 @@ the camera's independent `visibility` value/frame/age, and
 `localEnvironmentAmbientEstimateWorking`. Global sky RGB itself is unoccluded;
 the product estimate is not measured room brightness or physical illumination.
 
-The new OFF per-light implementation adds optional `sourceVisibility` to each
-rendered contribution and preserves it in each smoothed group's `contributions`.
-Original records, raw RGB/luminance, grouping and EMA RGB remain unchanged; a
-blocked light is never removed from either API feed. No separate filtered route
-is introduced. See [source visibility](SOURCE_VISIBILITY.md) for the complete
-metadata, capture pairing, 1500 ms freshness rule and explicit unknown reasons.
+Per-light geometric visibility failed live acceptance and is excluded from this
+`CDT_RESEARCH=OFF` release. Its additive `sourceVisibility` fields are retained:
+current rendered contributions report `unknown`, reason `disabled`, and a null
+attenuation factor. Smoothed groups preserve that metadata in `contributions`.
+Original records, raw RGB/luminance, grouping and EMA RGB remain unchanged.
+No source is removed or attenuated by this release.
 
-The geometric segment runs from the camera paired with the light capture to its
-source center. It accepts off-screen/behind-camera targets that remain in the
-current source list, but source discovery is not a complete 360-degree registry.
-It does not test the player root or the light's entire illuminated region. A
-blocked source may still illuminate a visible surface, and grouped contributions
-can have different verdicts. Unknown/stale metadata must not become a false OFF.
-
-Synthetic production controls exist; live visible/blocked/visible and
-behind-camera acceptance of the new per-light path is still pending. Both
-ambient and per-light goals must pass before final release. Older packages may
-omit these development fields; legacy native v2 light captures remain readable.
+The experimental contract and evidence remain in [source visibility](SOURCE_VISIBILITY.md)
+for later work under `CDT_RESEARCH=ON`. Older packages may omit these fields;
+legacy native v2 captures remain readable. See [release validation](STABLE_RELEASE_VALIDATION.md)
+for the exact candidate's test status and remaining installation/live checks.
 
 ## Historical published validation
 
@@ -57,7 +50,7 @@ TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it t
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
 Configure the ASI before starting the game. These settings describe current
-production development; the production INI contains product settings only:
+stability release; the production INI contains supported product settings only:
 
 ```ini
 [Server]
@@ -74,9 +67,6 @@ ManyLightsSampleRateHz=20
 [Ambient]
 Enabled=1
 
-[SourceVisibility]
-Enabled=1
-
 [Overlay]
 Enabled=1
 InitiallyVisible=1
@@ -90,8 +80,6 @@ HdrPaperWhiteNits=200
 Enabled=1
 InitiallyVisible=1
 ToggleKey=121
-HideOccluded=0
-OcclusionToggleKey=122
 Radius=35
 
 [Notifications]
@@ -103,23 +91,25 @@ DurationMilliseconds=6000
 1–100000 game units and `ManyLightsSampleRateHz` supports 1–60. The ASI clamps values
 outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
 metadata unchanged; it is not user configuration. The default shortcuts are F8
-for the corner HUD/radar, F9 for diagnostics, F10 for fullscreen markers and F11
-for hiding/showing fresh geometrically blocked sources in both light views.
-All four keys can be reassigned using decimal Windows virtual-key codes, or
-individually disabled with `0`. `HideOccluded=1` starts in that optional display
-mode. Unknown or stale sources stay visible, and no API record or RGB is changed.
+for the corner HUD/radar, F9 for diagnostics and F10 for fullscreen markers.
+All three keys can be reassigned using decimal Windows virtual-key codes, or
+individually disabled with `0`. F11 is unused; geometric source occlusion and
+its display controls are excluded. No API record or RGB is filtered.
 Display radius does not expand API source coverage or its configured nearby radius.
 
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
 display global sky, camera sky visibility and the local estimate with their separate
-ages. `[SourceVisibility] Enabled=1` enables continuous, bounded production SDF
-acquisition and additional per-light metadata independently of HUD visibility.
-Both paths require native ManyLights capture. `CDT_RESEARCH=OFF` ignores all
-Research, Console, Explorer and legacy `OcclusionTest` controls, including those
+ages. Ambient requires native ManyLights capture. `CDT_RESEARCH=OFF` ignores all
+SourceVisibility, HideOccluded, OcclusionToggleKey, Research, Console, Explorer
+and legacy `OcclusionTest` controls, including those
 left in an old INI. They cannot replace product capture or enable research hooks.
 `CDT_RESEARCH=ON` preserves the experimental paths and uses a separate
 `CrimsonDesertTelemetry.research.ini` template, packaged as the normal INI filename.
 See [configuration dependencies and validation](INI_VALIDATION.md).
+
+The additive `sourceVisibility` schema is retained for compatibility and future
+development. This release publishes `unknown` with reason `disabled`
+and a null attenuation factor; it does not provide a geometric visibility verdict.
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed

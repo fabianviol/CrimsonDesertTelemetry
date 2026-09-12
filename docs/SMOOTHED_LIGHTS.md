@@ -51,8 +51,9 @@ members of a group may have different visibility. The existing group EMA include
 all members; applying one member's verdict to that whole color is not valid.
 Require matching capture sequence and fresh usable metadata as specified in the
 [source-visibility contract](SOURCE_VISIBILITY.md). Unknown or stale metadata does
-not invalidate healthy raw or smoothed light data. Optional HUD hiding (default
-F11) affects only the display, never this feed.
+not invalidate healthy raw or smoothed light data. The current stability release
+excludes source occlusion and HUD hiding: metadata is unknown/disabled, with no
+attenuation factor. The experimental contract remains preserved for later work.
 
 Do not average conflicting spot directions into a fabricated cone. Contributions
 retain their own directions; the aggregate has no single `kind`/cone/direction.

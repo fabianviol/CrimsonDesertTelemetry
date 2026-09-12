@@ -253,12 +253,16 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
     text(20,375,lightLive && sample.playerPosition ? Muted : Amber,
         !lightLive ? LightFeedStatus(view,now,config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
         std::format("Radius {:.0f} gu / filtered coverage (not 360 complete)",radius),11);
+#if CDT_RESEARCH
     const auto counts=CountSourceVisibility(view,now,radius);
     const auto hidden=config.hideOccluded?counts.blocked:0;
     text(20,394,lightLive ? Muted : Amber,lightLive
         ? std::format("Visible {} / blocked {} / unknown {} / {} hidden / ",counts.visible,counts.blocked,counts.unknown,hidden)+
             ShortcutAction(config.occlusionToggleKey,config.hideOccluded?"show blocked":"hide blocked")
         : "Source visibility unavailable",10);
+#else
+    text(20,394,Muted,"Light positions include sources behind geometry",10);
+#endif
 }
 }
 
@@ -472,9 +476,14 @@ void DrawLightOverlay(const View& view, const Config& config)
     else if (!cameraReady) headline = "RENDERED LIGHTS  /  camera projection unavailable";
     else
     {
+#if CDT_RESEARCH
         const auto hidden=config.hideOccluded?visibilityCounts.blocked:0;
         headline=std::format("RENDERED LIGHTS  /  {} shown  /  {} hidden  /  {} on screen",inRange-hidden,hidden,markers.size());
+#else
+        headline=std::format("RENDERED LIGHTS  /  {} in range  /  {} on screen",inRange,markers.size());
+#endif
     }
+#if CDT_RESEARCH
     const std::string controls=std::format("{}  /  {}  /  radius {:.0f} gu",
         ShortcutAction(config.lightToggleKey,"lights"),
         ShortcutAction(config.occlusionToggleKey,config.hideOccluded?"show blocked":"hide blocked"),radius);
@@ -487,6 +496,12 @@ void DrawLightOverlay(const View& view, const Config& config)
         ? sdfStatus.available?std::format("SDF A volume age {} ms / aim at a light for LOS",sdfStatus.ageMilliseconds)
             : "SDF A UNKNOWN / "+sdfStatus.reason
         : "Captured light sources / HDR swatches / spot arrows schematic";
+#else
+    const std::string controls=std::format("{}  /  radius {:.0f} gu / aim to inspect",
+        ShortcutAction(config.lightToggleKey,"lights"),radius);
+    const std::string visibilityLine="Markers include lights behind geometry";
+    const std::string caveat="Captured light sources / HDR swatches / spot arrows schematic";
+#endif
     float legendWidth = 0;
     for (const auto* line : std::array<const std::string*,4>{&headline,&controls,&visibilityLine,&caveat})
         legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
@@ -607,6 +622,7 @@ void DrawLightOverlay(const View& view, const Config& config)
                 value.position.y,value.position.z),Muted});
             lines.push_back({std::format("Linear RGB  {:.4g} / {:.4g} / {:.4g}   |   L {:.4g}",
                 value.colorLinear.x,value.colorLinear.y,value.colorLinear.z,value.luminanceLinear),White});
+#if CDT_RESEARCH
             const auto visibility=CurrentSourceVisibility(value,view,now);
             if(visibility.status=="clear")
                 lines.push_back({"SOURCE VISIBLE  /  contribution 100%",Cyan});
@@ -624,6 +640,7 @@ void DrawLightOverlay(const View& view, const Config& config)
                         sdf::VerdictName(trace.verdict),trace.closest,trace.ageMilliseconds),
                         trace.verdict==sdf::Verdict::Clear?Cyan:trace.verdict==sdf::Verdict::Blocked?Amber:Muted});
             }
+#endif
         }
         if (group.size() > shown)
             lines.push_back({std::format("+{} more contributions; all raw values remain in API",group.size()-shown),Muted});
