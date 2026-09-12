@@ -101,8 +101,10 @@ the runtime reuses that identity, so the test now explicitly supplies a mismatch
 verified identity. None of these synthetic controls proves the original live
 match change or a live recovery yet.
 
-Whether the user had opened a menu during the stall was asked and remains pending.
-Neither `playing` nor ongoing GI updates is a validated general menu indicator.
+The user subsequently confirmed there was no interruption or menu operation;
+they had simply left the PC. The stall therefore occurred during unattended
+normal play. Neither `playing` nor ongoing GI updates becomes a validated general
+menu indicator because of this confirmation.
 
 ## Evidence and next check
 

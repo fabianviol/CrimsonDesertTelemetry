@@ -51,7 +51,8 @@ preparation has been moved before atomic publication and a concurrency regressio
 passes. A separately proven normalized-sampling half-texel fix is also tested, but
 does not solve all camp false clears. The SDF later stopped at volume 1853;
 read-only live state is Ready/no failure with progressing GI and a frozen original
-command-list generation. Menu state is awaiting the user's answer. Exact evidence,
+command-list generation. The user confirmed no interruption/menu change: they
+had simply left the PC. Exact evidence,
 limits and next test are in [live regression](SOURCE_VISIBILITY_REGRESSION.md).
 The forced 0.05-gu trace step also demonstrably skips a negative interval; dense
 sampling leaves other false-clear paths positive. These are still unresolved,
@@ -122,6 +123,9 @@ Locally all production-relevant native paths pass;
 the previous full native suite was 24/26 due to the two inherited research failures.
 The ON ASI also compiles. Do not commit the inherited `spatial_readback.cpp`
 changes or unrelated root diagnostic scripts with this work.
+
+The fixes, tests, descriptions and exact `.4` evidence were committed and pushed
+as `fd3bf54`. Its GitHub CI run is in progress; no release or tag was created.
 
 **Immediate next action:** the user closes the game and installs `.4` through DMM;
 verify installed companions, then capture a stationary raw/EMA window and fresh
