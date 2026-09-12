@@ -122,7 +122,7 @@ DurationMilliseconds=6000
 ```
 
 - `[Lights] Enabled=0` disables both authored and rendered light feeds. `ManyLights=0` disables only the native GPU light capture.
-- `[Ambient] Enabled=1` enables the separate sky/ambient path; `[SourceVisibility] Enabled=1` enables per-light geometry metadata. Both require native ManyLights capture. Keep research switches and the historical `OcclusionTest` diagnostic at `0` for production use.
+- `[Ambient] Enabled=1` enables the separate sky/ambient path; `[SourceVisibility] Enabled=1` enables per-light geometry metadata. Both require native ManyLights capture.
 - `NearbyRadius` controls the API's player-centered light radius; `LightOverlay.Radius` controls both light views. Distances are **game units**, not a claimed metre conversion.
 - Disable **Overlay, LightOverlay and Notifications** to skip all UI hooks/client. The server and light capture have their own switches.
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
@@ -130,6 +130,11 @@ DurationMilliseconds=6000
 - Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
 - `HideOccluded=1` initially hides only fresh, geometrically blocked lights in the HUD/radar. Unknown or stale visibility stays visible; raw and smoothed API records remain complete. `OcclusionToggleKey` changes this display mode during play. The production implementation is under live validation; see [source visibility](docs/SOURCE_VISIBILITY.md).
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
+
+The production `CDT_RESEARCH=OFF` profile contains only product settings. Research,
+Console, Explorer and the legacy `OcclusionTest` cannot be activated in this build,
+including through an older INI. Research builds retain those controls in a separate
+template. See [configuration dependencies and validation](docs/INI_VALIDATION.md).
 
 ### Startup and errors
 
@@ -143,6 +148,9 @@ The status display starts independently of game-memory validation, so an unknown
 - `CrimsonDesertTelemetry.overlay.log`
 
 Known behavior: after returning to the title screen without restarting, data/HUD may persist briefly before becoming stale or being replaced during loading. The views remain hideable with F8/F10. Telemetry availability is not a definitive menu/loading-screen detector.
+Automatic hiding in every game menu is not implemented. A live run with all
+production features enabled still needs validation; synthetic UI tests do not
+establish that result.
 
 ## Use the data
 
@@ -207,7 +215,7 @@ Important boundaries:
 - Fullscreen markers have no screen-depth test. The new optional geometry mode hides only sources with fresh SDF-blocked metadata; unknown, stale and absent results are never treated as blocked. The geometry test supports behind-camera/off-screen targets present in the feed, while source discovery remains view-filtered. Fast motion can expose capture/projection latency, and production live acceptance is pending.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
-- The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The bundled research console can change debug values when explicitly enabled and is off by default.
+- The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The console that can change debug values is available only in a separate `CDT_RESEARCH=ON` build.
 
 ## Build, test and contribute
 
@@ -218,7 +226,11 @@ dotnet run --project .\tests\CrimsonDesertTelemetry.Tests -c Release
 ctest --test-dir build/native-package-release -C Release --output-on-failure
 ```
 
-The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP. The default production package uses `CDT_RESEARCH=OFF`; bounded ambient/SDF acquisition is included, while private probe histories and capture dumps stay in the research build. GitHub CI covers managed/API tests and native capture, guard and UI tests. Current acceptance and outstanding checks are recorded in [the handover](docs/HANDOVER.md); historical test totals are not a result for a new package.
+The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP.
+
+The production package uses `CDT_RESEARCH=OFF`; bounded ambient/SDF acquisition is included. `-Research on` preserves the experimental paths and selects [CrimsonDesertTelemetry.research.ini](packaging/mod-manager/CrimsonDesertTelemetry.research.ini), packaged under the normal INI filename. The separate profiles prevent old diagnostic settings from replacing product streams or offering inactive controls; this is a configuration correction, not an antivirus mitigation. See [INI validation](docs/INI_VALIDATION.md).
+
+GitHub CI covers managed/API tests and native capture, guard and UI tests. Current acceptance and outstanding checks are recorded in [the handover](docs/HANDOVER.md); historical test totals are not a result for a new package.
 
 See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), [2.0 release notes](docs/releases/v2.0.0.md), [Nexus publishing](docs/NEXUS_PUBLISHING.md) and [current public description drafts](docs/PUBLIC_DESCRIPTIONS.md). Game binaries, memory dumps, private captures and third-party checkout directories do not belong in the public repository.
 

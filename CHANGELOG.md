@@ -16,6 +16,16 @@
   `0`. Display hiding does not filter either API feed.
 - Keep production acquisition in `CDT_RESEARCH=OFF` with bounded current data;
   private probe histories and capture dumps remain in the preserved research path.
+- Give production and research builds separate INI templates. OFF ignores
+  Research, Console, Explorer and legacy `OcclusionTest` entry points, including
+  old INIs that enable them; ON retains the experimental behavior. This corrects
+  conflicting or inactive configuration options and prevents diagnostic modes
+  from replacing product streams. It is not an antivirus mitigation.
+- Align HUD client and host port handling: negative or out-of-range configured
+  ports use the same signed 1024–65535 bounds across all UI combinations.
+  See [INI validation](docs/INI_VALIDATION.md) for configuration dependencies and
+  synthetic coverage. Live acceptance with all production features enabled is
+  still pending; automatic hiding in every game menu is not implemented.
 - The new per-light path has synthetic coverage; real visible/blocked/visible
   and behind-camera acceptance and exact final ASI/ZIP virus checks remain
   outstanding. This entry is development status, not a published or final release.

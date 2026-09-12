@@ -34,8 +34,8 @@ Requirements and compatibility
 Install or upgrade
 ------------------
 1. Close the game. Preserve useful old INI preferences in a backup.
-2. Disable previous telemetry packages and the old CrimsonHueConsole.asi. This
-   single plugin replaces both; never leave the old console ASI active alongside it.
+2. Disable previous telemetry packages and the old CrimsonHueConsole.asi.
+   The old console ASI conflicts with the current telemetry plugin.
 3. Import this ZIP into Definitive Mod Manager or JSON Mod Manager, then enable it.
    Alternatively, put its payload files beside the game EXE using your ASI loader.
    Keep your existing loader and other mods. A complete install/uninstall matrix
@@ -61,11 +61,21 @@ F11: show/hide geometrically blocked lights in both HUD light views.
 All four shortcuts are configurable decimal Windows virtual-key codes; 0 disables
 one shortcut. [Overlay] ToggleKey=119 and DetailsKey=120 control F8/F9 defaults.
 [LightOverlay] ToggleKey=121 and OcclusionToggleKey=122 control F10/F11 defaults.
-Initial states: [Overlay] InitiallyVisible=1, ShowDetails=0; [LightOverlay]
+Template defaults (private test INIs can override these):
+[Overlay] InitiallyVisible=1, ShowDetails=0; [LightOverlay]
 InitiallyVisible=1, HideOccluded=0. HideOccluded=1 hides freshly known blocked
 lights; unknown/stale visibility remains visible. API records are never removed.
 These controls do not capture mouse input. Light capture, both HUD views and status
-notices are enabled in the supplied INI; the optional research console is disabled.
+notices are enabled in the supplied INI.
+
+The production CDT_RESEARCH=OFF profile contains product settings only. Research,
+Console, Explorer and the legacy OcclusionTest cannot be activated, even through
+an older INI. Source builds with CDT_RESEARCH=ON preserve the research controls
+and use their own CrimsonDesertTelemetry.research.ini template, packaged as
+CrimsonDesertTelemetry.ini. This separation fixes conflicting or inactive INI
+options; it is not an antivirus mitigation.
+Configuration reference and validation:
+https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md
 
 [Lights] Enabled=1 includes authored lights; ManyLights=1 adds filtered renderer
 contributions, captured at 20 Hz by default. NearbyRadius uses game units, not metres.
@@ -88,6 +98,8 @@ and their client. InitiallyVisible=0 only hides an enabled view. The telemetry h
 is independently controlled by [Server]. Configuration changes require a restart.
 Returning to the title screen may leave data/HUD visible for several seconds before
 they become stale; the user can hide the views with their keys.
+Automatic hiding in every game menu is not implemented. Live validation with all
+production features enabled remains pending; synthetic tests do not establish it.
 
 Local HTTP and WebSocket APIs
 ----------------------------
@@ -130,15 +142,15 @@ is drawn. The SDR path has no additional compositor pass.
 Safety and diagnostics
 ----------------------
 The external host reads process memory. The native plugin uses guarded code and
-D3D12 hooks for capture and UI. The optional research console can change game debug
-values when explicitly enabled; the package is not wholly read-only instrumentation.
+D3D12 hooks for capture and UI; the package is not wholly read-only instrumentation.
+The console that can change game debug values belongs to CDT_RESEARCH=ON builds.
 No gameplay-control API or anti-cheat bypass is provided.
 
 Logs beside the plugin:
 - CrimsonDesertTelemetry.bootstrap.log: plugin startup and host launch.
 - CrimsonDesertTelemetry.host.log: host diagnostics.
 - CrimsonDesertTelemetry.overlay.log: HUD initialization and status.
-- CrimsonDesertTelemetry.native.log: integrated console and light capture.
+- CrimsonDesertTelemetry.native.log: native light and ambient capture diagnostics.
 
 Source users can run check-update against a new EXE for an offline diagnostic;
 it does not automatically approve that build. See docs/UPDATE_RECOVERY.md.

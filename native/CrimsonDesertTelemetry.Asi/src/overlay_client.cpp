@@ -351,7 +351,9 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.lightMaxMarkers = std::clamp(lightInteger(L"MaxMarkers", 512), 1, 2048);
     config.lightMaxLabels = std::clamp(lightInteger(L"MaxLabels", 6), 0, 16);
     config.lightRadius = IniFloat(ini, L"Radius", 35.0f, 1.0f, 500.0f, L"LightOverlay");
+#if CDT_RESEARCH
     config.occlusionTest = lightInteger(L"OcclusionTest", 0) != 0;
+#endif
     config.hideOccluded = lightInteger(L"HideOccluded", 0) != 0;
     config.occlusionToggleKey = std::clamp(lightInteger(L"OcclusionToggleKey", 122), 0, 255);
     config.radar3D = integer(L"Radar3D", 1) != 0;
@@ -372,7 +374,8 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.scale = IniFloat(ini, L"Scale", 1.0f, 0.5f, 3.0f);
     config.opacity = IniFloat(ini, L"Opacity", 0.92f, 0.2f, 1.0f);
     config.hdrPaperWhiteNits = IniFloat(ini, L"HdrPaperWhiteNits", 200.0f, 80.0f, 500.0f);
-    config.port = static_cast<unsigned short>(std::clamp(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()), 1024u, 65535u));
+    const int requestedPort = static_cast<int>(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()));
+    config.port = static_cast<unsigned short>(std::clamp(requestedPort, 1024, 65535));
     return config;
 }
 void Start(const HMODULE module, HANDLE stopEvent, const std::filesystem::path& directory) noexcept

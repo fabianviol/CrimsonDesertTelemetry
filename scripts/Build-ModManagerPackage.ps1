@@ -26,6 +26,41 @@ if (Test-Path -LiteralPath $archive) {
 $buildStamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $stagingRoot = Join-Path $artifactRoot "v$Version-$buildStamp"
 $packageRoot = Join-Path $stagingRoot 'CrimsonDesertTelemetry'
+$researchEnabled = if ($Research -eq 'auto') { [bool]($Version -match '-') } else { $Research -eq 'on' }
+$packageProfile = if ($researchEnabled) { 'research' } else { 'production' }
+$iniTemplate = Join-Path $repoRoot $(if ($researchEnabled) {
+    'packaging\mod-manager\CrimsonDesertTelemetry.research.ini'
+} else { 'packaging\mod-manager\CrimsonDesertTelemetry.ini' })
+$configuredIni = Get-Content -LiteralPath $iniTemplate -Raw
+
+# Resolve overrides before any build or package mutation. A production template
+# has no research keys; an old/unsupported override therefore fails explicitly.
+if ($IniOverrides -and $IniOverrides.Count -gt 0) {
+    if ($Version -notmatch '-') {
+        throw "Refusing INI overrides for release version '$Version'; a public package ships the clean template."
+    }
+    foreach ($qualifiedKey in $IniOverrides.Keys) {
+        $parts = $qualifiedKey -split '\.', 2
+        $key = $parts[-1]
+        $pattern = if ($parts.Count -eq 2) {
+            $section = [regex]::Escape($parts[0])
+            "(?m)(^\[$section\]\s*\r?\n(?:(?!^\[)[^\r\n]*(?:\r?\n|$))*?^$([regex]::Escape($key))=)[^\r\n]*"
+        } else {
+            "(?m)^$([regex]::Escape($key))=[^\r\n]*$"
+        }
+        $matches = [regex]::Matches($configuredIni, $pattern)
+        if ($matches.Count -ne 1) {
+            throw "INI override must identify exactly one supported $packageProfile template key: $qualifiedKey (found $($matches.Count))"
+        }
+        $value = [string]$IniOverrides[$qualifiedKey]
+        if ($value -match '[\r\n]') { throw "INI override must be one value without newlines: $qualifiedKey" }
+        $configuredIni = [regex]::Replace($configuredIni, $pattern, {
+            param($match)
+            if ($parts.Count -eq 2) { return $match.Groups[1].Value + $value }
+            return $key + '=' + $value
+        })
+    }
+}
 $cmake = $null
 $cmakeCommand = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($cmakeCommand) { $cmake = $cmakeCommand.Source }
@@ -42,7 +77,6 @@ if (-not $cmake -or -not (Test-Path -LiteralPath $cmake)) {
 }
 
 $nativeSource = Join-Path $repoRoot 'native\CrimsonDesertTelemetry.Asi'
-$researchEnabled = if ($Research -eq 'auto') { [bool]($Version -match '-') } else { $Research -eq 'on' }
 # Separate trees per setting so a release build never inherits a research CMake cache.
 $nativeBuild = Join-Path $repoRoot $(if ($researchEnabled) { 'build\native-package' } else { 'build\native-package-release' })
 $managedPublish = Join-Path $repoRoot "build\managed-package\v$Version-$buildStamp"
@@ -75,7 +109,7 @@ $files = @(
     @{ Source = (Join-Path $managedPublish 'crimson-desert-telemetry.deps.json'); Name = 'crimson-desert-telemetry.deps.cfg' },
     @{ Source = (Join-Path $managedPublish 'crimson-desert-telemetry.runtimeconfig.json'); Name = 'crimson-desert-telemetry.runtimeconfig.cfg' },
     @{ Source = (Join-Path $managedPublish 'CrimsonDesertTelemetry.Core.dll'); Name = 'CrimsonDesertTelemetry.Core.dll' },
-    @{ Source = (Join-Path $repoRoot 'packaging\mod-manager\CrimsonDesertTelemetry.ini'); Name = 'CrimsonDesertTelemetry.ini' },
+    @{ Source = $iniTemplate; Name = 'CrimsonDesertTelemetry.ini' },
     @{ Source = (Join-Path $repoRoot 'packaging\mod-manager\README.txt'); Name = 'README.txt' },
     @{ Source = (Join-Path $nativeBuild 'THIRD-PARTY-NOTICES.txt'); Name = 'THIRD-PARTY-NOTICES.txt' },
     @{ Source = (Join-Path $repoRoot 'LICENSE'); Name = 'LICENSE.txt' }
@@ -86,39 +120,15 @@ foreach ($file in $files) {
 }
 
 if ($IniOverrides -and $IniOverrides.Count -gt 0) {
-    if ($Version -notmatch '-') {
-        throw "Refusing INI overrides for release version '$Version'; a public package ships the clean template."
-    }
     $iniPath = Join-Path $packageRoot 'CrimsonDesertTelemetry.ini'
-    $ini = Get-Content -LiteralPath $iniPath -Raw
-    foreach ($qualifiedKey in $IniOverrides.Keys) {
-        $parts = $qualifiedKey -split '\.', 2
-        $key = $parts[-1]
-        $pattern = if ($parts.Count -eq 2) {
-            $section = [regex]::Escape($parts[0])
-            "(?m)(^\[$section\]\s*\r?\n(?:(?!^\[)[^\r\n]*(?:\r?\n|$))*?^$([regex]::Escape($key))=)[^\r\n]*"
-        } else {
-            "(?m)^$([regex]::Escape($key))=[^\r\n]*$"
-        }
-        $matches = [regex]::Matches($ini, $pattern)
-        if ($matches.Count -ne 1) {
-            throw "INI override must identify exactly one template key: $qualifiedKey (found $($matches.Count))"
-        }
-        $value = [string]$IniOverrides[$qualifiedKey]
-        $ini = [regex]::Replace($ini, $pattern, {
-            param($match)
-            if ($parts.Count -eq 2) { return $match.Groups[1].Value + $value }
-            return $key + '=' + $value
-        })
-    }
-    Set-Content -LiteralPath $iniPath -Value $ini -NoNewline
+    Set-Content -LiteralPath $iniPath -Value $configuredIni -NoNewline
     Write-Output "INI overrides applied (private build): $(($IniOverrides.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')"
 }
 
 # No -Force: also refuse a release created by another build while this one ran.
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $archive -CompressionLevel Optimal
 
-& (Join-Path $repoRoot 'tests\Test-ModManagerPackage.ps1') -PackageDirectory $packageRoot -ArchivePath $archive -SelfTest
+& (Join-Path $repoRoot 'tests\Test-ModManagerPackage.ps1') -PackageDirectory $packageRoot -ArchivePath $archive -Profile $packageProfile -SelfTest
 
 $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256
 Write-Output "Package: $archive"

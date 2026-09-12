@@ -57,7 +57,7 @@ TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it t
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
 Configure the ASI before starting the game. These settings describe current
-production development; the complete INI also contains disabled research options:
+production development; the production INI contains product settings only:
 
 ```ini
 [Server]
@@ -93,7 +93,6 @@ ToggleKey=121
 HideOccluded=0
 OcclusionToggleKey=122
 Radius=35
-OcclusionTest=0
 
 [Notifications]
 Enabled=1
@@ -115,8 +114,12 @@ Display radius does not expand API source coverage or its configured nearby radi
 display global sky, camera sky visibility and the local estimate with their separate
 ages. `[SourceVisibility] Enabled=1` enables continuous, bounded production SDF
 acquisition and additional per-light metadata independently of HUD visibility.
-Both paths require native ManyLights capture. Keep `OcclusionTest=0` and research
-switches at `0`; the preserved experimental run is not required by production.
+Both paths require native ManyLights capture. `CDT_RESEARCH=OFF` ignores all
+Research, Console, Explorer and legacy `OcclusionTest` controls, including those
+left in an old INI. They cannot replace product capture or enable research hooks.
+`CDT_RESEARCH=ON` preserves the experimental paths and uses a separate
+`CrimsonDesertTelemetry.research.ini` template, packaged as the normal INI filename.
+See [configuration dependencies and validation](INI_VALIDATION.md).
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed
@@ -136,6 +139,9 @@ the packaged INI explicitly enables them. Lighting has independent `[Lights]`
 switches: hiding/disabling the views does not stop capture. The external host
 reads memory, while native ManyLights capture uses guarded renderer hooks and GPU
 readback in the ASI. It is an instrumented path, not an untouched baseline.
+Live validation with all production features enabled remains pending. Automatic
+HUD hiding in every game menu is not implemented; `playing`/`loading` remains a
+telemetry availability contract, not a menu-state API.
 
 Alternatively, from a source checkout with the .NET 8 SDK:
 

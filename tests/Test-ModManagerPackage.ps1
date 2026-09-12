@@ -1,6 +1,7 @@
 param(
-    [Parameter(Mandatory = $true)][string]$PackageDirectory,
-    [Parameter(Mandatory = $true)][string]$ArchivePath,
+    [string]$PackageDirectory,
+    [string]$ArchivePath,
+    [ValidateSet('production', 'research')][string]$Profile = 'production',
     [switch]$SelfTest
 )
 
@@ -22,47 +23,119 @@ function Assert-PackageNames([string[]]$Names) {
     if (@($Names | Where-Object { $_ -match '(?i)\.json$' }).Count) {
         throw 'Loose JSON is forbidden: mod managers interpret it as game-patch data.'
     }
-    if (@(Compare-Object $expectedNames $Names).Count) {
+    if ($Names.Count -ne $expectedNames.Count -or @(Compare-Object $expectedNames $Names).Count) {
         throw 'Package contents differ from the ASI companion-file contract.'
     }
 }
 
-function Assert-Payload([hashtable]$Files) {
+function Get-ProfileRules([ValidateSet('production', 'research')][string]$ProfileName) {
+    # Complete offered configuration, with ranges taken from the native readers.
+    # This validates a package's requested settings, not runtime availability.
+    $rules = @{
+        Server = @{ Enabled = 'bool'; Port = 'int:1024:65535'; SampleRateHz = 'int:1:240' }
+        Notifications = @{ Enabled = 'bool'; DurationMilliseconds = 'int:5000:10000' }
+        Lights = @{ Enabled = 'bool'; NearbyRadius = 'int:1:100000'; ManyLights = 'bool'; ManyLightsSampleRateHz = 'int:1:60' }
+        Ambient = @{ Enabled = 'bool' }
+        SourceVisibility = @{ Enabled = 'bool' }
+        LightSmoothing = @{ TimeConstantMilliseconds = 'int:0:2000'; GroupRadius = 'number:0.01:1' }
+        Overlay = @{
+            Enabled = 'bool'; InitiallyVisible = 'bool'; ShowDetails = 'bool'; ShowAmbient = 'bool'; Radar3D = 'bool'
+            ToggleKey = 'int:0:255'; DetailsKey = 'int:0:255'; Corner = 'int:0:3'; AutoScale = 'bool'
+            Scale = 'number:0.5:3'; Opacity = 'number:0.2:1'; HdrPaperWhiteNits = 'number:80:500'
+            StaleMilliseconds = 'int:100:10000'
+        }
+        LightOverlay = @{
+            Enabled = 'bool'; InitiallyVisible = 'bool'; ToggleKey = 'int:0:255'; HideOccluded = 'bool'
+            OcclusionToggleKey = 'int:0:255'; Radius = 'number:1:500'; MaxMarkers = 'int:1:2048'; MaxLabels = 'int:0:16'
+        }
+    }
+    if ($ProfileName -eq 'research') {
+        $rules.Research = @{
+            SignedDistanceReadback = 'bool'; SignedDistanceReadbackCount = 'int:1:120'; SignedDistanceReadbackIntervalMs = 'int:250:10000'
+            SpatialProbe = 'bool'; SpatialReadback = 'bool'; SpatialReadbackCount = 'int:1:8'
+            SpatialReadbackIntervalMs = 'int:250:10000'; SpatialVisibilitySeconds = 'int:0:4294967295'; AmbientProbe = 'bool'
+        }
+        $rules.Console = @{
+            EnableConsole = 'bool'; PatchGates = 'bool'; PatchDevFlags = 'bool'; EarlyBreakpoint = 'bool'
+            HideNotification = 'bool'; VerboseDiscovery = 'bool'; InitDelayMs = 'int:1:30000'
+        }
+        $rules.Explorer = @{
+            EnableExplorer = 'bool'; AllowWrite = 'bool'; AllowCall = 'bool'; AllowDebugCommands = 'bool'
+            AllowBreakpoints = 'bool'; AllowManyLights = 'bool'; PollIntervalMs = 'int:1:4294967294'
+            CmdFile = 'filename'; ResultFile = 'filename'
+        }
+        $rules.LightOverlay.OcclusionTest = 'bool'
+    }
+    return $rules
+}
+
+function Assert-IniConfiguration([string]$Ini, [ValidateSet('production', 'research')][string]$ProfileName) {
+    $rules = Get-ProfileRules $ProfileName
+    $sections = @{}
+    $section = $null
+    $lineNumber = 0
+    foreach ($line in ($Ini.TrimStart([char]0xFEFF) -split '\r?\n')) {
+        ++$lineNumber
+        $text = $line.Trim()
+        if (-not $text -or $text.StartsWith(';') -or $text.StartsWith('#')) { continue }
+        if ($text -match '^\[([^\[\]]+)\]$') {
+            $section = $Matches[1].Trim()
+            if (-not $rules.ContainsKey($section)) { throw "Section [$section] is not supported by the $ProfileName profile." }
+            if ($sections.ContainsKey($section)) { throw "Duplicate INI section [$section]." }
+            $sections[$section] = @{}
+            continue
+        }
+        if (-not $section -or $text -notmatch '^([^=]+)=(.*)$') { throw "Malformed INI entry at line $lineNumber." }
+        $key = $Matches[1].Trim()
+        $value = $Matches[2].Trim()
+        if (-not $rules[$section].ContainsKey($key)) { throw "Setting $section.$key is not supported by the $ProfileName profile." }
+        if ($sections[$section].ContainsKey($key)) { throw "Duplicate INI setting $section.$key." }
+        $sections[$section][$key] = $value
+        $rule = $rules[$section][$key] -split ':'
+        if ($rule[0] -eq 'bool') {
+            if ($value -cnotmatch '^[01]$') { throw "$section.$key must be 0 or 1." }
+        }
+        elseif ($rule[0] -eq 'filename') {
+            # Explorer joins these names to the game directory, deletes its command
+            # file and replaces its result file. Require distinct local filenames.
+            if (-not $value -or $value -in @('.', '..') -or $value -match '[\\/:*?"<>|\x00-\x1f]' -or $value -match '[. ]$') {
+                throw "$section.$key must be a local filename."
+            }
+        }
+        else {
+            if ($rule[0] -eq 'int' -and $value -cnotmatch '^[0-9]+$') { throw "$section.$key must be an unsigned decimal integer." }
+            if ($rule[0] -eq 'number' -and $value.StartsWith('+')) { throw "$section.$key must not have a leading plus sign." }
+            $number = 0.0
+            $culture = [Globalization.CultureInfo]::InvariantCulture
+            if (-not [double]::TryParse($value, [Globalization.NumberStyles]::Float, $culture, [ref]$number) -or
+                [double]::IsNaN($number) -or [double]::IsInfinity($number) -or
+                $number -lt [double]::Parse($rule[1], $culture) -or $number -gt [double]::Parse($rule[2], $culture)) {
+                throw "$section.$key must be within $($rule[1])..$($rule[2]) (decimal point required)."
+            }
+        }
+    }
+    foreach ($requiredSection in $rules.Keys) {
+        if (-not $sections.ContainsKey($requiredSection)) { throw "Missing INI section [$requiredSection]." }
+        foreach ($requiredKey in $rules[$requiredSection].Keys) {
+            if (-not $sections[$requiredSection].ContainsKey($requiredKey)) { throw "Missing INI setting $requiredSection.$requiredKey." }
+        }
+    }
+    if ($ProfileName -eq 'research' -and $sections.Explorer.CmdFile -ieq $sections.Explorer.ResultFile) {
+        throw 'Explorer command and result filenames must differ.'
+    }
+    # Deliberately no all-on claim or dependency prohibition: requested features
+    # may be unavailable while their upstream feed is disabled. Research includes
+    # exclusive diagnostic modes whose runtime effects are documented separately.
+}
+
+function Assert-Payload([hashtable]$Files, [ValidateSet('production', 'research')][string]$ProfileName = $Profile) {
     Assert-PackageNames @($Files.Keys)
     $deps = [Text.Encoding]::UTF8.GetString($Files['crimson-desert-telemetry.deps.cfg']) | ConvertFrom-Json
     $runtime = [Text.Encoding]::UTF8.GetString($Files['crimson-desert-telemetry.runtimeconfig.cfg']) | ConvertFrom-Json
     if (-not $deps.runtimeTarget.name -or $null -eq $deps.targets) { throw 'Invalid .NET dependency metadata.' }
     if ($null -eq $runtime.runtimeOptions) { throw 'Invalid .NET runtime configuration.' }
     $ini = [Text.Encoding]::UTF8.GetString($Files['CrimsonDesertTelemetry.ini'])
-    if ($ini -notmatch '(?m)^\[Overlay\]' -or $ini -notmatch '(?m)^ToggleKey=119\r?$') { throw 'Missing overlay configuration.' }
-    $overlay = [regex]::Match($ini, '(?ms)^\[Overlay\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
-    foreach ($setting in @('Enabled=1', 'Radar3D=1')) {
-        if ($overlay -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
-            throw "Missing light HUD preview default: $setting"
-        }
-    }
-    $worldOverlay = [regex]::Match($ini, '(?ms)^\[LightOverlay\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
-    foreach ($setting in @('Enabled=1', 'InitiallyVisible=1', 'ToggleKey=121', 'Radius=35', 'MaxMarkers=512', 'MaxLabels=6')) {
-        if ($worldOverlay -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
-            throw "Missing independent world-light overlay default: $setting"
-        }
-    }
-    $notifications = [regex]::Match($ini, '(?ms)^\[Notifications\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
-    if ($notifications -notmatch '(?m)^Enabled=1\r?$' -or $notifications -notmatch '(?m)^DurationMilliseconds=6000\r?$') {
-        throw 'Missing independent startup notification defaults.'
-    }
-    $lights = [regex]::Match($ini, '(?ms)^\[Lights\]\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
-    foreach ($setting in @('Enabled=1', 'NearbyRadius=100', 'ManyLights=1', 'ManyLightsSampleRateHz=20')) {
-        if ($lights -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
-            throw "Missing unified light default: $setting"
-        }
-    }
-    foreach ($setting in @('EnableConsole=0', 'EnableExplorer=0', 'AllowWrite=0', 'AllowCall=0',
-        'AllowDebugCommands=0', 'AllowBreakpoints=0', 'AllowManyLights=0')) {
-        if ($ini -notmatch ('(?m)^' + [regex]::Escape($setting) + '\r?$')) {
-            throw "Research instruments must be opt-in: $setting"
-        }
-    }
+    Assert-IniConfiguration $ini $ProfileName
     $notices = [Text.Encoding]::UTF8.GetString($Files['THIRD-PARTY-NOTICES.txt'])
     foreach ($dependency in @('Dear ImGui', 'MinHook', 'JSON for Modern C++', 'Tristan Grimmer', 'Sean Barrett')) {
         if (-not $notices.Contains($dependency)) { throw "Missing third-party attribution: $dependency" }
@@ -88,8 +161,144 @@ if ($SelfTest) {
     Assert-Rejected { Assert-PackageNames ($expectedNames | Where-Object { $_ -ne 'crimson-desert-telemetry.deps.cfg' }) } 'Missing dependency metadata was accepted.'
     Assert-Rejected { Assert-PackageNames ($expectedNames + 'unexpected.exe') } 'A loose EXE was accepted.'
     Assert-Rejected { Assert-PackageNames ($expectedNames + 'CrimsonHueConsole.asi') } 'A second console ASI was accepted.'
-    Write-Output 'PASS package validator regression cases'
+    Assert-Rejected { Assert-PackageNames ($expectedNames + $expectedNames[0]) } 'A duplicate companion filename was accepted.'
+
+    # Independent complete fixture: disabled UI/upstream feeds, remapped/disabled
+    # keys and supported range boundaries must not be mistaken for bad defaults.
+    $productionIni = @'
+[Server]
+Enabled=0
+Port=65535
+SampleRateHz=240
+[Notifications]
+Enabled=0
+DurationMilliseconds=10000
+[Lights]
+Enabled=0
+NearbyRadius=1
+ManyLights=0
+ManyLightsSampleRateHz=1
+[Ambient]
+Enabled=1
+[SourceVisibility]
+Enabled=1
+[LightSmoothing]
+TimeConstantMilliseconds=0
+GroupRadius=0.01
+[Overlay]
+Enabled=0
+InitiallyVisible=0
+ShowDetails=1
+ShowAmbient=0
+Radar3D=0
+ToggleKey=0
+DetailsKey=255
+Corner=3
+AutoScale=0
+Scale=0.5
+Opacity=0.2
+HdrPaperWhiteNits=500
+StaleMilliseconds=100
+[LightOverlay]
+Enabled=0
+InitiallyVisible=0
+ToggleKey=65
+HideOccluded=1
+OcclusionToggleKey=0
+Radius=500
+MaxMarkers=1
+MaxLabels=0
+'@
+    Assert-IniConfiguration $productionIni 'production'
+    $otherBounds = $productionIni.Replace('Port=65535', 'Port=1024').Replace('SampleRateHz=240', 'SampleRateHz=1').
+        Replace('DurationMilliseconds=10000', 'DurationMilliseconds=5000').Replace('NearbyRadius=1', 'NearbyRadius=100000').
+        Replace('ManyLightsSampleRateHz=1', 'ManyLightsSampleRateHz=60').Replace('TimeConstantMilliseconds=0', 'TimeConstantMilliseconds=2000').
+        Replace('GroupRadius=0.01', 'GroupRadius=1').Replace('DetailsKey=255', 'DetailsKey=0').Replace('Corner=3', 'Corner=0').
+        Replace('Scale=0.5', 'Scale=3').Replace('Opacity=0.2', 'Opacity=1').Replace('HdrPaperWhiteNits=500', 'HdrPaperWhiteNits=80').
+        Replace('StaleMilliseconds=100', 'StaleMilliseconds=10000').Replace('Radius=500', 'Radius=1').
+        Replace('MaxMarkers=1', 'MaxMarkers=2048').Replace('MaxLabels=0', 'MaxLabels=16')
+    Assert-IniConfiguration $otherBounds 'production'
+    $researchTail = @'
+OcclusionTest=0
+[Research]
+SignedDistanceReadback=0
+SignedDistanceReadbackCount=120
+SignedDistanceReadbackIntervalMs=2000
+SpatialProbe=0
+SpatialReadback=0
+SpatialReadbackCount=1
+SpatialReadbackIntervalMs=1000
+SpatialVisibilitySeconds=0
+AmbientProbe=0
+[Console]
+EnableConsole=0
+PatchGates=1
+PatchDevFlags=1
+EarlyBreakpoint=1
+HideNotification=1
+VerboseDiscovery=0
+InitDelayMs=5000
+[Explorer]
+EnableExplorer=0
+AllowWrite=0
+AllowCall=0
+AllowDebugCommands=0
+AllowBreakpoints=0
+AllowManyLights=0
+PollIntervalMs=100
+CmdFile=inject_cmd.txt
+ResultFile=inject_result.txt
+'@
+    $researchIni = $productionIni + "`n" + $researchTail
+    Assert-IniConfiguration $researchIni 'research'
+    Assert-IniConfiguration ($researchIni.Replace('EnableConsole=0', 'EnableConsole=1').Replace('SpatialProbe=0', 'SpatialProbe=1')) 'research'
+    Assert-Rejected { Assert-IniConfiguration $productionIni 'unsupported' } 'An unsupported profile was accepted.'
+    Assert-Rejected { Assert-IniConfiguration $researchIni 'production' } 'Research settings were accepted in production.'
+    Assert-Rejected { Assert-IniConfiguration $productionIni 'research' } 'An incomplete research profile was accepted.'
+    foreach ($forbidden in @('Research', 'Console', 'Explorer')) {
+        Assert-Rejected { Assert-IniConfiguration ($productionIni + "`n[$forbidden]`n") 'production' } "Forbidden section [$forbidden] was accepted."
+    }
+    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nOcclusionTest=0`n") 'production' } 'The legacy research key was accepted in production.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nUnknownSetting=1`n") 'production' } 'An unknown key was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni -replace '(?m)^DetailsKey=255\r?\n', '') 'production' } 'A missing offered shortcut was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nMaxLabels=1`n") 'production' } 'A duplicate key was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`n[Server]`n") 'production' } 'A duplicate section was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Enabled=0', 'Enabled=true')) 'production' } 'A nonnumeric boolean was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Port=65535', 'Port=1023')) 'production' } 'An unsupported port was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('DetailsKey=255', 'DetailsKey=256')) 'production' } 'An unsupported keycode was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('MaxLabels=0', 'MaxLabels=-1')) 'production' } 'A negative unsigned setting was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('GroupRadius=0.01', 'GroupRadius=0,15')) 'production' } 'A locale-dependent decimal was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Scale=0.5', 'Scale=NaN')) 'production' } 'A nonfinite number was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Scale=0.5', 'Scale=+2')) 'production' } 'A leading plus sign rejected by the native UI reader was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('SpatialReadbackCount=1', 'SpatialReadbackCount=9')) 'research' } 'An unsupported research count was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('PollIntervalMs=100', 'PollIntervalMs=0')) 'research' } 'A busy-loop Explorer interval was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('PollIntervalMs=100', 'PollIntervalMs=4294967295')) 'research' } 'An infinite Explorer interval was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('inject_cmd.txt', '..\outside.txt')) 'research' } 'An Explorer path escape was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('inject_result.txt', 'inject_cmd.txt')) 'research' } 'Overlapping Explorer command/result files were accepted.'
+
+    $fixture = @{}
+    foreach ($name in $expectedNames) { $fixture[$name] = [Text.Encoding]::UTF8.GetBytes('fixture') }
+    foreach ($name in @('CrimsonDesertTelemetry.asi', 'CrimsonDesertTelemetry.Core.dll', 'crimson-desert-telemetry.dll')) {
+        $fixture[$name] = [byte[]](0x4D, 0x5A)
+    }
+    $fixture['CrimsonDesertTelemetry.ini'] = [Text.Encoding]::UTF8.GetBytes($productionIni)
+    $fixture['crimson-desert-telemetry.deps.cfg'] = [Text.Encoding]::UTF8.GetBytes('{"runtimeTarget":{"name":"test"},"targets":{}}')
+    $fixture['crimson-desert-telemetry.runtimeconfig.cfg'] = [Text.Encoding]::UTF8.GetBytes('{"runtimeOptions":{}}')
+    $fixture['THIRD-PARTY-NOTICES.txt'] = [Text.Encoding]::UTF8.GetBytes('Dear ImGui; MinHook; JSON for Modern C++; Tristan Grimmer; Sean Barrett')
+    Assert-Payload $fixture 'production'
+    $missing = $fixture.Clone(); $missing.Remove('crimson-desert-telemetry.runtimeconfig.cfg')
+    Assert-Rejected { Assert-Payload $missing 'production' } 'Missing runtime companion was accepted.'
+    $badMetadata = $fixture.Clone(); $badMetadata['crimson-desert-telemetry.deps.cfg'] = [Text.Encoding]::UTF8.GetBytes('{}')
+    Assert-Rejected { Assert-Payload $badMetadata 'production' } 'Malformed dependency metadata was accepted.'
+    $badPe = $fixture.Clone(); $badPe['CrimsonDesertTelemetry.asi'] = [byte[]](0, 0)
+    Assert-Rejected { Assert-Payload $badPe 'production' } 'A non-PE ASI was accepted.'
+    $badNotices = $fixture.Clone(); $badNotices['THIRD-PARTY-NOTICES.txt'] = [Text.Encoding]::UTF8.GetBytes('Dear ImGui')
+    Assert-Rejected { Assert-Payload $badNotices 'production' } 'Missing dependency attribution was accepted.'
+    Write-Output 'PASS package profiles, nondefault settings, bounds and companion-file regression cases (in-memory only)'
 }
+
+if (-not $PackageDirectory -and -not $ArchivePath -and $SelfTest) { return }
+if (-not $PackageDirectory -or -not $ArchivePath) { throw 'PackageDirectory and ArchivePath are both required for package validation.' }
 
 $directoryPath = (Resolve-Path -LiteralPath $PackageDirectory).Path.TrimEnd('\') + '\'
 $directoryFiles = @{}
@@ -98,7 +307,7 @@ foreach ($file in Get-ChildItem -LiteralPath $PackageDirectory -Recurse -File -F
     $directoryFiles[$relative] = [IO.File]::ReadAllBytes($file.FullName)
 }
 Assert-Payload $directoryFiles
-Write-Output 'PASS expanded ASI package (no loose JSON or EXE)'
+Write-Output "PASS expanded $Profile ASI package (no loose JSON or EXE)"
 
 $archiveFiles = @{}
 $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ArchivePath).Path)

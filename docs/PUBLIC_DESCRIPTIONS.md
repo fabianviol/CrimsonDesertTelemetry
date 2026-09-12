@@ -70,6 +70,12 @@ ambient and per-light goals must pass before a final release. Production uses
 bounded current-data acquisition; private research capture runs and histories
 are not required.
 
+The development production profile (`CDT_RESEARCH=OFF`) does not expose or
+activate Research, Console, Explorer or the legacy `OcclusionTest`. Old INI
+switches cannot enable them. Research remains preserved under `CDT_RESEARCH=ON`
+with its own INI template. This corrects conflicting or inactive configuration
+options; it is not an antivirus mitigation. See [INI validation](INI_VALIDATION.md).
+
 **Development HUD controls:** the radar and markers show visibility metadata.
 Optional `HideOccluded=1` hides only fresh known blocked sources, while unknown
 or stale sources stay visible. **F11** toggles this display mode; it does not
@@ -85,6 +91,9 @@ Windows virtual-key codes or individually disabled with `0`:
 
 These four-key controls describe the development build; they must not be assumed
 present in the published 2.0.2 package.
+Automatic HUD hiding in every game menu is not implemented. Live validation with
+all production features enabled is still pending; synthetic coverage does not
+establish game compatibility for that combination.
 
 ### Requirements and installation
 

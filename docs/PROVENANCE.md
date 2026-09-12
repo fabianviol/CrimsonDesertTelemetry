@@ -29,6 +29,14 @@ binding histories or binary dumps. The new SDF acquisition adds three necessary
 barrier/lifecycle callbacks and reuses the existing exposure context and queue
 submission observer. Research source and historical evidence remain preserved.
 
+Current production (`CDT_RESEARCH=OFF`) cannot activate the Research, Console,
+Explorer or legacy `OcclusionTest` entry points through INI settings. The
+experimental paths and their own INI template remain available in
+`CDT_RESEARCH=ON`. This boundary corrects configurations that could replace the
+product streams or expose inactive options; it is not an antivirus mitigation.
+See [INI validation](INI_VALIDATION.md). Historical packages and their recorded
+behavior are unchanged by this development correction.
+
 Validation status as of 2026-09-12: camera-local ambient visibility passed a
 controlled open/enclosed/open route in the OFF v2.1.9 package on build 25246367.
 The production per-light implementation has synthetic coverage; its controlled

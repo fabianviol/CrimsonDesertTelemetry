@@ -54,12 +54,15 @@ void EarlyAttach(HMODULE module)
         const auto directory = std::filesystem::path(path.data()).parent_path();
         moduleDirectory = directory.string();
         iniPath = (directory / L"CrimsonDesertTelemetry.ini").wstring();
+#if CDT_RESEARCH
         ch::LoadConfig(moduleDirectory);
+#endif
         const auto name = L"Local\\CrimsonDesertTelemetry.Native." + std::to_wstring(GetCurrentProcessId());
         singleton = CreateMutexW(nullptr, FALSE, name.c_str());
         duplicate = !singleton || GetLastError() == ERROR_ALREADY_EXISTS;
         legacy = LegacyPresent();
         if (duplicate || legacy) return;
+#if CDT_RESEARCH
         requested = ch::g_cfg.enableConsole || ch::g_cfg.enableExplorer;
         if (requested)
         {
@@ -72,6 +75,7 @@ void EarlyAttach(HMODULE module)
             PinModule();
             ch::discovery::EarlyPatch();
         }
+#endif
     }
     catch (...) { earlyFailed = true; }
 }
@@ -80,8 +84,12 @@ void RunImpl(HANDLE stopEvent)
 {
     if (duplicate) return;
     ch::OpenLog(moduleDirectory);
+#if CDT_RESEARCH
     ch::LogConfig();
     ch::bp::ReportStartup();
+#else
+    ch::Log("Production build: Research, Console, Explorer and legacy OcclusionTest settings are inactive.");
+#endif
     const bool skyBridge = sky::OpenBridge();
     if (!render::OpenBridge())
     {
@@ -134,6 +142,7 @@ void RunImpl(HANDLE stopEvent)
             "The plugin could not resolve the game image. Check the native log and restart the game; no capture hook was installed.");
         return;
     }
+#if CDT_RESEARCH
     if (requested)
     {
         const DWORD delay = std::clamp(ch::g_cfg.initDelayMs, 1u, 30000u);
@@ -156,11 +165,17 @@ void RunImpl(HANDLE stopEvent)
         else ch::discovery::DisarmEarlyBreakpoint();
         if (ch::g_cfg.enableExplorer) ch::explorer::Start();
     }
+#endif
     bool capturing = false;
     if (captureEnabled)
     {
         const unsigned rate = GetPrivateProfileIntW(L"Lights", L"ManyLightsSampleRateHz", 20, iniPath.c_str());
+#if CDT_RESEARCH
         const bool ambientProbe = GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) != 0;
+#else
+        // An old diagnostic INI must never replace the production light/sky feed.
+        constexpr bool ambientProbe = false;
+#endif
         const bool streamSky = skyBridge && GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0;
         capturing = ambientProbe
             ? render::StartAmbientProbe(ch::g_game.moduleBase, std::filesystem::path(moduleDirectory).c_str())
@@ -183,10 +198,11 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
-    const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
-        GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
     const bool sourceVisibility = GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
     render::SetSourceVisibilityEnabled(sourceVisibility);
+#if CDT_RESEARCH
+    const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
+        GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
     const bool spatialProbe = captureEnabled && (sourceVisibility || hudOcclusion || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 ||
         GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0);
     const bool spatialReadback = GetPrivateProfileIntW(L"Research", L"SpatialReadback", 0, iniPath.c_str()) != 0;
@@ -205,6 +221,13 @@ void RunImpl(HANDLE stopEvent)
     const bool spatialStarted = spatialProbe && readbackAllowed && spatial::Start(ch::g_game.moduleBase,
         std::filesystem::path(moduleDirectory).c_str(),spatialReadback || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0,spatialTransactions,spatialInterval,
         spatialVisibilitySeconds,distanceReadback,persistDistanceReadback,hudOcclusion);
+#else
+    const bool sampleAmbient = GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0;
+    const bool spatialProbe = captureEnabled && (sampleAmbient || sourceVisibility);
+    const bool spatialStarted = spatialProbe && capturing && spatial::Start(ch::g_game.moduleBase,
+        std::filesystem::path(moduleDirectory).c_str(), sampleAmbient, 1, 1000, 0,
+        sourceVisibility, false, false);
+#endif
     if(spatialProbe && !spatialStarted)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;
@@ -228,9 +251,11 @@ void RunImpl(HANDLE stopEvent)
     if (capturing) render::StopCapture();
     else render::PublishStatus(render::Status::Stopped);
     // No blocking cleanup under loader lock. Stop() is on this worker.
+#if CDT_RESEARCH
     if (ch::g_cfg.enableExplorer) ch::explorer::Stop();
     ch::console::UnhookWndProc();
     ch::discovery::DisarmEarlyBreakpoint();
+#endif
 }
 void Run(HANDLE stopEvent)
 {

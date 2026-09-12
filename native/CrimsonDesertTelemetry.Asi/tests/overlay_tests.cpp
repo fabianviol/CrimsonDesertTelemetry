@@ -31,6 +31,34 @@ Config ReadTestConfig(const char* contents)
     else Require(std::filesystem::remove(cleanup.path), "Missing-INI fixture setup");
     return LoadConfig(cleanup.path);
 }
+void ServerPortConfigurationTests()
+{
+    struct Mode
+    {
+        const char* name;
+        const char* ini;
+        bool hud, notifications, markers;
+    };
+    const std::array<Mode, 4> modes{{
+        {"HUD only", "[Overlay]\nEnabled=1\n", true, false, false},
+        {"notifications only", "[Notifications]\nEnabled=1\n", false, true, false},
+        {"markers only", "[LightOverlay]\nEnabled=1\n", false, false, true},
+        {"all enabled", "[Overlay]\nEnabled=1\n[Notifications]\nEnabled=1\n[LightOverlay]\nEnabled=1\n", true, true, true},
+    }};
+    struct PortCase { int requested, expected; };
+    const std::array<PortCase, 5> ports{{{-1, 1024}, {0, 1024}, {1024, 1024}, {65535, 65535}, {65536, 65535}}};
+    for (const auto& mode : modes)
+        for (const auto& port : ports)
+        {
+            const std::string ini = std::string(mode.ini) + "[Server]\nPort=" + std::to_string(port.requested) + "\n";
+            const auto config = ReadTestConfig(ini.c_str());
+            const std::string context = std::string(mode.name) + ", Port=" + std::to_string(port.requested);
+            Require(config.port == port.expected, ("HUD client port must match bootstrap's signed bounds: " + context).c_str());
+            Require(config.enabled == mode.hud && config.notifications == mode.notifications && config.lightOverlay == mode.markers,
+                ("Port parsing must preserve independent feature switches: " + context).c_str());
+        }
+    std::cout << "PASS server port bounds across HUD, notifications, markers and combined modes\n";
+}
 void ProjectionTests()
 {
     Sample sample;
@@ -641,6 +669,7 @@ int main(int argc, char** argv)
         Require(!ReadTestConfig("[Overlay]\nEnabled=0\nInitiallyVisible=1\n").enabled, "Explicitly disabled HUD");
         const auto enabled = ReadTestConfig("[Server]\nPort=27329\n[Overlay]\nEnabled=1\n");
         Require(enabled.enabled && enabled.visible && enabled.port == 27329, "Explicit opt-in preserves HUD configuration");
+        ServerPortConfigurationTests();
         const auto hidden = ReadTestConfig("[Overlay]\nEnabled=1\nInitiallyVisible=0\n");
         Require(enabled.hdrPaperWhiteNits == 200.f && config.hdrPaperWhiteNits == 200.f,
             "HDR UI paper white must have a safe 200 nit default");
@@ -669,8 +698,13 @@ int main(int argc, char** argv)
         Require(markers.lightOverlay && !markers.enabled && !markers.notifications && !markers.lightOverlayVisible &&
             markers.lightToggleKey == 122 && markers.lightMaxMarkers == 200 && markers.lightMaxLabels == 4 &&
             markers.lightRadius == 42.5f && !markers.autoScale && markers.scale == 1.5f && !markers.radar3D &&
-            markers.port == 27329 && markers.occlusionTest && markers.hideOccluded && markers.occlusionToggleKey==72,
+            markers.port == 27329 && markers.hideOccluded && markers.occlusionToggleKey==72,
             "World markers alone must retain client, scale and independent toggle configuration");
+#if CDT_RESEARCH
+        Require(markers.occlusionTest, "Research builds must retain the optional legacy occlusion test");
+#else
+        Require(!markers.occlusionTest, "Production must ignore the legacy research occlusion test switch");
+#endif
         const auto largeMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=99999\nMaxLabels=999\nRadius=99999\nToggleKey=999\n");
         Require(largeMarkers.lightMaxMarkers == 2048 && largeMarkers.lightMaxLabels == 16 &&
             largeMarkers.lightRadius == 500 && largeMarkers.lightToggleKey == 255, "Large marker settings must be bounded");

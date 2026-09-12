@@ -333,17 +333,18 @@ int wmain(int argc, wchar_t** argv)
     {
         Config config; config.details = true;
         Require(!InstallGraphics(config), "Disabled HUD installed graphics hooks");
+        const bool allOn = argc > 1 && (_wcsicmp(argv[1], L"--all-ui") == 0 || _wcsicmp(argv[1], L"--scrgb-all-ui") == 0);
         const bool scRgbNotices = argc > 1 && _wcsicmp(argv[1], L"--scrgb-notices") == 0;
-        const bool scRgb = scRgbNotices || (argc > 1 && _wcsicmp(argv[1], L"--scrgb") == 0);
+        const bool scRgb = scRgbNotices || (argc > 1 && (_wcsicmp(argv[1], L"--scrgb") == 0 || _wcsicmp(argv[1], L"--scrgb-all-ui") == 0));
         const bool noticesOnly = scRgbNotices || (argc > 1 && _wcsicmp(argv[1], L"--notices") == 0);
         const bool lightsOnly = argc > 1 && _wcsicmp(argv[1], L"--lights-only") == 0;
-        const bool lightsMode = lightsOnly || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
+        const bool lightsMode = allOn || lightsOnly || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
         config.enabled = !noticesOnly && !lightsOnly;
-        config.notifications = noticesOnly;
+        config.notifications = allOn || noticesOnly;
         config.lightOverlay = lightsMode;
         // Regression control: InitiallyVisible=0 must still allow the runtime
         // F10 state to enable drawing; the immutable startup config stays false.
-        config.lightOverlayVisible = !lightsMode;
+        config.lightOverlayVisible = allOn || !lightsMode;
         config.radar3D = true;
         const int imageArgument = noticesOnly || lightsMode || scRgb ? 2 : 1;
         Require(!scRgb || argc == 2, "scRGB modes accept no BMP paths; they validate synthetic linear FP16 pixels");
@@ -387,6 +388,13 @@ int wmain(int argc, wchar_t** argv)
             DXGI_SWAP_CHAIN_DESC1 current{}; Check(chain->GetDesc1(&current));
             auto view = supplied ? *supplied : lightsMode ?
                 LightFixture(static_cast<float>(current.Width) / static_cast<float>(current.Height)) : Fixture();
+            if (allOn)
+            {
+                // Each Present represents a new synthetic capture. CPU conversion
+                // of the preceding 4K FP16 readback must not age this next sample.
+                view.received = Clock::now();
+                view.sample.sequence = static_cast<std::int64_t>(RenderedFrames()) + 1;
+            }
             if (noticesOnly && !supplied) view.sample.cameraPosition = view.sample.playerPosition;
             Publish(std::move(view));
             ComPtr<ID3D12Resource> buffer;
@@ -405,6 +413,47 @@ int wmain(int argc, wchar_t** argv)
             if (screenshot || inspect) return SaveBuffer(gpu, buffer.Get(), screenshot);
             return Pixels{};
         };
+        if (allOn)
+        {
+            // Exercise actual Present/Present1 with all three graphics features
+            // active together. Compare independent pixels, not just draw counts.
+            for (const auto size : {std::array<UINT,2>{960,720}, {1920,1080}, {3840,2160}})
+            {
+                std::cout << "Combined UI " << size[0] << 'x' << size[1] << '\n';
+                Check(chain->ResizeBuffers(3, size[0], size[1], swapchainFormat, 0));
+                MaintainGraphics();
+                auto view = LightFixture(static_cast<float>(size[0]) / size[1]);
+                view.localFaults.push_back({"all-ui", "Synthetic combined-feature test", "Notification A"});
+                const auto combined = frame(false, nullptr, &view, true);
+                Require(RenderedFrames() > 0, "Combined graphics path did not submit a frame after resize");
+                RequireLightPixels(combined, config, true);
+                if (scRgb) RequireScRgbUi(combined, config, false);
+                view.localFaults.front().detail = "Notification B: changed while HUD and markers stay active";
+                const auto changedNotice = frame(true, nullptr, &view, true);
+                Require(combined.Different(changedNotice, 0, 0, size[0], size[1]) > 20,
+                    "Combined graphics path did not update its notification");
+                SetVisibleForTest(false);
+                const auto noHud = frame(false, nullptr, &view, true);
+                Require(changedNotice.Different(noHud, 0, 0, size[0], size[1]) > 100,
+                    "HUD toggle had no effect while markers and notifications were active");
+                SetLightVisibleForTest(false);
+                const auto noticeOnlyImage = frame(true, nullptr, &view, true);
+                Require(noHud.Different(noticeOnlyImage, 0, 0, size[0], size[1]) > 100,
+                    "Marker toggle had no effect while notifications were active");
+                Require(noticeOnlyImage.Changed(20,20,640,160) > 100,
+                    "Notification disappeared when both other views were hidden");
+                SetVisibleForTest(true);
+                SetLightVisibleForTest(true);
+                const auto restored = frame(false, nullptr, &view, true);
+                RequireLightPixels(restored, config, true);
+                Require(view.sample.renderedLights.records->size() == 7,
+                    "Presentation toggles changed the source records");
+            }
+            Check(gpu.device->GetDeviceRemovedReason());
+            std::cout << "PASS combined HUD/markers/notifications, independent toggles and resize at 720p/1080p/2160p; synthetic WARP only\n";
+            DestroyWindow(window);
+            return 0;
+        }
         if (noticesOnly)
         {
             View waiting;

@@ -56,7 +56,7 @@ target_link_libraries(cdt_imgui PUBLIC d3d12 dxgi d3dcompiler)
 
 add_library(cdt_overlay STATIC src/overlay_model.cpp src/overlay_client.cpp src/overlay_hud.cpp src/overlay_graphics.cpp src/overlay_hdr.cpp)
 target_compile_features(cdt_overlay PUBLIC cxx_std_20)
-target_compile_definitions(cdt_overlay PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(cdt_overlay PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX CDT_RESEARCH=$<BOOL:${CDT_RESEARCH}>)
 target_compile_options(cdt_overlay PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_overlay PUBLIC src)
 target_link_libraries(cdt_overlay PUBLIC cdt_imgui ${CDT_SDF_LIBRARY} minhook nlohmann_json::nlohmann_json winhttp)
@@ -92,7 +92,7 @@ add_library(cdt_instruments STATIC src/instruments.cpp src/build_guard.cpp
     src/render_bridge.cpp src/render_capture.cpp src/filter_thunk.asm src/ambient_thunk.asm
     ${CDT_RESEARCH_SOURCES} ${CDT_CONSOLE_SOURCES})
 target_compile_features(cdt_instruments PUBLIC cxx_std_20)
-target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(cdt_instruments PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX CDT_RESEARCH=$<BOOL:${CDT_RESEARCH}>)
 target_compile_options(cdt_instruments PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
 target_include_directories(cdt_instruments PUBLIC src)
 target_link_libraries(cdt_instruments PUBLIC ${CDT_SDF_LIBRARY} minhook d3d12 dxgi bcrypt psapi user32)
@@ -249,6 +249,9 @@ add_test(NAME light-overlay-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --
 set_tests_properties(light-overlay-d3d12 PROPERTIES TIMEOUT 45)
 add_test(NAME light-overlay-only-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --lights-only)
 set_tests_properties(light-overlay-only-d3d12 PROPERTIES TIMEOUT 45)
+add_test(NAME all-ui-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --all-ui)
+add_test(NAME all-ui-scrgb-d3d12 COMMAND CrimsonDesertTelemetryGraphicsSmoke --scrgb-all-ui)
+set_tests_properties(all-ui-d3d12 all-ui-scrgb-d3d12 PROPERTIES TIMEOUT 45)
 
 add_executable(CrimsonDesertTelemetryHdrTests tests/overlay_hdr_tests.cpp src/overlay_hdr.cpp)
 target_compile_features(CrimsonDesertTelemetryHdrTests PRIVATE cxx_std_20)

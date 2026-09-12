@@ -35,14 +35,13 @@ ManyLightsSampleRateHz=20
 
 [Ambient]
 Enabled=1
-
-[Research]
-AmbientProbe=0
 ```
 
-Current test packages supply the enabled ambient path and disabled research
-settings. Keep all research switches and `OcclusionTest` at `0`. The preserved
-`AmbientProbe` mode is exclusive and can pause normal light/sky publication.
+The current production profile supplies the enabled ambient path.
+`CDT_RESEARCH=OFF` neither offers nor needs Research, Console, Explorer or legacy
+`OcclusionTest` settings and ignores them in older INIs. `CDT_RESEARCH=ON` retains
+the exclusive `AmbientProbe` experiment, which can pause normal light/sky
+publication. See [INI configuration and validation](INI_VALIDATION.md).
 No console/explorer switch, Nsight or PIX is required. Ambient depends on enabled
 native ManyLights instrumentation. Ambient=0 leaves local lights unchanged;
 disabled UI is fine. `[Overlay] ShowAmbient=1` shows the separate sky, visibility

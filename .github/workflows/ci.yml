@@ -22,6 +22,9 @@ jobs:
       - name: API smoke test
         shell: pwsh
         run: .\tests\Test-Server.ps1
+      - name: INI and package profile validation
+        shell: pwsh
+        run: .\tests\Test-ModManagerPackage.ps1 -SelfTest
       - name: Configure and build native plugin/tests
         shell: pwsh
         run: |

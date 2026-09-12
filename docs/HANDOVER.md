@@ -30,31 +30,56 @@ or individually disabled shortcuts for all four HUD functions (defaults F8-F11).
 Update all current product descriptions. Commit and push completed changes to
 GitHub; do NOT create a GitHub release.
 
+The user additionally requires all offered INI functions to be tested individually
+and together; unsupported/broken options must be documented, rejected or removed
+from the product profile. See `docs/INI_VALIDATION.md` for all 60 original options,
+the 34 production settings, concrete exclusions and the still-pending live matrix.
+Automatic HUD/marker hiding in every menu is also requested. It is NOT implemented:
+`playing` means valid telemetry, not a proven menu state; the old console UI value
+is not a general menu flag. No reliable menu signal was found in existing code or
+preserved evidence. Do not implement an Escape-key/FOV/frame-stall guess as menu
+detection. No game process/API was available during this read-only check.
+
 ## Current result — Ambient Occlusion complete; per-light production in progress
 
-**Current candidate:** `v2.1.10-source-visibility.2`, `CDT_RESEARCH=OFF`, prepared
-but not installed by Codex. ASI 1,438,208 bytes, SHA256
-`A3722B05408464BA95BB6C1AFED1A1B27B9D6795A43E9311A37B4240DAD2AAE1`;
-ZIP 875,096 bytes, SHA256
-`A3E956660EBFF749BE94DF26454E5CBF34BD0EED42EB888B88FFEA3CD7B4D808`.
-Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.2-ModManagers.zip`.
-The ASI is byte-identical to `.1`; `.2` fixes the embedded unavailable Ambient
-JSON schema and clarifies the public 2.0.2 compatibility report in the package text.
-Both occlusion INI switches are enabled, research/legacy OcclusionTest off.
+**Current candidate:** `v2.1.10-source-visibility.3`, `CDT_RESEARCH=OFF`, prepared
+but not installed by Codex. ASI 1,303,040 bytes, SHA256
+`76B0D0B1DAFA15F233D94DAD92BE11FE4FD01DE2DDB20162423F314932E9605D`;
+ZIP 811,399 bytes, SHA256
+`C00F23DF90910C9ACF211A920A52B32F5E446BE40FFF9D1E2806F4F4B71D2E74`.
+Path: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.10-source-visibility.3-ModManagers.zip`.
+All production feature switches are on, including ShowDetails=1 and
+HideOccluded=1 for the private all-functions test. Numeric settings retain their
+bounded defaults; this is not a maximum-load or all-values acceptance claim.
 F11 hides/restores fresh blocked HUD/radar sources. All four shortcuts accept
 other virtual-key codes or 0; raw/EMA records remain complete. F9's inherited
 overflowing disabled research section was corrected after synthetic image review.
 
-Exact current VirusTotal: ASI **5/70**, ZIP **0/68**. Immediate v2.1.9 ASI is
-**4/71**, so historical 0/75 was already lost before the new per-light work.
-Current extra engine: Bkav; CrowdStrike/Cynet/McAfeeD/Microsoft flag both. Final
-release clearance remains open; do not call this a clean ASI or bypass AV.
-Identical imported DLLs/functions, +44,032 bytes, narrowly required acquisition;
-no causal AV finding or signature changes. Full evidence and bounds are in
+Exact `.3` VirusTotal: ASI **5/70**, ZIP **0/67**. Previous `.2` ASI was
+**5/70**, ZIP **0/68**; v2.1.9 ASI was **4/71**. Historical 0/75 is not current
+clearance; final release remains blocked. Do not call this a clean ASI or bypass AV; see
 [production validation](PRODUCTION_OCCLUSION_VALIDATION.md).
 
-Current code/docs were committed and pushed as `40bee9f` and `1ebad86` to main
-(including all seven previously local commits). No release/tag was created. GitHub CI exposed
+The INI audit found a signed/unsigned negative-port mismatch (fixed, 20 controls)
+and research switches that could replace normal feeds or silently mean something
+different in OFF. `CDT_RESEARCH` now gates all research/console/explorer startup
+and legacy HUD-test activation. OFF uses only Ambient/SourceVisibility product
+switches; old research INIs cannot activate those research entry points. The
+unchanged 60-key template is preserved as `CrimsonDesertTelemetry.research.ini`
+for ON builds; OFF has 34 offered keys. This addresses demonstrated configuration
+conflicts, not an AV hypothesis. No research sources/captures were removed.
+Package/profile checks and all nine UI tests pass, including combined HUD,
+markers and notifications in SDR/scRGB at 720p/1080p/4K. Full local native suite:
+26/28, with only the same two inherited research failures. ON ASI builds and its
+overlay-model test passes. Full live INI/all-functions acceptance is pending.
+An independent code review finds no hidden Ambient dependency for SourceVisibility:
+the source-only path still observes GI/camera and queue submissions. Ambient-only
+leaves source metadata disabled; Lights/ManyLights off leaves capture stopped.
+These are code findings, not new live isolation results.
+
+Previous code/docs were committed and pushed through `bb30d10` to main
+(including all seven previously local commits); that exact GitHub CI run passed.
+No release/tag was created. Earlier GitHub CI exposed
 an older SDK8 test overload issue at `SmoothedLightTests.cs:92`; explicit
 `Enumerable.Reverse` fixes it. SDK8.0.425 now builds the complete solution with
 zero warnings/errors and all 68 managed tests pass. CI is also set explicitly
@@ -68,12 +93,12 @@ The 68 managed tests also pass. Production port 27311 was untouched.
 GitHub About and repository/package descriptions are updated. The external Nexus
 page was not edited; its prepared English text is in `docs/PUBLIC_DESCRIPTIONS.md`.
 Locally all production-relevant native paths pass;
-the full native suite remains 24/26 due to the two inherited research failures.
+the previous full native suite was 24/26 due to the two inherited research failures.
 The ON ASI also compiles. Do not commit the inherited `spatial_readback.cpp`
 changes or unrelated root diagnostic scripts with this work.
 
 **Immediate next action:** verify the updated remote CI, then perform the real
-production fireplace test after the user installs the
+production fireplace/all-functions test after the user installs the
 clearly labelled private test package through DMM. Ambient is accepted; per-light
 live acceptance/frame cost and final AV clearance remain outstanding. A separate
 public **2.0.2** DMM/graphics-crash report (Nexus post around 08:30, download
@@ -196,7 +221,7 @@ for this controlled live acceptance on build 25246367; this does not claim an
 exhaustive test of every cave or material. The signal samples CAMERA location.
 
 User additionally confirms the HUD must include per-light visibility. Installed
-v2.1.9 still shows raw light markers without per-light occlusion. The `.2`
+v2.1.9 still shows raw light markers without per-light occlusion. The `.3`
 candidate includes status and optional hiding, without dropping original API data.
 
 The installed v2.1.9 OFF build still links `cdt_sdf_disabled`. The next production
@@ -216,7 +241,7 @@ controlled test. Preserved current-build SDF calibration is in
 `docs/SDF_VARIANT_A.md` and
 `artifacts/light-research/variant-a-pid31852-20260911-1242-warspike/`.
 
-**Next:** let the user install the configured `.2` OFF DMM package and perform
+**Next:** let the user install the configured `.3` OFF DMM package and perform
 the real fireplace test. Its exact ASI/ZIP scans are recorded above; per-light
 live acceptance and final AV clearance remain outstanding. The project is NOT
 complete or release-ready.

@@ -15,6 +15,19 @@ INI or individually disabled with `0`; see [controls](../README.md#controls-and-
 and [source visibility](SOURCE_VISIBILITY.md). These current changes do not inherit
 live acceptance from the historical tests below, and no final release is claimed.
 
+The production `CDT_RESEARCH=OFF` build ignores Research, Console, Explorer and
+the legacy `OcclusionTest`, even when an old INI enables them. Production source
+visibility and its HUD controls remain independent of those experimental paths.
+`CDT_RESEARCH=ON` retains the research controls with a separate INI template.
+The boundary fixes conflicting or inactive configuration options, not antivirus
+detections. See [configuration validation](INI_VALIDATION.md) for the setting
+matrix and recorded synthetic test results.
+
+A live run with all production features enabled has not passed acceptance.
+Automatic HUD hiding in every game menu is not implemented; no reliable generic
+menu-state signal is established. Existing `playing`/`loading` values describe
+telemetry availability and cannot validate menu hiding.
+
 ## Historical: 2.0.0 HDR compositor, 2026-09-07
 
 The D3D12 UI now supports HDR10 and scRGB, in addition to 8-bit and 10-bit SDR.
