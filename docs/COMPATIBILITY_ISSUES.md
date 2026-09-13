@@ -1,6 +1,34 @@
-# Current compatibility reports
++# Current compatibility reports
 
-## Report relayed on 2026-09-12, posted around 08:30
+## Two current Nexus reports — 2026-09-13
+
+Source: <https://www.nexusmods.com/crimsondesert/mods/3374?tab=posts>.
+All nine visible comments and their timestamps were checked; the two newest reports
+are the current evidence.
+
+At 05:04, WHOLE reported 2.1.10 on Steam build 25246367, RTX 4090 and NVIDIA
+driver 616.92. Streamline DLSS/DLSS-RR 2.11.1 fails
+`linkSwapchainToCmdQueue` and `CreateSwapChainForHwnd` with
+`0x80070005 (E_ACCESSDENIED)` immediately before a `0xC0000005` crash at
+`CrimsonDesert.exe+0x3D0FEA6`.
+
+At 08:49, jimos87 linked the DMM support package
+<https://drive.proton.me/urls/V1AX5VHNV0#sIhaw6yiTPQJ>. Its game logs reproduce
+the same Streamline error on an RTX 4080 SUPER with driver 616.92 and show that
+the failure is intermittent. The dump has the same exception offset and proves
+that the loaded Telemetry module is the exact public 2.1.10 ASI (timestamp
+`0x6AA59B26`, image size `0x17C000`). Steam's overlay DLL, Streamline,
+DesertLinkCore and MasterLooter were also loaded. This evidence supersedes the
+earlier unverified stale-package theory for these crashes.
+
+The first concrete unsafe ordering is in the overlay factory callback: it installed
+five hooks on the just-created swapchain before NVIDIA Streamline's outer factory
+wrapper had finished linking that chain to its command queue. The 2.1.11-rc.2
+candidate defers only that tracking/hook step by 500 ms on the existing worker.
+The public 2.1.10 release remains unchanged. Live multi-start validation on driver
+616.92 is pending; do not state that the external crash is fixed until it passes.
+
+## Historical report relayed on 2026-09-12, posted around 08:30
 
 A Nexus user reported two separate problems with the public **2.0.2 ASI package**.
 The project owner supplied the post text and confirmed the download listing

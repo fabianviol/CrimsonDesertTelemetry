@@ -13,6 +13,7 @@
 #include <memory>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -378,6 +379,12 @@ int wmain(int argc, wchar_t** argv)
         ComPtr<IDXGISwapChain3> chain; Check(chain1.As(&chain));
         // FP16 defaults to G10/P709 scRGB. Do not require display HDR support or
         // SetColorSpace1 success on this hidden software-rendered swapchain.
+        // Production deliberately leaves the newly returned swapchain untouched
+        // while graphics wrappers finish their post-create association work.
+        MaintainGraphics();
+        Require(std::string(GraphicsStatus()).find("waiting for graphics wrappers") != std::string::npos,
+            "Swapchain was tracked before graphics wrappers could finish");
+        Sleep(550);
         MaintainGraphics();
         std::cout << GraphicsStatus() << '\n';
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc{}; heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; heapDesc.NumDescriptors = 1;

@@ -2,12 +2,11 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-12): focus only on direct geometric visibility from
-the player to each local light already known to the authored/rendered feeds. Camera
-direction and screen visibility must not participate. Stable release 2.1.10 is
-complete; do not revisit packaging/hotfix work unless it blocks this research.
-Finish and document the `CDT_RESEARCH=ON` candidate, obtain controlled live tests,
-then move only validated minimal functionality into production. Read HANDOVER first.
+Current user priority (2026-09-13): pause all occlusion/source-visibility research.
+Focus only on the two current Nexus crash reports and the Streamline/DXGI startup
+failure documented in HANDOVER. Keep the fix narrow, production-only and testable;
+do not resume feature research until the external crash candidate is validated.
+Read HANDOVER first.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.

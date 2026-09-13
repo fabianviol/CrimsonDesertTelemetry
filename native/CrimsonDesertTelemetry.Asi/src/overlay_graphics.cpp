@@ -271,8 +271,15 @@ using Present1 = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*, UINT, UINT, const
 using Resize = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
 using Resize1 = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, UINT, UINT, UINT, DXGI_FORMAT, UINT, const UINT*, IUnknown* const*);
 using ColorSpace = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, DXGI_COLOR_SPACE_TYPE);
+constexpr ULONGLONG GraphicsWrapperSettleMs = 500;
 struct State
 {
+    struct PendingSwapchain
+    {
+        ComPtr<IUnknown> device;
+        ComPtr<IDXGISwapChain> chain;
+        ULONGLONG readyAt{};
+    };
     std::mutex mutex, hooksMutex;
     Config config;
     std::unique_ptr<Renderer> renderer;
@@ -289,6 +296,7 @@ struct State
     CreateChain createChain{}; CreateHwnd createHwnd{};
     Present present{}; Present1 present1{}; Resize resize{}; Resize1 resize1{}; ColorSpace colorSpace{};
     std::array<void*, 7> targets{};
+    std::vector<PendingSwapchain> pendingSwapchains;
 };
 State& Data() { static auto* state = new State; return *state; }
 void SetReadyStatus(State& state, hdr::OutputMode mode)
@@ -518,17 +526,55 @@ void Track(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
     }
     catch (...) { Data().status = "Swapchain tracking failed; telemetry continues."; }
 }
+void QueueTrack(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
+{
+    try
+    {
+        if (!suppliedDevice || !chain) return;
+        auto& state = Data();
+        std::lock_guard lock(state.mutex);
+        // This callback runs inside the real DXGI factory call. NVIDIA Streamline
+        // still has to associate the returned swapchain with its command queue
+        // after DXGI returns. Patching the swapchain vtable here races that work
+        // and can make Streamline fail its link with E_ACCESSDENIED. Retain the
+        // COM objects only; the worker installs presentation hooks after the
+        // wrapper stack has completed.
+        if (state.pendingSwapchains.size() == 8) state.pendingSwapchains.erase(state.pendingSwapchains.begin());
+        state.pendingSwapchains.push_back({suppliedDevice, chain, GetTickCount64() + GraphicsWrapperSettleMs});
+        state.status = "Game D3D12 swapchain created; waiting for graphics wrappers to finish.";
+    }
+    catch (...) { Data().status = "Swapchain handoff failed; telemetry continues."; }
+}
+void ProcessPendingSwapchains() noexcept
+{
+    try
+    {
+        std::vector<State::PendingSwapchain> ready;
+        auto& state = Data();
+        {
+            std::lock_guard lock(state.mutex);
+            const ULONGLONG now = GetTickCount64();
+            auto firstPending = std::stable_partition(state.pendingSwapchains.begin(), state.pendingSwapchains.end(),
+                [now](const auto& pending) { return pending.readyAt <= now; });
+            ready.insert(ready.end(), std::make_move_iterator(state.pendingSwapchains.begin()),
+                std::make_move_iterator(firstPending));
+            state.pendingSwapchains.erase(state.pendingSwapchains.begin(), firstPending);
+        }
+        for (const auto& pending : ready) Track(pending.device.Get(), pending.chain.Get());
+    }
+    catch (...) { Data().status = "Deferred swapchain tracking failed; telemetry continues."; }
+}
 HRESULT STDMETHODCALLTYPE OnCreateChain(IDXGIFactory* factory, IUnknown* device, DXGI_SWAP_CHAIN_DESC* desc, IDXGISwapChain** chain)
 {
     const HRESULT result = Data().createChain(factory, device, desc, chain);
-    if (SUCCEEDED(result) && chain) Track(device, *chain);
+    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain);
     return result;
 }
 HRESULT STDMETHODCALLTYPE OnCreateHwnd(IDXGIFactory2* factory, IUnknown* device, HWND window, const DXGI_SWAP_CHAIN_DESC1* desc,
     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* fullscreen, IDXGIOutput* output, IDXGISwapChain1** chain)
 {
     const HRESULT result = Data().createHwnd(factory, device, window, desc, fullscreen, output, chain);
-    if (SUCCEEDED(result) && chain) Track(device, *chain);
+    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain);
     return result;
 }
 }
@@ -558,6 +604,7 @@ void MaintainGraphics() noexcept
     auto& state = Data();
     try
     {
+        ProcessPendingSwapchains();
         std::lock_guard lock(state.mutex);
         if (!state.candidate || state.resizing || state.changingColorSpace || state.failed) return;
         DXGI_SWAP_CHAIN_DESC1 desc{};

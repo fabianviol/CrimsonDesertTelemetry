@@ -1,4 +1,90 @@
-# Current checkpoint — per-light direct visibility, 2026-09-12
+# Current checkpoint — Nexus crash compatibility, 2026-09-13
+
+> This section supersedes the older source-visibility checkpoint below. The user has
+> explicitly paused all occlusion research until the current Nexus crashes are fixed.
+
+## Current external evidence
+
+The Nexus posts page contained nine comments when checked on 2026-09-13. In
+chronological order:
+
+- jimos87, 2026-09-10 11:40: initial crash report.
+- WHOLE, 2026-09-12 06:45: 2.0.2 package/deployment report and graphics-feature
+  crash matrix; backend-only operation worked.
+- fabianviol, 2026-09-12 10:51: replied to both threads, acknowledged the
+  failures and requested native log/crash evidence from WHOLE.
+- jimos87, 2026-09-12 17:18: current download still crashed.
+- fabianviol, 2026-09-12 19:38: requested a clean 2.1.10 install and exact logs.
+- fabianviol, 2026-09-12 19:40: announced 2.1.10 and requested the same controls.
+- **WHOLE, 2026-09-13 05:04 (current):** build 25246367, RTX 4090, NVIDIA
+  616.92, all six files copied manually, reported overlays off. Streamline
+  DLSS/DLSS-RR 2.11.1 logs `linkSwapchainToCmdQueue` /
+  `CreateSwapChainForHwnd` failure `0x80070005 (E_ACCESSDENIED)`, followed about
+  one second later by `0xC0000005` at `CrimsonDesert.exe+0x3D0FEA6`.
+- **jimos87, 2026-09-13 08:49 (current):** 2.1.10 sometimes reaches the game but
+  still fails; supplied a DMM support package:
+  <https://drive.proton.me/urls/V1AX5VHNV0#sIhaw6yiTPQJ>.
+
+The support ZIP is preserved read-only under
+`%TEMP%/nexus3374-support-jimos87-20260913`; no downloaded binary was executed.
+Its SHA-256 is
+`6062BD48244BE56220C75C14EED06FE55D66070BC0B3A0DF186DE44CA242DBE0`.
+It proves DMM 2.8.1, RTX 4080 SUPER, driver 616.92, game build 25246367 and an
+intermittent pattern: one enabled run exited normally, while the next enabled run
+logged the same Streamline `E_ACCESSDENIED` and crashed.
+
+The minidump proves the loaded Telemetry ASI is the exact public 2.1.10 build:
+PE timestamp `0x6AA59B26`, mapped size `0x17C000`, matching local SHA-256
+`8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78`.
+It also contains Streamline, Steam's `gameoverlayrenderer64.dll`,
+`DesertLinkCore_v1.0.7.asi` and `MasterLooter.asi`. The exception is the same
+`CrimsonDesert.exe+0x3D0FEA6` reported independently by WHOLE. This is no longer
+an unverified stale-file or packaging hypothesis.
+
+## First concrete defect and narrow fix
+
+`overlay_graphics.cpp` hooked Present/Present1/Resize/SetColorSpace synchronously
+inside the real DXGI `CreateSwapChainForHwnd` detour. At that point the inner DXGI
+call has returned, but NVIDIA Streamline's outer wrapper has not yet associated the
+new swapchain with its command queue. The code therefore modified the swapchain
+implementation during Streamline's still-active creation path, exactly before its
+`linkSwapchainToCmdQueue` failure.
+
+The hotfix retains the returned COM objects without inspecting or patching them.
+The existing overlay worker calls `Track()` 500 ms later, after the wrapper stack
+has completed. No research hooks, tracing system or new production feature was
+added. The public 2.1.10 artifact remains unchanged on Nexus.
+
+Work is isolated on branch `codex/streamline-swapchain-fix` in
+`C:/DEV/CrimsonDesertTelemetry-hotfix`, based on public `origin/main` commit
+`a245299`. Paused source-visibility commit `f750974` is preserved on branch
+`codex/source-visibility-paused` and was not included.
+
+Candidate package (rc.1 was an equivalent intermediate build and is superseded):
+
+- `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-rc.2-ModManagers.zip`
+- production `CDT_RESEARCH=OFF` ASI: 1,275,392 bytes, SHA-256
+  `95D733491FB8C09CCD7D80C5800F87C6379BFD6B178299C1902D6F0F89541EEF`
+- ZIP: 799,538 bytes, SHA-256
+  `3EE1F93368E673A876218C9F7C89DB2C47EF37962FA64F103E9EA1D0D8F07226`
+
+Build, managed tests and package self-test pass. All eight D3D12 HUD/notification/
+light-marker SDR/scRGB smoke modes pass after being updated to assert the deliberate
+post-create delay. Microsoft Defender found no threats in either exact rc.2 file.
+VirusTotal is intentionally deferred until a live-validated final artifact exists.
+A real 616.92 game start is still required before calling the external crash fixed.
+
+## One next step
+
+With the game closed, cleanly install only the 2.1.11-rc.2 ZIP. Run at least three
+cold starts with Overlay, Notifications, Lights and LightOverlay enabled. Confirm
+that the HUD/markers initialize and that no Streamline `E_ACCESSDENIED` appears.
+If it still crashes, preserve its new game log and dump before changing code; compare
+the exception offset and loaded modules to this checkpoint.
+
+---
+
+# Previous checkpoint — per-light direct visibility, 2026-09-12 (paused)
 
 ## Do not confuse the Nexus release with the research package
 
@@ -23,7 +109,7 @@ instrumentation. It was never uploaded to Nexus and must remain private. GitHub
 `main` contains its source and documentation for continued development; this does
 not alter the immutable production binary already hosted on Nexus.
 
-## Active priority
+## Previous priority (paused)
 
 Focus only on this question for each local light already known to the project:
 
