@@ -90,13 +90,15 @@ Two NVIDIA 616.92 users reproduced CreateSwapChainForHwnd failing with E_ACCESSD
 
 [size=4][b]What the measurements mean[/b][/size]
 
-The feed contains renderer contributions, not every physical light. Discovery is view-filtered and not a complete world registry. Absence does not prove that a lamp is off. Authored and rendered arrays overlap and must not be summed. One lamp can produce several records. Linear HDR RGB is renderer data, not lumens or final screen pixels. Fast movement can expose projection latency; displayed spotlight lengths are schematic.
+The feed contains renderer contributions, not every physical light. Discovery is view-filtered and not a complete world registry. Absence does not prove that a lamp is off. Authored and rendered arrays overlap and must not be summed. One lamp can produce several records. Linear HDR RGB is renderer data, not lumens or final screen pixels: the values are linear and unclamped, so they routinely exceed 1.0 for bright sources and are not 0-255 colours. Tone map them before display. Fast movement can expose projection latency; displayed spotlight lengths are schematic.
 
 The external host reads game memory; the ASI uses guarded renderer/D3D12 hooks and bounded GPU copies. The production build contains only the mechanisms needed for the released telemetry features; larger diagnostics and unfinished occlusion research remain outside it.
 
 [size=4][b]Validation and integrity[/b][/size]
 
-Automated validation passed 71/71 managed controls and 30/30 native controls. The D3D12 suite includes every SDR/scRGB UI combination plus immediate nested and later runtime swapchain replacement. Package validation confirms the complete production payload and CDT_RESEARCH=OFF. The exact final 2.1.11 package still needs the short live second-monitor/HDR replacement test and affected-user multi-start confirmation.
+Automated validation passed 71/71 managed controls and 30/30 native controls. The D3D12 suite includes every SDR/scRGB UI combination plus immediate nested and later runtime swapchain replacement. Package validation confirms the complete production payload and CDT_RESEARCH=OFF.
+
+The exact final package was then run live on Steam build 25246367 with every supported production feature enabled: raw, smoothed and ambient HTTP and WebSocket feeds, F8/F9/F10 toggled off and on in game, and repeated display/HDR transitions that each logged a clean swapchain replacement with no error. Confirmation from an affected external system is still outstanding.
 
 ZIP SHA-256: [code]CB7DD68FFAA548A53F2A5303870C012F9CD0CC44944A46A0F59BF274457C5052[/code]
 ASI SHA-256: [code]06EE760E33E499252AF072711C28D55D2D65127E50B98A3E4FD26B39ADEC1B63[/code]

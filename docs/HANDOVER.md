@@ -1,4 +1,100 @@
-# Current checkpoint — Nexus crash compatibility, 2026-09-13
+# Current checkpoint — 2.1.11 PUBLISHED, 2026-09-13 evening, Claude
+
+> Supersedes the "One next step" of the 18:46 checkpoint below, which still asked for
+> external validation BEFORE publishing. The user overrode that and released.
+
+## What changed after 18:46
+
+**`v2.1.11` is live on Nexus.** Published 19:54, verified through the authenticated
+API: `2.1.11 main 09/13/2026 19:54:00 id=38521561693168`, with **2.1.10 archived** at
+the user's explicit instruction and the page version moved. Changelog appended from
+`docs/releases/v2.1.11.md`. The exact ZIP `CB7DD68F…5052` and ASI `06EE760E…1B63`
+were re-hashed from the published archive itself before upload, not trusted from the
+documentation.
+
+**The publish tool was broken and is fixed (`380eaa9`).** The first attempt died with
+a bare 403 on the presigned storage PUT. `tools/nexus/NexusMods.psm1` deliberately
+left `Content-Type` unset, with a comment claiming it is not signed. That comment was
+wrong. Reading the storage provider's own error body showed
+`X-Amz-SignedHeaders=content-disposition;content-md5;content-type;host`, and Cloudflare
+R2 rebuilding the canonical request with an empty content-type. Nexus signs for
+`application/octet-stream`; `application/zip` is rejected with the same 403. The lesson
+worth keeping: a presigned PUT's 403 body carries the whole diagnosis, and the module
+was discarding it.
+
+**`docs/NEXUS_DESCRIPTION.bbcode` corrected in two places.** Its "Validation and
+integrity" section still said the package needed the live second-monitor/HDR
+replacement test -- that ran today and passed, so it now states the live validation
+actually performed and leaves external confirmation as the only open item. And "What
+the measurements mean" now says the linear HDR values are unclamped, routinely exceed
+1.0 and are not 0-255 colours; the owner asked exactly that question, so users will.
+Everything else of Codex's 2.1.11 rewrite is untouched, including the schema 1.5
+statement, which matches `lightsSchemaVersion = "1.5"` in Program.cs.
+
+## New evidence: a local crash the fix did NOT prevent
+
+At about 19:20 the game ended after 2 h 15 min with 2.1.11 installed, following an
+HDR on -> off change. **Telemetry's replacement path had completed successfully**
+moments earlier -- `overlay.log` ends at 19:19:51 with the full sequence including
+2.1.11's new `Existing HUD swapchain released for replacement.` line, then
+`Overlay ready`. No `CreateSwapChainForHwnd` failure, no `E_ACCESSDENIED`, no
+exception in any Telemetry log. Logs preserved under
+`artifacts/crash-reports/local-20260913-1919-hdr-off/` with a CONTEXT.txt stating
+what they do and do not establish.
+
+**There is no dump for it.** The game's own handler did not write `last_crash.dmp`,
+and Windows Error Reporting was configured per-application only, without
+`CrimsonDesert.exe`. So the process vanished without either mechanism catching it,
+which is itself a difference from the 16:17 crash that did produce one.
+
+**WER is now armed** (user ran it elevated, verified):
+`HKLM\...\Windows Error Reporting\LocalDumps\CrimsonDesert.exe`, DumpFolder
+`C:\CrashDumps`, DumpType 2 (full), DumpCount 10; the folder exists. The next
+unhandled crash produces a full dump automatically. This does not cover a hard
+termination or a driver-level TDR.
+
+**Do not merge this with the users' crash.** Codex's earlier warning was right and I
+briefly violated it. The user then raised the decisive point: their machine now has a
+**two-monitor extended setup with HDR on one screen**, and reaching the Windows
+display settings requires leaving the game. Both local crashes happened during an
+output change in that configuration. The users' crashes are at **startup**, with a
+different signature. Whether the two overlap is unknown -- nobody has asked the users
+how many monitors they run.
+
+Retests tonight after the crash, all passing, all with 2.1.11: HDR switch at the main
+menu (no HUD swapchain to release, so the new path did not even run), then HDR switch
+in game (the release path did run, logged cleanly, no crash). So the crash is
+**intermittent**, matching jimos87's report of one good run followed by a bad one. The
+only obvious difference in the crashing run is uptime: 2 h 15 min versus ~20 min.
+
+## Replies drafted for both Nexus users
+
+Full text given to the user for posting, not yet posted. Both credit the specific
+evidence that made the diagnosis possible -- WHOLE's Streamline log and exception
+offset, jimos87's minidump and his observation of intermittency -- state plainly that
+the cause was ours, and explicitly do NOT claim the crash is fixed for them. Both ask
+for three consecutive starts and, for the first time, **how many monitors they run and
+whether HDR is active**. jimos87's additionally covers the DMM leftover cleanup.
+
+## Verified machine state
+
+Installed and running 2.1.11. Five of the six deployed files match the published ZIP
+byte for byte; only `crimson-desert-telemetry.deps.cfg` differs, carrying older
+version labels with identical runtime assets -- the known DMM behaviour, now measured
+rather than assumed.
+
+## One next step
+
+Post the two replies and wait for an affected user. Until one of them reports three
+clean starts, 2.1.11 is a diagnosed and locally verified fix, not a closed report --
+that wording is in the description and the changelog and should not be tightened
+without their evidence. If a local crash recurs, `C:\CrashDumps` will now hold a full
+dump: compare its exception offset and loaded modules against the two known cases
+(`+0x3D0FEA6` external startup, `+0x3D05303` local runtime) before touching code.
+
+---
+
+# Previous checkpoint — Nexus crash compatibility, 2026-09-13 18:46, Codex
 
 > This section supersedes the older source-visibility checkpoint below. The user has
 > explicitly paused all occlusion research until the current Nexus crashes are fixed.
