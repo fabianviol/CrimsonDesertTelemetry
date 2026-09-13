@@ -38,6 +38,14 @@ member is used earlier for vtable offset `0x50` with fullscreen arguments, match
 dereference of the game's swapchain member after the Streamline failure. WHOLE
 reproduced the failure in SDR, so HDR is not a supported cause.
 
+Disassembly of the exact shipped `sl.dlss_g.dll` (SHA-256
+`DAE3F24A690F3DEE3FBD89BDDE47FBEB6BF480CEE376ECFD0242A50E0BB6E6C6`) shows that
+the `linkSwapchainToCmdQueue` error path logs the negative HRESULT returned directly
+by its internal factory `CreateSwapChain`/`CreateSwapChainForHwnd` call. Together
+with the official v2.11.1 factory ordering, this places the failure during DLFG's
+post-create linking work, after the base swapchain return and before the Streamline
+after-hook completes. That is exactly the interval rc.2 no longer modifies.
+
 The first concrete unsafe ordering is in the overlay factory callback: it installed
 five hooks on the just-created swapchain before NVIDIA Streamline's outer factory
 wrapper had finished linking that chain to its command queue. The 2.1.11-rc.2

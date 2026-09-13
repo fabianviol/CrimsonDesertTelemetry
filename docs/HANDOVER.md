@@ -63,6 +63,17 @@ direct null dereference of its swapchain member after Streamline reported that t
 swapchain could not be created/linked. HDR is not implicated: WHOLE reproduced the
 same failure in SDR.
 
+The exact shipped `sl.dlss_g.dll` (SHA-256
+`DAE3F24A690F3DEE3FBD89BDDE47FBEB6BF480CEE376ECFD0242A50E0BB6E6C6`) was also
+disassembled. The `linkSwapchainToCmdQueue` error path at DLL RVAs
+`0x4B735`/`0x4BC31` logs the negative HRESULT returned directly by its internal
+factory `CreateSwapChain`/`CreateSwapChainForHwnd` call. Combined with the official
+v2.11.1 factory order, this places the failure in DLFG's post-create linking work:
+the base swapchain has been returned, but the Streamline after-hook has not finished.
+That is the precise interval in which 2.1.10 installed five shared swapchain-method
+hooks and which rc.2 now leaves untouched. No second code defect is established by
+the current evidence; external multi-start validation of rc.2 remains the next gate.
+
 ## First concrete defect and narrow fix
 
 `overlay_graphics.cpp` hooked Present/Present1/Resize/SetColorSpace synchronously
