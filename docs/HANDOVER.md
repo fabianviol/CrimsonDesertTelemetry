@@ -114,15 +114,16 @@ factory create function runs, releases only Telemetry's pending or active
 swapchain/renderer/queue references for that same HWND. It waits for submitted HUD
 GPU work before releasing active resources. The worker still waits 500 ms before
 installing presentation hooks. No research hook, tracing system or new production
-feature was added. The public 2.1.10 artifact remains unchanged on Nexus until the
-owner uploads 2.1.11.
+feature was added.
 
-Work is isolated on branch `codex/streamline-swapchain-fix` in
-`C:/DEV/CrimsonDesertTelemetry-hotfix`, based on public `origin/main` commit
-`a6e973d`. Paused source-visibility commit `f750974` is preserved on branch
+The completed fix is commit `a8c5ed8` (`Release swapchain replacement compatibility
+fix`). It is pushed to both `origin/main` and
+`origin/codex/streamline-swapchain-fix`; local `main` is at the same commit. The
+implementation was prepared in `C:/DEV/CrimsonDesertTelemetry-hotfix`. Paused
+source-visibility commit `f750974` is preserved on branch
 `codex/source-visibility-paused` and was not included.
 
-Final-version package (not yet uploaded to Nexus):
+Exact final-version package used for the local acceptance test:
 
 - `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-ModManagers.zip`
 - production `CDT_RESEARCH=OFF` ASI: 1,276,416 bytes, SHA-256
@@ -137,8 +138,12 @@ next chain. Microsoft Defender found no threats in either exact 2.1.11 file.
 VirusTotal reports 0/68 for the exact ZIP and 4/71 for the exact ASI. The ASI
 result is not a regression from public 2.1.10's 5/71 result. Local Defender found
 no threat in either exact file.
+The source and release documentation are on GitHub. Before telling users that
+2.1.11 is available on Nexus, verify the Nexus file entry itself; the last
+independently confirmed public Nexus binary in this checkpoint was 2.1.10.
 Repeated starts by an affected 616.92 user are still required before calling the
-crash fixed because their evidence proves the old failure is intermittent.
+external startup crash fixed because their evidence proves the old failure is
+intermittent.
 
 ### Local live evidence
 
@@ -158,16 +163,36 @@ was armed after the playable-world signal, recurring rendered-light capture was
 ready, `/v1/health` reported `playing`, and player/camera, authored lights,
 rendered lights and Ambient were all live. This is the first successful cold-start
 control on the affected driver. At 16:17 the later monitor/HDR switch reproduced
-the separate runtime replacement crash described above. The final 2.1.11 binary
-with the reference-release fix has not yet completed this same local transition.
-External RTX 4080/4090 startup acceptance remains a separate decisive test.
+the separate runtime replacement crash described above.
+
+The owner then installed the exact final 2.1.11 production package and started the
+game at 17:04 on the same RTX 3080 / NVIDIA 616.92 system. The installed ASI hash
+was verified as
+`06EE760E33E499252AF072711C28D55D2D65127E50B98A3E4FD26B39ADEC1B63`, exactly
+matching the final package. At about 17:16 the owner repeated the same output/HDR
+switch to the connected TV which had caused the 16:17 crash. The game remained
+responsive. `CrimsonDesertTelemetry.overlay.log` recorded a second complete
+replacement sequence:
+
+```text
+Game D3D12 swapchain created; waiting for graphics wrappers to finish.
+Overlay ready: D3D12 / SDR.
+```
+
+The current game log contained no `CreateSwapChainForHwnd`, `E_ACCESSDENIED`, crash
+or exception entry after the transition, and `/v1/ambient` continued returning
+fresh data on port 27311. This is a passed one-way local reproduction test of the
+runtime replacement crash. The reverse switch to the original output was requested
+but had not been performed when the user asked for this handover. External RTX
+4080/4090 startup acceptance remains separate and decisive for the Nexus reports.
 
 ## One next step
 
-Install the exact 2.1.11 ZIP locally and repeat the second-monitor/HDR output switch
-that caused the 16:17 crash. Then send the same unchanged ZIP to at least one of the
-two affected users for three clean starts with Overlay, Notifications, Lights and
-LightOverlay enabled. One
+If desired, complete the local symmetry check by switching once back to the original
+display and confirming another `Overlay ready` line without a game-log swapchain
+error. Do not delay external validation for that check. Send the exact unchanged
+2.1.11 ZIP and hashes above to at least one of the two affected users for three clean
+starts with Overlay, Notifications, Lights and LightOverlay enabled. One
 affected user reproducing three successful starts is enough for the first external
 acceptance gate; the second user is useful confirmation, not a prerequisite for
 learning whether the ordering fix works. Ask whether the HUD/markers initialize and
