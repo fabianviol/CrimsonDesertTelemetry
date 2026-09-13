@@ -61,13 +61,38 @@ It skipped a genuine negative interval on `near-box-b`, where dense sampling fin
 when it steps by at most the sampled distance; a floor breaks that guarantee exactly
 where it matters. Fixing it recovers that case. It does **not** recover the others.
 
-**Ruled out:** raising the hit tolerance. Across 13 labelled paths in two locations
-the suspected-blocked minima are ≤ 0.039 and the believed-clear minima are ≥ 0.1245,
-so a cut between them would appear to work. Do not install it. It is fitted to the
-labels of one room and one camp, it has no basis in the field's semantics, and a
-genuinely clear path passing close to a wall would be misclassified. `SOURCE_VISIBILITY
-_REGRESSION.md` already reached this conclusion; this document explains why it is
-right.
+**Ruled out:** raising the hit tolerance. It is fitted to the labels of one room and
+one camp, has no basis in the field's semantics, and would misclassify a genuinely
+clear path that passes close to a wall. `SOURCE_VISIBILITY_REGRESSION.md` already
+reached this conclusion; this document explains why it is right.
+
+One correction to how the room evidence is usually quoted, because it changes the
+apparent size of the problem. The regression table lists the **complete** path
+minima, which include the end margin: 0.1603 for `left-3.0` and 0.1245 for
+`right-4.2`. Those minima are the **light's own housing** — `left-3.0` has length
+7.733 and its full minimum sits at t = 7.733, exactly the endpoint; `right-4.2` has
+length 9.257 with its minimum at 9.157. The 1.0-gu end margin excludes them by
+design and correctly.
+
+Within the traced range the room separates far more sharply than that table
+suggests:
+
+| room path | label | minimum in traced range |
+|---|---|---|
+| top-11.9 | blocked | 0.005259 |
+| bottom-3.6 | blocked | 0.016471 |
+| left-3.0 | clear | **0.529488** |
+| right-4.2 | clear | **0.516649** |
+
+0.5303 is the level-0 clamp. The two clear controls never leave saturation at all:
+nothing comes within half a game unit of either path. So in this room the failure is
+not that blocked and clear sit close together — they are a factor of thirty apart.
+It is solely that the blocked pair never reaches ≤ 0.
+
+The camp is where the real difficulty lives. Its minima are spread across the range
+(0.015, 0.037, 0.038, 0.170, 0.177) and its labels are soft: the regression record
+describes the near pair as giving "conflicting and changing verdicts despite being
+only centimeters apart", which is not a clean ground truth to test anything against.
 
 **Ruled out for the same reason:** counting solid texels near the path. Tested and
 refuted on the controlled same-source A/B — the blocked pose touched 4 solid texels
@@ -81,6 +106,14 @@ A distance field answers *"how far is the nearest surface"* reliably inside its 
 So a **swept** test is well posed where a sign test is not: "does any geometry come
 within radius r of this segment" is answerable, because `value < r` means exactly
 that, with no reliance on the sign surviving interpolation.
+
+At each room minimum the gradient was also checked, because a swept test is only
+useful if what it finds is an occluder rather than the ground: a long low path
+grazes the floor for most of its length. Both blocked minima have their nearest
+surface to the **side** (gradient y-components 0.01 and 0.38), not below, so the
+floor is not what they are detecting. Gradient magnitudes there are 0.23 and 0.24
+rather than 1.0, which is itself further evidence of how little of the field is
+outside saturation.
 
 That is a different question from "is the segment blocked", and choosing r is a
 physical decision — source size, penumbra, how much grazing contact should count as
