@@ -90,16 +90,17 @@ After five minutes the game process was still responsive. Native light capture
 was armed after the playable-world signal, recurring rendered-light capture was
 ready, `/v1/health` reported `playing`, and player/camera, authored lights,
 rendered lights and Ambient were all live. This is the first successful cold-start
-control on the affected driver, not yet the required repeated-start or external
-RTX 4080/4090 acceptance.
+control on the affected driver. The owner has never reproduced the reported crash
+during development, so repeating local starts would add little evidence. External
+RTX 4080/4090 acceptance by the affected users is the decisive test.
 
 ## One next step
 
-Continue using only the 2.1.11-rc.2 ZIP. Complete two more cold starts with Overlay,
-Notifications, Lights and LightOverlay enabled. Confirm
-that the HUD/markers initialize and that no Streamline `E_ACCESSDENIED` appears.
-If it still crashes, preserve its new game log and dump before changing code; compare
-the exception offset and loaded modules to this checkpoint.
+Send the exact 2.1.11-rc.2 ZIP to WHOLE and jimos87 for one clean test with Overlay,
+Notifications, Lights and LightOverlay enabled. Ask whether the HUD/markers initialize
+and whether the Streamline `E_ACCESSDENIED` remains. If either user still crashes,
+preserve the new game log and dump before changing code; compare the exception offset
+and loaded modules to this checkpoint.
 
 ---
 
