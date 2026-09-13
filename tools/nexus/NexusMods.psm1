@@ -222,20 +222,25 @@ function New-NexusUpload {
 
     Write-Verbose "Upload session $($session.id) created for $FileName ($($digest.SizeBytes) bytes)."
 
-    # Content-Disposition and Content-MD5 are part of the presigned URL signature,
-    # so storage rejects the PUT if either is missing or altered. Content-Type is
-    # not signed and is left unset on purpose.
+    # Content-Disposition, Content-MD5 AND Content-Type are all part of the presigned
+    # URL signature, so storage rejects the PUT if any of them is missing or altered.
+    # This was found the hard way: leaving Content-Type unset produced a 403 whose
+    # body named the cause exactly --
+    #   X-Amz-SignedHeaders=content-disposition;content-md5;content-type;host
+    # with an empty content-type in the canonical request Cloudflare R2 rebuilt.
+    # Nexus signs the URL for application/octet-stream; application/zip is rejected.
     $quote = [char]34
     $headers = @{
         'Content-Disposition' = "attachment; filename=$quote$FileName$quote"
         'Content-MD5'         = $digest.Md5Base64
     }
+    $signedContentType = 'application/octet-stream'
 
     # The 5.1 progress bar makes -InFile uploads an order of magnitude slower.
     $previousProgress = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
     try {
-        Invoke-WebRequest -Uri $session.presigned_url -Method Put -InFile $digest.Path -Headers $headers -UseBasicParsing -TimeoutSec $TimeoutSeconds | Out-Null
+        Invoke-WebRequest -Uri $session.presigned_url -Method Put -InFile $digest.Path -Headers $headers -ContentType $signedContentType -UseBasicParsing -TimeoutSec $TimeoutSeconds | Out-Null
     }
     catch { throw (Get-NexusFailureText -ErrorRecord $_ -Method 'PUT' -Uri 'presigned storage URL') }
     finally { $ProgressPreference = $previousProgress }
