@@ -30,6 +30,14 @@ game exception is therefore the consequence of the missing graphics object after
 the logged swapchain failure, while Telemetry remains the cause under investigation
 for that earlier failure.
 
+Disassembly of the exact matching game image identifies the missing object. The
+routine beginning at RVA `0x3D0FE00` reads `[rbx+0xA8]` and calls vtable offset
+`0x120`, method slot 36, `IDXGISwapChain3::GetCurrentBackBufferIndex`. The same
+member is used earlier for vtable offset `0x50` with fullscreen arguments, matching
+`IDXGISwapChain::SetFullscreenState`. The crash is therefore a direct null
+dereference of the game's swapchain member after the Streamline failure. WHOLE
+reproduced the failure in SDR, so HDR is not a supported cause.
+
 The first concrete unsafe ordering is in the overlay factory callback: it installed
 five hooks on the just-created swapchain before NVIDIA Streamline's outer factory
 wrapper had finished linking that chain to its command queue. The 2.1.11-rc.2

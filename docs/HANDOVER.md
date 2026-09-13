@@ -53,6 +53,16 @@ the sequence shown by the game log: swapchain creation fails first, then the gam
 dereferences its missing graphics object. It does not by itself absolve Telemetry
 of causing the preceding swapchain failure.
 
+Disassembly of the exact game image now identifies that missing object precisely.
+The fault is in the routine beginning at RVA `0x3D0FE00`; it loads the member at
+`[rbx+0xA8]` and calls vtable offset `0x120`, which is method slot 36,
+`IDXGISwapChain3::GetCurrentBackBufferIndex`. The same member is used earlier with
+vtable offset `0x50` and fullscreen arguments, matching
+`IDXGISwapChain::SetFullscreenState`. Therefore the access violation is the game's
+direct null dereference of its swapchain member after Streamline reported that the
+swapchain could not be created/linked. HDR is not implicated: WHOLE reproduced the
+same failure in SDR.
+
 ## First concrete defect and narrow fix
 
 `overlay_graphics.cpp` hooked Present/Present1/Resize/SetColorSpace synchronously
