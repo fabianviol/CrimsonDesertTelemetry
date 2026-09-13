@@ -72,12 +72,31 @@ Build, managed tests and package self-test pass. All eight D3D12 HUD/notificatio
 light-marker SDR/scRGB smoke modes pass after being updated to assert the deliberate
 post-create delay. Microsoft Defender found no threats in either exact rc.2 file.
 VirusTotal is intentionally deferred until a live-validated final artifact exists.
-A real 616.92 game start is still required before calling the external crash fixed.
+Repeated and external 616.92 starts are still required before calling the crash fixed.
+
+### Local live validation — pass 1 of 3
+
+On 2026-09-13 at 15:03, the owner launched the exact rc.2 ASI on an RTX 3080 with
+NVIDIA driver 616.92. The installed ASI hash matches the candidate above. The
+overlay log records the intended sequence:
+
+```text
+Waiting for the game's D3D12 swapchain.
+Game D3D12 swapchain created; waiting for graphics wrappers to finish.
+Overlay ready: D3D12 / SDR.
+```
+
+After five minutes the game process was still responsive. Native light capture
+was armed after the playable-world signal, recurring rendered-light capture was
+ready, `/v1/health` reported `playing`, and player/camera, authored lights,
+rendered lights and Ambient were all live. This is the first successful cold-start
+control on the affected driver, not yet the required repeated-start or external
+RTX 4080/4090 acceptance.
 
 ## One next step
 
-With the game closed, cleanly install only the 2.1.11-rc.2 ZIP. Run at least three
-cold starts with Overlay, Notifications, Lights and LightOverlay enabled. Confirm
+Continue using only the 2.1.11-rc.2 ZIP. Complete two more cold starts with Overlay,
+Notifications, Lights and LightOverlay enabled. Confirm
 that the HUD/markers initialize and that no Streamline `E_ACCESSDENIED` appears.
 If it still crashes, preserve its new game log and dump before changing code; compare
 the exception offset and loaded modules to this checkpoint.
