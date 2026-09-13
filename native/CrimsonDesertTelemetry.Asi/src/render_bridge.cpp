@@ -16,9 +16,7 @@ namespace
 HANDLE mappingHandle{};
 Mapping* mapping{};
 SRWLOCK publishLock = SRWLOCK_INIT;
-#if CDT_RESEARCH || defined(CDT_RENDER_BRIDGE_TEST)
 std::atomic<bool> sourceVisibilityEnabled{};
-#endif
 struct PreparedVisibility
 {
     uint64_t volumeSequence{}, volumeTickMs{};
@@ -44,15 +42,9 @@ void PrepareVisibility(const void* scene, const void* lights, const void* counte
 {
     auto& prepared=preparedVisibility;
     prepared.volumeSequence=0;prepared.volumeTickMs=0;prepared.contextFrame=0;
-#if CDT_RESEARCH || defined(CDT_RENDER_BRIDGE_TEST)
     const bool enabled=sourceVisibilityEnabled.load(std::memory_order_relaxed);
-#else
-    constexpr bool enabled=false;
-    (void)scene;(void)lights;(void)counters;(void)now;
-#endif
     prepared.entries.fill(VisibilityEntry{enabled?0u:11u,0});
     if(!enabled)return;
-#if CDT_RESEARCH || defined(CDT_RENDER_BRIDGE_TEST)
     const auto camera=At<std::array<float,3>>(scene,native_contract::PositionOffset);
     struct Target{uint32_t index;std::array<float,3> world;double distanceSquared;};
     std::vector<Target> candidates;
@@ -101,17 +93,12 @@ void PrepareVisibility(const void* scene, const void* lights, const void* counte
         else entry.code=static_cast<uint32_t>(trace.verdict);
         entry.closest=trace.samples&&std::isfinite(trace.closest)?static_cast<float>(trace.closest):0;
     }
-#endif
 }
 }
 
 void SetSourceVisibilityEnabled(bool enabled)
 {
-#if CDT_RESEARCH || defined(CDT_RENDER_BRIDGE_TEST)
     sourceVisibilityEnabled.store(enabled,std::memory_order_relaxed);
-#else
-    (void)enabled;
-#endif
 }
 #ifdef CDT_RENDER_BRIDGE_TEST
 void SetBeforeVisibilityTraceForTest(void(*observer)()){beforeVisibilityTrace.store(observer);}

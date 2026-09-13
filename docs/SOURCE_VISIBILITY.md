@@ -8,30 +8,61 @@ to that source. Fire, torch, candle, lamp, point and spot records use the same
 test. Camera direction, screen projection, Ambient, image brightness and bounced
 light do not participate.
 
-The current implementation is a **research candidate awaiting live acceptance**.
-It is compiled only with `CDT_RESEARCH=ON`; production 2.1.10 remains unchanged.
-Offline replay separates all 17 preserved labelled controls, and managed/native
-protocol tests pass. These results justify a live test but do not prove the game
-feature complete.
+Public production 2.1.11 keeps this capability disabled. Current source now
+contains two deliberately separate implementations:
 
-## Why the previous implementation was replaced
+- `CDT_RESEARCH=OFF` restores the earlier minimal camera-to-rendered-source path
+  whose fire verdicts previously worked live. It keeps only one current SDF volume,
+  classifies records already present in the renderer capture, and publishes metadata
+  without changing raw or smoothed records. A new package still needs live and
+  antivirus acceptance.
+- `CDT_RESEARCH=ON` retains the broader player-to-all-known-source candidate and its
+  preserved offline evidence. Its ASI explicitly opts the host into the private
+  query mapping; OFF does not run that client. The path still awaits reliable live
+  acceptance.
 
-The old path had two concrete contract defects:
+The production fallback is an intentional recovery step, not completion of the
+product goal. It does not claim authored-only sources, a complete 360-degree
+registry, candles or lamps until those cases pass controlled live tests.
+
+## Narrow production fallback
+
+The OFF path uses the camera position paired with the renderer light capture as its
+segment origin. Camera direction, projection and on-screen state do not participate,
+so a behind-camera record can be classified while it remains in that capture. The
+target is each valid renderer-selected source record, bounded by the current record
+count. Sources absent from that feed receive no invented verdict.
+
+It captures one fenced R16 SDF volume, keeps it for at most 1500 ms and uses the
+historical Variant A marcher: skip the first 0.6 and final 1.0 game units, advance by
+`max(distance, 0.05)`, and classify blocked at the first nonpositive sample. The
+implementation has no repeated diagnostic series, history buffer, dump or trace
+logger. `HideOccluded`/F11 consumes only fresh known blocked verdicts in the two HUD
+views; the API records and RGB remain intact.
+
+The dedicated OFF test verifies waiting before the first field, clear and blocked
+results for sources in front of and behind the camera, disabling, and byte-for-byte
+preservation of the raw scene/light/counter blocks. This is synthetic evidence. The
+next live control is one known fire following `visible -> blocked -> visible`.
+
+## Why the broader research implementation was created
+
+The narrow path cannot satisfy the final all-source/player contract by itself:
 
 1. It traced from the capture camera and could only classify renderer-selected
    contributions. The requested receiver is the player, and every source known to
    either existing light feed must be considered.
-2. It required a signed-distance zero crossing. The copied, filtered t233 field
+2. It requires a signed-distance zero crossing. The copied, filtered t233 field
    can represent a blocking wall with samples that remain slightly positive, so
    a zero-crossing sphere trace produced false `clear` verdicts.
 
-The replacement is a separate asynchronous query/result bridge. The managed host
+The broader research candidate is a separate asynchronous query/result bridge. The managed host
 publishes the player receiver and the union of `lights.sources` and
 `lights.rendered.sources`. The native SDF worker traces those positions against
 one immutable volume and echoes IDs and positions back. The host position-matches
 the response onto both arrays. It never changes or removes original light data.
 
-## Trace definition
+## Broad research trace definition
 
 The receiver is:
 
@@ -58,8 +89,10 @@ a positive `closestApproach`; its sign alone is no longer the classifier.
 
 ## API contract (schema 1.5 development build)
 
-Optional `sourceVisibility` is attached independently to authored and rendered
-source records. The smoothed stream preserves it on the original contributions.
+Optional `sourceVisibility` is attached to rendered records by the OFF fallback and
+independently to authored and rendered records by the ON research bridge. The
+smoothed stream preserves it on the original contributions. `referencePosition` is
+the paired camera for OFF and the raised player receiver for the broad ON path.
 
 | Field | Meaning |
 | --- | --- |
@@ -114,7 +147,8 @@ player and source. Repeat across relevant detected light types. A source absent
 from both existing light feeds is outside this classifier's input and must not be
 reported as blocked.
 
-Only after this live research test passes should the narrow bridge, SDF sampler
-and required acquisition be moved into `CDT_RESEARCH=OFF`, followed by the same
-controlled production test. `HideOccluded`/F11 may then consume fresh known
-verdicts; they remain display-only and must never filter API records.
+The restored OFF fallback has its own smaller acceptance gate: first reproduce the
+previous fire result with `visible -> blocked -> visible`, then scan the exact ASI
+and ZIP. Passing that gate restores a useful fire feature but does not complete this
+document's all-light goal. The broader ON path must still pass the fixed-player,
+camera-rotation and multi-type controls above before replacing the fallback.

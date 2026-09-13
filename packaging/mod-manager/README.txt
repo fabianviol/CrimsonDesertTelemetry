@@ -1,13 +1,14 @@
-Crimson Desert Telemetry 2.1.11
-==============================
+Crimson Desert Telemetry
+========================
 Live light contributions, player/render-camera telemetry and local ambient data,
 with a corner HUD, 3D light radar, fullscreen markers and startup/error notices.
 Local HTTP/WebSocket APIs support other tools. This mod does not drive lamps.
 
-This CDT_RESEARCH=OFF release excludes per-light geometric visibility after failed
-live acceptance. HideOccluded and F11 are absent. Markers include lights behind
-geometry. No API records or RGB values are filtered or attenuated. Research code
-and evidence remain preserved under CDT_RESEARCH=ON for later development.
+This CDT_RESEARCH=OFF candidate restores the earlier narrow
+camera-to-rendered-source visibility path that worked live for fires. It uses one
+current SDF volume and does not include research history, dumps or tracing. It is
+not a complete light registry: candles, lamps and retained off-screen sources still
+need live acceptance. No API records or RGB values are filtered or attenuated.
 
 Source and support: https://github.com/fabianviol/CrimsonDesertTelemetry
 Validation: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/STABLE_RELEASE_VALIDATION.md
@@ -51,7 +52,7 @@ Complete ZIP contents do not prove complete manager deployment. JSON Mod Manager
 and manual ASI-loader installation need the same files; their current full
 installation/uninstallation matrix remains pending.
 
-Compatibility focus: 2.1.11 fixes an overlay-owned DXGI reference that could keep
+Compatibility fix retained from 2.1.11: an overlay-owned DXGI reference could keep
 an old flip-model swapchain alive while NVIDIA Streamline or the game replaced it
 for the same window. That failure was observed as CreateSwapChainForHwnd
 E_ACCESSDENIED. Automated nested/startup-style and runtime display/HDR replacement
@@ -60,17 +61,18 @@ include a DMM support bundle if a crash persists.
 
 Controls and configuration
 --------------------------
-All offered feature switches are ON in the supplied 31-setting INI, including
-diagnostics. F8: corner HUD/radar. F9: details. F10: fullscreen light markers.
+All offered feature switches are ON in the supplied 34-setting INI, including
+diagnostics and source visibility. F8: corner HUD/radar. F9: details. F10:
+fullscreen light markers. F11: show/hide freshly blocked light records.
 Each shortcut accepts a decimal Windows virtual-key code; 0 disables that key.
 Defaults: Overlay.ToggleKey=119, Overlay.DetailsKey=120,
-LightOverlay.ToggleKey=121. F11 is unused. Keys do not stop API capture.
+LightOverlay.ToggleKey=121, LightOverlay.OcclusionToggleKey=122.
+Keys do not stop API capture.
 Automatic hiding in every menu is not implemented; use F8/F10 to hide the views.
 INI changes require a game restart; display keys work immediately.
 
-Research, Console, Explorer, SourceVisibility, OcclusionTest, HideOccluded and
-OcclusionToggleKey are absent and cannot activate through an old INI in this
-production build. Merge preferences into the new template.
+Research, Console, Explorer, the broad player/all-source bridge and OcclusionTest
+remain absent from this production build. Merge preferences into the new template.
 Configuration ranges, dependencies and tests:
 https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md
 
@@ -100,7 +102,8 @@ Smoothed:  http://127.0.0.1:27311/v1/lights/smoothed
 
 The host listens on loopback only. Do not launch another host on its port.
 Routes remain v1; light-enabled snapshots use additive schema1.5, otherwise1.1.
-SourceVisibility metadata remains unknown/disabled with null attenuation.
+Rendered records receive camera-to-source visibility when a fresh SDF volume covers
+their segment. Unknown/stale records remain present with null attenuation.
 Authored/rendered arrays overlap. One lamp may produce multiple contributions.
 This is not a full360-degree registry; a missing source does not prove OFF.
 Linear HDR RGB/luminance are renderer values, not lumens or final pixels.
@@ -133,11 +136,11 @@ an earlier clean scan is not a verdict for this binary.
 Current development goal and blocker
 ------------------------------------
 The goal is reliable local ambient/sky occlusion plus geometric visibility for
-each relevant light, including off-screen and behind-camera sources. The current
-blocker is consistent occlusion across fires, candles, lamps, walls, buildings
-and terrain. Ambient has passed an open/enclosed/open route, while camera
-orientation semantics and per-light geometry still need work. The complete
-current source and preserved research are on GitHub. Forks are welcome.
+each relevant light, including off-screen and behind-camera sources. This candidate
+only restores the earlier rendered-source/fire step. Consistent candles, lamps,
+all known sources, walls, buildings and terrain remain the blocker. Ambient has
+passed an open/enclosed/open route. The complete current source and preserved
+research are on GitHub. Forks are welcome.
 
 Created by fabianviol, developed with Claude and Codex (OpenAI).
 See THIRD-PARTY-NOTICES.txt for dependency licenses.

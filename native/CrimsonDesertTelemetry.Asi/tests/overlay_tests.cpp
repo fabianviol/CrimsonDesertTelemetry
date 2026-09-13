@@ -690,7 +690,7 @@ int main(int argc, char** argv)
             ReadTestConfig("[Notifications]\nEnabled=1\nDurationMilliseconds=60000\n").notificationDurationMs == 10000,
             "Configured ready duration must remain between five and ten seconds");
         Require(!config.lightOverlay && config.lightOverlayVisible && config.radar3D && config.lightToggleKey == 121 &&
-            config.showAmbient && !config.occlusionTest && !config.hideOccluded && config.occlusionToggleKey==(CDT_RESEARCH?122:0),
+            config.showAmbient && !config.occlusionTest && !config.hideOccluded && config.occlusionToggleKey==122,
             "World markers must default off and retain independent visibility/hotkey defaults");
         const auto markers = ReadTestConfig("[Overlay]\nEnabled=0\nAutoScale=0\nScale=1.5\nRadar3D=0\n"
             "[Notifications]\nEnabled=0\n[LightOverlay]\nEnabled=1\nInitiallyVisible=0\nToggleKey=122\n"
@@ -704,8 +704,8 @@ int main(int argc, char** argv)
         Require(markers.occlusionTest && markers.hideOccluded && markers.occlusionToggleKey==72,
             "Research builds must retain the occlusion tests and configurable hiding");
 #else
-        Require(!markers.occlusionTest && !markers.hideOccluded && markers.occlusionToggleKey==0,
-            "Release must ignore all occlusion controls from old diagnostic INIs");
+        Require(!markers.occlusionTest && markers.hideOccluded && markers.occlusionToggleKey==72,
+            "Release must ignore the legacy trace overlay while retaining source hiding");
 #endif
         const auto largeMarkers = ReadTestConfig("[LightOverlay]\nEnabled=1\nMaxMarkers=99999\nMaxLabels=999\nRadius=99999\nToggleKey=999\n");
         Require(largeMarkers.lightMaxMarkers == 2048 && largeMarkers.lightMaxLabels == 16 &&
@@ -717,13 +717,13 @@ int main(int argc, char** argv)
             "Nonfinite marker radius must use the safe default");
         const auto remapped=ReadTestConfig("[Overlay]\nEnabled=1\nToggleKey=65\nDetailsKey=66\n"
             "[LightOverlay]\nEnabled=1\nToggleKey=67\nOcclusionToggleKey=68\n");
-        Require(remapped.toggleKey==65&&remapped.detailsKey==66&&remapped.lightToggleKey==67&&remapped.occlusionToggleKey==(CDT_RESEARCH?68:0),
-            "Offered view shortcuts must use their INI remapping; release F11 remains unused");
+        Require(remapped.toggleKey==65&&remapped.detailsKey==66&&remapped.lightToggleKey==67&&remapped.occlusionToggleKey==68,
+            "Offered view shortcuts must use their INI remapping");
         const auto disabledKeys=ReadTestConfig("[Overlay]\nEnabled=1\nToggleKey=0\nDetailsKey=0\n"
             "[LightOverlay]\nEnabled=1\nToggleKey=0\nOcclusionToggleKey=0\n");
         Require(disabledKeys.toggleKey==0&&disabledKeys.detailsKey==0&&disabledKeys.lightToggleKey==0&&disabledKeys.occlusionToggleKey==0,
             "All four view shortcuts must support disabling with zero");
-        Require(ReadTestConfig("[LightOverlay]\nEnabled=1\nOcclusionToggleKey=999\n").occlusionToggleKey==(CDT_RESEARCH?255:0)&&
+        Require(ReadTestConfig("[LightOverlay]\nEnabled=1\nOcclusionToggleKey=999\n").occlusionToggleKey==255&&
             ReadTestConfig("[LightOverlay]\nEnabled=1\nOcclusionToggleKey=-1\n").occlusionToggleKey==0,
             "Occlusion shortcut must use the bounded virtual-key range");
         ShortcutTests();

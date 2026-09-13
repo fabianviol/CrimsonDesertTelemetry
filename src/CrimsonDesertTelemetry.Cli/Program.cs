@@ -559,7 +559,8 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
                            definition.NativeCapture is not null
                 ? new RenderLightReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
             SourceVisibilityClient? visibility = null;
-            if (lightOptions.Enabled && resolved.Compatibility.Mode == "tested" && definition.NativeCapture is not null)
+            if (lightOptions.SourceVisibilityQuery && resolved.Compatibility.Mode == "tested" &&
+                definition.NativeCapture is not null)
             {
                 try { visibility = new SourceVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc()); }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
@@ -697,6 +698,7 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
 {
     var values = new List<string>();
     var enabled = false;
+    var sourceVisibilityQuery = false;
     var radius = LightOptions.DefaultRadius;
     error = null;
     for (var index = 0; index < arguments.Length; index++)
@@ -705,6 +707,12 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
         if (argument.Equals("--lights", StringComparison.OrdinalIgnoreCase))
         {
             enabled = true;
+            continue;
+        }
+        if (argument.Equals("--research-source-visibility", StringComparison.OrdinalIgnoreCase))
+        {
+            enabled = true;
+            sourceVisibilityQuery = true;
             continue;
         }
         if (argument.Equals("--light-radius", StringComparison.OrdinalIgnoreCase))
@@ -730,7 +738,7 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
         return false;
     }
     positional = values.ToArray();
-    options = new LightOptions(enabled, radius);
+    options = new LightOptions(enabled, radius, sourceVisibilityQuery);
     return true;
 }
 
@@ -841,7 +849,7 @@ sealed class RuntimeContext(
     }
 }
 
-readonly record struct LightOptions(bool Enabled, float NearbyRadius)
+readonly record struct LightOptions(bool Enabled, float NearbyRadius, bool SourceVisibilityQuery)
 {
     public const float DefaultRadius = 100f;
 }

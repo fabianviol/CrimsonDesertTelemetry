@@ -255,6 +255,10 @@ DWORD RunBootstrap()
     const unsigned short port = static_cast<unsigned short>(std::clamp(requestedPort, 1024, 65535));
     const int sampleRate = std::clamp(requestedRate, 1, 240);
     const bool lightsEnabled = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, iniPath.c_str()) != 0;
+#if CDT_RESEARCH
+    const bool researchSourceVisibility = lightsEnabled &&
+        GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+#endif
     const int nearbyRadius = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"Lights", L"NearbyRadius", 100, iniPath.c_str())), 1, 100000);
     const int smoothingMs = std::clamp(static_cast<int>(GetPrivateProfileIntW(
@@ -356,6 +360,9 @@ DWORD RunBootstrap()
         std::to_wstring(port) + L" " + std::to_wstring(sampleRate);
     if (lightsEnabled)
         commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
+#if CDT_RESEARCH
+    if (researchSourceVisibility) commandLine += L" --research-source-visibility";
+#endif
     commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
         L" --light-group-radius " + std::format(L"{}", groupRadius);
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());

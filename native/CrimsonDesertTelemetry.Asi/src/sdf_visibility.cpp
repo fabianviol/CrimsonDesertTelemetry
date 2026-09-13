@@ -143,6 +143,12 @@ namespace
 TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const Status& status,
     const std::array<float,3>& origin, const std::array<float,3>& target)
 {
+#if defined(CDT_FIRE_VISIBILITY)
+    // Exact Variant A parameters from the previously live-tested rendered-fire
+    // path. Keep this production fallback stable while broader visibility remains
+    // isolated in research.
+    constexpr double StartOffset=.6, EndMargin=1.0, MinimumStep=.05;
+#else
     // t233 is a voxelized, filtered distance field. Requiring a zero crossing
     // misses walls whose filtered samples stay slightly positive, while treating
     // one small value as a hit makes isolated interpolation noise block a light.
@@ -152,6 +158,7 @@ TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const
     constexpr double StartOffset=.25, EndMargin=.25;
     constexpr double BaseCellSize=.25, SampleFraction=.25, NearSurfaceFraction=.5;
     constexpr unsigned IterationBound=4096;
+#endif
     TraceResult result;
     static_cast<Status&>(result)=status;
     if(!result.available||!snapshot)return result;
@@ -163,8 +170,12 @@ TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const
     if(!(result.length>StartOffset+EndMargin)){result.verdict=Verdict::TooShort;return result;}
     for(auto& lane:delta)lane/=result.length;
     double travelled=StartOffset,closest=std::numeric_limits<double>::infinity(),closestAt{};
+#if defined(CDT_FIRE_VISIBILITY)
+    for(unsigned iteration=0;iteration<400;++iteration)
+#else
     double connectedLength{},requiredLength{};
     for(unsigned iteration=0;iteration<IterationBound;++iteration)
+#endif
     {
         std::array<double,3> point{};
         for(unsigned axis=0;axis<3;++axis)point[axis]=origin[axis]+delta[axis]*travelled;
@@ -174,6 +185,11 @@ TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const
         if(!std::isfinite(value)){result.available=false;result.reason="invalid-sdf-sample";return result;}
         if(value<closest){closest=value;closestAt=travelled;}
         result.samples=iteration+1;result.closest=closest;result.closestAt=closestAt;
+#if defined(CDT_FIRE_VISIBILITY)
+        if(value<=0){result.verdict=Verdict::Blocked;result.at=travelled;result.value=value;
+            result.level=static_cast<unsigned>(level);return result;}
+        travelled+=std::max(value,MinimumStep);
+#else
         const double cellSize=BaseCellSize*static_cast<double>(1u<<static_cast<unsigned>(level));
         const double step=cellSize*SampleFraction;
         if(value<=cellSize*NearSurfaceFraction)
@@ -188,6 +204,7 @@ TraceResult TraceSnapshot(const std::shared_ptr<const Snapshot>& snapshot, const
         }
         else {connectedLength=0;requiredLength=0;}
         travelled+=step;
+#endif
         if(travelled>=result.length-EndMargin){result.verdict=Verdict::Clear;return result;}
     }
     result.verdict=Verdict::IterationBound;result.at=travelled;return result;

@@ -2,8 +2,9 @@
 
 This is the option inventory and test ledger, not a claim that every configuration
 has passed in the game. The previous combined template contained **60 settings**.
-The stability-release production template now offers **31**; the unchanged research
-template retains all **60**, including the 29 excluded settings listed below.
+Public 2.1.11 offered **31**. The current production source candidate offers **34**
+after restoring SourceVisibility, HideOccluded and OcclusionToggleKey. The unchanged
+research template retains all **60**, including the 26 research-only settings below.
 No research implementation or evidence was removed.
 
 `Build-ModManagerPackage.ps1 -Research off` selects
@@ -23,9 +24,11 @@ does not automatically pass through the package validator.
 
 - Ambient alone has controlled live open/enclosed/open acceptance in OFF v2.1.9,
   build 25246367. That is not acceptance of every INI value or combination.
-- Per-light visibility failed live acceptance and is excluded from the stability
-  release, along with HideOccluded/F11. Its code/evidence are preserved. The new
-  all-enabled release needs separate live acceptance: [release ledger](STABLE_RELEASE_VALIDATION.md).
+- Public 2.1.11 excludes per-light visibility after failed live acceptance. Current
+  OFF source restores only the earlier camera-to-rendered-source path that worked
+  for fires, together with HideOccluded/F11. Its new package requires a controlled
+  live test and exact ASI/ZIP antivirus checks before release. The broader
+  player/all-source research bridge remains ON-only.
 - The native tests below are synthetic: configuration parsing, model behavior,
   acquisition and graphics fixtures. A unit-test result is not a live game result.
 - rc.1 first SDR game start now passes with all offered booleans1; two30-second
@@ -46,7 +49,7 @@ Test references used in the tables:
 | B | Native `tests/bootstrap_smoke.cpp:55`: actual host launch using CFG companions and HTTP checks, including smoothing time forwarding. It is a separate executable, not a registered CTest entry. |
 | M | `tests/CrimsonDesertTelemetry.Tests/SmoothedLightTests.cs`: grouping, EMA, repeated samples, zero smoothing and invalid options; not all ASI INI forwarding paths. |
 | A | Native sampler/sky capture tests and managed sky reader tests; live ambient route above. |
-| V | Native SDF acquisition/trace/bridge tests and managed rendered-light/overlay metadata tests; live production verdicts pending. |
+| V | Native SDF acquisition/trace/bridge tests and managed rendered-light/overlay metadata tests; current OFF candidate includes a dedicated clear/blocked/front/behind/raw-preservation control. Live production verdicts pending. |
 | R | Direct research spatial/readback/ambient-event tests; these do not establish INI orchestration or coexistence with production. |
 
 ## Production options
@@ -54,7 +57,7 @@ Test references used in the tables:
 All supported boolean values in packaged profiles are `0` and `1`. Runtime
 readers have historically accepted other nonzero integers; that is not an
 additional advertised boolean syntax. Changes require a game restart except
-the three runtime display toggles. Fractional values use a decimal point.
+the four runtime display toggles. Fractional values use a decimal point.
 Every offered boolean feature is 1 in the release template, including ShowDetails.
 
 Bootstrap settings are read in `src/bootstrap.cpp:252-268`, light/ambient source
@@ -73,6 +76,7 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Lights.ManyLights | 0/1; native rendered capture, requires Lights.Enabled. Also required by Ambient. | O expected-feed flags and native capture controls; isolation startup matrix pending. |
 | Lights.ManyLightsSampleRateHz | Integer 1-60; capture interval is integer `1000 / rate` ms (`render_capture.cpp:547`). | Native copy tests; INI min/max cadence not a measured game result; P. |
 | Ambient.Enabled | 0/1; global sky + camera visibility, requires Lights.Enabled/ManyLights. Independent of HUD visibility. | A plus live ambient default; dependency/combined startup pending. |
+| SourceVisibility.Enabled | 0/1; enables the narrow camera-to-rendered-source classifier and one current SDF volume; requires Lights.Enabled/ManyLights. It does not enable the ON-only player/all-source bridge. | V verifies OFF enable/disable, clear/blocked, front/behind and raw-byte preservation; live restored-fire acceptance pending. |
 | LightSmoothing.TimeConstantMilliseconds | Integer 0-2000; 0 keeps grouping but disables temporal smoothing. | B forwards time; M covers zero/invalid/EMA; P. |
 | LightSmoothing.GroupRadius | Decimal 0.01-1 game units; maximal group extent, not physical identity. Invalid runtime input falls back to 0.15 and logs. | M validates options/grouping; ASI malformed/boundary forwarding pending; P. |
 | Overlay.Enabled | 0/1; corner HUD. Other UI owners can keep graphics/client active when 0. | O/G disabled, enabled and view-isolation controls. |
@@ -91,6 +95,8 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | LightOverlay.Enabled | 0/1; independent fullscreen markers; radar belongs to Overlay. | O/G markers-only, HUD+markers/all-three-UI pass; rc.1 all-enabled SDR and user F10 control pass without reported flicker. |
 | LightOverlay.InitiallyVisible | 0/1; initial marker state, changed by ToggleKey; requires Enabled. | O/G hidden startup and toggle regression. |
 | LightOverlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default121/F10. | O remap/disable/bounds and G runtime display state. |
+| LightOverlay.HideOccluded | 0/1; hides only freshly known blocked records in the HUD/radar. Unknown/stale records remain shown; raw/EMA API records remain unchanged. | O model controls; V raw preservation; live verdict quality pending. |
+| LightOverlay.OcclusionToggleKey | Integer 0-255 Windows VK; 0 disables; default122/F11. | O remap/disable/bounds and shortcut state machine; live F11 depends on accepted visibility verdicts. |
 | LightOverlay.Radius | Decimal 1-500 game units for radar/markers; cannot extend Lights.NearbyRadius or source discovery. | O nondefault/bounds/nonfinite; G views; P. |
 | LightOverlay.MaxMarkers | Integer 1-2048; bound in both views. 0 clamps to1, does not disable. | O small/large bounds; G rendering; P. |
 | LightOverlay.MaxLabels | Integer 0-16; fullscreen detail-label bound. 0 keeps markers without labels. | O small/large bounds; label-zero render check pending; P. |
@@ -107,15 +113,12 @@ claim unavailable dependent features are active.
 
 ## Research-only options preserved in the ON template
 
-These 29 settings are absent from the production template and rejected as OFF
+These 26 settings are absent from the production template and rejected as OFF
 package overrides. ON retains the original controls, including their existing
 limitations. Their presence is not a promise that all can run together.
 
 | Section / key | ON effect, range and dependency | Test coverage / limit |
 | --- | --- | --- |
-| SourceVisibility.Enabled | 0/1; experimental geometry metadata, requires Lights/ManyLights. | Failed live concealed-source acceptance; excluded from OFF. |
-| LightOverlay.HideOccluded | 0/1; hides fresh known blocked records in the two light views. Raw/EMA remain unchanged. | Model controls pass; underlying geometry verdicts failed live acceptance. |
-| LightOverlay.OcclusionToggleKey | Integer 0-255 Windows VK; 0 disables; default122/F11. | ON remap/disable tested; OFF ignores even a legacy nonzero setting. |
 | Research.AmbientProbe | 0/1; exclusive event-triggered diagnostic, replaces normal ManyLights/sky stream and prevents spatial readback combinations. | R tests event/copy mechanics; incompatible with normal all-on streaming. |
 | Research.SpatialProbe | 0/1; enables passive/event probe when Lights/ManyLights are active. | R; INI orchestration pending. |
 | Research.SpatialReadback | 0/1; guarded R8 readback; requires probe/source prerequisites and AmbientProbe=0. SDF mode takes precedence when also selected. | R; simultaneous modes are not independent output promises. |
@@ -199,13 +202,13 @@ OcclusionTest, pass. Those are synthetic/source-build results; installed-game
 combinations and live per-light acceptance remain subject to the current handover.
 No full INI or live all-functions pass is claimed.
 
-## Stability release follow-up
+## Current production candidate follow-up
 
-The OFF template now has 31 settings; SourceVisibility.Enabled, HideOccluded and
-OcclusionToggleKey are removed. The ON template retains its original hash above.
-The profile self-test rejects all three removed keys, including zero values.
-The native release-source-disabled control forces enable, publication and tracing:
-OFF still produces disabled metadata, publishes no volume, and preserves raw bytes.
-Overlay-model verifies old hide/F11 switches remain inert in OFF and work as before
-in ON. The 27 selected native tests and ON preservation build/model pass; exact
-package, live and scan status are in [the release ledger](STABLE_RELEASE_VALIDATION.md).
+The OFF template now has 34 settings. SourceVisibility.Enabled, HideOccluded and
+OcclusionToggleKey are restored; the ON template remains the preserved 60-setting
+research profile. The profile self-test accepts and bounds the three restored OFF
+settings while continuing to reject Research, Console, Explorer and OcclusionTest.
+The native `release-fire-visibility` control exercises first-volume waiting,
+clear/blocked verdicts in front of and behind the camera, disabling and byte-for-byte
+preservation of raw scene/light/counter data. Exact package, live and scan status
+belong in [the handover](HANDOVER.md) until a new release ledger exists.

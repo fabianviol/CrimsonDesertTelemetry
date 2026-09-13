@@ -353,12 +353,9 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.lightRadius = IniFloat(ini, L"Radius", 35.0f, 1.0f, 500.0f, L"LightOverlay");
 #if CDT_RESEARCH
     config.occlusionTest = lightInteger(L"OcclusionTest", 0) != 0;
+#endif
     config.hideOccluded = lightInteger(L"HideOccluded", 0) != 0;
     config.occlusionToggleKey = std::clamp(lightInteger(L"OcclusionToggleKey", 122), 0, 255);
-#else
-    config.hideOccluded = false;
-    config.occlusionToggleKey = 0;
-#endif
     config.radar3D = integer(L"Radar3D", 1) != 0;
     config.showAmbient = integer(L"ShowAmbient", 1) != 0;
     config.notifications = GetPrivateProfileIntW(L"Notifications", L"Enabled", 0, ini.c_str()) != 0;

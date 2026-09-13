@@ -36,6 +36,7 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
         Notifications = @{ Enabled = 'bool'; DurationMilliseconds = 'int:5000:10000' }
         Lights = @{ Enabled = 'bool'; NearbyRadius = 'int:1:100000'; ManyLights = 'bool'; ManyLightsSampleRateHz = 'int:1:60' }
         Ambient = @{ Enabled = 'bool' }
+        SourceVisibility = @{ Enabled = 'bool' }
         LightSmoothing = @{ TimeConstantMilliseconds = 'int:0:2000'; GroupRadius = 'number:0.01:1' }
         Overlay = @{
             Enabled = 'bool'; InitiallyVisible = 'bool'; ShowDetails = 'bool'; ShowAmbient = 'bool'; Radar3D = 'bool'
@@ -44,14 +45,12 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
             StaleMilliseconds = 'int:100:10000'
         }
         LightOverlay = @{
-            Enabled = 'bool'; InitiallyVisible = 'bool'; ToggleKey = 'int:0:255'
+            Enabled = 'bool'; InitiallyVisible = 'bool'; ToggleKey = 'int:0:255'; HideOccluded = 'bool'
+            OcclusionToggleKey = 'int:0:255'
             Radius = 'number:1:500'; MaxMarkers = 'int:1:2048'; MaxLabels = 'int:0:16'
         }
     }
     if ($ProfileName -eq 'research') {
-        $rules.SourceVisibility = @{ Enabled = 'bool' }
-        $rules.LightOverlay.HideOccluded = 'bool'
-        $rules.LightOverlay.OcclusionToggleKey = 'int:0:255'
         $rules.Research = @{
             SignedDistanceReadback = 'bool'; SignedDistanceReadbackCount = 'int:1:120'; SignedDistanceReadbackIntervalMs = 'int:250:10000'
             SpatialProbe = 'bool'; SpatialReadback = 'bool'; SpatialReadbackCount = 'int:1:8'
@@ -182,6 +181,8 @@ ManyLights=0
 ManyLightsSampleRateHz=1
 [Ambient]
 Enabled=1
+[SourceVisibility]
+Enabled=1
 [LightSmoothing]
 TimeConstantMilliseconds=0
 GroupRadius=0.01
@@ -203,6 +204,8 @@ StaleMilliseconds=100
 Enabled=0
 InitiallyVisible=0
 ToggleKey=65
+HideOccluded=1
+OcclusionToggleKey=0
 Radius=500
 MaxMarkers=1
 MaxLabels=0
@@ -217,11 +220,7 @@ MaxLabels=0
         Replace('MaxMarkers=1', 'MaxMarkers=2048').Replace('MaxLabels=0', 'MaxLabels=16')
     Assert-IniConfiguration $otherBounds 'production'
     $researchTail = @'
-HideOccluded=1
-OcclusionToggleKey=0
 OcclusionTest=0
-[SourceVisibility]
-Enabled=1
 [Research]
 SignedDistanceReadback=0
 SignedDistanceReadbackCount=120
@@ -257,12 +256,10 @@ ResultFile=inject_result.txt
     Assert-Rejected { Assert-IniConfiguration $productionIni 'unsupported' } 'An unsupported profile was accepted.'
     Assert-Rejected { Assert-IniConfiguration $researchIni 'production' } 'Research settings were accepted in production.'
     Assert-Rejected { Assert-IniConfiguration $productionIni 'research' } 'An incomplete research profile was accepted.'
-    foreach ($forbidden in @('Research', 'Console', 'Explorer', 'SourceVisibility')) {
+    foreach ($forbidden in @('Research', 'Console', 'Explorer')) {
         Assert-Rejected { Assert-IniConfiguration ($productionIni + "`n[$forbidden]`n") 'production' } "Forbidden section [$forbidden] was accepted."
     }
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nOcclusionTest=0`n") 'production' } 'The legacy research key was accepted in production.'
-    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nHideOccluded=1`n") 'production' } 'Unvalidated source hiding was accepted in production.'
-    Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nOcclusionToggleKey=122`n") 'production' } 'The excluded F11 function was accepted in production.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nUnknownSetting=1`n") 'production' } 'An unknown key was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni -replace '(?m)^DetailsKey=255\r?\n', '') 'production' } 'A missing offered shortcut was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nMaxLabels=1`n") 'production' } 'A duplicate key was accepted.'

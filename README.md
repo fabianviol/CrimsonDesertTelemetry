@@ -19,12 +19,13 @@ the sky and environment** and **which individual nearby game lights can actually
 reach it through world geometry**, including sources off-screen or behind the
 camera. Current development targets **Steam build 25246367**.
 
-The current blocker is reliable per-light geometric visibility. Production 2.1.11
-excludes that unfinished path. The current research candidate instead traces from
-the player to the union of authored and rendered source positions, without camera
-direction or screen projection, and separates all 17 preserved labelled offline
-controls. Live fire/candle/lamp, wall and behind-camera acceptance is still pending.
-The full method, limits and test route are documented for review and forks in
+The current blocker is reliable per-light geometric visibility. Public production
+2.1.11 excludes that unfinished path. Current source restores the earlier narrow
+camera-to-rendered-source classifier that previously worked live for fires, while
+keeping the broader player/all-source candidate isolated under `CDT_RESEARCH=ON`.
+The restored path is awaiting a new live visible/blocked/visible test and exact
+antivirus scans before release; candles, lamps and complete off-screen coverage are
+not claimed. The methods and limits are documented in
 [source visibility](docs/SOURCE_VISIBILITY.md).
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
@@ -79,10 +80,11 @@ Do not merge old binaries or metadata into the new package. Preserve your INI pr
 | **F8** | Show/hide the corner HUD and 3D radar |
 | **F9** | Toggle additional diagnostics |
 | **F10** | Show/hide fullscreen light markers |
+| **F11** | Show/hide lights with a fresh blocked verdict |
 
 The HUD does not capture mouse input. Hiding it does not stop telemetry.
-These are defaults: all three shortcuts can be reassigned in the INI using decimal
-Windows virtual-key codes, or individually disabled with `0`. F11 is unused.
+These are defaults: all four shortcuts can be reassigned in the INI using decimal
+Windows virtual-key codes, or individually disabled with `0`.
 
 Edit `CrimsonDesertTelemetry.ini` before starting the game:
 
@@ -101,6 +103,9 @@ ManyLightsSampleRateHz=20
 [Ambient]
 Enabled=1
 
+[SourceVisibility]
+Enabled=1
+
 [Overlay]
 Enabled=1
 InitiallyVisible=1
@@ -115,6 +120,8 @@ HdrPaperWhiteNits=200
 Enabled=1
 InitiallyVisible=1
 ToggleKey=121
+HideOccluded=0
+OcclusionToggleKey=122
 Radius=35
 MaxMarkers=512
 MaxLabels=6
@@ -131,13 +138,15 @@ DurationMilliseconds=6000
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
 - `HdrPaperWhiteNits` controls all HDR UI brightness, including markers and notices with the corner HUD disabled. The default is 200 nits, clamped to 80–500. It does not change the game's HDR settings or metadata.
 - Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
-- Geometric source occlusion and its hiding controls are excluded from this release. Old `SourceVisibility`, `HideOccluded` and `OcclusionToggleKey` settings cannot activate them. Raw and smoothed records remain complete.
+- `[SourceVisibility] Enabled=1` enables the current narrow camera-to-rendered-source classifier. It covers records present in the renderer capture; it is not a complete light registry and live acceptance currently exists only for the earlier fire implementation.
+- `HideOccluded=1` or F11 hides only sources with a fresh known blocked verdict from the HUD/radar. Unknown and stale sources remain shown. Raw and smoothed API records and RGB values remain complete.
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
 
-The production `CDT_RESEARCH=OFF` profile contains only product settings. Research,
-Console, Explorer, source occlusion and the legacy `OcclusionTest` cannot be activated in this build,
-including through an older INI. Research builds retain those controls in a separate
-template. See [configuration dependencies and validation](docs/INI_VALIDATION.md).
+The production `CDT_RESEARCH=OFF` profile contains the narrow current-volume SDF
+acquisition and rendered-source classifier, without history buffers or diagnostic
+tracing. Research, Console, Explorer, the broad player/all-source bridge and legacy
+`OcclusionTest` remain in a separate `CDT_RESEARCH=ON` profile. See
+[configuration dependencies and validation](docs/INI_VALIDATION.md).
 
 ### Startup and errors
 
@@ -175,17 +184,19 @@ Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
 Product versions and API versions are separate: routes remain **HTTP API v1**.
-Production 2.1.11 uses snapshot schema **1.5** with lights enabled because it
-retains disabled visibility capability metadata. With lights disabled it remains
+Production 2.1.11 uses snapshot schema **1.5** with lights enabled and reports the
+excluded visibility capability as disabled. Current production source uses the same
+schema for its narrow rendered-source result. With lights disabled it remains
 **1.1**. Optional per-light
 metadata adds no route and changes no original RGB values. Clients should check
 capability/status fields and freshness instead of assuming every source is always available.
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
-- Production 2.1.11 retains rendered `sourceVisibility` as `unknown` / `disabled`.
-  Research schema 1.5 can attach player-to-source results to authored and rendered
-  records; original records and RGB smoothing remain unchanged.
+- Public production 2.1.11 retains rendered `sourceVisibility` as `unknown` / `disabled`.
+  The current OFF candidate can attach camera-to-source results to rendered records.
+  Research schema 1.5 separately supports player-to-source results on authored and
+  rendered records; original records and RGB smoothing remain unchanged.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
 - The arrays **overlap**; do not add them together. One physical lamp can produce several contributions.
 
@@ -228,7 +239,7 @@ Important boundaries:
 - A missing contribution is **not** a permanent physical OFF state. Stable lamp IDs, physical lumens and validated light ranges are not supplied.
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
 - The radar can show behind-camera contributions still present in the feed, but is **not** a complete 360-degree registry.
-- Fullscreen markers include lights behind geometry: geometric source occlusion and F11 hiding are excluded from this release after failed live acceptance. The [preserved investigation](docs/SOURCE_VISIBILITY_REGRESSION.md) will resume separately. Fast motion can expose capture/projection latency.
+- Public 2.1.11 markers include lights behind geometry. Current source restores the narrow rendered-source verdict and F11 display filter as a new candidate; it does not yet establish correct candles, lamps, all known sources or complete 360-degree coverage. Fast motion can expose capture/projection latency.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
 - The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The console that can change debug values is available only in a separate `CDT_RESEARCH=ON` build.
@@ -244,7 +255,12 @@ ctest --test-dir build/native-package-release -C Release --output-on-failure
 
 The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP.
 
-The production package uses `CDT_RESEARCH=OFF`; bounded ambient acquisition is included, while per-light SDF acquisition is excluded. `-Research on` preserves the experimental paths and selects [CrimsonDesertTelemetry.research.ini](packaging/mod-manager/CrimsonDesertTelemetry.research.ini), packaged under the normal INI filename. The separate profiles prevent old diagnostic settings from replacing product streams or offering inactive controls. See [INI validation](docs/INI_VALIDATION.md).
+The production package uses `CDT_RESEARCH=OFF`; bounded ambient acquisition plus
+one current SDF volume for the narrow rendered-source classifier are included.
+Repeated captures, history, dumps, diagnostic tracing and the broad player/all-source
+bridge stay excluded. `-Research on` selects
+[CrimsonDesertTelemetry.research.ini](packaging/mod-manager/CrimsonDesertTelemetry.research.ini)
+under the normal packaged filename. See [INI validation](docs/INI_VALIDATION.md).
 
 GitHub CI covers managed/API tests and native capture, guard and UI tests. Current acceptance and outstanding checks are recorded in [the handover](docs/HANDOVER.md); historical test totals are not a result for a new package.
 

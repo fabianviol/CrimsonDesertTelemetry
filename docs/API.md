@@ -4,8 +4,8 @@ The API carries raw light contributions, a separate [grouped and smoothed
 local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
 [ambient feed](AMBIENT_STREAM.md). Product versions, route versions and JSON
 schema versions are separate. Routes remain **v1**; the current development host
-uses schema **1.5** with lights enabled and **1.1** with lights disabled. Stable
-production 2.1.10 uses schema 1.4.
+uses schema **1.5** with lights enabled and **1.1** with lights disabled. Public
+production 2.1.11 also uses schema 1.5 but reports source visibility as disabled.
 
 ## Current development scope — 2026-09-12
 
@@ -15,12 +15,13 @@ the camera's independent `visibility` value/frame/age, and
 `localEnvironmentAmbientEstimateWorking`. Global sky RGB itself is unoccluded;
 the product estimate is not measured room brightness or physical illumination.
 
-Stable production 2.1.10 excludes per-light geometric visibility after its failed
-live acceptance. Current source adds a new `CDT_RESEARCH=ON` candidate that traces
-from the player to the union of authored and rendered sources, independently of
-camera direction. Its additive `sourceVisibility` metadata is awaiting live game
-validation. Original records, raw RGB/luminance, grouping and EMA RGB remain
-unchanged; no source is removed or attenuated by the API.
+Public production 2.1.11 excludes per-light geometric visibility after its failed
+live acceptance. Current `CDT_RESEARCH=OFF` source restores the earlier narrow
+camera-to-rendered-source classifier that previously worked live for fires. Its
+new production package and exact binaries still require live and antivirus
+acceptance. The broader player-to-authored-and-rendered-source bridge remains
+isolated under `CDT_RESEARCH=ON`. Original records, raw RGB/luminance, grouping and
+EMA RGB remain unchanged; no source is removed or attenuated by the API.
 
 See [source visibility](SOURCE_VISIBILITY.md) for the exact classifier, bounds,
 offline evidence and required live controls. Older packages may omit these fields;
@@ -50,8 +51,8 @@ The server listens on IPv4 loopback only. There is no API key, authentication,
 TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it to
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
-Configure the ASI before starting the game. These settings describe current
-stability release; the production INI contains supported product settings only:
+Configure the ASI before starting the game. These settings describe the current
+production source candidate:
 
 ```ini
 [Server]
@@ -68,6 +69,9 @@ ManyLightsSampleRateHz=20
 [Ambient]
 Enabled=1
 
+[SourceVisibility]
+Enabled=1
+
 [Overlay]
 Enabled=1
 InitiallyVisible=1
@@ -81,6 +85,8 @@ HdrPaperWhiteNits=200
 Enabled=1
 InitiallyVisible=1
 ToggleKey=121
+HideOccluded=0
+OcclusionToggleKey=122
 Radius=35
 
 [Notifications]
@@ -92,27 +98,28 @@ DurationMilliseconds=6000
 1–100000 game units and `ManyLightsSampleRateHz` supports 1–60. The ASI clamps values
 outside those ranges. Changes require a game restart. Keep the `.cfg` runtime
 metadata unchanged; it is not user configuration. The default shortcuts are F8
-for the corner HUD/radar, F9 for diagnostics and F10 for fullscreen markers.
-All three keys can be reassigned using decimal Windows virtual-key codes, or
-individually disabled with `0`. Stable production 2.1.10 leaves F11 unused and
-excludes geometric source occlusion. The research template adds configurable F11
-for display-only hiding of freshly blocked sources. No API record or RGB is filtered.
+for the corner HUD/radar, F9 for diagnostics, F10 for fullscreen markers and F11
+for display-only hiding of freshly blocked sources. All four keys can be reassigned
+using decimal Windows virtual-key codes, or individually disabled with `0`. No API
+record or RGB is filtered.
 Display radius does not expand API source coverage or its configured nearby radius.
 
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
 display global sky, camera sky visibility and the local estimate with their separate
-ages. Ambient requires native ManyLights capture. `CDT_RESEARCH=OFF` ignores all
-SourceVisibility, HideOccluded, OcclusionToggleKey, Research, Console, Explorer
-and legacy `OcclusionTest` controls, including those
-left in an old INI. They cannot replace product capture or enable research hooks.
+ages. Ambient requires native ManyLights capture. Current `CDT_RESEARCH=OFF`
+accepts SourceVisibility, HideOccluded and OcclusionToggleKey, but ignores Research,
+Console, Explorer and legacy `OcclusionTest` controls left in an old INI. Those
+settings cannot enable the broad research architecture.
 `CDT_RESEARCH=ON` preserves the experimental paths and uses a separate
 `CrimsonDesertTelemetry.research.ini` template, packaged as the normal INI filename.
 See [configuration dependencies and validation](INI_VALIDATION.md).
 
-Stable production 2.1.10 publishes additive rendered `sourceVisibility` as
-`unknown` with reason `disabled`. The current schema 1.5 research host attaches
-measured or explicit unknown metadata to both authored and rendered records through
-the independent player-to-source bridge described in [source visibility](SOURCE_VISIBILITY.md).
+Public production 2.1.11 publishes additive rendered `sourceVisibility` as
+`unknown` with reason `disabled`. The current OFF candidate attaches measured or
+explicit unknown camera-to-source metadata to rendered records. The schema 1.5
+research host separately attaches player-to-source results to authored and rendered
+records through the independent bridge described in
+[source visibility](SOURCE_VISIBILITY.md).
 
 Normal startup/loading/discovery notices are silent. Success appears once the API
 reports `playing` and the requested feeds are fresh; a valid empty light feed
@@ -384,7 +391,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
-| `sourceVisibility` | Optional development metadata: player-to-source `clear`/`blocked`/`unknown`, usable attenuation factor, legacy-named visibility-query sequence and independent SDF age/context. Camera direction and screen projection are absent. Omitted with a legacy v2 native bridge. See [complete contract](SOURCE_VISIBILITY.md). |
+| `sourceVisibility` | Optional metadata: `clear`/`blocked`/`unknown`, usable attenuation factor and SDF age/context. The current OFF candidate traces from the capture-paired camera to renderer-selected records; the ON research bridge instead uses the player and both source arrays. Neither uses camera direction or screen projection. Omitted with a legacy v2 native bridge. See [complete contract](SOURCE_VISIBILITY.md). |
 
 Diagnostics count active records, published records, malformed records and records
 outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and

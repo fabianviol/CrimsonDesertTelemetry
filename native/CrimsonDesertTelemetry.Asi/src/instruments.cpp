@@ -199,17 +199,10 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
-#if CDT_RESEARCH
     const bool sourceVisibility = GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
-#else
-    // The current release does not offer unvalidated per-light occlusion.
-    // Ignore the switch in older diagnostic INIs as well.
-    constexpr bool sourceVisibility = false;
-#endif
-    // The old render-capture path could only trace renderer-selected records
-    // and used the camera as its origin. The dedicated query bridge below uses
-    // the player receiver and the union of authored and rendered sources.
-    render::SetSourceVisibilityEnabled(false);
+    // OFF uses the narrow render-capture path with its paired camera. ON keeps
+    // that path disabled and uses the player/all-known-source bridge below.
+    render::SetSourceVisibilityEnabled(!CDT_RESEARCH && sourceVisibility);
 #if CDT_RESEARCH
     const bool sourceVisibilityBridge = sourceVisibility && source_visibility::Open();
     if (sourceVisibility && !sourceVisibilityBridge)

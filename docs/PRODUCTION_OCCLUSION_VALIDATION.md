@@ -1,9 +1,10 @@
 # Production occlusion checkpoint — 2026-09-12
 
-**Historical evidence, currently paused:** the user deferred unfinished per-light
-work. The OFF stability release excludes per-light visibility/F11; the active
-ledger is [stable release validation](STABLE_RELEASE_VALIDATION.md). The results
-below are preserved and do not establish source-occlusion acceptance.
+**Historical evidence:** the results below describe the failed 2026-09-12 candidate
+and public 2.1.11 exclusion. Current source has since restored the earlier narrow
+rendered-source/fire path as a new private candidate; its exact state and acceptance
+gate are in [the handover](HANDOVER.md). Nothing below establishes that candidate's
+live result.
 
 Ambient Occlusion passed the controlled live open/enclosed/open route in OFF
 v2.1.9 on game build 25246367. Per-light production visibility is implemented

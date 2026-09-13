@@ -1,4 +1,90 @@
-# Current checkpoint — 2.1.11 PUBLISHED, 2026-09-13 evening, Claude
+# Current checkpoint — narrow rendered/fire visibility restored, 2026-09-13 late, Codex
+
+## User decision and scope
+
+The user ended the feature pause after 2.1.11 publication and asked for the earlier
+live-working fire visibility behavior back **without new renderer research**. This
+checkpoint restores only that small production path. Do not treat it as completion
+of the all-light/player goal, and do not replace it with the broader research bridge
+unless a later controlled failure requires that work.
+
+Public 2.1.11 remains unchanged on Nexus. A matching GitHub release now also exists:
+<https://github.com/fabianviol/CrimsonDesertTelemetry/releases/tag/v2.1.11>.
+Its tag points to stable commit `a8c5ed87925a688532b50b00102d90a46ee69d46`
+and its uploaded asset is the exact existing stable ZIP, SHA-256
+`CB7DD68FFAA548A53F2A5303870C012F9CD0CC44944A46A0F59BF274457C5052`.
+The new visibility candidate below has **not** been published there or on Nexus.
+
+## Concrete production restoration
+
+`CDT_RESEARCH=OFF` now:
+
+- compiles `sdf_acquire.cpp`, which retains one fenced current R16 SDF volume;
+- links `sdf_visibility.cpp` as `cdt_sdf_fire` with the exact earlier Variant A
+  classifier: 0.6 start skip, 1.0 end margin, `max(distance, 0.05)` steps,
+  nonpositive sample = blocked, at most 400 iterations;
+- classifies only current renderer-selected records in `render_bridge.cpp`, from
+  their capture-paired camera position. Camera direction and projection are not
+  inputs, so a retained behind-camera record is still eligible;
+- reads `[SourceVisibility] Enabled`, publishes additive metadata and restores
+  `HideOccluded` plus configurable/default F11 in both light views;
+- leaves raw and smoothed records, positions and RGB unchanged. Unknown/stale
+  records remain displayed even when hiding is active.
+
+The host creates the broad managed player/all-known-source query mapping only when
+the ON ASI passes its private `--research-source-visibility` flag. OFF does not run
+that client or compile the native result bridge, history, diagnostic series, dump
+or trace infrastructure.
+This is the same architectural family that previously produced working fire
+verdicts; candles, lamps, authored-only sources and a complete 360-degree registry
+are not claimed.
+
+## Exact candidate and verification
+
+Private package:
+
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-fire-visibility.2-ModManagers.zip`
+
+Expanded folder:
+
+`artifacts/mod-manager/v2.1.12-fire-visibility.2-20260913-235738-037-8b9b65b8/CrimsonDesertTelemetry`
+
+| Exact file | SHA-256 | VirusTotal | Microsoft Defender |
+| --- | --- | --- | --- |
+| ASI | `03989712E34BF418BB326A835A998CAC206863775D8EB182BA98A2C55ADAC1D7` | **4/71**: CrowdStrike, Cynet, McAfeeD, Microsoft | No matching detection |
+| ZIP | `B2CF14D58F9F31F6238C617D77B66499CE13BCF3D88A55C12170CF1CA719C0BD` | **0/68** | No matching detection |
+
+The VT result is equal to/better than the immediate v2.1.9 predecessor (4/71) and
+earlier narrow visibility candidates (5/70–5/71, ZIP 0/67–0/68). It does **not**
+reproduce the later broad research-bridge regression (ASI 11/71, ZIP 7/68).
+This directly answers the user's AV question: restoring the narrow path did not
+damage the measured scan profile. The known deterministic Bitdefender family came
+from commit `6937fa9`'s bounded repeated diagnostic readback series, which remains
+compiled out of OFF; see `ANTIVIRUS_FINDINGS.md`.
+
+Verification completed against this production build:
+
+- all **30/30 native CTests** pass;
+- all **71/71 managed tests** pass;
+- the new `release-fire-visibility` test covers first-volume waiting, clear/blocked
+  fields, sources in front of and behind the camera, disabling, and byte-for-byte
+  raw scene/light/counter preservation;
+- the production package validator accepts all **34** offered settings, rejects
+  research-only settings, verifies all nine files and verifies ZIP/staging equality.
+
+## One next step
+
+With the game closed, install the exact private ZIP above cleanly. Use one known
+fire and perform `visible -> solid wall/building blocked -> visible`, keeping F11 in
+show-blocked mode first so wrong verdicts cannot disappear. Rotate away if useful:
+camera direction must not change the verdict while the renderer record remains in
+the feed. If that passes, repeat with F11 hiding, record the live result here and
+decide whether this limited fire restoration is releasable. Do not claim candles,
+lamps or the final all-source product requirement from that one pass.
+
+---
+
+# Previous checkpoint — 2.1.11 PUBLISHED, 2026-09-13 evening, Claude
 
 > Supersedes the "One next step" of the 18:46 checkpoint below, which still asked for
 > external validation BEFORE publishing. The user overrode that and released.

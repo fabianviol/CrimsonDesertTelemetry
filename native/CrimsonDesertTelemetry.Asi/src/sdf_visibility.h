@@ -34,9 +34,10 @@ void Publish(std::vector<std::uint8_t> volume, const std::array<std::uint8_t, 76
 void Clear() noexcept;
 Status CurrentStatus(std::uint64_t nowTick);
 
-// Conservative voxel-segment test. It samples every quarter cell and classifies
-// one connected cell of near-surface distance as blocked. The caller supplies
-// the receiver position; no camera direction or projection participates.
+// Voxel-segment test. The research target uses connected quarter-cell sampling;
+// the narrow production fallback is compiled separately with its preserved
+// zero-crossing marcher. The caller supplies the receiver position; no camera
+// direction or projection participates.
 TraceResult Trace(const std::array<float, 3>& target, std::uint64_t nowTick);
 inline constexpr std::uint32_t ProductionMaximumAgeMilliseconds = 1500;
 inline constexpr unsigned MaximumBatchTargets = 256;

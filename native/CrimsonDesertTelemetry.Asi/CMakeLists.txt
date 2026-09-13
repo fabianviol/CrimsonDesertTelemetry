@@ -33,12 +33,13 @@ target_compile_features(cdt_sdf PUBLIC cxx_std_20)
 target_compile_options(cdt_sdf PRIVATE /W4 /WX /permissive-)
 target_include_directories(cdt_sdf PUBLIC src)
 
-# The stability release includes ambient acquisition but excludes the unfinished
-# per-light SDF feature. Its implementation and direct tests remain preserved.
-add_library(cdt_sdf_disabled STATIC src/sdf_disabled.cpp)
-target_compile_features(cdt_sdf_disabled PUBLIC cxx_std_20)
-target_compile_options(cdt_sdf_disabled PRIVATE /W4 /WX /permissive-)
-target_include_directories(cdt_sdf_disabled PUBLIC src)
+# Preserve the exact, previously live-tested camera-to-rendered-source classifier
+# for the narrow production fire path. Research keeps its newer all-source work.
+add_library(cdt_sdf_fire STATIC src/sdf_visibility.cpp)
+target_compile_features(cdt_sdf_fire PUBLIC cxx_std_20)
+target_compile_definitions(cdt_sdf_fire PRIVATE CDT_FIRE_VISIBILITY=1)
+target_compile_options(cdt_sdf_fire PRIVATE /W4 /WX /permissive-)
+target_include_directories(cdt_sdf_fire PUBLIC src)
 
 option(CDT_RESEARCH "Compile the private research instrumentation into the ASI" ON)
 if(CDT_RESEARCH)
@@ -46,9 +47,9 @@ if(CDT_RESEARCH)
         src/spatial_sample.cpp src/spatial_thunk.asm src/source_visibility_bridge.cpp)
     set(CDT_SDF_LIBRARY cdt_sdf)
 else()
-    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
-    set(CDT_SDF_LIBRARY cdt_sdf_disabled)
-    message(STATUS "CDT_RESEARCH=OFF: research and unfinished source occlusion excluded from the ASI")
+    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/sdf_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
+    set(CDT_SDF_LIBRARY cdt_sdf_fire)
+    message(STATUS "CDT_RESEARCH=OFF: narrow rendered-source fire visibility included; research instrumentation excluded")
 endif()
 
 add_library(cdt_imgui STATIC
@@ -108,7 +109,8 @@ target_compile_definitions(CrimsonDesertTelemetryAsi PRIVATE
     UNICODE
     _UNICODE
     WIN32_LEAN_AND_MEAN
-    NOMINMAX)
+    NOMINMAX
+    CDT_RESEARCH=$<BOOL:${CDT_RESEARCH}>)
 target_compile_options(CrimsonDesertTelemetryAsi PRIVATE /W4 /WX /permissive-)
 target_link_libraries(CrimsonDesertTelemetryAsi PRIVATE ws2_32 bcrypt cdt_overlay cdt_instruments)
 set_target_properties(CrimsonDesertTelemetryAsi PROPERTIES
@@ -208,14 +210,14 @@ target_compile_definitions(CrimsonDesertTelemetryRenderBridgeTests PRIVATE CDT_R
 target_compile_options(CrimsonDesertTelemetryRenderBridgeTests PRIVATE /W4 /WX /permissive-)
 target_link_libraries(CrimsonDesertTelemetryRenderBridgeTests PRIVATE cdt_sdf)
 add_test(NAME render-bridge COMMAND CrimsonDesertTelemetryRenderBridgeTests)
-add_executable(CrimsonDesertTelemetryReleaseSourceDisabledTests
-    tests/release_source_disabled_tests.cpp src/render_bridge.cpp)
-target_compile_features(CrimsonDesertTelemetryReleaseSourceDisabledTests PRIVATE cxx_std_20)
-target_compile_definitions(CrimsonDesertTelemetryReleaseSourceDisabledTests PRIVATE
+add_executable(CrimsonDesertTelemetryReleaseFireVisibilityTests
+    tests/release_fire_visibility_tests.cpp src/render_bridge.cpp)
+target_compile_features(CrimsonDesertTelemetryReleaseFireVisibilityTests PRIVATE cxx_std_20)
+target_compile_definitions(CrimsonDesertTelemetryReleaseFireVisibilityTests PRIVATE
     CDT_RESEARCH=0 UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_compile_options(CrimsonDesertTelemetryReleaseSourceDisabledTests PRIVATE /W4 /WX /permissive-)
-target_link_libraries(CrimsonDesertTelemetryReleaseSourceDisabledTests PRIVATE cdt_sdf_disabled)
-add_test(NAME release-source-disabled COMMAND CrimsonDesertTelemetryReleaseSourceDisabledTests)
+target_compile_options(CrimsonDesertTelemetryReleaseFireVisibilityTests PRIVATE /W4 /WX /permissive-)
+target_link_libraries(CrimsonDesertTelemetryReleaseFireVisibilityTests PRIVATE cdt_sdf_fire)
+add_test(NAME release-fire-visibility COMMAND CrimsonDesertTelemetryReleaseFireVisibilityTests)
 add_executable(CrimsonDesertTelemetryRenderCaptureSmoke tests/render_capture_smoke.cpp
     src/render_capture.cpp src/render_bridge.cpp src/filter_thunk.asm src/ambient_thunk.asm src/console/mem.cpp src/console/util.cpp)
 target_compile_features(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE cxx_std_20)

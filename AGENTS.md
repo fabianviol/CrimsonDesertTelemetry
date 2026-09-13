@@ -2,11 +2,12 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-13): pause all occlusion/source-visibility research.
-Focus only on the two current Nexus crash reports and the Streamline/DXGI startup
-failure documented in HANDOVER. Keep the fix narrow, production-only and testable;
-do not resume feature research until the external crash candidate is validated.
-Read HANDOVER first.
+Current user priority (2026-09-13): restore only the earlier narrow production
+rendered-source/fire visibility path, then live-test and antivirus-scan its exact
+ASI and ZIP. The 2.1.11 Streamline/DXGI fix is already public; external reporter
+confirmation remains pending but does not justify reopening crash work here. Keep
+the broad player/all-source visibility bridge in research and do not start new
+renderer research. Read HANDOVER first.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.
