@@ -1,4 +1,82 @@
-# Current checkpoint — narrow rendered/fire visibility restored, 2026-09-13 late, Codex
+# Current checkpoint — why per-light occlusion fails, 2026-09-14, Claude
+
+Offline research only, from preserved volumes. No game, no capture, no build, no
+package. The narrow fire-visibility restoration below is untouched and still
+untested live.
+
+## The blocker is explained, and it is not a bug
+
+**The distance field stores a thin signed band around surfaces, not solid
+interiors.** Full evidence in [SDF_BAND_LIMIT.md](SDF_BAND_LIMIT.md). Probing
+straight down through ground the player stands on, at level 0 throughout: the
+negative region is 0.6 gu wide in the room volume and 0.3 gu in the camp volume,
+reaching −0.181 and −0.092, and immediately below it the field returns to
+**+0.53027**, exactly the positive clamp. From 0.2 to 3.6 gu beneath the floor it
+reports being as far from geometry as it can express.
+
+So "inside" is not a persistent state. A segment registers a nonpositive value only
+when it crosses that one-to-two-cell band in a way trilinear interpolation
+preserves, and the room case proves it often does not: exhaustive piecewise-cubic
+evaluation of the whole path found no crossing while solid texels sat within one
+cell of it.
+
+**"Is the interpolated value ≤ 0 somewhere along this segment" therefore cannot be
+made reliable on this field** — not by smaller steps, denser sampling or a larger
+tolerance. The tracing, addressing and acquisition are all fine; offline traces
+reproduce the native `closestApproach` values exactly.
+
+## Two candidates ruled out with evidence
+
+**Counting solid texels beside the path.** Refuted on the controlled same-source
+A/B: the blocked pose touched 4, the three exposed poses touched 3. A room always
+has walls and a floor nearby.
+
+**Raising the hit tolerance.** Ruled out on principle, as `SOURCE_VISIBILITY_REGRESSION.md`
+already said. Worth knowing why it looks tempting: within the traced range the room
+separates by a factor of thirty, blocked at 0.005/0.016 against clear at
+0.529/0.517 where 0.530 is the clamp. That is a correction to how the evidence is
+usually quoted — the regression table's 0.160 and 0.125 for the clear controls are
+their **complete-path** minima, which fall on the lights' own housings inside the
+end margin (`left-3.0` length 7.733, minimum at exactly 7.733). The camp is where
+the real difficulty sits: minima spread 0.015 to 0.177 and labels the record itself
+calls conflicting for lamps centimetres apart.
+
+## Still worth doing, separately
+
+The forced 0.05-gu minimum step remains a genuine defect: it skipped a real negative
+interval on `near-box-b`, where dense sampling finds −0.0073 at t = 13.25 against a
+traced verdict of clear. A sphere trace is only valid stepping by at most the sampled
+distance. Fixing it recovers that one case and no other, so do not expect it to close
+the goal.
+
+## The question this raises for the product
+
+A swept query — "does anything come within radius r of this segment" — is well posed
+on a distance field where a sign test is not, because it relies on the distance
+rather than on the sign surviving interpolation. Checked at the room minima: both
+blocked paths have their nearest surface to the side, not the floor, so such a test
+would not simply be detecting the ground. It is untested and inherently conservative,
+calling a light blocked when its path merely grazes geometry.
+
+**But that bias may be acceptable, and this is a product decision rather than a
+research one.** The consumer is a set of Hue lamps, not a renderer. It may not need
+to know whether each individual source is geometrically occluded, only roughly how
+much light reaches the player and from which direction — and the ambient feed, which
+works and is measured to exactly zero indoors, already answers most of that. Before
+more renderer work, it is worth deciding how much per-light fidelity the lighting
+product actually requires.
+
+## One next step
+
+Ask the user that question before building anything further. If per-light occlusion
+at this fidelity is genuinely required, the swept query is the only remaining
+candidate on this data and needs a live controlled test with r chosen on physical
+grounds. If a conservative approximation suffices, the existing narrow fire path plus
+ambient may already be enough, and the remaining work is in the consumer.
+
+---
+
+# Previous checkpoint — narrow rendered/fire visibility restored, 2026-09-13 late, Codex
 
 ## User decision and scope
 
