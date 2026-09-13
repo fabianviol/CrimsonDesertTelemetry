@@ -21,10 +21,22 @@ that the loaded Telemetry module is the exact public 2.1.10 ASI (timestamp
 DesertLinkCore and MasterLooter were also loaded. This evidence supersedes the
 earlier unverified stale-package theory for these crashes.
 
+The owner also uses driver 616.92, on an RTX 3080, and has never reproduced this
+crash. Thus all three relevant systems share the driver, while only the two external
+RTX 4080 SUPER/4090 systems currently reproduce the failure. In jimos87's dump the
+faulting game instruction dereferences `rcx == 0`; the crash thread retains
+CrimsonDesert/Streamline/NVIDIA-driver frames and no Telemetry frame. The immediate
+game exception is therefore the consequence of the missing graphics object after
+the logged swapchain failure, while Telemetry remains the cause under investigation
+for that earlier failure.
+
 The first concrete unsafe ordering is in the overlay factory callback: it installed
 five hooks on the just-created swapchain before NVIDIA Streamline's outer factory
 wrapper had finished linking that chain to its command queue. The 2.1.11-rc.2
 candidate defers only that tracking/hook step by 500 ms on the existing worker.
+NVIDIA's official Streamline v2.11.1 tag confirms the call order: the base
+`CreateSwapChainForHwnd` returns before Streamline runs its after-hooks and
+`setupSwapchainProxy`. Telemetry 2.1.10 called `Track()` on that inner return path.
 The public 2.1.10 release remains unchanged. Live multi-start validation on driver
 616.92 is pending; do not state that the external crash is fixed until it passes.
 

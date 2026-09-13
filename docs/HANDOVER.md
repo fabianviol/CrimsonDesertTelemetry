@@ -41,6 +41,18 @@ It also contains Streamline, Steam's `gameoverlayrenderer64.dll`,
 `CrimsonDesert.exe+0x3D0FEA6` reported independently by WHOLE. This is no longer
 an unverified stale-file or packaging hypothesis.
 
+The owner, WHOLE and jimos87 all used NVIDIA driver **616.92** in the relevant
+tests (RTX 3080, 4090 and 4080 SUPER respectively). The shared driver is therefore
+a compatibility condition worth retaining, but it is not sufficient to reproduce
+the crash: the owner has never seen it. Parsing jimos87's exception context against
+the exact local game executable (matching PE timestamp `0x6AA22ABB` and image size
+`0x16B0E000`) proves that the faulting instruction is `mov rax, [rcx]` with
+`rcx == 0`. The crash thread's retained stack contains CrimsonDesert, `sl.common`,
+`sl.reflex`, `sl.interposer` and `nvwgf2umx`, but no Telemetry frame. This supports
+the sequence shown by the game log: swapchain creation fails first, then the game
+dereferences its missing graphics object. It does not by itself absolve Telemetry
+of causing the preceding swapchain failure.
+
 ## First concrete defect and narrow fix
 
 `overlay_graphics.cpp` hooked Present/Present1/Resize/SetColorSpace synchronously
@@ -49,6 +61,15 @@ call has returned, but NVIDIA Streamline's outer wrapper has not yet associated 
 new swapchain with its command queue. The code therefore modified the swapchain
 implementation during Streamline's still-active creation path, exactly before its
 `linkSwapchainToCmdQueue` failure.
+
+This ordering is confirmed by NVIDIA's official Streamline **v2.11.1** source
+(tag commit `019994e18d256a3e92347888deb527feb7f58bc0`), the exact Streamline version
+reported by both users. Its `IDXGIFactory2_CreateSwapChainForHwnd` calls the base
+factory first, then invokes Streamline's after-hooks, and only afterward calls
+`setupSwapchainProxy`. Telemetry 2.1.10 ran `Track()` while that base call was
+returning, so its five swapchain hooks were installed before those two Streamline
+steps. The rc.2 delay therefore removes a demonstrated ordering violation rather
+than merely tuning a timeout after the crash.
 
 The hotfix retains the returned COM objects without inspecting or patching them.
 The existing overlay worker calls `Track()` 500 ms later, after the wrapper stack
@@ -72,7 +93,8 @@ Build, managed tests and package self-test pass. All eight D3D12 HUD/notificatio
 light-marker SDR/scRGB smoke modes pass after being updated to assert the deliberate
 post-create delay. Microsoft Defender found no threats in either exact rc.2 file.
 VirusTotal is intentionally deferred until a live-validated final artifact exists.
-Repeated and external 616.92 starts are still required before calling the crash fixed.
+Repeated starts by an affected 616.92 user are still required before calling the
+crash fixed because their evidence proves the old failure is intermittent.
 
 ### Local live validation — pass 1 of 3
 
@@ -96,11 +118,14 @@ RTX 4080/4090 acceptance by the affected users is the decisive test.
 
 ## One next step
 
-Send the exact 2.1.11-rc.2 ZIP to WHOLE and jimos87 for one clean test with Overlay,
-Notifications, Lights and LightOverlay enabled. Ask whether the HUD/markers initialize
-and whether the Streamline `E_ACCESSDENIED` remains. If either user still crashes,
-preserve the new game log and dump before changing code; compare the exception offset
-and loaded modules to this checkpoint.
+Send the exact 2.1.11-rc.2 ZIP to at least one of the two affected users for three
+clean starts with Overlay, Notifications, Lights and LightOverlay enabled. One
+affected user reproducing three successful starts is enough for the first external
+acceptance gate; the second user is useful confirmation, not a prerequisite for
+learning whether the ordering fix works. Ask whether the HUD/markers initialize and
+whether the Streamline `E_ACCESSDENIED` remains. If a run still crashes, preserve the
+new game log and dump before changing code; compare the exception offset and loaded
+modules to this checkpoint.
 
 ---
 
