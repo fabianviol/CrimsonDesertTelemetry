@@ -1,5 +1,11 @@
 # Live source-visibility regressions — 2026-09-12
 
+> **Why these false clears happen is now measured:** the field stores a thin
+> signed band around surfaces, not solid interiors, so a ray can cross geometry
+> without the interpolated value ever going nonpositive. See
+> [SDF_BAND_LIMIT.md](SDF_BAND_LIMIT.md). It confirms this document's conclusion
+> that a larger hit tolerance cannot be the solution, and explains the cause.
+
 ## Current `.4` room test: fresh paired field still reports four clear sources
 
 User installed `.4` via DMM, PID 34380, started 16:12:57 CEST. The ASI, code DLLs
