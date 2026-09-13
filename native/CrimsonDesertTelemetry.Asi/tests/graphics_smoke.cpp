@@ -374,6 +374,11 @@ int wmain(int argc, wchar_t** argv)
         desc.Format = swapchainFormat; desc.BufferCount = 3;
         desc.SampleDesc.Count = 1; desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        ComPtr<IDXGISwapChain1> initialChain;
+        Check(factory->CreateSwapChainForHwnd(gpu.queue.Get(), window, &desc, nullptr, nullptr, &initialChain));
+        initialChain.Reset();
+        // NVIDIA Streamline may replace the base chain inside its outer factory
+        // wrapper. A pending telemetry reference must not block that nested create.
         ComPtr<IDXGISwapChain1> chain1;
         Check(factory->CreateSwapChainForHwnd(gpu.queue.Get(), window, &desc, nullptr, nullptr, &chain1));
         ComPtr<IDXGISwapChain3> chain; Check(chain1.As(&chain));
@@ -420,6 +425,19 @@ int wmain(int argc, wchar_t** argv)
             if (screenshot || inspect) return SaveBuffer(gpu, buffer.Get(), screenshot);
             return Pixels{};
         };
+        // Also replace a chain after the overlay has accepted it. This models a
+        // runtime display/HDR transition while keeping the HWND unchanged.
+        chain.Reset();
+        chain1.Reset();
+        Check(factory->CreateSwapChainForHwnd(gpu.queue.Get(), window, &desc, nullptr, nullptr, &chain1));
+        Check(chain1.As(&chain));
+        MaintainGraphics();
+        Require(std::string(GraphicsStatus()).find("waiting for graphics wrappers") != std::string::npos,
+            "Replacement swapchain was tracked before graphics wrappers could finish");
+        Sleep(550);
+        MaintainGraphics();
+        Require(std::string(GraphicsStatus()).find("Overlay ready") != std::string::npos,
+            "HUD did not adopt the replacement swapchain");
         if (allOn)
         {
             // Exercise actual Present/Present1 with all three graphics features

@@ -1,6 +1,8 @@
-[size=5][b]Crimson Desert Telemetry 2.1.10[/b][/size]
+[size=5][b]Crimson Desert Telemetry 2.1.11[/b][/size]
 
 [b]Live light, player, render-camera and ambient/sky telemetry for Crimson Desert, with local HTTP/WebSocket APIs, fullscreen light markers and a configurable 3D radar.[/b]
+
+[b]TL;DR:[/b] 2.1.11 addresses the traced NVIDIA Streamline/DXGI swapchain-replacement crash path while keeping all released telemetry features enabled. Per-light wall/terrain occlusion is still unfinished and excluded from production. The goal is reliable ambient exposure plus direct player-to-light visibility for fires, candles and lamps, including off-screen sources. The full current source is on GitHub, and I gladly welcome testing, technical ideas, reviews, forks and pull requests that help reach that goal.
 
 Inspect current contributions from fires, candles, lanterns and other game lights: world position, linear HDR RGB, derived luminance, and direction/cone angle for recognized spotlights. Independent player position/root orientation and the native render camera are included. A separate grouped/EMA stream smooths lights without changing or removing the raw records. One ASI starts the local telemetry host automatically.
 
@@ -14,9 +16,11 @@ The goal is telemetry that answers both how exposed the player/camera location i
 
 The current blocker is consistent occlusion in all its forms. Fires, candles and other lamps still disagree with walls, buildings and terrain in controlled tests. Ambient passed a reversible open -> enclosed -> open test, but its camera-orientation semantics still need validation.
 
-[b]Per-light geometric occlusion is excluded from production 2.1.10.[/b] F11 and occlusion-hiding INI settings are absent because the concealed-source tests failed. Markers can therefore appear through walls. Raw and smoothed light records remain available without hidden filtering; retained visibility metadata reports unknown/disabled.
+[b]Per-light geometric occlusion is excluded from production 2.1.11.[/b] F11 and occlusion-hiding INI settings are absent because the concealed-source tests failed. Markers can therefore appear through walls. Raw and smoothed light records remain available without hidden filtering; retained visibility metadata reports unknown/disabled.
 
 The complete current development state and preserved research are on [url=https://github.com/fabianviol/CrimsonDesertTelemetry]GitHub[/url]. Everyone is welcome to fork the repository, test alternatives and contribute improvements.
+
+I gladly welcome help with the remaining occlusion work: controlled in-game tests, D3D12 or geometry analysis, implementation ideas, code review and pull requests are all useful. Please keep evidence separated by game build, source type and exact player/light position.
 
 [size=4][b]Install or upgrade[/b][/size]
 
@@ -72,7 +76,7 @@ Ambient schema: http://127.0.0.1:27311/v1/ambient/schema
 Ambient WebSocket: ws://127.0.0.1:27311/v1/ambient/stream
 [/code]
 
-The raw light routes use schema 1.4. The smoothed feed is separate and groups nearby contributions before applying a configurable 200 ms EMA; proximity grouping is not physical lamp identity. Ambient includes global sky coefficients, camera-local sky exposure and a derived local estimate. It is renderer telemetry, not a physical brightness measurement. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md]API reference and client examples[/url]. The API exposes telemetry and does not control game actions.
+The raw light routes use schema 1.5 when lights are enabled; production visibility metadata remains unknown/disabled. The smoothed feed is separate and groups nearby contributions before applying a configurable 200 ms EMA; proximity grouping is not physical lamp identity. Ambient includes global sky coefficients, camera-local sky exposure and a derived local estimate. It is renderer telemetry, not a physical brightness measurement. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md]API reference and client examples[/url]. The API exposes telemetry and does not control game actions.
 
 [size=4][b]SDR and HDR[/b][/size]
 
@@ -80,9 +84,9 @@ The D3D12 UI supports SDR, HDR10 and FP16 scRGB, selected from the game's output
 
 [size=4][b]Startup and compatibility[/b][/size]
 
-Version 2.1.10 waits for the host's first valid playable-world player/render-camera state before arming native light and sky GPU capture. Command-list submission and submitted GPU-fence waits now have separate bounds and report the exact failing stage. The final local start after a graphics-driver update and shader rebuild passed without the earlier long-loading timeout.
+Version 2.1.11 waits for the host's first valid playable-world player/render-camera state before arming native light and sky GPU capture. Command-list submission and submitted GPU-fence waits have separate bounds and report the exact failing stage.
 
-Public 2.0.2 users reported incomplete companion deployment and graphics-feature crashes. The deployment and graphics symptoms are separate. The exact external GPU/driver, overlays and faulting module/offset are still unavailable, so 2.1.10 is not presented as a confirmed fix for those systems. Please include the full INI plus bootstrap, host, native and overlay logs when reporting a crash. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md]Current compatibility record[/url].
+Two NVIDIA 616.92 users reproduced CreateSwapChainForHwnd failing with E_ACCESSDENIED during Streamline 2.11.1 setup, followed by a game null dereference. Version 2.1.11 defers HUD hook installation until graphics wrappers finish and releases Telemetry's old flip-model swapchain references before Streamline or the game creates a replacement for the same window. Automated nested and runtime display/HDR replacement tests pass. Confirmation on both affected external systems remains pending; please attach a DMM support bundle if the crash persists. [url=https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md]Current compatibility record[/url].
 
 [size=4][b]What the measurements mean[/b][/size]
 
@@ -92,11 +96,11 @@ The external host reads game memory; the ASI uses guarded renderer/D3D12 hooks a
 
 [size=4][b]Validation and integrity[/b][/size]
 
-Final validation passed with all six deployed files matching the release ZIP, every supported production feature enabled, live raw/smoothed/ambient HTTP and WebSocket feeds, and F8/F9/F10 toggled off and on in game. Automated checks passed 70/70 managed controls and 27/27 selected production-relevant native controls.
+Automated validation passed 71/71 managed controls and 30/30 native controls. The D3D12 suite includes every SDR/scRGB UI combination plus immediate nested and later runtime swapchain replacement. Package validation confirms the complete production payload and CDT_RESEARCH=OFF. The exact final 2.1.11 package still needs the short live second-monitor/HDR replacement test and affected-user multi-start confirmation.
 
-ZIP SHA-256: [code]1A8DD7641E9431AA0FE383E68706D9519A0B93E2ED5E6A70129C4C4552DEBD24[/code]
-ASI SHA-256: [code]8028E9EE43E846F79075618F9B7A522F5F66E2EB1784FFB48AF178AAFC0C0A78[/code]
+ZIP SHA-256: [code]CB7DD68FFAA548A53F2A5303870C012F9CD0CC44944A46A0F59BF274457C5052[/code]
+ASI SHA-256: [code]06EE760E33E499252AF072711C28D55D2D65127E50B98A3E4FD26B39ADEC1B63[/code]
 
-The exact final ZIP reported 0/66 on VirusTotal. The exact ASI reported 5/71, the same five detecting vendors as the preceding release candidate; local Microsoft Defender custom scans reported no threat for either exact file. These results apply only to the hashes above.
+The exact final ZIP reported 0/68 on VirusTotal. The exact ASI reported 4/71; this is no regression from public 2.1.10's 5/71 result. Local Microsoft Defender custom scans reported no threat for either exact file. These results apply only to the hashes above.
 
 [b]Credits:[/b] Created by fabianviol, developed with Claude and Codex (OpenAI). Thanks to the community research sources and libraries credited in the repository. [url=https://github.com/fabianviol/CrimsonDesertTelemetry]Source, documentation and dependency notices[/url]. MIT-licensed unofficial community project; not affiliated with Pearl Abyss.

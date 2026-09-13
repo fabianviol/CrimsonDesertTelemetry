@@ -1,4 +1,4 @@
-Crimson Desert Telemetry 2.1.10
+Crimson Desert Telemetry 2.1.11
 ==============================
 Live light contributions, player/render-camera telemetry and local ambient data,
 with a corner HUD, 3D light radar, fullscreen markers and startup/error notices.
@@ -51,10 +51,12 @@ Complete ZIP contents do not prove complete manager deployment. JSON Mod Manager
 and manual ASI-loader installation need the same files; their current full
 installation/uninstallation matrix remains pending.
 
-Known unresolved report: a public 2.0.2 user reported missing DMM host/cfg files,
-then a separate graphics-feature crash after repairing deployment. The cause and
-affected GPU/driver environment are unverified. This candidate is not a confirmed
-fix for that report. See docs/COMPATIBILITY_ISSUES.md online.
+Compatibility focus: 2.1.11 fixes an overlay-owned DXGI reference that could keep
+an old flip-model swapchain alive while NVIDIA Streamline or the game replaced it
+for the same window. That failure was observed as CreateSwapChainForHwnd
+E_ACCESSDENIED. Automated nested/startup-style and runtime display/HDR replacement
+tests pass. Confirmation on the two external reporter systems remains pending;
+include a DMM support bundle if a crash persists.
 
 Controls and configuration
 --------------------------
@@ -97,7 +99,7 @@ Ambient:   http://127.0.0.1:27311/v1/ambient
 Smoothed:  http://127.0.0.1:27311/v1/lights/smoothed
 
 The host listens on loopback only. Do not launch another host on its port.
-Routes remain v1; light-enabled snapshots use additive schema1.4, otherwise1.1.
+Routes remain v1; light-enabled snapshots use additive schema1.5, otherwise1.1.
 SourceVisibility metadata remains unknown/disabled with null attenuation.
 Authored/rendered arrays overlap. One lamp may produce multiple contributions.
 This is not a full360-degree registry; a missing source does not prove OFF.

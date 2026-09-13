@@ -42,10 +42,9 @@ It also contains Streamline, Steam's `gameoverlayrenderer64.dll`,
 an unverified stale-file or packaging hypothesis.
 
 The owner, WHOLE and jimos87 all used NVIDIA driver **616.92** in the relevant
-tests (RTX 3080, 4090 and 4080 SUPER respectively). The shared driver is therefore
-a compatibility condition worth retaining, but it is not sufficient to reproduce
-the crash: the owner has never seen it. Parsing jimos87's exception context against
-the exact local game executable (matching PE timestamp `0x6AA22ABB` and image size
+tests (RTX 3080, 4090 and 4080 SUPER respectively). Parsing jimos87's exception
+context against the exact local game executable (matching PE timestamp
+`0x6AA22ABB` and image size
 `0x16B0E000`) proves that the faulting instruction is `mov rax, [rcx]` with
 `rcx == 0`. The crash thread's retained stack contains CrimsonDesert, `sl.common`,
 `sl.reflex`, `sl.interposer` and `nvwgf2umx`, but no Telemetry frame. This supports
@@ -71,8 +70,9 @@ factory `CreateSwapChain`/`CreateSwapChainForHwnd` call. Combined with the offic
 v2.11.1 factory order, this places the failure in DLFG's post-create linking work:
 the base swapchain has been returned, but the Streamline after-hook has not finished.
 That is the precise interval in which 2.1.10 installed five shared swapchain-method
-hooks and which rc.2 now leaves untouched. No second code defect is established by
-the current evidence; external multi-start validation of rc.2 remains the next gate.
+hooks and which 2.1.11 now leaves untouched. The external startup failure remains
+distinct from the owner's later runtime display-transition crash until affected-user
+tests establish whether both were fixed.
 
 ## First concrete defect and narrow fix
 
@@ -89,38 +89,62 @@ reported by both users. Its `IDXGIFactory2_CreateSwapChainForHwnd` calls the bas
 factory first, then invokes Streamline's after-hooks, and only afterward calls
 `setupSwapchainProxy`. Telemetry 2.1.10 ran `Track()` while that base call was
 returning, so its five swapchain hooks were installed before those two Streamline
-steps. The rc.2 delay therefore removes a demonstrated ordering violation rather
+steps. The deferred tracking therefore removes a demonstrated ordering violation rather
 than merely tuning a timeout after the crash.
 
-The hotfix retains the returned COM objects without inspecting or patching them.
-The existing overlay worker calls `Track()` 500 ms later, after the wrapper stack
-has completed. No research hooks, tracing system or new production feature was
-added. The public 2.1.10 artifact remains unchanged on Nexus.
+The first rc.2 attempt still retained the newly returned swapchain in a pending
+`ComPtr`. Microsoft documents that a flip-model HWND can have only one swapchain;
+keeping the old one alive can make replacement creation fail. The owner then
+reproduced that exact DXGI failure locally at 16:17:07 by switching the game's
+output/HDR state for a newly connected second monitor. The game logged
+`CreateSwapChainForHwnd failed: -2147024891` twice and crashed with `0xC0000005`
+at `CrimsonDesert.exe+0x3D05303`. This is a runtime replacement path and a different
+downstream crash routine from the users' startup RVA `0x3D0FEA6`; do not merge the
+two acceptance claims.
+
+The local DMM support ZIP and its 17,409,728-byte minidump are preserved under the
+Git-ignored `artifacts/crash-reports/local-20260913-161707`; dump SHA-256 is
+`290587A6193989B6AE8D8E23A4A7DF71BB7774498D3A9A59F3CF178310D2DF68`.
+Disassembly of the local fault shows a null/invalid structure at `mov rsi,[rax+30h]`
+inside the game's swapchain/backbuffer rebuild routine, not the external users'
+`GetCurrentBackBufferIndex` null call.
+
+The final narrow fix records each pending HWND and, before either hooked DXGI
+factory create function runs, releases only Telemetry's pending or active
+swapchain/renderer/queue references for that same HWND. It waits for submitted HUD
+GPU work before releasing active resources. The worker still waits 500 ms before
+installing presentation hooks. No research hook, tracing system or new production
+feature was added. The public 2.1.10 artifact remains unchanged on Nexus until the
+owner uploads 2.1.11.
 
 Work is isolated on branch `codex/streamline-swapchain-fix` in
 `C:/DEV/CrimsonDesertTelemetry-hotfix`, based on public `origin/main` commit
-`a245299`. Paused source-visibility commit `f750974` is preserved on branch
+`a6e973d`. Paused source-visibility commit `f750974` is preserved on branch
 `codex/source-visibility-paused` and was not included.
 
-Candidate package (rc.1 was an equivalent intermediate build and is superseded):
+Final-version package (not yet uploaded to Nexus):
 
-- `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-rc.2-ModManagers.zip`
-- production `CDT_RESEARCH=OFF` ASI: 1,275,392 bytes, SHA-256
-  `95D733491FB8C09CCD7D80C5800F87C6379BFD6B178299C1902D6F0F89541EEF`
-- ZIP: 799,538 bytes, SHA-256
-  `3EE1F93368E673A876218C9F7C89DB2C47EF37962FA64F103E9EA1D0D8F07226`
+- `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.11-ModManagers.zip`
+- production `CDT_RESEARCH=OFF` ASI: 1,276,416 bytes, SHA-256
+  `06EE760E33E499252AF072711C28D55D2D65127E50B98A3E4FD26B39ADEC1B63`
+- ZIP: 800,147 bytes, SHA-256
+  `CB7DD68FFAA548A53F2A5303870C012F9CD0CC44944A46A0F59BF274457C5052`
 
-Build, managed tests and package self-test pass. All eight D3D12 HUD/notification/
-light-marker SDR/scRGB smoke modes pass after being updated to assert the deliberate
-post-create delay. Microsoft Defender found no threats in either exact rc.2 file.
-VirusTotal is intentionally deferred until a live-validated final artifact exists.
+Build, 71 managed controls, 30 native CTests and package self-test pass. All eight
+D3D12 HUD/notification/light-marker SDR/scRGB smoke modes now create a replacement
+immediately while the first chain is pending and again after the HUD accepted the
+next chain. Microsoft Defender found no threats in either exact 2.1.11 file.
+VirusTotal reports 0/68 for the exact ZIP and 4/71 for the exact ASI. The ASI
+result is not a regression from public 2.1.10's 5/71 result. Local Defender found
+no threat in either exact file.
 Repeated starts by an affected 616.92 user are still required before calling the
 crash fixed because their evidence proves the old failure is intermittent.
 
-### Local live validation — pass 1 of 3
+### Local live evidence
 
 On 2026-09-13 at 15:03, the owner launched the exact rc.2 ASI on an RTX 3080 with
-NVIDIA driver 616.92. The installed ASI hash matches the candidate above. The
+NVIDIA driver 616.92. That superseded ASI's SHA-256 was
+95D733491FB8C09CCD7D80C5800F87C6379BFD6B178299C1902D6F0F89541EEF. The
 overlay log records the intended sequence:
 
 ```text
@@ -133,14 +157,17 @@ After five minutes the game process was still responsive. Native light capture
 was armed after the playable-world signal, recurring rendered-light capture was
 ready, `/v1/health` reported `playing`, and player/camera, authored lights,
 rendered lights and Ambient were all live. This is the first successful cold-start
-control on the affected driver. The owner has never reproduced the reported crash
-during development, so repeating local starts would add little evidence. External
-RTX 4080/4090 acceptance by the affected users is the decisive test.
+control on the affected driver. At 16:17 the later monitor/HDR switch reproduced
+the separate runtime replacement crash described above. The final 2.1.11 binary
+with the reference-release fix has not yet completed this same local transition.
+External RTX 4080/4090 startup acceptance remains a separate decisive test.
 
 ## One next step
 
-Send the exact 2.1.11-rc.2 ZIP to at least one of the two affected users for three
-clean starts with Overlay, Notifications, Lights and LightOverlay enabled. One
+Install the exact 2.1.11 ZIP locally and repeat the second-monitor/HDR output switch
+that caused the 16:17 crash. Then send the same unchanged ZIP to at least one of the
+two affected users for three clean starts with Overlay, Notifications, Lights and
+LightOverlay enabled. One
 affected user reproducing three successful starts is enough for the first external
 acceptance gate; the second user is useful confirmation, not a prerequisite for
 learning whether the ordering fix works. Ask whether the HUD/markers initialize and

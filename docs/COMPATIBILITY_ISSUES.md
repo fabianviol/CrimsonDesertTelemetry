@@ -1,4 +1,4 @@
-+# Current compatibility reports
+# Current compatibility reports
 
 ## Two current Nexus reports — 2026-09-13
 
@@ -21,9 +21,10 @@ that the loaded Telemetry module is the exact public 2.1.10 ASI (timestamp
 DesertLinkCore and MasterLooter were also loaded. This evidence supersedes the
 earlier unverified stale-package theory for these crashes.
 
-The owner also uses driver 616.92, on an RTX 3080, and has never reproduced this
-crash. Thus all three relevant systems share the driver, while only the two external
-RTX 4080 SUPER/4090 systems currently reproduce the failure. In jimos87's dump the
+The owner also uses driver 616.92 on an RTX 3080. The owner later reproduced a
+separate runtime swapchain-creation failure while changing the game's output/HDR
+state for a newly connected second monitor; the two external systems still own the
+Streamline startup reproduction. In jimos87's dump the
 faulting game instruction dereferences `rcx == 0`; the crash thread retains
 CrimsonDesert/Streamline/NVIDIA-driver frames and no Telemetry frame. The immediate
 game exception is therefore the consequence of the missing graphics object after
@@ -44,17 +45,36 @@ the `linkSwapchainToCmdQueue` error path logs the negative HRESULT returned dire
 by its internal factory `CreateSwapChain`/`CreateSwapChainForHwnd` call. Together
 with the official v2.11.1 factory ordering, this places the failure during DLFG's
 post-create linking work, after the base swapchain return and before the Streamline
-after-hook completes. That is exactly the interval rc.2 no longer modifies.
+after-hook completes. That is exactly the interval 2.1.11 no longer modifies.
 
 The first concrete unsafe ordering is in the overlay factory callback: it installed
 five hooks on the just-created swapchain before NVIDIA Streamline's outer factory
-wrapper had finished linking that chain to its command queue. The 2.1.11-rc.2
-candidate defers only that tracking/hook step by 500 ms on the existing worker.
+wrapper had finished linking that chain to its command queue. Version 2.1.11
+defers that tracking/hook step by 500 ms on the existing worker.
 NVIDIA's official Streamline v2.11.1 tag confirms the call order: the base
 `CreateSwapChainForHwnd` returns before Streamline runs its after-hooks and
 `setupSwapchainProxy`. Telemetry 2.1.10 called `Track()` on that inner return path.
-The public 2.1.10 release remains unchanged. Live multi-start validation on driver
-616.92 is pending; do not state that the external crash is fixed until it passes.
+The first deferred candidate still held the returned chain in a pending COM pointer.
+That is unsafe when Streamline or the game replaces a flip-model swapchain for the
+same HWND: DXGI permits only one such chain per HWND, so Telemetry's extra reference
+can make the replacement fail with E_ACCESSDENIED. The final 2.1.11 code releases
+only its references for the same HWND before either factory-create call proceeds,
+waiting for any submitted HUD GPU work first.
+
+The owner's local runtime failure occurred at 16:17:07 after switching the game's
+second-monitor/HDR output. Its game log contains CreateSwapChainForHwnd failed:
+-2147024891 twice, then 0xC0000005 at CrimsonDesert.exe+0x3D05303. Its DMM support
+bundle and 17,409,728-byte dump are preserved outside Git; dump SHA-256 is
+290587A6193989B6AE8D8E23A4A7DF71BB7774498D3A9A59F3CF178310D2DF68.
+That local rebuild routine differs from the external startup crash routine. Treat
+the two live acceptance tests separately even though both exercise swapchain
+lifetime. WHOLE's SDR reproduction still disproves HDR as a necessary cause.
+
+Automated D3D12 tests now pass both an immediate nested replacement and a later
+replacement after the HUD adopted a chain, in every SDR/scRGB UI mode. The public
+2.1.10 release remains unchanged until 2.1.11 is uploaded. External multi-start
+validation on an affected system is pending; do not state that the external crash
+is fixed until it passes.
 
 ## Historical report relayed on 2026-09-12, posted around 08:30
 

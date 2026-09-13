@@ -19,7 +19,7 @@ the sky and environment** and **which individual nearby game lights can actually
 reach it through world geometry**, including sources off-screen or behind the
 camera. Current development targets **Steam build 25246367**.
 
-The current blocker is reliable per-light geometric visibility. Production 2.1.10
+The current blocker is reliable per-light geometric visibility. Production 2.1.11
 excludes that unfinished path. The current research candidate instead traces from
 the player to the union of authored and rendered source positions, without camera
 direction or screen projection, and separates all 17 preserved labelled offline
@@ -175,15 +175,15 @@ Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
 Product versions and API versions are separate: routes remain **HTTP API v1**.
-Stable production 2.1.10 uses snapshot schema **1.4** with lights enabled; the
-current source-visibility research host uses **1.5** because it adds metadata to
-authored lights. With lights disabled it remains **1.1**. Optional per-light
+Production 2.1.11 uses snapshot schema **1.5** with lights enabled because it
+retains disabled visibility capability metadata. With lights disabled it remains
+**1.1**. Optional per-light
 metadata adds no route and changes no original RGB values. Clients should check
 capability/status fields and freshness instead of assuming every source is always available.
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
-- Stable 2.1.10 retains rendered `sourceVisibility` as `unknown` / `disabled`.
+- Production 2.1.11 retains rendered `sourceVisibility` as `unknown` / `disabled`.
   Research schema 1.5 can attach player-to-source results to authored and rendered
   records; original records and RGB smoothing remain unchanged.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
@@ -205,12 +205,14 @@ The external host alone can read player/camera and supported authored lights. **
 
 ## Compatibility and limits
 
-The current release candidate targets **Steam build 25246367 / EXE 1.0.0.2850**, using its exact validated SHA-256. The historical 2.0.0 package targets build 25116796 / EXE 1.0.0.2760. Older player/camera profiles remain preserved; those historical checks do not establish compatibility of a current native package with an older or unknown build.
+The current release targets **Steam build 25246367 / EXE 1.0.0.2850**, using its exact validated SHA-256. The historical 2.0.0 package targets build 25116796 / EXE 1.0.0.2760. Older player/camera profiles remain preserved; those historical checks do not establish compatibility of a current native package with an older or unknown build.
 
-Current user reports, including missing DMM host companion files and a separately
-reported graphics crash with unproven cause, are tracked in
-[compatibility issues](docs/COMPATIBILITY_ISSUES.md). These reports do not establish
-a shared cause or a verified fix.
+Version 2.1.11 addresses a DXGI swapchain-lifetime defect found while investigating
+two NVIDIA Streamline crash reports. Telemetry now releases its old flip-model
+swapchain references before Streamline or the game creates a replacement for the
+same window. Automated nested and runtime replacement tests pass; confirmation on
+the two external reporter systems remains pending. Evidence stays in
+[compatibility issues](docs/COMPATIBILITY_ISSUES.md).
 
 Native capture validates the EXE, hook instructions and surrounding caller/binding contexts before instrumentation. Shared build contracts and the read-only command below help recover after updates:
 

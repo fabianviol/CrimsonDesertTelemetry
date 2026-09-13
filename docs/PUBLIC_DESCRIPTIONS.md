@@ -1,9 +1,7 @@
-# Public descriptions — 2.1.10, 2026-09-12
+# Public descriptions — 2.1.11, 2026-09-13
 
-These texts describe release 2.1.10, not the old Nexus 2.0.2 download. Use them
-only with the exact package and hashes in [release checks](STABLE_RELEASE_VALIDATION.md).
-The external graphics crash remains unresolved; this local release is not a
-confirmed fix for that user's system.
+These texts describe release 2.1.11. It addresses the Streamline/DXGI crash path;
+confirmation on both external reporter systems remains pending.
 
 ## GitHub About text
 
@@ -21,6 +19,12 @@ The mod provides a 3D light radar, fullscreen markers, status notices and local
 HTTP/WebSocket APIs for overlays, tools and future lighting integrations.
 It does not drive physical lamps itself.
 
+**TL;DR:** 2.1.11 addresses the traced NVIDIA Streamline/DXGI swapchain-replacement
+crash path while keeping the released telemetry features enabled. Per-light
+wall/terrain occlusion remains unfinished and excluded from production. The full
+current source is on GitHub, and testing, technical ideas, reviews, forks and pull
+requests toward reliable ambient and direct player-to-light visibility are welcome.
+
 Target: **Steam build 25246367 / EXE 1.0.0.2850**. Native capture rejects unknown builds.
 
 ### Goal and current development blocker
@@ -35,6 +39,10 @@ passed open/enclosed/open, but camera-orientation semantics still need validatio
 The complete current development state and preserved research are on
 [GitHub](https://github.com/fabianviol/CrimsonDesertTelemetry). Everyone is welcome
 to fork the repository, test alternatives and contribute improvements.
+
+Help with controlled in-game tests, D3D12 or geometry analysis, implementation
+ideas, code review and pull requests is welcome. Evidence should identify the
+game build, source type and exact player/light position.
 
 - Rendered light positions, linear HDR RGB, luminance and recognized spotlight directions/cone angles; separate authored light records.
 - A separate grouped/EMA light feed preserving the original contributions.
@@ -101,13 +109,16 @@ delete only those four leftover Telemetry files, then import the new ZIP. Do not
 delete the ASI loader. A clean import then deployed all six current files exactly.
 JSON Mod Manager/manual-loader lifecycle validation remains pending.
 
-### Known compatibility report
+### Streamline/DXGI compatibility fix
 
-A public 2.0.2 user reported missing DMM host/cfg companions, then a graphics-feature
-crash after manually restoring them. The preserved ZIP contains them, but their
-exact deployed hashes, DMM version, GPU/driver and crash module/offset are unverified.
-**The cause remains unresolved; a local pass does not establish a fix for that
-system.** See
+Two affected NVIDIA 616.92 users reproduced `CreateSwapChainForHwnd` failing with
+`E_ACCESSDENIED` during Streamline 2.11.1 setup, followed by a game null dereference.
+Version 2.1.11 defers HUD hook installation until wrapper setup completes and
+releases Telemetry's references before a flip-model swapchain is replaced for the
+same game window. The owner separately reproduced the same DXGI failure during a
+runtime monitor/HDR transition; that path has a different downstream crash offset.
+Automated nested and runtime replacement tests pass. External affected-user
+confirmation is still required before claiming universal resolution. See
 [compatibility issues](https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md).
 
 ### Data limits

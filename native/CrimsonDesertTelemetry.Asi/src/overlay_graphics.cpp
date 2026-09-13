@@ -278,6 +278,7 @@ struct State
     {
         ComPtr<IUnknown> device;
         ComPtr<IDXGISwapChain> chain;
+        HWND window{};
         ULONGLONG readyAt{};
     };
     std::mutex mutex, hooksMutex;
@@ -526,7 +527,37 @@ void Track(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
     }
     catch (...) { Data().status = "Swapchain tracking failed; telemetry continues."; }
 }
-void QueueTrack(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
+void BeforeSwapchainCreate(HWND window) noexcept
+{
+    if (!window) return;
+    try
+    {
+        auto& state = Data();
+        std::lock_guard lock(state.mutex);
+        state.pendingSwapchains.erase(std::remove_if(state.pendingSwapchains.begin(), state.pendingSwapchains.end(),
+            [window](const auto& pending) { return pending.window == window; }), state.pendingSwapchains.end());
+        if (state.window != window) return;
+        if (state.renderer && !state.renderer->WaitIdle())
+        {
+            state.status = "GPU timeout before swapchain replacement; HUD disabled. Restart recommended.";
+            state.renderer->fault = true;
+            return;
+        }
+        // A flip-model HWND can own only one swapchain. Release every reference
+        // held by the overlay before DXGI or a graphics wrapper replaces it.
+        state.renderer.reset();
+        state.candidate.Reset();
+        state.queue.Reset();
+        state.window = nullptr;
+        state.resizing = false;
+        state.failed = false;
+        state.changingColorSpace = state.explicitColorSpace = false;
+        state.outputLabel = "D3D12 / waiting";
+        state.status = "Existing HUD swapchain released for replacement.";
+    }
+    catch (...) { Data().status = "Swapchain replacement preparation failed; telemetry continues."; }
+}
+void QueueTrack(IUnknown* suppliedDevice, IDXGISwapChain* chain, HWND window) noexcept
 {
     try
     {
@@ -538,9 +569,10 @@ void QueueTrack(IUnknown* suppliedDevice, IDXGISwapChain* chain) noexcept
         // after DXGI returns. Patching the swapchain vtable here races that work
         // and can make Streamline fail its link with E_ACCESSDENIED. Retain the
         // COM objects only; the worker installs presentation hooks after the
-        // wrapper stack has completed.
+        // wrapper stack has completed. BeforeSwapchainCreate drops this pending
+        // reference if a wrapper replaces the chain for the same HWND first.
         if (state.pendingSwapchains.size() == 8) state.pendingSwapchains.erase(state.pendingSwapchains.begin());
-        state.pendingSwapchains.push_back({suppliedDevice, chain, GetTickCount64() + GraphicsWrapperSettleMs});
+        state.pendingSwapchains.push_back({suppliedDevice, chain, window, GetTickCount64() + GraphicsWrapperSettleMs});
         state.status = "Game D3D12 swapchain created; waiting for graphics wrappers to finish.";
     }
     catch (...) { Data().status = "Swapchain handoff failed; telemetry continues."; }
@@ -566,15 +598,18 @@ void ProcessPendingSwapchains() noexcept
 }
 HRESULT STDMETHODCALLTYPE OnCreateChain(IDXGIFactory* factory, IUnknown* device, DXGI_SWAP_CHAIN_DESC* desc, IDXGISwapChain** chain)
 {
+    const HWND window = desc ? desc->OutputWindow : nullptr;
+    BeforeSwapchainCreate(window);
     const HRESULT result = Data().createChain(factory, device, desc, chain);
-    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain);
+    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain, window);
     return result;
 }
 HRESULT STDMETHODCALLTYPE OnCreateHwnd(IDXGIFactory2* factory, IUnknown* device, HWND window, const DXGI_SWAP_CHAIN_DESC1* desc,
     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* fullscreen, IDXGIOutput* output, IDXGISwapChain1** chain)
 {
+    BeforeSwapchainCreate(window);
     const HRESULT result = Data().createHwnd(factory, device, window, desc, fullscreen, output, chain);
-    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain);
+    if (SUCCEEDED(result) && chain) QueueTrack(device, *chain, window);
     return result;
 }
 }
