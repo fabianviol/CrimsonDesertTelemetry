@@ -1,4 +1,30 @@
-# Current checkpoint — why per-light occlusion fails, 2026-09-14, Claude
+# Current checkpoint — first external crash confirmation, 2026-09-14, Claude
+
+**jimos87 reports 2.1.11 works**, 14 Sep 2026 09:57 on the Nexus posts page:
+"It is now working for me :D ty". That is the first external acceptance of the
+Streamline swapchain fix, from the user whose DMM support bundle and minidump made
+the diagnosis possible in the first place. His system: RTX 4080 SUPER, driver
+616.92, DMM 2.8.1.
+
+**Read it for what it is.** It is one user reporting success, not the three
+consecutive clean starts the 18:46 checkpoint asked for, and his own earlier
+evidence showed the failure was intermittent -- one run exiting normally followed by
+one crashing. So this raises confidence substantially without closing the question.
+WHOLE (RTX 4090) has not reported back.
+
+Public wording updated accordingly: the Nexus description no longer says
+confirmation is pending on both systems, it says one of two has confirmed. Nothing
+else was tightened -- the fix is still described as diagnosed and tested rather than
+proven for every configuration.
+
+**Still unanswered and worth asking:** how many monitors each affected user runs,
+and whether HDR is active. The owner's two local crashes both happened on a
+two-monitor extended setup during an output change, and the 19:20 crash on 2026-09-13
+is still unexplained with no dump. WER is armed for the next one.
+
+---
+
+# Previous checkpoint — why per-light occlusion fails, 2026-09-14, Claude
 
 Offline research only, from preserved volumes. No game, no capture, no build, no
 package. The narrow fire-visibility restoration below is untouched and still
