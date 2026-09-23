@@ -9,6 +9,10 @@ stowed: visible illumination vanished on AUS and returned on AN. The full
 authored-light vector stayed unchanged at three progressing frames; do not
 repeat that branch. The previously proven filtered ManyLights path now also
 passed a controlled AN/AUS/AN on the new game build (details below).
+The owner explicitly wants future rendered-light checks to reuse this secured
+ManyLights path, not to infer status from another array. Its exact build guards
+and live response must be revalidated after updates; failure means unavailable
+until diagnosed, not permission to guess a replacement.
 
 The exact-build `25477059` definition is deliberately `research`, so the
 managed public compatibility resolver still rejects it. A separate explicit

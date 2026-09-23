@@ -18,6 +18,7 @@ renderer research. Read HANDOVER first.
 6. Scoped reversible console/graphics instrumentation is authorized for lighting research. Never call an instrumented run an untouched baseline. Require game shutdown for ASI replacement.
 7. Use PowerShell 7 where suitable. Keep `AGENTS.md` and `CLAUDE.md` byte-identical.
 8. When a game action or user input is needed, finish the current turn immediately. Do not keep a command/session open, poll, sleep, or spend tokens waiting for the owner. The owner will return with `AN`, `AUS`, `weiter`, or another message; resume only then. Keep each handoff short.
+9. For rendered-light data and AN/AUS status, start with the proven, camera-paired filtered ManyLights path. Never guess a substitute from the authored-light vector or another nearby structure. After a game update, validate the exact EXE, hook/context bytes, live bridge and controlled light response before trusting that path. If it fails, report unavailable and diagnose the failure; do not restart broad light-source research by default.
 
 ## Locations
 
