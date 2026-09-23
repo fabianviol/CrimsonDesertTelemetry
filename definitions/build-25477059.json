@@ -4,12 +4,12 @@
   "steamBuildId": "25477059",
   "executableVersion": "1.0.0.2976",
   "executableSha256": "57DA440D72F4DB974F25FEF047CF84C4DADD999A88CB2A3C5AF4C9BD67FDE1E7",
-  "status": "research",
+  "status": "locally-validated",
   "allowAutomaticCompatibility": false,
   "nativeCapture": {
     "schemaVersion": 1,
     "contractId": "manylights-filter-25477059-v1",
-    "status": "research",
+    "status": "locally-validated",
     "requiresExactExecutable": true,
     "skyProducerRva": 59970327,
     "hookRva": 64657370,
@@ -79,8 +79,8 @@
       "pattern": "C5 FB 11 3D ?? ?? ?? ?? 44 89 3D ?? ?? ?? ??",
       "ripOffset": 4,
       "ripEnd": 8,
-      "confidence": "candidate",
-      "source": "Static candidate in build 25477059; not validated by controlled player movement."
+      "confidence": "locally-validated",
+      "source": "Exact build 25477059: live HUD and integrated telemetry showed changing X/Y and stable scene correspondence while the player moved from the camp to the shed on 2026-09-23; package acceptance still requires one final live run."
     },
     {
       "name": "static-position-z-write",
@@ -89,8 +89,8 @@
       "pattern": "C5 FB 11 3D ?? ?? ?? ?? 44 89 3D ?? ?? ?? ??",
       "ripOffset": 11,
       "ripEnd": 15,
-      "confidence": "candidate",
-      "source": "Static candidate in build 25477059; not validated by controlled player movement."
+      "confidence": "locally-validated",
+      "source": "Exact build 25477059: live HUD and integrated telemetry showed changing Z and stable scene correspondence while the player moved from the camp to the shed on 2026-09-23; package acceptance still requires one final live run."
     }
   ],
   "engineCamera": {
@@ -116,8 +116,8 @@
       "pattern": "48 8B 0D ?? ?? ?? ?? 48 8B 49 30 E8 ?? ?? ?? ?? 84 C0 75 23 49 8B 46 08 48 8B 48 68 C6 44 24 20 00",
       "ripOffset": 3,
       "ripEnd": 7,
-      "confidence": "candidate",
-      "source": "Bounded live RTTI/basis check on build 25477059; movement control still pending."
+      "confidence": "locally-validated",
+      "source": "Exact build 25477059: bounded live RTTI/basis check plus changing player-root yaw and position during camp-to-shed movement on 2026-09-23; package acceptance still requires one final live run."
     },
     "worldSystemToActorManagerOffset": 48,
     "actorManagerToPlayerActorOffset": 80,

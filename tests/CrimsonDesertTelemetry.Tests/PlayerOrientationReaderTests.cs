@@ -38,6 +38,12 @@ internal static class PlayerOrientationReaderTests
     {
         var research = BuildDefinition.LoadAll("not-a-profile-directory")
             .Single(d => d.SteamBuildId == "25477059");
+        // Exercise the private gate with an in-memory candidate; the real build
+        // profile is now locally validated and must stay releasable.
+        research.Status = "research";
+        research.NativeCapture!.Status = "research";
+        foreach (var anchor in research.Patterns.Append(research.PlayerRoot!.WorldSystemPattern))
+            anchor.Confidence = "candidate";
         var candidate = research.PlayerRoot!;
         Check(candidate.WorldSystemPattern.Confidence == "candidate", "Expected a candidate player anchor.");
         Reject(() => PlayerOrientationReader.FromResolvedAddress(0x110000, candidate),

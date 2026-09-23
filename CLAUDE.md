@@ -2,12 +2,12 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-13): restore only the earlier narrow production
-rendered-source/fire visibility path, then live-test and antivirus-scan its exact
-ASI and ZIP. The 2.1.11 Streamline/DXGI fix is already public; external reporter
-confirmation remains pending but does not justify reopening crash work here. Keep
-the broad player/all-source visibility bridge in research and do not start new
-renderer research. Read HANDOVER first.
+Current user priority (2026-09-23): validate one new 2.1.14 ZIP, then publish it
+if the live check passes. Preserve published 2.1.11. A possible Win32 error 6
+bootstrap handle bug is fixed, but the external report is unconfirmed. The narrow
+source-visibility classifier remains included as EXPERIMENTAL and OFF by default
+because live false-visible verdicts were observed. Do not reopen renderer research
+for this release. Read HANDOVER first.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.
@@ -32,4 +32,8 @@ renderer research. Read HANDOVER first.
 - Old research paths under `C:\DEV\CrimsonHue` map to this repository after the 2026-09-06 migration.
 - Antivirus detections: [docs/ANTIVIRUS_FINDINGS.md](docs/ANTIVIRUS_FINDINGS.md) records what was MEASURED. Microsoft's Wacatac verdict is toolchain drift, proven by rebuilding the 2.0.0 source today, and no feature removal fixes it. Bitdefender's Barys signature is pinned to commit 6937fa9, the bounded repeated readback series. Do not cut functionality on a hunch; both detections were misattributed at first glance.
 - Build 25246367: current production Ambient Occlusion passed controlled open/enclosed/open validation on 2026-09-12. Production per-light source visibility is still under implementation/validation; preserved research success is not production acceptance. Exact state and evidence are in `docs/HANDOVER.md`. Hardcoded native anchors also live in `spatial_acquire.cpp`; verify the applicable anchors after any update.
-- Completion requires BOTH Ambient and per-light geometric visibility in `CDT_RESEARCH=OFF`, including a real visible/blocked/visible light test and off-screen/behind-camera coverage. Do not start CrimsonHue consumer work or final release before both pass. Keep production narrow, raw/EMA light records intact and research code preserved. Keep t224, engine-raymarch reconstruction, DXR and new PIX work closed unless a concrete failure requires it.
+- For 2.1.12, release acceptance requires the exact ZIP live test of the supported
+  telemetry, ManyLights, ambient and HUD paths. Per-light geometric visibility is
+  not an acceptance criterion while explicitly experimental and default-off. Keep
+  raw/EMA light records intact and research preserved. Do not claim the visibility
+  classifier is reliable or complete.

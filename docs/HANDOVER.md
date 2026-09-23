@@ -1,3 +1,69 @@
+# 2.1.14 ZIP ready for one live acceptance run — 2026-09-23, Codex
+
+**Use only the latest candidate**:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.14-ModManagers.zip`, SHA-256
+`C325B987FDE681C7516C9F298D6D8E1939195BD7AE5A624C6C68A73CB0898F1A`.
+Its package README and repository README lead with the public Crimson Desert
+patch version **2.03.02**, confirmed against Pearl Abyss's 2026-09-23 patch
+notes (<https://crimsondesert.pearlabyss.com/en-US/News/Notice/Detail?_boardNo=133>).
+EXE file version 1.0.0.2976 and Steam build ID 25477059 are only technical
+identifiers. The installed EXE hash matches the exact guarded build profile.
+The owner correctly distinguished the public patch version from EXE metadata;
+do not call 1.0.0.2976 the game version again.
+
+Package self-test and exact ZIP/expanded-payload equality passed; final
+2.1.14 expanded package passed the bootstrap smoke with no parent stdin.
+30/30 native tests and managed tests passed on the same code. No new in-game
+run has happened yet. Earlier immutable local candidates 2.1.12 and 2.1.13
+were never installed or published; do **not** use them for the one live test.
+Next action is DMM install of exactly 2.1.14 while the game is closed, followed
+by one live integrated check. End the turn at user action; no polling.
+
+# Earlier 2.1.12 candidate checkpoint — superseded by 2.1.14
+
+The owner chose one production ZIP, keeping the narrow per-light geometric
+visibility path compiled but marking it EXPERIMENTAL and setting
+`SourceVisibility.Enabled=0` in the shipped INI. A live view in front of a shed
+had falsely labelled lights behind solid wood `SOURCE VISIBLE`; do not promote
+that classifier or include it in release acceptance. Normal raw/EMA ManyLights,
+ambient, HTTP/WebSocket and both HUDs remain enabled. Published 2.1.11 is untouched.
+
+Nexus user buck0021 reported only "error 6" and a speculative WebView diagnosis.
+The actual source and log have not been supplied, so the cause is unconfirmed.
+The ASI bootstrap did violate `STARTF_USESTDHANDLES`: it passed a non-inheritable
+host-log handle and the game's possibly absent stdin to `CreateProcessW`. The
+new code opens inheritable host-log and NUL-input handles, closes them after
+launch, and falls back to no redirection if NUL cannot be opened. The boot
+smoke now clears its own stdin to model a GUI process. This is a concrete
+hardening fix, not proof that the external report is resolved. A comment already
+requests the user's actual error location and bootstrap log; do not claim WebView
+is a requirement.
+
+The exact build 25477059 profile was promoted to `locally-validated` based on
+the prior all-on live run plus subsequent HUD captures after camp-to-shed player
+movement: position and yaw changed with the scene, native camera/ManyLights
+remained live, and ambient values were populated. Exact EXE hash is
+`57DA440D72F4DB974F25FEF047CF84C4DADD999A88CB2A3C5AF4C9BD67FDE1E7`;
+`allowAutomaticCompatibility=false`, so other EXEs still fail closed. The
+separate per-light visibility verdict is not part of this validation claim.
+
+The immutable candidate ZIP is
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-ModManagers.zip`, SHA-256
+`B37EE43EEE85E9DA4E71852CC29258E37B1D242D557D72FF3A850AF3BAC42016`.
+It is `CDT_RESEARCH=OFF`, targets Steam build 25477059, and contains the fixed
+bootstrap and default-off experimental INI. Package self-test passed; 30/30
+native CTests passed; managed tests passed after adapting the private-candidate
+gate test to an in-memory research fixture; the exact expanded ZIP passed the
+bootstrap smoke with no parent stdin and live HTTP health/schema/smoothed route.
+These are offline/host tests, not the owner's new game test.
+
+**Next step:** with the game closed, install exactly this ZIP through DMM; start
+and load one save. When the owner reports in-game, run one bounded integrated
+check (`scripts/Check-IntegratedTelemetry.ps1`) and inspect the status/HUD and
+bootstrap log. If it passes, finish main README/release ledger, commit, and
+publish to GitHub and Nexus. Never wait/poll for the owner between turns; and
+never overwrite either published 2.1.11 or this candidate ZIP.
+
 # Build 25477059 integrated.3 live check and integrated.4 candidate — 2026-09-23, Codex
 
 The owner installed `integrated.3` and sent a screenshot showing LIVE player,

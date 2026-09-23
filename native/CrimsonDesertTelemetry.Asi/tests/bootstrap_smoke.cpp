@@ -13,6 +13,18 @@
 
 namespace
 {
+class ClearedStandardInput
+{
+public:
+    ClearedStandardInput() : previous_(GetStdHandle(STD_INPUT_HANDLE)), cleared_(SetStdHandle(STD_INPUT_HANDLE, nullptr) != FALSE) {}
+    ~ClearedStandardInput() { if (cleared_) SetStdHandle(STD_INPUT_HANDLE, previous_); }
+    bool Cleared() const { return cleared_; }
+
+private:
+    HANDLE previous_ = nullptr;
+    bool cleared_ = false;
+};
+
 std::string HttpGet(const unsigned short port, const std::string_view path)
 {
     SOCKET socketHandle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -66,7 +78,7 @@ int wmain(const int argc, wchar_t** argv)
     const auto ini = directory / L"CrimsonDesertTelemetry.ini";
     const auto port = static_cast<unsigned short>(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()));
     const std::string schemaMarker = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str())
-        ? "\"schemaVersion\":\"1.4\"" : "\"schemaVersion\":\"1.1\"";
+        ? "\"schemaVersion\":\"1.5\"" : "\"schemaVersion\":\"1.1\"";
     if (std::filesystem::exists(directory / L"crimson-desert-telemetry.deps.json") ||
         std::filesystem::exists(directory / L"crimson-desert-telemetry.runtimeconfig.json"))
     {
@@ -81,6 +93,15 @@ int wmain(const int argc, wchar_t** argv)
         return 7;
     }
 
+    // The game is a GUI process; its standard input need not exist. Keep it
+    // absent until the ASI has started the host, then restore the test runner.
+    ClearedStandardInput noInput;
+    if (!noInput.Cleared())
+    {
+        std::wcerr << L"Could not clear the parent standard input for the bootstrap smoke test.\n";
+        WSACleanup();
+        return 10;
+    }
     HMODULE module = LoadLibraryW(argv[1]);
     if (module == nullptr)
     {

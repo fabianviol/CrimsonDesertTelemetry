@@ -58,7 +58,9 @@ All supported boolean values in packaged profiles are `0` and `1`. Runtime
 readers have historically accepted other nonzero integers; that is not an
 additional advertised boolean syntax. Changes require a game restart except
 the four runtime display toggles. Fractional values use a decimal point.
-Every offered boolean feature is 1 in the release template, including ShowDetails.
+Every supported non-experimental boolean feature is 1 in the release template,
+including ShowDetails. `SourceVisibility.Enabled=0` by default because its live
+geometric verdicts have produced false-visible results through solid geometry.
 
 Bootstrap settings are read in `src/bootstrap.cpp:252-268`, light/ambient source
 selection in `src/instruments.cpp:110-207`, UI settings in

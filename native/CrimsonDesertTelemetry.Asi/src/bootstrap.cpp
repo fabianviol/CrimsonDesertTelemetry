@@ -339,10 +339,24 @@ DWORD RunBootstrap()
     }
 
     const auto hostLogPath = directory / L"CrimsonDesertTelemetry.host.log";
+    SECURITY_ATTRIBUTES inheritableHandles{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     HANDLE hostLog = CreateFileW(hostLogPath.c_str(), FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &inheritableHandles, OPEN_ALWAYS,
         FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hostLog == INVALID_HANDLE_VALUE) hostLog = nullptr;
+    HANDLE hostInput = nullptr;
+    if (hostLog != nullptr)
+    {
+        hostInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &inheritableHandles, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hostInput == INVALID_HANDLE_VALUE)
+        {
+            Log(L"Could not open an inheritable null input for telemetry host; starting without redirected output.");
+            CloseHandle(hostLog);
+            hostLog = nullptr;
+            hostInput = nullptr;
+        }
+    }
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -351,7 +365,7 @@ DWORD RunBootstrap()
         startup.dwFlags = STARTF_USESTDHANDLES;
         startup.hStdOutput = hostLog;
         startup.hStdError = hostLog;
-        startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        startup.hStdInput = hostInput;
     }
 
     // Mod managers interpret loose .json files as game patches. Keep the .NET
@@ -378,6 +392,7 @@ DWORD RunBootstrap()
         hostLog != nullptr, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
         directory.c_str(), &startup, &process);
     const auto startError = started ? ERROR_SUCCESS : GetLastError();
+    if (hostInput != nullptr) CloseHandle(hostInput);
     if (hostLog != nullptr) CloseHandle(hostLog);
     if (!started)
     {

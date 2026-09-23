@@ -17,15 +17,14 @@ Global sky RGB itself remains unoccluded.
 The product goal is to answer both **how exposed the player/camera location is to
 the sky and environment** and **which individual nearby game lights can actually
 reach it through world geometry**, including sources off-screen or behind the
-camera. Current development targets **Steam build 25246367**.
+camera. The current source targets **Crimson Desert patch 2.03.02** on Steam
+for Windows. Internal EXE/Steam identifiers are listed under Compatibility.
 
-The current blocker is reliable per-light geometric visibility. Public production
-2.1.11 excludes that unfinished path. Current source restores the earlier narrow
-camera-to-rendered-source classifier that previously worked live for fires, while
-keeping the broader player/all-source candidate isolated under `CDT_RESEARCH=ON`.
-The restored path is awaiting a new live visible/blocked/visible test and exact
-antivirus scans before release; candles, lamps and complete off-screen coverage are
-not claimed. The methods and limits are documented in
+Per-light geometric visibility remains experimental: the classifier has reported
+lights behind solid geometry as visible. It is included but **off by default**;
+raw and smoothed light data do not depend on it. The broader player/all-source
+candidate remains isolated under `CDT_RESEARCH=ON`. Candles, lamps and complete
+off-screen occlusion coverage are not claimed. Methods and limits are in
 [source visibility](docs/SOURCE_VISIBILITY.md).
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
@@ -42,7 +41,7 @@ not claimed. The methods and limits are documented in
 | **Fullscreen light overlay** | Markers at projected light positions; aim toward a source to inspect position, color, brightness and distance |
 | **3D light radar** | Nearby light contributions with height, player heading and a camera frustum that follows pitch and roll |
 | **Local API** | HTTP snapshots and health, WebSocket streaming, JSON Schema and JSON Lines recordings |
-| **Local ambient** | Camera-local sky-exposure estimate with independent frame/age, alongside global sky RGB; controlled open/enclosed/open acceptance on build 25246367 |
+| **Local ambient** | Camera-local sky-exposure estimate with independent frame/age, alongside global sky RGB; earlier controlled open/enclosed/open acceptance and a live reading on patch 2.03.02 |
 | **Status notices** | Brief success when data becomes ready; actionable startup/build/capture errors |
 
 Lighting, both HUD views and status notices are enabled in the supplied configuration. Each can be configured separately; the HUD is not required to consume the API.
@@ -80,7 +79,7 @@ Do not merge old binaries or metadata into the new package. Preserve your INI pr
 | **F8** | Show/hide the corner HUD and 3D radar |
 | **F9** | Toggle additional diagnostics |
 | **F10** | Show/hide fullscreen light markers |
-| **F11** | Show/hide lights with a fresh blocked verdict |
+| **F11** | Experimental show/hide for classified blocked lights; meaningful only if SourceVisibility is enabled |
 
 The HUD does not capture mouse input. Hiding it does not stop telemetry.
 These are defaults: all four shortcuts can be reassigned in the INI using decimal
@@ -104,7 +103,8 @@ ManyLightsSampleRateHz=20
 Enabled=1
 
 [SourceVisibility]
-Enabled=1
+; EXPERIMENTAL: current verdicts can be wrong behind solid geometry.
+Enabled=0
 
 [Overlay]
 Enabled=1
@@ -138,8 +138,8 @@ DurationMilliseconds=6000
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
 - `HdrPaperWhiteNits` controls all HDR UI brightness, including markers and notices with the corner HUD disabled. The default is 200 nits, clamped to 80–500. It does not change the game's HDR settings or metadata.
 - Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
-- `[SourceVisibility] Enabled=1` enables the current narrow camera-to-rendered-source classifier. It covers records present in the renderer capture; it is not a complete light registry and live acceptance currently exists only for the earlier fire implementation.
-- `HideOccluded=1` or F11 hides only sources with a fresh known blocked verdict from the HUD/radar. Unknown and stale sources remain shown. Raw and smoothed API records and RGB values remain complete.
+- `[SourceVisibility] Enabled=1` opts into an experimental camera-to-rendered-source classifier. It can falsely report a source behind solid geometry as visible. The default is `0`; it is not a reliable visibility filter or complete light registry.
+- `HideOccluded=1` or F11 experimentally hides sources with a fresh blocked verdict from the HUD/radar. Unknown and stale sources remain shown. Raw and smoothed API records and RGB values remain complete.
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
 
 The production `CDT_RESEARCH=OFF` profile contains the narrow current-volume SDF
@@ -184,17 +184,16 @@ Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
 Product versions and API versions are separate: routes remain **HTTP API v1**.
-Production 2.1.11 uses snapshot schema **1.5** with lights enabled and reports the
-excluded visibility capability as disabled. Current production source uses the same
-schema for its narrow rendered-source result. With lights disabled it remains
+The current source uses snapshot schema **1.5** with lights enabled and reports
+the default-off experimental visibility capability as disabled. With lights disabled it remains
 **1.1**. Optional per-light
 metadata adds no route and changes no original RGB values. Clients should check
 capability/status fields and freshness instead of assuming every source is always available.
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
-- Public production 2.1.11 retains rendered `sourceVisibility` as `unknown` / `disabled`.
-  The current OFF candidate can attach camera-to-source results to rendered records.
+- With the default INI, rendered `sourceVisibility` stays `unknown` / `disabled`.
+  Opting in can attach experimental camera-to-source results to rendered records.
   Research schema 1.5 separately supports player-to-source results on authored and
   rendered records; original records and RGB smoothing remain unchanged.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
@@ -216,7 +215,12 @@ The external host alone can read player/camera and supported authored lights. **
 
 ## Compatibility and limits
 
-The current release targets **Steam build 25246367 / EXE 1.0.0.2850**, using its exact validated SHA-256. The historical 2.0.0 package targets build 25116796 / EXE 1.0.0.2760. Older player/camera profiles remain preserved; those historical checks do not establish compatibility of a current native package with an older or unknown build.
+The new package targets **Crimson Desert patch 2.03.02** on Steam for Windows.
+Technical identity: EXE file version `1.0.0.2976`, Steam build ID `25477059`,
+and the exact validated EXE SHA-256. The file version is not the public game
+patch version. Older
+player/camera profiles remain preserved; they do not establish compatibility of
+the current native package with an older or unknown game executable.
 
 Version 2.1.11 addresses a DXGI swapchain-lifetime defect found while investigating
 two NVIDIA Streamline crash reports. Telemetry now releases its old flip-model
@@ -239,7 +243,7 @@ Important boundaries:
 - A missing contribution is **not** a permanent physical OFF state. Stable lamp IDs, physical lumens and validated light ranges are not supplied.
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
 - The radar can show behind-camera contributions still present in the feed, but is **not** a complete 360-degree registry.
-- Public 2.1.11 markers include lights behind geometry. Current source restores the narrow rendered-source verdict and F11 display filter as a new candidate; it does not yet establish correct candles, lamps, all known sources or complete 360-degree coverage. Fast motion can expose capture/projection latency.
+- Markers can include lights behind geometry. The optional rendered-source verdict and F11 filter are experimental and off by default; they do not establish correct candles, lamps, all known sources or complete 360-degree coverage. Fast motion can expose capture/projection latency.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
 - The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The console that can change debug values is available only in a separate `CDT_RESEARCH=ON` build.
