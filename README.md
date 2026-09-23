@@ -11,8 +11,11 @@ Inspect positions, colors and brightness of current light contributions from fir
 
 The [grouped and smoothed local-light stream](docs/SMOOTHED_LIGHTS.md) retains
 the original contributions. The separate [ambient feed](docs/AMBIENT_STREAM.md)
-carries global sky, camera-local sky visibility and their working product estimate.
-Global sky RGB itself remains unoccluded.
+carries global sky RGB. Camera-local sky visibility and its derived working RGB
+estimate are available only when the native spatial sample succeeds; on patch
+2.03.02 they have also remained unavailable for an entire live session. Those
+fields are nullable and must not be treated as guaranteed output. Global sky RGB
+itself remains unoccluded.
 
 The product goal is to answer both **how exposed the player/camera location is to
 the sky and environment** and **which individual nearby game lights can actually
@@ -41,7 +44,7 @@ off-screen occlusion coverage are not claimed. Methods and limits are in
 | **Fullscreen light overlay** | Markers at projected light positions; aim toward a source to inspect position, color, brightness and distance |
 | **3D light radar** | Nearby light contributions with height, player heading and a camera frustum that follows pitch and roll |
 | **Local API** | HTTP snapshots and health, WebSocket streaming, JSON Schema and JSON Lines recordings |
-| **Local ambient** | Camera-local sky-exposure estimate with independent frame/age, alongside global sky RGB; earlier controlled open/enclosed/open acceptance and a live reading on patch 2.03.02 |
+| **Ambient / sky** | Global sky RGB; optional camera-local sky visibility and derived working RGB when a valid spatial sample arrives. Earlier tests succeeded, but the local fields were unavailable in one 2.03.02 release-candidate session. |
 | **Status notices** | Brief success when data becomes ready; actionable startup/build/capture errors |
 
 Lighting, both HUD views and status notices are enabled in the supplied configuration. Each can be configured separately; the HUD is not required to consume the API.
