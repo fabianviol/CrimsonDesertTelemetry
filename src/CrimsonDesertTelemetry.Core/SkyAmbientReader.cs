@@ -44,7 +44,8 @@ public sealed record SkyAmbientSnapshot(string Status, string? Reason = null,
 }
 
 /// <summary>Separate native mapping, PID/start identity, seqlock and freshness guards.</summary>
-public sealed class SkyAmbientReader(int processId, long processStartFileTime) : IDisposable
+public sealed class SkyAmbientReader(int processId, long processStartFileTime,
+    uint expectedProducerRva = SkyAmbientReader.SkyProducerRva) : IDisposable
 {
     public const int HeaderBytes = 128, SceneBytes = 2816, PayloadBytes = 1024;
     public const int TotalBytes = HeaderBytes + SceneBytes + PayloadBytes;
@@ -96,7 +97,8 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
                 Thread.MemoryBarrier();
                 var after = _view.ReadUInt64(16);
                 if (before != after || (after & 1) != 0 || BitConverter.ToUInt64(bytes, 16) != after) continue;
-                var result = Decode(bytes, processId, processStartFileTime, Environment.TickCount64);
+                var result = Decode(bytes, processId, processStartFileTime, Environment.TickCount64,
+                    expectedProducerRva);
                 _cached = bytes; _lock = after;
                 return result;
             }
@@ -107,7 +109,8 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
         { Reset(); return Unavailable("bridge-invalid"); }
     }
 
-    public static SkyAmbientSnapshot Decode(byte[] bytes, int pid, long start, long now)
+    public static SkyAmbientSnapshot Decode(byte[] bytes, int pid, long start, long now,
+        uint expectedProducerRva = SkyProducerRva)
     {
         if (bytes.Length != TotalBytes || BitConverter.ToUInt32(bytes, 0) != 0x53445443 ||
             BitConverter.ToUInt32(bytes, 4) != BridgeVersion || BitConverter.ToUInt32(bytes, 8) != HeaderBytes ||
@@ -122,7 +125,7 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime) :
             0 => "bridge-waiting", 2 => "unsupported-build", 3 => "native-fault",
             4 => "legacy-plugin-conflict", _ => "capture-disabled-or-stopped"
         });
-        if (BitConverter.ToUInt32(bytes, 84) != 7 || BitConverter.ToUInt32(bytes, 76) != SkyProducerRva ||
+        if (BitConverter.ToUInt32(bytes, 84) != 7 || BitConverter.ToUInt32(bytes, 76) != expectedProducerRva ||
             BitConverter.ToUInt64(bytes, 88) == 0 || BitConverter.ToUInt32(bytes, 80) != 0)
             throw new InvalidDataException("Sky sample lacks validated producer/fence/scene provenance.");
         var tick = BitConverter.ToInt64(bytes, 48);

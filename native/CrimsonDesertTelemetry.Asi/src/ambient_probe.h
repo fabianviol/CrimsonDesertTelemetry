@@ -26,6 +26,7 @@ constexpr bool UpdatedGameBuild = native_contract::BuildId == "25477059";
 constexpr std::array<uint32_t, 2> AmbientHookRvas = UpdatedGameBuild
     ? std::array<uint32_t, 2>{0x3931317, 0x3934313}
     : std::array<uint32_t, 2>{0x384BD77, 0x384ED63};
+static_assert(AmbientHookRvas[0] == native_contract::SkyProducerRva);
 // The [sky+0x98] source-field load preceding each hook. Held here rather than
 // inline so one relocation touches one place.
 constexpr std::array<uint32_t, 2> AmbientSourceRvas = UpdatedGameBuild

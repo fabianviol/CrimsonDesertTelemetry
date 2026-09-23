@@ -264,6 +264,13 @@ int TraceCameraCopies(string[] commandArgs)
 
 int Serve(string[] commandArgs)
 {
+    var privateExactCount = commandArgs.Count(argument =>
+        argument.Equals("--private-exact-build", StringComparison.OrdinalIgnoreCase));
+    if (privateExactCount > 1) return UsageError("--private-exact-build may appear only once.");
+    var privateExact = privateExactCount == 1;
+    if (privateExact)
+        commandArgs = commandArgs.Where(argument =>
+            !argument.Equals("--private-exact-build", StringComparison.OrdinalIgnoreCase)).ToArray();
     if (!TryParseSmoothingOptions(commandArgs, out commandArgs, out var smoothing, out var smoothingError))
         return UsageError(smoothingError!);
     if (!TryParseLightOptions(commandArgs, out var positional, out var lightOptions, out var lightError) ||
@@ -275,10 +282,11 @@ int Serve(string[] commandArgs)
     var rateHz = positional.Length >= 2 ? int.Parse(positional[1]) : 60;
     if (port is < 1024 or > 65535 || rateHz is < 1 or > 240)
         return UsageError("serve expects [port; 1024-65535] [rate-hz; 1-240].");
-    return RunServer(port, rateHz, lightOptions, smoothing);
+    return RunServer(port, rateHz, lightOptions, smoothing, privateExact);
 }
 
-int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOptions smoothing)
+int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOptions smoothing,
+    bool privateExact)
 {
     using var cancellation = new CancellationTokenSource();
     using var timerResolution = WindowsTimerResolution.RequestFor(rateHz);
@@ -327,7 +335,7 @@ int RunServer(int port, int rateHz, LightOptions lightOptions, LightSmoothingOpt
         app.Map("/v1/lights/smoothed/stream", context => StreamWebSocket(context, state, cancellation.Token, true));
 
         Console.Error.WriteLine($"Listening on http://127.0.0.1:{port} at {rateHz} Hz.");
-        var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, lightOptions, cancellation.Token),
+        var samplingTask = Task.Run(() => SampleContinuously(state, rateHz, lightOptions, privateExact, cancellation.Token),
             cancellation.Token);
         try
         {
@@ -414,7 +422,7 @@ async Task WaitForWebSocketClose(WebSocket socket, CancellationToken cancellatio
     }
 }
 
-async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptions lightOptions,
+async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptions lightOptions, bool privateExact,
     CancellationToken cancellationToken)
 {
     long sequence = 0;
@@ -424,7 +432,7 @@ async Task SampleContinuously(TelemetryServerState state, int rateHz, LightOptio
         try
         {
             state.SetHealth("waiting-for-game", false, null, null, 0, null, null);
-            try { runtime = OpenRuntime(lightOptions); }
+            try { runtime = OpenRuntime(lightOptions, privateExact); }
             catch (InvalidOperationException)
             {
                 await Task.Delay(1000, cancellationToken);
@@ -529,7 +537,7 @@ async Task<(float X, float Y, float Z)?> WaitForPlayerPosition(RuntimeContext ru
     return null;
 }
 
-RuntimeContext OpenRuntime(LightOptions lightOptions = default)
+RuntimeContext OpenRuntime(LightOptions lightOptions = default, bool privateExact = false)
 {
     var process = GameDiscovery.FindRunningProcess()
         ?? throw new InvalidOperationException("Crimson Desert is not running.");
@@ -537,11 +545,13 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
     {
         var executable = process.MainModule?.FileName
             ?? throw new InvalidOperationException("The Crimson Desert executable path is unavailable.");
-        var resolved = ResolveBuild(executable);
+        var resolved = ResolveBuild(executable, privateExact);
         var definition = resolved.Definition;
         if (resolved.Compatibility.Mode == "automatic")
             Console.Error.WriteLine($"Untested executable accepted by automatic compatibility checks " +
                 $"(reference layout {resolved.Compatibility.ReferenceBuild}). Runtime validation remains active.");
+        if (resolved.Compatibility.Mode == "research-exact")
+            Console.Error.WriteLine("PRIVATE UNVALIDATED exact-build integration test. Not a supported release.");
         var addresses = StaticPositionProbe.Resolve(process, executable, definition);
         var orientation = PlayerOrientationReader.Resolve(process, executable, definition);
         var reader = new ReadOnlyProcess(process);
@@ -552,14 +562,15 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
             var camera = new EngineCameraReader(reader,
                 checked((ulong)process.MainModule!.BaseAddress.ToInt64()), cameraDefinition);
             EngineLightReader? lights = null;
-            if (lightOptions.Enabled && resolved.Compatibility.Mode == "tested" && definition.EngineLights is { } lightDefinition)
+            var exactLightProfile = resolved.Compatibility.Mode is "tested" or "research-exact";
+            if (lightOptions.Enabled && exactLightProfile && definition.EngineLights is { } lightDefinition)
                 lights = new EngineLightReader(reader,
                     checked((ulong)process.MainModule!.BaseAddress.ToInt64()), lightDefinition);
-            var rendered = lightOptions.Enabled && resolved.Compatibility.Mode == "tested" &&
+            var rendered = lightOptions.Enabled && exactLightProfile &&
                            definition.NativeCapture is not null
                 ? new RenderLightReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
             SourceVisibilityClient? visibility = null;
-            if (lightOptions.SourceVisibilityQuery && resolved.Compatibility.Mode == "tested" &&
+            if (lightOptions.SourceVisibilityQuery && exactLightProfile &&
                 definition.NativeCapture is not null)
             {
                 try { visibility = new SourceVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc()); }
@@ -583,7 +594,8 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default)
 IReadOnlyList<BuildDefinition> LoadDefinitions() =>
     BuildDefinition.LoadAll(Path.Combine(AppContext.BaseDirectory, "definitions"));
 
-ResolvedBuild ResolveBuild(string executable) => BuildCompatibility.Resolve(executable, LoadDefinitions());
+ResolvedBuild ResolveBuild(string executable, bool privateExact = false) =>
+    BuildCompatibility.Resolve(executable, LoadDefinitions(), privateExact);
 
 byte[] LoadEmbeddedSchema(string fileName = "telemetry-v1.schema.json")
 {
@@ -779,8 +791,9 @@ sealed class RuntimeContext(
     /// refused the executable. Those answers are accurate, where a hardcoded build
     /// name could only ever go stale at the next game update.
     /// </summary>
-    public SkyAmbientReader? Sky { get; } = resolved.Compatibility.Mode == "tested"
-        ? new SkyAmbientReader(process.Id, process.StartTime.ToFileTimeUtc()) : null;
+    public SkyAmbientReader? Sky { get; } = resolved.Compatibility.Mode is "tested" or "research-exact"
+        ? new SkyAmbientReader(process.Id, process.StartTime.ToFileTimeUtc(),
+            resolved.Definition.NativeCapture?.SkyProducerRva ?? SkyAmbientReader.SkyProducerRva) : null;
     public LightOptions LightOptions { get; } = lightOptions;
     public bool SupportsLights => Lights is not null;
 

@@ -104,6 +104,7 @@ public static class BuildProfileValidation
             definition.EngineLights?.Layout != "light-source-array-scene-global-v1")
             Fail("Native capture must use its supported exact-executable contract and coherent direct scene profile.");
         Rva(native.HookRva); Signature(native.HookSignature, 25, 25, exact: true);
+        Rva(native.SkyProducerRva);
         if (native.ContextSignatures is null || native.ContextSignatures.Count is < 1 or > 8 ||
             native.ContextSignatures.Any(c => c is null) ||
             native.ContextSignatures.Select(c => c.Rva).Distinct().Count() != native.ContextSignatures.Count)

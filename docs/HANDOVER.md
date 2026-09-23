@@ -1,3 +1,40 @@
+# Build 25477059 private all-on integration package — 2026-09-23, Codex
+
+The owner rejected another sequence of single-feature game runs: test all
+current **product** features at once. The game is closed. Use only the final
+private ZIP
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-integrated.2-ModManagers.zip`
+(SHA256 `7E4791625AA50D480CAB0B8AF18A73E7B334CF110549A61FB86D2BB1A8DE0703`).
+Immutable `integrated.1` preceded the build-specific Ambient reader correction;
+do not install `.1`. Nothing has been installed or publicly released yet.
+
+This exact-hash, `research`-status package has `CDT_RESEARCH=OFF` (current
+product paths, not mutually exclusive console/probe modes). INI enables
+Server, Notifications, Lights, ManyLights, Ambient, SourceVisibility, Overlay
+and LightOverlay. The bootstrap passes `--private-exact-build` to the managed
+host only because its native contract is explicitly private/research. The
+ordinary CLI resolver still rejects the research profile. The host labels
+compatibility `research-exact`; health `supportedBuild` remains null, never
+claims public support. Game EXE hash and native hook/context bytes must match.
+The Ambient reader now checks the per-build sky producer RVA from the profile;
+otherwise the relocated hook would have been falsely reported as invalid.
+
+Managed tests passed. Native CTest passed 30/30; offline preflight matched the
+new ManyLights and Ambient callsites against the installed EXE. The package
+self-test passed, and all eight product switches above were confirmed `1` in
+the nine-file ZIP. Those are build/offline checks, not a live all-feature result.
+One bounded post-install check is `scripts/Check-IntegratedTelemetry.ps1`,
+which reads health, player/camera, raw/EMA lights, visibility, ambient and the
+three WebSocket streams into one fresh report under `artifacts/`. It makes no
+game changes and does not wait for the owner. The owner should also visually
+confirm both HUDs/status; the report cannot judge presentation.
+
+**One next step:** install integrated `.2` via DMM while the game is closed,
+start/load once, then run the one-pass check when the owner reports in-game.
+Separate genuine failures by their status/reason; do not restart broad light
+research or claim everything works merely because the INI enabled it. End the
+turn whenever user action is needed; no polling or waiting.
+
 # Build 25477059 ManyLights recovery — controlled fire AN/AUS/AN, 2026-09-23, Codex
 
 Interaction rule from the owner: never keep a turn/session running while waiting

@@ -12,6 +12,7 @@ inline constexpr bool ResearchContract = @CDT_RESEARCH_CONTRACT@;
 inline constexpr std::string_view ContractId = "@CDT_CONTRACT_ID@";
 inline constexpr std::array<unsigned char, 32> ExecutableSha256{@CDT_EXE_HASH@};
 inline constexpr std::uint64_t SceneGlobalRva = @CDT_SCENE_GLOBAL@ULL;
+inline constexpr std::uint32_t SkyProducerRva = @CDT_SKY_PRODUCER_RVA@U;
 inline constexpr std::uint64_t HookRva = @CDT_HOOK_RVA@ULL;
 inline constexpr std::array<std::uint8_t, @CDT_HOOK_SIZE@> HookSignature{@CDT_HOOK_BYTES@};
 struct ContextSignature { std::uint64_t rva; std::span<const std::uint8_t> bytes; };

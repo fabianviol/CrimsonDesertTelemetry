@@ -11,6 +11,7 @@
     "contractId": "manylights-filter-25477059-v1",
     "status": "research",
     "requiresExactExecutable": true,
+    "skyProducerRva": 59970327,
     "hookRva": 64657370,
     "hookSignature": "48 8B 5C 24 50 48 8B CB E8 B9 4E B1 FF 48 8B 03 48 8B CB FF 90 18 02 00 00",
     "contextSignatures": [

@@ -156,6 +156,7 @@ public sealed class NativeCaptureDefinition
     public string ContractId { get; set; } = "";
     public string Status { get; set; } = "";
     public bool RequiresExactExecutable { get; set; }
+    public uint SkyProducerRva { get; set; } = 0x384BD77;
     public ulong HookRva { get; set; }
     public string HookSignature { get; set; } = "";
     public List<NativeContextSignature> ContextSignatures { get; set; } = [];

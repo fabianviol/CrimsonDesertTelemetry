@@ -144,7 +144,9 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
             {
                 Status = snapshot.Game.State,
                 GameRunning = gameRunning,
-                SupportedBuild = true,
+                // Private exact-hash diagnostics publish data but are not a
+                // declaration that the game build is publicly supported.
+                SupportedBuild = _health.Compatibility?.Mode == "research-exact" ? null : true,
                 GameBuild = snapshot.Game.Build,
                 LastSequence = snapshot.Sequence,
                 LastCapture = snapshot.CapturedAt,

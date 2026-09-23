@@ -65,6 +65,10 @@ internal static class SkyAmbientTests
     {
         SkyAmbientSnapshot Read(byte[] b, long now = 1100) => SkyAmbientReader.Decode(b, 42, 123, now);
         Check(Read(Bridge()).Status == "available", "Valid sky rejected.");
+        var relocated = Bridge(); U32(relocated,76,0x3931317);
+        Check(SkyAmbientReader.Decode(relocated,42,123,1100,0x3931317).Status == "available",
+            "Build-specific sky producer was rejected.");
+        Invalid(() => SkyAmbientReader.Decode(relocated,42,123,1100));
         foreach (var offset in new[]{0,4,8,12,24,32,40,68,72,76,84,88})
         { var b=Bridge(); U32(b,offset,0); Invalid(()=>Read(b)); }
         var odd=Bridge(); U64(odd,16,3); Invalid(()=>Read(odd));

@@ -37,9 +37,18 @@ internal static class BuildCompatibilityTests
         fixture.Definition.EngineCamera!.ContextVtableFingerprints.Clear();
         var result = BuildCompatibility.Resolve(fixture.Path, [fixture.Definition]);
         Check(result.Compatibility.Mode == "tested", "Known EXE did not take the existing path.");
+        fixture.Definition.Status = "research";
+        Reject(() => BuildCompatibility.Resolve(fixture.Path, [fixture.Definition]),
+            "Research exact hash was accepted without a private opt-in.");
+        var privateResult = BuildCompatibility.Resolve(fixture.Path, [fixture.Definition], allowPrivateResearchExact: true);
+        Check(privateResult.Compatibility.Mode == "research-exact" &&
+            privateResult.GameBuild == fixture.Definition.SteamBuildId,
+            "Private exact-hash research mode was not distinctly labelled.");
         fixture.Bytes[0x70] = 1; // A harmless DOS-header byte changes the identity, not the game build string.
         fixture.Save();
         Reject(() => BuildCompatibility.Resolve(fixture.Path, [fixture.Definition]), "Changed hash bypassed validation.");
+        Reject(() => BuildCompatibility.Resolve(fixture.Path, [fixture.Definition], allowPrivateResearchExact: true),
+            "Private research opt-in accepted a changed executable hash.");
     }
 
     public static void MissingAndAmbiguousCode()

@@ -11,7 +11,8 @@ public sealed record ResolvedBuild(BuildDefinition Definition, string GameBuild,
 
 public static class BuildCompatibility
 {
-    public static ResolvedBuild Resolve(string executable, IReadOnlyList<BuildDefinition> definitions)
+    public static ResolvedBuild Resolve(string executable, IReadOnlyList<BuildDefinition> definitions,
+        bool allowPrivateResearchExact = false)
     {
         BuildProfileValidation.ValidateAll(definitions);
         var hash = GameDiscovery.ComputeSha256(executable);
@@ -19,6 +20,9 @@ public static class BuildCompatibility
             string.Equals(definition.ExecutableSha256, hash, StringComparison.OrdinalIgnoreCase));
         if (known is not null && known.Status == "locally-validated")
             return Result(executable, known, known, hash, "tested");
+        if (allowPrivateResearchExact && known is not null && known.Status == "research" &&
+            !known.AllowAutomaticCompatibility)
+            return Result(executable, known, known, hash, "research-exact");
         return ResolveAutomatic(executable, definitions, hash);
     }
 
@@ -49,7 +53,7 @@ public static class BuildCompatibility
 
     private static ResolvedBuild Result(string executable, BuildDefinition resolved, BuildDefinition reference,
         string hash, string mode) => new(resolved,
-        mode == "tested"
+        mode is "tested" or "research-exact"
             ? reference.SteamBuildId
             : GameDiscovery.ReadSteamBuildIdForExecutable(executable) ?? "unknown",
         new CompatibilityInfo(mode, hash, FileVersionInfo.GetVersionInfo(executable).FileVersion,

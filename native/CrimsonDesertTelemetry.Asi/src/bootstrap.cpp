@@ -4,6 +4,7 @@
 #include <bcrypt.h>
 #include "overlay.h"
 #include "instruments.h"
+#include "native_contract.generated.h"
 
 #include <algorithm>
 #include <array>
@@ -365,6 +366,11 @@ DWORD RunBootstrap()
 #endif
     commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
         L" --light-group-radius " + std::format(L"{}", groupRadius);
+    if (cdt::native_contract::ResearchContract)
+    {
+        commandLine += L" --private-exact-build";
+        Log(L"PRIVATE UNVALIDATED exact-build integration test; not a supported release.");
+    }
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
     mutableCommand.push_back(L'\0');
     PROCESS_INFORMATION process{};

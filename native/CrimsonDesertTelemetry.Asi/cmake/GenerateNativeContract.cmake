@@ -75,6 +75,13 @@ if(CDT_SCENE_GLOBAL EQUAL 0 OR NOT CDT_SCENE_GLOBAL EQUAL camera_global)
     message(FATAL_ERROR "Native and managed scene roots disagree")
 endif()
 cdt_number(CDT_HOOK_RVA nativeCapture hookRva)
+if(CDT_BUILD STREQUAL "25116796")
+    # Preserve the archived native build's old default; its ambient path was
+    # never part of this update's full-product recovery.
+    set(CDT_SKY_PRODUCER_RVA 59030903)
+else()
+    cdt_number(CDT_SKY_PRODUCER_RVA nativeCapture skyProducerRva)
+endif()
 cdt_require(hook STRING nativeCapture hookSignature)
 cdt_bytes(CDT_HOOK_BYTES CDT_HOOK_SIZE "${hook}")
 if(NOT CDT_HOOK_SIZE EQUAL 25)
