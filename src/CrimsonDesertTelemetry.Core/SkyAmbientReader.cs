@@ -91,7 +91,8 @@ public sealed class SkyAmbientReader(int processId, long processStartFileTime,
                 if ((before & 1) != 0) continue;
                 Thread.MemoryBarrier();
                 if (_cached is not null && before == _lock)
-                    return Decode(_cached, processId, processStartFileTime, Environment.TickCount64);
+                    return Decode(_cached, processId, processStartFileTime, Environment.TickCount64,
+                        expectedProducerRva);
                 var bytes = new byte[TotalBytes];
                 if (_view.ReadArray(0, bytes, 0, TotalBytes) != TotalBytes) throw new InvalidDataException("Short sky bridge.");
                 Thread.MemoryBarrier();

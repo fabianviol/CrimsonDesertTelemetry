@@ -698,6 +698,14 @@ void PollCapture()
     ReleaseSRWLockExclusive(&lock);
 }
 
+bool CaptureReady()
+{
+    AcquireSRWLockShared(&lock);
+    const bool ready = captureReady;
+    ReleaseSRWLockShared(&lock);
+    return ready;
+}
+
 uint32_t CaptureFailureCode()
 {
     AcquireSRWLockShared(&lock);

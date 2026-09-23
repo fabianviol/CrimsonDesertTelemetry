@@ -1,3 +1,44 @@
+# Build 25477059 integrated.3 live check and integrated.4 candidate — 2026-09-23, Codex
+
+The owner installed `integrated.3` and sent a screenshot showing LIVE player,
+camera, native light radar and fullscreen rendered lights. The bounded one-pass
+`scripts/Check-IntegratedTelemetry.ps1` report is
+`artifacts/integrated-check-20260923-205124.json`: health `playing`, exact
+private compatibility `research-exact`, player/camera/orientation and authored
+plus rendered lights available, smoothed groups available, all three WebSocket
+connections received. The ambient HTTP sample was available, but its WebSocket
+sample and most subsequent samples were unavailable. All 11–15 current rendered
+light sources had visibility `unknown/waiting-for-volume`, never fabricated
+clear/blocked. This was one all-on run, not a series of isolated feature tests.
+
+Ambient intermittency had a precise cache bug: `SkyAmbientReader.Capture`
+decoded a cached unchanged sample with the old default producer RVA instead of
+the build-specific `expectedProducerRva`. It reset the mapping and reported
+`bridge-invalid` followed by `bridge-missing` during its retry interval. Fixed
+in source and covered by a two-read relocated-producer mapping regression test.
+
+The SDF visibility acquisition was read *without changing game memory* using
+the preserved exact-ASI state-inspection script, retargeted in-memory to the
+installed ASI hash. Evidence is `artifacts/sdf-state-build25477059-20260923-2055.json`.
+Three stable readings showed `phase=Failed`, reason
+`list-reset-before-confirmed-submit`, no completed readback, and the last
+contexts at loading frames 7/8 with zero camera. The SDF path had armed before
+the managed host's playable-world signal, while ManyLights itself already
+waited for that signal. The change delays SDF interception until the same
+signal. It does **not** relax list/fence/identity guards or claim that the
+remaining GPU-list behavior is validated; a new live check is required.
+
+The next immutable private DMM ZIP is
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-integrated.4-ModManagers.zip`
+(SHA256 `11634393F778FF2A3C0BA6F57CF7BE9CA04488A6970945529C7339D54DFC9163`).
+`CDT_RESEARCH=OFF`, exact EXE hash, all current product switches on, profile
+still `research`. Managed tests and all 30 native CTests passed; package
+self-test passed. `.4` is built but **not installed or live validated**. The
+game was still open at last check with `.3`. Close it before replacing via DMM;
+after restart, run one bounded integrated report and inspect source-visibility
+reasons. If still unknown, inspect the exact ASI's SDF phase once, not another
+blind toggle series. Do not poll/wait for the owner; end the turn at user action.
+
 # Build 25477059 private all-on startup correction — 2026-09-23, Codex
 
 The owner installed `integrated.2` via DMM and started the game. Screenshot

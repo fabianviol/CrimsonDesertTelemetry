@@ -151,6 +151,12 @@ internal static class SkyAmbientTests
         Check(reader.Capture().Reason=="native-fault", "Cached result survived native fault.");
         U64(b,16,6); U32(b,28,1); U32(b,0,0); w.WriteArray(0,b,0,b.Length);
         Check(reader.Capture().Reason=="bridge-invalid", "Malformed mapping did not fail closed.");
+        var relocated=Bridge(); U32(relocated,24,(uint)Environment.ProcessId);
+        U32(relocated,76,0x3931317); U64(relocated,48,now); U64(relocated,56,now);
+        w.WriteArray(0,relocated,0,relocated.Length);
+        using var updated=new SkyAmbientReader(Environment.ProcessId,123,0x3931317);
+        Check(updated.Capture().Status=="available" && updated.Capture().Status=="available",
+            "A cached sample lost its build-specific sky producer identity.");
     }
     public static void Transport()
     {

@@ -4,12 +4,14 @@
 #include "submission_observer.h"
 #include "sdf_acquire.h"
 #include "render_bridge.h"
+#include "render_capture.h"
 #include "native_contract.generated.h"
 #include "console/mem.h"
 #include <windows.h>
 #include <d3d12.h>
 #include <MinHook.h>
 #include <array>
+#include <atomic>
 #include <wrl/client.h>
 #include <mutex>
 
@@ -18,8 +20,8 @@ namespace cdt::spatial
 {
 namespace
 {
-// Candidate relocation only: this path is disabled in the private ManyLights
-// diagnostic until a controlled spatial/ambient test validates it.
+// Exact-build spatial acquisition. The private all-on package exercises this
+// candidate without promoting the build to a supported release.
 constexpr bool UpdatedGameBuild = native_contract::BuildId == "25477059";
 constexpr uint32_t DispatchRva = UpdatedGameBuild ? 0x389C000 : 0x37B6520;
 constexpr uint32_t ExposureReturnRva = UpdatedGameBuild ? 0x362595A : 0x3547264;
@@ -28,7 +30,8 @@ using DispatchFn = uint64_t(*)(uint64_t, uint32_t, uint32_t, uint32_t);
 DispatchFn originalDispatch{};
 void* dispatchTarget{};
 uint64_t gameBase{};
-bool sampleAmbient{}, sampleSources{};
+bool sampleAmbient{}, requestedSources{};
+std::atomic<bool> sampleSources{};
 
 Microsoft::WRL::ComPtr<ID3D12Resource> readbackBuffer;
 Microsoft::WRL::ComPtr<ID3D12Fence> readbackFence;
@@ -190,11 +193,11 @@ bool Start(uint64_t moduleBase, const wchar_t*, bool enableReadback, unsigned, u
     if (!Read(moduleBase + DispatchRva, bytes) || bytes != Signature) return false;
     
     dispatchTarget = reinterpret_cast<void*>(moduleBase + DispatchRva);
-    gameBase=moduleBase;sampleAmbient=enableReadback;sampleSources=enableDistanceReadback;
+    gameBase=moduleBase;sampleAmbient=enableReadback;requestedSources=enableDistanceReadback;
+    sampleSources.store(false, std::memory_order_release);
     if (MH_CreateHook(dispatchTarget, reinterpret_cast<void*>(CdtSpatialThunk), reinterpret_cast<void**>(&originalDispatch)) != MH_OK) return false;
-    if(sampleSources)sdf::acquire::Start();
     if (MH_EnableHook(dispatchTarget) != MH_OK)
-    {if(sampleSources)sdf::acquire::Stop();return false;}
+        return false;
     
     render::submissionObserver = OnSubmission;
     return true;
@@ -202,6 +205,16 @@ bool Start(uint64_t moduleBase, const wchar_t*, bool enableReadback, unsigned, u
 
 void Poll()
 {
+    // The previous package started SDF interception during the loading screens.
+    // On 25477059 that caught frames 7/8 with a zero camera and permanently
+    // failed when the loading command list reset before confirmed submission.
+    // Arm only after the existing playable-world gate opens; never reuse those
+    // early loading resources as visibility evidence.
+    if (requestedSources && !sampleSources.load(std::memory_order_acquire) && render::CaptureReady())
+    {
+        sdf::acquire::Start();
+        sampleSources.store(true, std::memory_order_release);
+    }
     if(sampleSources)sdf::acquire::Poll();
     std::lock_guard<std::mutex> lock(acquireMutex);
     if (!acquisitionInFlight || !readbackFence || !readbackBuffer || activeList) return;
@@ -235,7 +248,8 @@ void Stop()
 {
     render::submissionObserver = nullptr;
     if (dispatchTarget) MH_DisableHook(dispatchTarget);
-    if(sampleSources)sdf::acquire::Stop();
+    if (sampleSources.exchange(false, std::memory_order_acq_rel)) sdf::acquire::Stop();
+    requestedSources = false;
     readbackBuffer.Reset();
     readbackFence.Reset();
     acquisitionInFlight = false;

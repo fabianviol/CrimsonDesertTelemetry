@@ -197,6 +197,7 @@ int main(int argc, char** argv)
         Put(skyInner,0x168,reinterpret_cast<uint64_t>(skySource.Get()));
         Put(skyOuter,0x30,reinterpret_cast<uint64_t>(skyInner.data())); Put(skyOwner,0x98,reinterpret_cast<uint64_t>(skyOuter.data()));
         InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase)); EnableSkyForTest();
+        Check(!CaptureReady(), "loading world opened the SDF acquisition gate");
         const auto capture=[&](bool sky) {
             if(sky) CaptureAmbient(reinterpret_cast<uint64_t>(skyOwner.data()),reinterpret_cast<uint64_t>(command.data()),0);
             else CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
@@ -209,6 +210,7 @@ int main(int argc, char** argv)
         CaptureAmbient(reinterpret_cast<uint64_t>(skyOwner.data()),reinterpret_cast<uint64_t>(command.data()),1);
         Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"unvalidated B entered public stream");
         capture(skyFirst); PollCapture(); Sleep(510); // Sky cadence applies to discovery too.
+        Check(CaptureReady(), "playable-world signal did not open the SDF acquisition gate");
         ComPtr<ID3D12CommandQueue> computeQueue;
         D3D12_COMMAND_QUEUE_DESC cq{}; cq.Type=D3D12_COMMAND_LIST_TYPE_COMPUTE;
         Hr(device->CreateCommandQueue(&cq,IID_PPV_ARGS(&computeQueue)),"mixed compute queue");
@@ -391,6 +393,7 @@ int main(int argc, char** argv)
         return 0;
     }
     InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase));
+    Check(!CaptureReady(), "loading world opened the SDF acquisition gate");
     const auto capture=[&] {
         CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
             reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data()));
@@ -399,6 +402,8 @@ int main(int argc, char** argv)
     Check(std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,
         "capture armed before playable-world signal");
     SignalCaptureReady();
+    PollCapture();
+    Check(CaptureReady(), "playable-world signal did not open the SDF acquisition gate");
     // A malformed/missing/undersized counter cannot silently downgrade a pair
     // to the former light-only capture. These calls occur before discovery.
     CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),0,0);

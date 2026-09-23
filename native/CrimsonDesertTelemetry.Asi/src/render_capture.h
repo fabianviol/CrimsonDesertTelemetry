@@ -21,6 +21,8 @@ PreflightResult CheckCapturePreflight(uint64_t moduleBase);
 const char* PreflightFailureName(PreflightFailure failure);
 bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled = false);
 void PollCapture();
+// True only after the managed host has validated a playable player/camera sample.
+bool CaptureReady();
 uint32_t CaptureFailureCode();
 void StopCapture();
 bool OwnsCodeAddress(uint64_t address);
