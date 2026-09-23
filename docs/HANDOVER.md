@@ -58,11 +58,32 @@ is not yet a movement/rotation control.
 All addresses in this paragraph except module-relative RVAs are session-specific
 and must not become update anchors.
 
-Next: verify the `scene+0xF90` vector with one known-light AN/AUS/AN control,
-then make an exact-build candidate profile with all changed signatures and native
-anchors. Run tests and validate live camera, paired ManyLights and ambient controls
-before any promotion. An EXE-only match does not validate shaders or per-light
-visibility.
+Next: prepare an exact-build, fail-closed **private diagnostic** capture using
+the changed native signatures and anchors, then repeat this known-light AN/AUS/AN
+through paired ManyLights. Run tests and validate ambient before any promotion.
+An EXE-only match does not validate shaders or per-light visibility.
+
+Controlled AN/AUS/AN at the known four-fire-lantern camp, player
+`(-10530.401, 609.15674, -4419.537)`, no ASI and no player movement: read-only
+authored-vector samples at progressing scene frames 59996/61855/65107 all had
+16 records, 15 `recordActive` and 6 `rendererSelected`. No position or status
+disappeared and returned with the switched lantern; only two near-player record
+positions drifted slightly while their flags and scales stayed constant. Thus
+this CPU authored-light vector is **not a validated status source for this fire
+lantern**. Do not treat this negative result as refuting the previously measured
+ManyLights/rendered-fire path. Next controlled check must use the exact-build
+ManyLights capture, not more searches in this array.
+
+Follow-up visual clarification: the owner's *portable lantern* was still on
+during that fire-switch series and masked the perceived illumination change.
+With the fire on, stowing the portable lantern kept PID 11280 and the player
+near the camp; authored slots 11 and 12 both changed from active/selected with
+positive renderer scales (13.094/5.238) to inactive/unselected with scale 0.
+Their positions had followed the player. This independently identifies those
+two contributions as the portable lantern, not the switched fire. Slot 15 was
+reused by a different record and must not be treated as a permanent light ID.
+An isolated fire AN/AUS/AN with the portable lantern stowed is now pending;
+do not infer the fire's visible contribution from the earlier confounded view.
 
 # Current checkpoint — handover to Codex, 2026-09-23, Claude
 
