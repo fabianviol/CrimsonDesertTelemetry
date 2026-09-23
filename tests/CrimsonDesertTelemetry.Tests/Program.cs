@@ -68,6 +68,7 @@ var tests = new (string Name, Action Run)[]
     ("player orientation serializes validated basis", PlayerOrientationSerializesValidatedBasis),
     ("player orientation walks the actual guarded pointer chain", PlayerOrientationReaderTests.RealChain),
     ("player orientation rejects wrong identity and replaced physics", PlayerOrientationReaderTests.IdentityAndRaces),
+    ("private exact-build candidate anchors stay gated", PlayerOrientationReaderTests.PrivateCandidateGate),
     ("build profiles reject malformed and mismatched native contracts", UpdateCheckTests.Profiles),
     ("build profile JSON rejects typos, duplicates and omitted offsets", UpdateCheckTests.JsonGuards),
     ("update check relocates direct-camera and native candidates without promotion", UpdateCheckTests.DirectRelocation),

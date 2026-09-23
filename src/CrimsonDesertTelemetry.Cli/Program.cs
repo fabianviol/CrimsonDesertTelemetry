@@ -552,8 +552,11 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default, bool privateExac
                 $"(reference layout {resolved.Compatibility.ReferenceBuild}). Runtime validation remains active.");
         if (resolved.Compatibility.Mode == "research-exact")
             Console.Error.WriteLine("PRIVATE UNVALIDATED exact-build integration test. Not a supported release.");
-        var addresses = StaticPositionProbe.Resolve(process, executable, definition);
-        var orientation = PlayerOrientationReader.Resolve(process, executable, definition);
+        // Only an exact-hash, explicitly private research launch may exercise
+        // candidate player anchors; all signature and live pointer guards remain active.
+        var allowResearchCandidate = resolved.Compatibility.Mode == "research-exact";
+        var addresses = StaticPositionProbe.Resolve(process, executable, definition, allowResearchCandidate);
+        var orientation = PlayerOrientationReader.Resolve(process, executable, definition, allowResearchCandidate);
         var reader = new ReadOnlyProcess(process);
         try
         {

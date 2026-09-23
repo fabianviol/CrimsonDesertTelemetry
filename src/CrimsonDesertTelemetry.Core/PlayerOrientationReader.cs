@@ -22,23 +22,26 @@ public sealed class PlayerOrientationReader
     }
 
     /// <summary>Construct the same guarded reader from an already resolved address (also for offline memory fixtures).</summary>
-    public static PlayerOrientationReader FromResolvedAddress(ulong worldSystemGlobalAddress, PlayerRootDefinition definition)
+    public static PlayerOrientationReader FromResolvedAddress(ulong worldSystemGlobalAddress, PlayerRootDefinition definition,
+        bool allowResearchCandidate = false)
     {
-        BuildProfileValidation.ValidatePlayerRoot(definition);
+        BuildProfileValidation.ValidatePlayerRoot(definition, trusted: !allowResearchCandidate);
         if (worldSystemGlobalAddress is < 0x10000 or > 0x00007FFFFFFFFFFF || (worldSystemGlobalAddress & 7) != 0)
             throw new InvalidDataException("Invalid resolved world-system global address.");
         return new PlayerOrientationReader(new(worldSystemGlobalAddress), definition);
     }
 
-    public static PlayerOrientationReader? Resolve(Process process, string executable, BuildDefinition definition)
+    public static PlayerOrientationReader? Resolve(Process process, string executable, BuildDefinition definition,
+        bool allowResearchCandidate = false)
     {
         var root = definition.PlayerRoot;
         if (root is null || root.WorldSystemPattern.Purpose != "world-system") return null;
-        if (root.WorldSystemPattern.Confidence != "locally-validated")
-            throw new InvalidDataException("Player orientation is not validated for this build.");
+        BuildProfileValidation.ValidateRuntimeAnchor(root.WorldSystemPattern, definition,
+            allowResearchCandidate, "Player orientation is not validated for this build.");
         var moduleBase = checked((ulong)process.MainModule!.BaseAddress.ToInt64());
         var relative = StaticPositionProbe.ResolveUniqueRipTarget(executable, root.WorldSystemPattern);
-        return FromResolvedAddress(checked(moduleBase + relative), root);
+        return FromResolvedAddress(checked(moduleBase + relative), root,
+            allowResearchCandidate && definition.Status == "research");
     }
 
     /// <summary>

@@ -1,7 +1,33 @@
+# Build 25477059 private all-on startup correction — 2026-09-23, Codex
+
+The owner installed `integrated.2` via DMM and started the game. Screenshot
+showed both HUDs but `WAITING FOR DATA` and status `This game build needs an
+update / Static position is not validated for this build.` Read-only health
+confirmed `unsupported-build` with that exact error. Native log confirmed
+the exact-build ManyLights detour and sky hook installed, but the managed host
+stopped before its first sample. This was a double confidence gate: the private
+exact-hash compatibility resolver accepted the research profile, then
+`StaticPositionProbe.Resolve` rejected its `candidate` anchors (and the
+orientation reader would have done likewise). No evidence here that the
+ManyLights/Ambient/visibility paths themselves failed.
+
+The corrected immutable ZIP is
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-integrated.3-ModManagers.zip`
+(SHA256 `FFA331A8895EF32365E08FF306769191BBD30B53C85C1617518C8D418250F731`).
+Only `research-exact` may read candidate player anchors; public `tested` and
+`automatic` modes keep the prior trusted-anchor rule. RIP uniqueness, profile,
+pointer-chain, RTTI and per-sample plausibility guards remain. Managed tests,
+including the candidate gate, and package self-test passed. The `.3` package
+has **not yet been installed or live-tested**. Game was still open at last
+check. Next step: close game, replace `.2` with `.3` through DMM, start/load,
+then run the one-pass `scripts/Check-IntegratedTelemetry.ps1` and inspect the
+HUD. Do not poll/wait for user action; end turn and resume on message. Older
+`.1` and `.2` packages are retained but must not be installed for this test.
+
 # Build 25477059 private all-on integration package — 2026-09-23, Codex
 
 The owner rejected another sequence of single-feature game runs: test all
-current **product** features at once. The game is closed. Use only the final
+current **product** features at once. This entry describes the superseded
 private ZIP
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-integrated.2-ModManagers.zip`
 (SHA256 `7E4791625AA50D480CAB0B8AF18A73E7B334CF110549A61FB86D2BB1A8DE0703`).

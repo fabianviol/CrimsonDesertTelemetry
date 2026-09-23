@@ -18,12 +18,15 @@ public static class StaticPositionProbe
             "guarded patterns and runtime plausibility checks passed");
     }
 
-    public static StaticPositionAddresses Resolve(Process process, string executable, BuildDefinition definition)
+    public static StaticPositionAddresses Resolve(Process process, string executable, BuildDefinition definition,
+        bool allowResearchCandidate = false)
     {
         var xy = definition.Patterns.Single(pattern => pattern.Purpose == "static-position-xy");
         var z = definition.Patterns.Single(pattern => pattern.Purpose == "static-position-z");
-        if (xy.Confidence != "locally-validated" || z.Confidence != "locally-validated")
-            throw new InvalidDataException("Static position is not validated for this build.");
+        BuildProfileValidation.ValidateRuntimeAnchor(xy, definition, allowResearchCandidate,
+            "Static position is not validated for this build.");
+        BuildProfileValidation.ValidateRuntimeAnchor(z, definition, allowResearchCandidate,
+            "Static position is not validated for this build.");
         var moduleBase = checked((ulong)process.MainModule!.BaseAddress.ToInt64());
         return new StaticPositionAddresses(
             checked(moduleBase + ResolveUniqueRipTarget(executable, xy)),

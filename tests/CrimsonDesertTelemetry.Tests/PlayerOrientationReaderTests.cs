@@ -34,6 +34,33 @@ internal static class PlayerOrientationReaderTests
               racing.Reader.LastFailureReason!.Contains("replaced"), "Replaced leaf published orientation.");
     }
 
+    public static void PrivateCandidateGate()
+    {
+        var research = BuildDefinition.LoadAll("not-a-profile-directory")
+            .Single(d => d.SteamBuildId == "25477059");
+        var candidate = research.PlayerRoot!;
+        Check(candidate.WorldSystemPattern.Confidence == "candidate", "Expected a candidate player anchor.");
+        Reject(() => PlayerOrientationReader.FromResolvedAddress(0x110000, candidate),
+            "A candidate orientation was accepted by the standard reader.");
+        _ = PlayerOrientationReader.FromResolvedAddress(0x110000, candidate, allowResearchCandidate: true);
+        foreach (var anchor in research.Patterns.Append(candidate.WorldSystemPattern))
+        {
+            Reject(() => BuildProfileValidation.ValidateRuntimeAnchor(anchor, research, false, "unvalidated"),
+                "A candidate anchor was accepted without private mode.");
+            BuildProfileValidation.ValidateRuntimeAnchor(anchor, research, true, "unvalidated");
+        }
+        research.Status = "locally-validated";
+        Reject(() => BuildProfileValidation.ValidateRuntimeAnchor(candidate.WorldSystemPattern, research, true,
+                "unvalidated"), "A candidate anchor was accepted in a validated profile.");
+    }
+
+    private static void Reject(Action action, string message)
+    {
+        try { action(); }
+        catch (InvalidDataException) { return; }
+        throw new InvalidOperationException(message);
+    }
+
     private sealed class Fixture : IReadOnlyProcessMemory
     {
         public const ulong Owner = 0x170000, Physics = 0x180000;

@@ -3,6 +3,17 @@ namespace CrimsonDesertTelemetry.Core;
 /// <summary>Reject malformed profiles before either exact-hash trust or diagnostic scanning.</summary>
 public static class BuildProfileValidation
 {
+    // Candidate anchors are executable only in the caller's explicit private,
+    // exact-hash research mode. Profile validation alone never promotes them.
+    public static void ValidateRuntimeAnchor(PatternDefinition pattern, BuildDefinition definition,
+        bool allowResearchCandidate, string failure)
+    {
+        if (pattern.Confidence == "locally-validated" ||
+            (allowResearchCandidate && definition.Status == "research" && pattern.Confidence == "candidate"))
+            return;
+        Fail(failure);
+    }
+
     public static void ValidateAll(IReadOnlyList<BuildDefinition> definitions)
     {
         if (definitions.Count is 0 or > 64) Fail("Expected 1..64 build profiles.");
