@@ -1,4 +1,34 @@
-# 2.1.14 live crash — release STOPPED, 2026-09-23, Codex
+# 2.1.14 crash A/B and deployment correction — 2026-09-23, Codex
+
+The owner disabled only `CrimsonDesertTelemetry` in DMM, launched the same save,
+and reported that it loaded and ran. DMM activity records the ASI disabled at
+22:20:33 and the game launched at 22:20:39; the ASI file was absent from
+`bin64` when checked. The owner then closed the game. This strengthens the ASI
+association but a single A/B run does not isolate the native GPU path from a
+mixed installation or a transient driver failure.
+
+The owner correctly notes that earlier private builds ran before the Error-6
+bootstrap change. Keep that temporal association in the differential diagnosis.
+The exact diff only made the host log and NUL stdin inheritable for `CreateProcessW`;
+it did not edit D3D12 command generation, and `bInheritHandles` was already true
+before the change. An indirect startup/timing effect is possible, not established.
+If a clean same-build retry still hangs, compare an otherwise identical build
+with only this bootstrap change reverted before opening broad GPU research.
+
+DMM's library held the correct 2.1.14 `crimson-desert-telemetry.deps.cfg` but
+`bin64` retained the 2.1.11-rc.2 copy. With the game closed, the exact old file
+was backed up to
+`artifacts/deployment-backups/20260923-2230-stale-deps/crimson-desert-telemetry.deps.cfg`
+and only `bin64/crimson-desert-telemetry.deps.cfg` was replaced with the exact
+2.1.14 package file. The target hash now matches the package
+(`AD78244EFB69E454E4709C395E74E0B38924DFC3AE4ACC8D2A2C40E17307BCA7`).
+Do not infer that this fixes the GPU hang: the .NET host started with the old
+CFG. **Next action:** owner re-enables the same 2.1.14 ASI in DMM but does not
+start the game yet. Verify all six deployed runtime hashes against the immutable
+ZIP, then ask for one same-save retest. If it hangs again, stop repeating and
+diagnose the native D3D12 path offline. No public release until resolved.
+
+# Earlier 2.1.14 live crash — release STOPPED, 2026-09-23, Codex
 
 The owner installed the exact 2.1.14 ZIP via DMM and the game crashed while
 loading a save at 22:09:51. DMM reported minidump exception `0x887A0006` in
