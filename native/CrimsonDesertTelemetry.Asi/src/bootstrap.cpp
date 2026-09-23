@@ -50,20 +50,24 @@ void Log(const std::wstring& message)
 {
     const auto directory = ModuleDirectory();
     if (directory.empty()) return;
-    const auto path = directory / L"CrimsonDesertTelemetry.bootstrap.log";
-    HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return;
-
     SYSTEMTIME time{};
     GetLocalTime(&time);
     const auto prefix = std::format(L"{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03} ",
         time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds);
     const auto line = Utf8(prefix + message + L"\r\n");
-    DWORD written = 0;
-    WriteFile(file, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
-    CloseHandle(file);
+    // Keep the detailed bootstrap log and a conventional <ASI stem>.log that
+    // mod managers can discover without knowing our component-specific names.
+    for (const auto* name : {L"CrimsonDesertTelemetry.bootstrap.log", L"CrimsonDesertTelemetry.log"})
+    {
+        const auto path = directory / name;
+        HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) continue;
+        DWORD written = 0;
+        WriteFile(file, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
+        CloseHandle(file);
+    }
 }
 
 std::filesystem::path FindDotnet()

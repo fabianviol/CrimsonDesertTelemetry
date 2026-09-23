@@ -129,6 +129,9 @@ int wmain(const int argc, wchar_t** argv)
             if (!smoothed.starts_with("HTTP/1.1 200") || smoothed.find("\"schemaVersion\":\"1.0\"") == std::string::npos ||
                 smoothed.find("\"timeConstantMilliseconds\":" + std::to_string(requestedSmoothing)) == std::string::npos)
             { std::wcerr << L"Derived light endpoint/config forwarding failed.\n"; WSACleanup(); return 9; }
+            const auto primaryLog = directory / L"CrimsonDesertTelemetry.log";
+            if (!std::filesystem::is_regular_file(primaryLog) || std::filesystem::file_size(primaryLog) == 0)
+            { std::wcerr << L"Discoverable ASI primary log was not written.\n"; WSACleanup(); return 11; }
             std::wcout << L"PASS ASI bootstrap started the host using .cfg metadata; raw health/schema and derived light settings respond.\n";
             WSACleanup();
             return 0;

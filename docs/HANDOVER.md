@@ -1,4 +1,38 @@
-# 2.1.14 ZIP ready for one live acceptance run — 2026-09-23, Codex
+# 2.1.14 live crash — release STOPPED, 2026-09-23, Codex
+
+The owner installed the exact 2.1.14 ZIP via DMM and the game crashed while
+loading a save at 22:09:51. DMM reported minidump exception `0x887A0006` in
+`kernelbase.dll+0xC41CA`; Microsoft identifies that HRESULT as
+`DXGI_ERROR_DEVICE_HUNG`, which can arise from invalid GPU commands and does
+not by itself prove bad hardware. The owner confirmed that game audio kept
+running. Windows System log has an `nvlddmkm` event 153 at 22:09:46. DMM's
+headline "not a mod" is not an ASI-plugin exoneration; its own panel listed
+`CrimsonDesertTelemetry` as injected. Native log shows the exact ManyLights
+detour installed, first playable-world signal received, and recurring capture
+armed. Overlay reached D3D12/SDR ready. There was no fatal detail in host,
+native, overlay or bootstrap logs. The game's crash log is
+`C:\Users\fabia\AppData\Local\Pearl Abyss\log\Launcher_2026_09_23_22_08_14_8272.log`;
+dump is `C:\Users\fabia\AppData\Local\Pearl Abyss\DumpCache\reports\39e5f532-15dc-49f4-9b1e-b7d1c443b31c.dmp`.
+
+Five of the six deployed runtime files matched the exact ZIP. DMM left an old
+`crimson-desert-telemetry.deps.cfg` from 2.1.11-rc.2 instead of the 2.1.14
+companion; the host did start, so this is a real packaging/deployment defect
+but not established as the GPU-hang cause. Do not publish 2.1.14. Keep its ZIP
+immutable. Before attributing blame to game, driver or plugin, run the same
+save with the Telemetry **ASI plugin disabled in DMM** (data mods are a separate
+category). Ask the owner for the result, then compare one controlled plugin-on
+run only if justified. Do not wait/poll between owner actions.
+
+DMM called Telemetry "no log" even though four component logs existed beside
+the ASI. Its search rule is unproven; the local DMM binary was inspected but
+source was unavailable. New un-packaged source mirrors bootstrap messages to
+the conventional `CrimsonDesertTelemetry.log` while preserving
+`.bootstrap.log`. Targeted native build and no-parent-stdin bootstrap smoke
+passed; the smoke checks that the primary log is actually written. This change
+is **not** in immutable 2.1.14 and is not evidence about the GPU hang. Only
+package it in a later version after the crash investigation.
+
+# Earlier 2.1.14 candidate checkpoint — superseded by live crash
 
 **Use only the latest candidate**:
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.14-ModManagers.zip`, SHA-256
