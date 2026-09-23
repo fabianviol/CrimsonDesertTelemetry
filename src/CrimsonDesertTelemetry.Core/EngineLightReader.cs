@@ -18,6 +18,7 @@ public sealed class EngineLightReader
     private readonly ulong _rootGlobal;
     private readonly ulong _sceneGlobal;
     private readonly ulong _sceneVtable;
+    private readonly int _arrayPointerOffset;
     private long _walkChanged;
     private long _walkRetrySucceeded;
     private long _walkUnavailable;
@@ -28,6 +29,7 @@ public sealed class EngineLightReader
             throw new InvalidDataException("Unsupported engine-light layout.");
         _reader = reader;
         _layout = definition.Layout;
+        _arrayPointerOffset = definition.ArrayPointerOffset;
         if (_layout == "light-source-array-v1")
             _rootGlobal = At(moduleBase, definition.RootGlobalRva);
         else
@@ -186,7 +188,7 @@ public sealed class EngineLightReader
 
     private Walk ReadArrayWalk(ulong root, ulong container, ulong scene)
     {
-        var array = ReadPointer(At(scene, 0xF08));
+        var array = ReadPointer(At(scene, checked((ulong)_arrayPointerOffset)));
         var descriptor = _reader.Read(Pointer(At(array, 0x10)), 0x10);
         var recordBase = BitConverter.ToUInt64(descriptor, 0);
         var count = BitConverter.ToUInt32(descriptor, 8);

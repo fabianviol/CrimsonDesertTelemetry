@@ -13,8 +13,7 @@ before further Steam changes:
 'C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesert.exe'` reports
 `anchor-check-failed` against the old definition. It is read-only and did not
 enable any hooks. Do **not** install or advertise compatibility yet. No ASI was
-installed and the game was not running at this checkpoint. The existing untracked
-analysis files were left untouched.
+installed. The existing untracked analysis files were left untouched.
 
 Bounded old/new EXE disassembly gives *static candidates*, not runtime proof:
 
@@ -27,11 +26,30 @@ Bounded old/new EXE disassembly gives *static candidates*, not runtime proof:
 | Ambient source B / hook B (diagnostic only) | `0x393424B` / `0x3934313` | Same caveat; do not enable B as product path |
 | Spatial dispatch / exposure return | `0x389C000` / `0x362595A` | Unique longer dispatch-body prefix and matching consumer shape; live ownership/resource checks still required |
 
-Next: once the owner has loaded a save, perform a guarded, read-only runtime
-inspection of the candidate object/layout path. Then make an exact-build
-candidate profile with all changed signatures and native anchors, run tests,
-and validate live camera, paired ManyLights and ambient controls before any
-promotion. An EXE-only match does not validate shaders or per-light visibility.
+Read-only runtime spot check on PID 11280 (started 19:22; no ASI): the relocated
+scene global `+0x6C8CF30` pointed to a live scene object with vtable RVA
+`0x5D20718`. `scene+0x428` pointed to a 2816-byte-shaped scene buffer: 3840×2160
+and camera XYZ about `(-10027.9, 522.4, -4434.8)`. The relocated static player
+slot `+0x6D77858` gave about `(-10030.1, 519.3, -4429.3)`; proximity is plausible,
+not a movement control. The scene frame counter `+0x2C8` advanced from `0x2580`
+to `0x3CB7`, so the scene was progressing. **The old authored-light pointer at
+`scene+0xF08` was null.** `scene+0xF10` was nonnull but its target did not have
+the expected vector at `+0x10`; do not substitute it by guess. A bounded read-only
+scan of only `scene+0x800..0x2000` then found one vector-shaped candidate at
+**`scene+0xF90`**. Its descriptor contained 15 records, capacity 18, stride
+`0xB8`; all 15 decoded at the old position/color/cone/active/selected offsets.
+Eight were active with plausible nearby world coordinates, including two at
+exactly `(-10029.832, 520.2973, -4428.764)`, close to the player. The inactive
+records had zero positions. This strongly identifies the relocated authored-light
+vector, but an AN/AUS/AN control and renderer-color verification are still needed.
+All addresses in this paragraph except module-relative RVAs are session-specific
+and must not become update anchors.
+
+Next: verify the `scene+0xF90` vector with one known-light AN/AUS/AN control,
+then make an exact-build candidate profile with all changed signatures and native
+anchors. Run tests and validate live camera, paired ManyLights and ambient controls
+before any promotion. An EXE-only match does not validate shaders or per-light
+visibility.
 
 # Current checkpoint — handover to Codex, 2026-09-23, Claude
 

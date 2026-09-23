@@ -112,6 +112,12 @@ internal static class EngineLightReaderTests
         var reader = new EngineLightReader(memory, moduleBase, definition);
         Check(reader.Capture((0, 0, 0), 10).Sources?.Count == 1,
             "Direct scene-global light walk failed.");
+        definition.ArrayPointerOffset = 0xF90;
+        memory.Q(scene + 0xF08, 0);
+        memory.Q(scene + 0xF90, array);
+        reader = new EngineLightReader(memory, moduleBase, definition);
+        Check(reader.Capture((0, 0, 0), 10).Sources?.Count == 1,
+            "Relocated direct scene-global light vector was not read from the profile offset.");
         memory.Q(scene, moduleBase + definition.SceneVtableRva + 8);
         Check(reader.Capture((0, 0, 0), 10).Status == "unavailable",
             "Direct scene-global light walk accepted the wrong scene type.");

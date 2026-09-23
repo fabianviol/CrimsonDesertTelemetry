@@ -58,6 +58,7 @@ public static class BuildProfileValidation
             Fail("Automatic compatibility requires the implemented legacy layout and multi-slot fingerprints.");
         if (definition.EngineLights is { } lights)
         {
+            Offset(lights.ArrayPointerOffset, 8);
             if (lights.Layout == "light-source-array-v1") Rva(lights.RootGlobalRva, 8);
             else if (lights.Layout == "light-source-array-scene-global-v1")
             {

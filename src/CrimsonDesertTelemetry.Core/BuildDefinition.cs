@@ -95,6 +95,7 @@ public sealed class EngineLightsDefinition
     public ulong RootGlobalRva { get; set; }
     public ulong SceneGlobalRva { get; set; }
     public ulong SceneVtableRva { get; set; }
+    public int ArrayPointerOffset { get; set; } = 0xF08;
 }
 
 public sealed class EngineCameraDefinition
