@@ -41,7 +41,20 @@ scan of only `scene+0x800..0x2000` then found one vector-shaped candidate at
 Eight were active with plausible nearby world coordinates, including two at
 exactly `(-10029.832, 520.2973, -4428.764)`, close to the player. The inactive
 records had zero positions. This strongly identifies the relocated authored-light
-vector, but an AN/AUS/AN control and renderer-color verification are still needed.
+vector, but an AN/AUS/AN control is still needed. With only these candidate
+offsets changed in diagnostic definition objects (not game memory; no profile
+promoted), the full existing
+`EngineCameraReader.Capture` passed basis/projection/scene checks twice, and the
+full `EngineLightReader.Capture` returned `available`: 15 source records, 8
+within 200 gu, 0 malformed/unsupported, 0 walk races. The eight decoded records
+include point and spot sources, plausible linear colors, renderer scales and
+directions. These are data/layout checks, not visual source identification.
+The old RTTI-guarded player chain failed only at `owner+0x2B8`; a bounded owner
+scan found exactly one physics candidate at **`owner+0x2C0`**. With that offset
+in the diagnostic definition, the unchanged `PlayerOrientationReader` passed its
+RTTI, position agreement and orthonormal basis checks, reporting heading 333.8
+degrees. This
+is not yet a movement/rotation control.
 All addresses in this paragraph except module-relative RVAs are session-specific
 and must not become update anchors.
 
