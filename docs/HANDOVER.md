@@ -1,5 +1,9 @@
 # Private ManyLights diagnostic ready — 2026-09-23, Codex
 
+Interaction rule from the owner: never keep a turn/session running while waiting
+for an in-game action or reply. End the turn; the owner resumes with `AN`,
+`AUS`, `weiter`, or another message. No polling or sleep in the meantime.
+
 The owner completed the isolated fire AN/AUS/AN with the portable lantern
 stowed: visible illumination vanished on AUS and returned on AN. The full
 authored-light vector stayed unchanged at three progressing frames; do not

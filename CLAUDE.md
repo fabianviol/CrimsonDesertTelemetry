@@ -17,6 +17,7 @@ renderer research. Read HANDOVER first.
 5. Maintain one concise current checkpoint in `docs/HANDOVER.md`: result, remaining work, relevant evidence and one next step. Raw captures stay out of Git.
 6. Scoped reversible console/graphics instrumentation is authorized for lighting research. Never call an instrumented run an untouched baseline. Require game shutdown for ASI replacement.
 7. Use PowerShell 7 where suitable. Keep `AGENTS.md` and `CLAUDE.md` byte-identical.
+8. When a game action or user input is needed, finish the current turn immediately. Do not keep a command/session open, poll, sleep, or spend tokens waiting for the owner. The owner will return with `AN`, `AUS`, `weiter`, or another message; resume only then. Keep each handoff short.
 
 ## Locations
 
