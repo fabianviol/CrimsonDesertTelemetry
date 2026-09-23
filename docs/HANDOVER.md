@@ -1,3 +1,38 @@
+# Game update 25477059 — checkpoint, 2026-09-23, Codex
+
+Steam briefly installed build `25455892` and then replaced it with `25477059`.
+The owner confirmed the second update was finished. Both EXEs were preserved
+before further Steam changes:
+
+| Build | Private backup | EXE identity |
+|---|---|---|
+| 25455892 (superseded) | `artifacts/recovery/20260923-190119-unknown-a9e5ca20/` | `1.0.0.2949`, SHA256 `A9E5CA2076367E7995B81A3A4803F7259AB7DAC3415DF8EA949043EF635A174A` |
+| **25477059 (installed)** | `artifacts/recovery/20260923-191056-build-25477059/` | `1.0.0.2976`, 384521624 bytes, SHA256 `57DA440D72F4DB974F25FEF047CF84C4DADD999A88CB2A3C5AF4C9BD67FDE1E7` |
+
+`dotnet run --project src/CrimsonDesertTelemetry.Cli -c Release -- check-update
+'C:\Steam\steamapps\common\Crimson Desert\bin64\CrimsonDesert.exe'` reports
+`anchor-check-failed` against the old definition. It is read-only and did not
+enable any hooks. Do **not** install or advertise compatibility yet. No ASI was
+installed and the game was not running at this checkpoint. The existing untracked
+analysis files were left untouched.
+
+Bounded old/new EXE disassembly gives *static candidates*, not runtime proof:
+
+| Path | Candidate RVA in 25477059 | Evidence still needed |
+|---|---|---|
+| ProcessManyLights entry | `0x3DA8210` | Live owner/wrapper/resource and scene pairing |
+| Counter binder / filtered binder | `0x3DA96CC` / `0x3DA9790` | Same R15/R12 roles seen statically; virtual binder slot changed `+0x4D0` → `+0x4E8` |
+| ManyLights hook | `0x3DA97DA` | Instruction boundary verified; dispatch slot `+0x328` → `+0x338`, next call `+0x208` → `+0x218`; active shader still unverified |
+| Ambient source A / hook A | `0x393100F` / `0x3931317` | Paired source-to-hook structure and Dispatch(1,1,1) seen; output layout/live values unverified |
+| Ambient source B / hook B (diagnostic only) | `0x393424B` / `0x3934313` | Same caveat; do not enable B as product path |
+| Spatial dispatch / exposure return | `0x389C000` / `0x362595A` | Unique longer dispatch-body prefix and matching consumer shape; live ownership/resource checks still required |
+
+Next: once the owner has loaded a save, perform a guarded, read-only runtime
+inspection of the candidate object/layout path. Then make an exact-build
+candidate profile with all changed signatures and native anchors, run tests,
+and validate live camera, paired ManyLights and ambient controls before any
+promotion. An EXE-only match does not validate shaders or per-light visibility.
+
 # Current checkpoint — handover to Codex, 2026-09-23, Claude
 
 Nine days with no commits. This replaces four stacked checkpoints from 13–14
