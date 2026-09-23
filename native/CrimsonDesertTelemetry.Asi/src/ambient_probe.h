@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include "exposure_probe.h"
+#include "native_contract.generated.h"
 
 namespace cdt::render
 {
@@ -21,14 +22,24 @@ static_assert(sizeof(AmbientRecordHeader) == 64);
 // signature is still unique image-wide and every surrounding anchor matched at the
 // shifted address; offline evidence in artifacts/recovery/20260911-build-25246367/.
 // These are exact-executable addresses: promote them with the build, never alone.
-constexpr std::array<uint32_t, 2> AmbientHookRvas{0x384BD77, 0x384ED63};
+constexpr bool UpdatedGameBuild = native_contract::BuildId == "25477059";
+constexpr std::array<uint32_t, 2> AmbientHookRvas = UpdatedGameBuild
+    ? std::array<uint32_t, 2>{0x3931317, 0x3934313}
+    : std::array<uint32_t, 2>{0x384BD77, 0x384ED63};
 // The [sky+0x98] source-field load preceding each hook. Held here rather than
 // inline so one relocation touches one place.
-constexpr std::array<uint32_t, 2> AmbientSourceRvas{0x384BA6F, 0x384EC9B};
-constexpr std::array<uint8_t, 15> AmbientSignatureA{
-    0x48,0x8B,0xCB,0xE8,0x81,0xD0,0xF8,0xFF,0x48,0x8B,0x03,0x48,0x8B,0xCB,0xFF};
-constexpr std::array<uint8_t, 15> AmbientSignatureB{
-    0x48,0x8B,0xCF,0xE8,0x95,0xA0,0xF8,0xFF,0x48,0x8B,0x07,0x48,0x8B,0xCF,0xFF};
+constexpr std::array<uint32_t, 2> AmbientSourceRvas = UpdatedGameBuild
+    ? std::array<uint32_t, 2>{0x393100F, 0x393424B}
+    : std::array<uint32_t, 2>{0x384BA6F, 0x384EC9B};
+constexpr std::array<uint8_t, 15> AmbientSignatureA = UpdatedGameBuild
+    ? std::array<uint8_t, 15>{0x48,0x8B,0xCB,0xE8,0x81,0xD3,0xF8,0xFF,0x48,0x8B,0x03,0x48,0x8B,0xCB,0xFF}
+    : std::array<uint8_t, 15>{0x48,0x8B,0xCB,0xE8,0x81,0xD0,0xF8,0xFF,0x48,0x8B,0x03,0x48,0x8B,0xCB,0xFF};
+constexpr std::array<uint8_t, 15> AmbientSignatureB = UpdatedGameBuild
+    ? std::array<uint8_t, 15>{0x48,0x8B,0xCF,0xE8,0x85,0xA3,0xF8,0xFF,0x48,0x8B,0x07,0x48,0x8B,0xCF,0xFF}
+    : std::array<uint8_t, 15>{0x48,0x8B,0xCF,0xE8,0x95,0xA0,0xF8,0xFF,0x48,0x8B,0x07,0x48,0x8B,0xCF,0xFF};
+constexpr std::array<uint8_t, 6> AmbientDispatchSignature = UpdatedGameBuild
+    ? std::array<uint8_t, 6>{0xFF,0x90,0x38,0x03,0x00,0x00}
+    : std::array<uint8_t, 6>{0xFF,0x90,0x28,0x03,0x00,0x00};
 bool CheckAmbientPreflight(uint64_t moduleBase);
 // Mutually exclusive with regular ManyLights. Reuses the tested copy/fence
 // machinery; never publishes ambient bytes as lights. Opt-in, bounded, no API.

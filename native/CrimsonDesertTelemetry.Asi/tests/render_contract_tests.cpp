@@ -155,14 +155,14 @@ int wmain(int argc, wchar_t** argv)
     Check(static_cast<bool>(CheckCapturePreflight(image.Base())) && CdtFilterTrampoline == nullptr,
         "Read-only valid preflight unexpectedly installed a hook");
     Check(!CheckAmbientPreflight(image.Base()),"missing ambient hook context accepted");
-    image.sections[0].VirtualAddress=0x3800000; image.sections[0].Misc.VirtualSize=0x500000;
+    image.sections[0].VirtualAddress=0x3800000;
+    image.sections[0].Misc.VirtualSize=static_cast<DWORD>(contract::HookRva+0x1000-0x3800000);
     for(unsigned n=0;n<2;++n)
     {
         image.Commit(AmbientHookRvas[n]-6,21);
         const auto& sig=n ? AmbientSignatureB : AmbientSignatureA;
         memcpy(image.data+AmbientHookRvas[n],sig.data(),sig.size());
-        const std::array<uint8_t,6> dispatch{0xFF,0x90,0x28,0x03,0x00,0x00};
-        memcpy(image.data+AmbientHookRvas[n]-6,dispatch.data(),dispatch.size());
+        memcpy(image.data+AmbientHookRvas[n]-6,AmbientDispatchSignature.data(),AmbientDispatchSignature.size());
     }
     image.Commit(AmbientSourceRvas[0],7); image.Commit(AmbientSourceRvas[1],7);
     const std::array<uint8_t,7> sourceA{0x48,0x8B,0xAF,0x98,0,0,0}, sourceB{0x48,0x8B,0x9D,0x98,0,0,0};

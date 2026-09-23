@@ -434,10 +434,9 @@ bool CheckAmbientPreflight(uint64_t moduleBase)
     };
     if (!match(AmbientHookRvas[0], AmbientSignatureA) || !match(AmbientHookRvas[1], AmbientSignatureB)) return false;
     // Verify dispatch immediately before both hooks and the source-field loads.
-    const std::array<uint8_t, 6> dispatch{0xFF,0x90,0x28,0x03,0x00,0x00};
     const std::array<uint8_t, 7> sourceA{0x48,0x8B,0xAF,0x98,0x00,0x00,0x00};
     const std::array<uint8_t, 7> sourceB{0x48,0x8B,0x9D,0x98,0x00,0x00,0x00};
-    return match(AmbientHookRvas[0] - 6, dispatch) && match(AmbientHookRvas[1] - 6, dispatch) &&
+    return match(AmbientHookRvas[0] - 6, AmbientDispatchSignature) && match(AmbientHookRvas[1] - 6, AmbientDispatchSignature) &&
         match(AmbientSourceRvas[0], sourceA) && match(AmbientSourceRvas[1], sourceB);
 }
 

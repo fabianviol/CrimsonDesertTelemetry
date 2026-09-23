@@ -1,3 +1,33 @@
+# Private ManyLights diagnostic ready — 2026-09-23, Codex
+
+The owner completed the isolated fire AN/AUS/AN with the portable lantern
+stowed: visible illumination vanished on AUS and returned on AN. The full
+authored-light vector stayed unchanged at three progressing frames; do not
+repeat that branch. The next controlled measurement is the previously proven
+filtered ManyLights path on the new game build.
+
+The exact-build `25477059` definition is deliberately `research`, so the
+managed public compatibility resolver still rejects it. A separate explicit
+`-UnvalidatedDiagnostic` package path compiles a hash- and byte-guarded native
+capture only, with server, ambient, visibility, notifications and HUDs OFF.
+The ZIP is
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-diagnostic.2-ModManagers.zip`
+(SHA256 `FDE598D02DB617C194C3A0320097C12217D574EA3E844B21FE4467CE67CB9C4E`).
+Diagnostic `.1` is an earlier immutable build; use `.2`. Nothing is installed
+or released publicly yet. Managed tests passed; native CTest 30/30 passed;
+native file preflight matched all ManyLights hook/caller bytes and both ambient
+hook contexts against the current EXE without accessing the game process.
+Ambient/spatial source locations remain static candidates, not runtime-validated.
+
+**One next step:** owner closes the running game, installs diagnostic `.2` via
+DMM, restarts at the four-fire-lantern camp with portable lantern stowed and
+the selected fire AN. Capture AN/AUS/AN with
+`scripts/Capture-PrivateManyLights.ps1` (read-only; one fresh progressing bridge
+sample per state, new file under `artifacts/` each time). Compare nearby records
+at the known fire position before promoting any build. If capture preflight or
+GPU pairing fails, diagnose that exact failure; do not infer the fire has no
+lighting data. Restore the prior package after the test if desired.
+
 # Game update 25477059 — checkpoint, 2026-09-23, Codex
 
 Steam briefly installed build `25455892` and then replaced it with `25477059`.

@@ -8,6 +8,7 @@
 namespace cdt::native_contract
 {
 inline constexpr std::string_view BuildId = "@CDT_BUILD@";
+inline constexpr bool ResearchContract = @CDT_RESEARCH_CONTRACT@;
 inline constexpr std::string_view ContractId = "@CDT_CONTRACT_ID@";
 inline constexpr std::array<unsigned char, 32> ExecutableSha256{@CDT_EXE_HASH@};
 inline constexpr std::uint64_t SceneGlobalRva = @CDT_SCENE_GLOBAL@ULL;

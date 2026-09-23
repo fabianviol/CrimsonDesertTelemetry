@@ -4,6 +4,7 @@
 #include "submission_observer.h"
 #include "sdf_acquire.h"
 #include "render_bridge.h"
+#include "native_contract.generated.h"
 #include "console/mem.h"
 #include <windows.h>
 #include <d3d12.h>
@@ -17,8 +18,11 @@ namespace cdt::spatial
 {
 namespace
 {
-constexpr uint32_t DispatchRva = 0x37B6520;
-constexpr uint32_t ExposureReturnRva = 0x3547264;
+// Candidate relocation only: this path is disabled in the private ManyLights
+// diagnostic until a controlled spatial/ambient test validates it.
+constexpr bool UpdatedGameBuild = native_contract::BuildId == "25477059";
+constexpr uint32_t DispatchRva = UpdatedGameBuild ? 0x389C000 : 0x37B6520;
+constexpr uint32_t ExposureReturnRva = UpdatedGameBuild ? 0x362595A : 0x3547264;
 constexpr std::array<uint8_t, 14> Signature{0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x57, 0x41, 0x56};
 using DispatchFn = uint64_t(*)(uint64_t, uint32_t, uint32_t, uint32_t);
 DispatchFn originalDispatch{};

@@ -31,6 +31,12 @@ internal static class UpdateCheckTests
         }
         var valid = Current();
         Reject(() => BuildProfileValidation.ValidateAll([valid, valid]), "Duplicate identity accepted.");
+        var research = Current();
+        research.Status = "research";
+        research.NativeCapture!.Status = "research";
+        BuildProfileValidation.Validate(research);
+        research.NativeCapture.Status = "locally-validated";
+        Reject(() => BuildProfileValidation.Validate(research), "Mixed research/validated native status accepted.");
     }
 
     public static void JsonGuards()

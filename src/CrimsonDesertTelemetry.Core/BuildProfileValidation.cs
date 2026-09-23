@@ -98,7 +98,7 @@ public static class BuildProfileValidation
     {
         var expectedContractId = $"manylights-filter-{definition.SteamBuildId}-v1";
         if (native.SchemaVersion != 1 || native.ContractId != expectedContractId ||
-            native.Status != "locally-validated" || definition.Status != "locally-validated" ||
+            native.Status != definition.Status || native.Status is not ("locally-validated" or "research") ||
             !native.RequiresExactExecutable || definition.AllowAutomaticCompatibility ||
             definition.EngineCamera?.Layout != "renderer-camera-direct-v1" ||
             definition.EngineLights?.Layout != "light-source-array-scene-global-v1")

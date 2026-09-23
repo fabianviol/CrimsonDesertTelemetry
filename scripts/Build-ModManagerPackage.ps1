@@ -13,7 +13,10 @@ param(
     # pass 'off' explicitly when validating a production implementation privately.
     # All research sources and their direct tests remain preserved.
     [ValidateSet('auto', 'on', 'off')]
-    [string]$Research = 'auto'
+    [string]$Research = 'auto',
+    # Explicit exact-hash-only native capture on a research profile. This is a
+    # private ManyLights diagnostic, never a supported/public package.
+    [switch]$UnvalidatedDiagnostic
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,10 +31,36 @@ $stagingRoot = Join-Path $artifactRoot "v$Version-$buildStamp"
 $packageRoot = Join-Path $stagingRoot 'CrimsonDesertTelemetry'
 $researchEnabled = if ($Research -eq 'auto') { [bool]($Version -match '-') } else { $Research -eq 'on' }
 $packageProfile = if ($researchEnabled) { 'research' } else { 'production' }
+if ($UnvalidatedDiagnostic) {
+    if ($Version -notmatch '-' -or $Research -ne 'off' -or $researchEnabled) {
+        throw 'UnvalidatedDiagnostic requires a prerelease version and -Research off.'
+    }
+    $definitionPath = Join-Path $repoRoot "definitions\build-$NativeBuildId.json"
+    if (-not (Test-Path -LiteralPath $definitionPath)) { throw "Missing diagnostic profile: $definitionPath" }
+    $definition = Get-Content -LiteralPath $definitionPath -Raw | ConvertFrom-Json
+    if ($definition.status -ne 'research' -or $definition.nativeCapture.status -ne 'research') {
+        throw 'UnvalidatedDiagnostic requires a paired research-status exact-build profile.'
+    }
+    $forced = @{
+        'Server.Enabled' = '0'; 'Notifications.Enabled' = '0'
+        'Lights.Enabled' = '1'; 'Lights.ManyLights' = '1'
+        'Ambient.Enabled' = '0'; 'SourceVisibility.Enabled' = '0'
+        'Overlay.Enabled' = '0'; 'LightOverlay.Enabled' = '0'
+    }
+    if (-not $IniOverrides) { $IniOverrides = @{} }
+    foreach ($key in $forced.Keys) {
+        if ($IniOverrides.ContainsKey($key) -and [string]$IniOverrides[$key] -ne $forced[$key]) {
+            throw "Diagnostic safety setting cannot be overridden: $key"
+        }
+        $IniOverrides[$key] = $forced[$key]
+    }
+}
 $iniTemplate = Join-Path $repoRoot $(if ($researchEnabled) {
     'packaging\mod-manager\CrimsonDesertTelemetry.research.ini'
 } else { 'packaging\mod-manager\CrimsonDesertTelemetry.ini' })
-$readmeTemplate = Join-Path $repoRoot $(if ($researchEnabled) {
+$readmeTemplate = Join-Path $repoRoot $(if ($UnvalidatedDiagnostic) {
+    'packaging\mod-manager\README.diagnostic.txt'
+} elseif ($researchEnabled) {
     'packaging\mod-manager\README.research.txt'
 } else { 'packaging\mod-manager\README.txt' })
 $configuredIni = Get-Content -LiteralPath $iniTemplate -Raw
@@ -99,7 +128,7 @@ Assert-WithinRepo $archive
 if ($LASTEXITCODE -ne 0) { throw 'Managed host publish failed.' }
 
 Write-Output "Research instrumentation: $(if ($researchEnabled) { 'compiled in' } else { 'COMPILED OUT' }) (-Research $Research)"
-& $cmake -S $nativeSource -B $nativeBuild -A x64 "-DCDT_NATIVE_BUILD_ID=$NativeBuildId" "-DCDT_RESEARCH=$(if ($researchEnabled) { 'ON' } else { 'OFF' })"
+& $cmake -S $nativeSource -B $nativeBuild -A x64 "-DCDT_NATIVE_BUILD_ID=$NativeBuildId" "-DCDT_RESEARCH=$(if ($researchEnabled) { 'ON' } else { 'OFF' })" "-DCDT_ALLOW_RESEARCH_NATIVE=$(if ($UnvalidatedDiagnostic) { 'ON' } else { 'OFF' })"
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI configure failed.' }
 & $cmake --build $nativeBuild --config Release
 if ($LASTEXITCODE -ne 0) { throw 'Native ASI build failed.' }
