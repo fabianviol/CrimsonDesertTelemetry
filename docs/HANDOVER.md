@@ -41,7 +41,8 @@ scan of only `scene+0x800..0x2000` then found one vector-shaped candidate at
 Eight were active with plausible nearby world coordinates, including two at
 exactly `(-10029.832, 520.2973, -4428.764)`, close to the player. The inactive
 records had zero positions. This strongly identifies the relocated authored-light
-vector, but an AN/AUS/AN control is still needed. With only these candidate
+vector. A later controlled fire AN/AUS/AN left this vector unchanged; see below.
+With only these candidate
 offsets changed in diagnostic definition objects (not game memory; no profile
 promoted), the full existing
 `EngineCameraReader.Capture` passed basis/projection/scene checks twice, and the
@@ -82,8 +83,16 @@ positive renderer scales (13.094/5.238) to inactive/unselected with scale 0.
 Their positions had followed the player. This independently identifies those
 two contributions as the portable lantern, not the switched fire. Slot 15 was
 reused by a different record and must not be treated as a permanent light ID.
-An isolated fire AN/AUS/AN with the portable lantern stowed is now pending;
-do not infer the fire's visible contribution from the earlier confounded view.
+The isolated fire AN/AUS/AN was then completed with the portable lantern stowed,
+same PID 11280 and stationary player `(-10530.632,609.1567,-4419.819)`.
+Progressing scene frames 9331/18291/21721 all had 16 authored records, 14
+active and 4 renderer-selected; the entire record set was unchanged between
+these samples. The owner reported that the fire illumination visibly vanished
+on AUS and returned on AN. This is a valid visual control that the earlier
+portable light had obscured. Consequently the authored array is **not** the
+fire-light state channel for this lantern; it says nothing negative about the
+ManyLights path. Stop testing this array for that fire and move to the exact-build
+render capture.
 
 # Current checkpoint — handover to Codex, 2026-09-23, Claude
 
