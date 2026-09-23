@@ -1,104 +1,114 @@
-# Current checkpoint — first external crash confirmation, 2026-09-14, Claude
+# Current checkpoint — handover to Codex, 2026-09-23, Claude
 
-**jimos87 reports 2.1.11 works**, 14 Sep 2026 09:57 on the Nexus posts page:
-"It is now working for me :D ty". That is the first external acceptance of the
-Streamline swapchain fix, from the user whose DMM support bundle and minidump made
-the diagnosis possible in the first place. His system: RTX 4080 SUPER, driver
-616.92, DMM 2.8.1.
+Nine days with no commits. This replaces four stacked checkpoints from 13–14
+September with one statement of where everything actually stands, verified today
+rather than recalled. Codex's own 13 September checkpoints stay below as history;
+the fire-visibility one still holds the live test that was never run.
 
-**Read it for what it is.** It is one user reporting success, not the three
-consecutive clean starts the 18:46 checkpoint asked for, and his own earlier
-evidence showed the failure was intermittent -- one run exiting normally followed by
-one crashing. So this raises confidence substantially without closing the question.
-WHOLE (RTX 4090) has not reported back.
+## Verified today
 
-Public wording updated accordingly: the Nexus description no longer says
-confirmation is pending on both systems, it says one of two has confirmed. Nothing
-else was tightened -- the fix is still described as diagnosed and tested rather than
-proven for every configuration.
+| | state |
+|---|---|
+| Nexus | `2.1.11` is `main`, uploaded 09-13 17:54, `2.1.10` archived. Nothing newer uploaded. |
+| Git | `origin/main` == local, nothing unpushed, last commit `b80e22e` on 09-14. |
+| Machine | **The mod is not installed.** `bin64` holds only leftover `crimson-desert-telemetry.deps.cfg` and `.runtimeconfig.cfg` — the known DMM removal behaviour, visible again. Game not running. |
+| `C:\CrashDumps` | **empty.** WER has been armed for `CrimsonDesert.exe` since 09-13 and the unexplained local crash has not recurred in nine days. |
 
-**Still unanswered and worth asking:** how many monitors each affected user runs,
-and whether HDR is active. The owner's two local crashes both happened on a
-two-monitor extended setup during an output change, and the 19:20 crash on 2026-09-13
-is still unexplained with no dump. WER is armed for the next one.
+## The crash is done
 
----
+`2.1.11` fixes a proven ordering violation: Telemetry installed its HUD swapchain
+hooks synchronously inside DXGI's `CreateSwapChainForHwnd`, before Streamline had
+associated the new swapchain with its command queue, which is exactly where the
+users' `E_ACCESSDENIED` came from. Verified against NVIDIA's published Streamline
+v2.11.1 source.
 
-# Previous checkpoint — why per-light occlusion fails, 2026-09-14, Claude
+**jimos87 confirmed it externally** on 09-14 09:57: "It is now working for me :D ty"
+(RTX 4080 SUPER, 616.92, DMM 2.8.1). That is one user, not the three consecutive
+starts the acceptance gate asked for, and his own evidence had shown the failure was
+intermittent. WHOLE (RTX 4090) never reported back. Public wording says one of two
+confirmed and should not be tightened further without WHOLE.
 
-Offline research only, from preserved volumes. No game, no capture, no build, no
-package. The narrow fire-visibility restoration below is untouched and still
-untested live.
+Two things remain open and are recorded rather than solved: nobody ever answered how
+many monitors the affected users run, and the owner's own 09-13 19:20 crash has no
+dump and no explanation. Both of the owner's local crashes happened on a two-monitor
+extended setup during an output change — a configuration the users may not share, and
+a different signature (runtime, `+0x3D05303`) from theirs (startup, `+0x3D0FEA6`).
+Do not merge those two.
 
-## The blocker is explained, and it is not a bug
+## Goal 1 is done; goal 2 is explained, not solved
 
-**The distance field stores a thin signed band around surfaces, not solid
-interiors.** Full evidence in [SDF_BAND_LIMIT.md](SDF_BAND_LIMIT.md). Probing
-straight down through ground the player stands on, at level 0 throughout: the
-negative region is 0.6 gu wide in the room volume and 0.3 gu in the camp volume,
-reaching −0.181 and −0.092, and immediately below it the field returns to
-**+0.53027**, exactly the positive clamp. From 0.2 to 3.6 gu beneath the floor it
-reports being as far from geometry as it can express.
+**Ambient / sky occlusion works and ships.** Measured 0.3916 on open ground, 0.0476
+in an open-fronted stable, and **exactly 0** in a closed interior. Its one product
+consequence: `sky × visibility` drives a lamp to black indoors, so the consumer needs
+a perceptual curve with a floor. That is not optional.
 
-So "inside" is not a persistent state. A segment registers a nonpositive value only
-when it crosses that one-to-two-cell band in a way trilinear interpolation
-preserves, and the room case proves it often does not: exhaustive piecewise-cubic
-evaluation of the whole path found no crossing while solid texels sat within one
-cell of it.
+**Per-light occlusion: the blocker is now explained.** See
+[SDF_BAND_LIMIT.md](SDF_BAND_LIMIT.md). The field stores a thin signed band around
+surfaces, not solid interiors: probing down through ground the player stands on, the
+negative region is 0.6 gu wide (room) and 0.3 gu (camp), reaching −0.181 and −0.092,
+and immediately below it the value returns to **+0.53027**, the positive clamp. So
+"inside" is not a persistent state, and a ray registers a nonpositive value only when
+it crosses that one-to-two-cell band in a way trilinear interpolation preserves —
+which the room case proves it often does not.
 
-**"Is the interpolated value ≤ 0 somewhere along this segment" therefore cannot be
-made reliable on this field** — not by smaller steps, denser sampling or a larger
-tolerance. The tracing, addressing and acquisition are all fine; offline traces
-reproduce the native `closestApproach` values exactly.
+**Therefore `value <= 0 along the segment` cannot be made reliable here.** Not by
+smaller steps, denser sampling or a larger tolerance. Tracing, addressing and
+acquisition are all fine; offline traces reproduce the native `closestApproach`
+values exactly and the geometry is present as negative texels.
 
-## Two candidates ruled out with evidence
+Two repairs are ruled out with evidence, not argument:
 
-**Counting solid texels beside the path.** Refuted on the controlled same-source
-A/B: the blocked pose touched 4, the three exposed poses touched 3. A room always
-has walls and a floor nearby.
+- **Counting solid texels beside the path** — refuted on the controlled same-source
+  A/B: blocked pose touched 4, the three exposed poses touched 3. A room always has
+  walls and a floor nearby.
+- **Raising the hit tolerance** — it looks tempting because within the traced range
+  the room separates by a factor of thirty (blocked 0.005/0.016, clear 0.529/0.517 at
+  the clamp), but that is fitted to one room. Note the regression table's 0.160 and
+  0.125 for the clear controls are **complete-path** minima landing on the lights' own
+  housings inside the end margin; `left-3.0` has length 7.733 with its minimum at
+  exactly 7.733.
 
-**Raising the hit tolerance.** Ruled out on principle, as `SOURCE_VISIBILITY_REGRESSION.md`
-already said. Worth knowing why it looks tempting: within the traced range the room
-separates by a factor of thirty, blocked at 0.005/0.016 against clear at
-0.529/0.517 where 0.530 is the clamp. That is a correction to how the evidence is
-usually quoted — the regression table's 0.160 and 0.125 for the clear controls are
-their **complete-path** minima, which fall on the lights' own housings inside the
-end margin (`left-3.0` length 7.733, minimum at exactly 7.733). The camp is where
-the real difficulty sits: minima spread 0.015 to 0.177 and labels the record itself
-calls conflicting for lamps centimetres apart.
+Still worth fixing separately: the forced 0.05-gu minimum step skipped a genuine
+negative interval on `near-box-b` (dense sampling finds −0.0073 at t = 13.25 against a
+traced verdict of clear). A sphere trace is only valid stepping by at most the sampled
+distance. It recovers that one case and no other.
 
-## Still worth doing, separately
+## The decision that blocks everything
 
-The forced 0.05-gu minimum step remains a genuine defect: it skipped a real negative
-interval on `near-box-b`, where dense sampling finds −0.0073 at t = 13.25 against a
-traced verdict of clear. A sphere trace is only valid stepping by at most the sampled
-distance. Fixing it recovers that one case and no other, so do not expect it to close
-the goal.
+A swept query — "does anything come within radius r of the segment" — is the only
+remaining candidate on this data, because it uses the distance rather than relying on
+the sign surviving interpolation. Checked at the room minima: both blocked paths have
+their nearest surface to the side, not the floor, so it would not merely be detecting
+ground. It is untested and inherently conservative.
 
-## The question this raises for the product
+**Before building it, the product question should be answered:** the consumer is a set
+of Hue lamps, not a renderer. Does it need per-source geometric truth, or roughly how
+much light reaches the player and from where — which the working ambient feed already
+answers? The user has not yet been asked this. Asking is cheaper than building for
+either answer.
 
-A swept query — "does anything come within radius r of this segment" — is well posed
-on a distance field where a sign test is not, because it relies on the distance
-rather than on the sign surviving interpolation. Checked at the room minima: both
-blocked paths have their nearest surface to the side, not the floor, so such a test
-would not simply be detecting the ground. It is untested and inherently conservative,
-calling a light blocked when its path merely grazes geometry.
+## Untested and waiting
 
-**But that bias may be acceptable, and this is a product decision rather than a
-research one.** The consumer is a set of Hue lamps, not a renderer. It may not need
-to know whether each individual source is geometrically occluded, only roughly how
-much light reaches the player and from which direction — and the ambient feed, which
-works and is measured to exactly zero indoors, already answers most of that. Before
-more renderer work, it is worth deciding how much per-light fidelity the lighting
-product actually requires.
+`v2.1.12-fire-visibility.2` is built, scanned (ASI 4/71, ZIP 0/68) and **never
+installed**. Its exact next test is in Codex's own checkpoint below and has not been
+performed: one known fire, `visible -> blocked -> visible`, F11 in show-blocked mode
+first, then rotate the camera without moving to confirm direction does not change the
+verdict. Do not claim candles, lamps or the all-source requirement from one pass.
+
+## Housekeeping, recorded not done
+
+26 untracked throwaway files sit in the repository root (`capture_aba*.py`,
+`parse_aba*.py`, `vt_*.py`, `test.cpp`, `debug_test.cpp`, `set_ini.py`, `temp_zip/`)
+plus `native/.../src/spatial_readback_stub.cpp`, which is in no CMake list. They are
+not mine and may hold the only copy of an analysis, so they were left alone.
 
 ## One next step
 
-Ask the user that question before building anything further. If per-light occlusion
-at this fidelity is genuinely required, the swept query is the only remaining
-candidate on this data and needs a live controlled test with r chosen on physical
-grounds. If a conservative approximation suffices, the existing narrow fire path plus
-ambient may already be enough, and the remaining work is in the consumer.
+Ask the user how much per-light fidelity the lighting product actually needs. If the
+answer is "geometric truth per source", the swept query needs a live controlled test
+with `r` chosen on physical grounds. If "a conservative approximation is fine", the
+existing narrow fire path plus ambient may already suffice and the remaining work is
+in the consumer, not the renderer.
 
 ---
 
