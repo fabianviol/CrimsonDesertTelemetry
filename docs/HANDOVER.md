@@ -1,4 +1,4 @@
-# Private ManyLights diagnostic ready — 2026-09-23, Codex
+# Build 25477059 ManyLights recovery — controlled fire AN/AUS/AN, 2026-09-23, Codex
 
 Interaction rule from the owner: never keep a turn/session running while waiting
 for an in-game action or reply. End the turn; the owner resumes with `AN`,
@@ -7,8 +7,8 @@ for an in-game action or reply. End the turn; the owner resumes with `AN`,
 The owner completed the isolated fire AN/AUS/AN with the portable lantern
 stowed: visible illumination vanished on AUS and returned on AN. The full
 authored-light vector stayed unchanged at three progressing frames; do not
-repeat that branch. The next controlled measurement is the previously proven
-filtered ManyLights path on the new game build.
+repeat that branch. The previously proven filtered ManyLights path now also
+passed a controlled AN/AUS/AN on the new game build (details below).
 
 The exact-build `25477059` definition is deliberately `research`, so the
 managed public compatibility resolver still rejects it. A separate explicit
@@ -17,20 +17,40 @@ capture only, with server, ambient, visibility, notifications and HUDs OFF.
 The ZIP is
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.12-build25477059-diagnostic.2-ModManagers.zip`
 (SHA256 `FDE598D02DB617C194C3A0320097C12217D574EA3E844B21FE4467CE67CB9C4E`).
-Diagnostic `.1` is an earlier immutable build; use `.2`. Nothing is installed
-or released publicly yet. Managed tests passed; native CTest 30/30 passed;
+Diagnostic `.1` is an earlier immutable build; use `.2`. `.2` was installed
+privately via DMM and run in the game; nothing was released publicly. Managed
+tests passed; native CTest 30/30 passed;
 native file preflight matched all ManyLights hook/caller bytes and both ambient
 hook contexts against the current EXE without accessing the game process.
 Ambient/spatial source locations remain static candidates, not runtime-validated.
 
-**One next step:** owner closes the running game, installs diagnostic `.2` via
-DMM, restarts at the four-fire-lantern camp with portable lantern stowed and
-the selected fire AN. Capture AN/AUS/AN with
-`scripts/Capture-PrivateManyLights.ps1` (read-only; one fresh progressing bridge
-sample per state, new file under `artifacts/` each time). Compare nearby records
-at the known fire position before promoting any build. If capture preflight or
-GPU pairing fails, diagnose that exact failure; do not infer the fire has no
-lighting data. Restore the prior package after the test if desired.
+The diagnostic has `Server.Enabled=0`, so the native detour initially remained
+`bridge-waiting` despite successfully installing. Once the owner confirmed the
+playable world, Codex used the existing
+`NativeCaptureReadySignal.TrySet(processId)` one-shot gate; no plugin change or
+rebuild was needed. That manual signal must be repeated after a restart of this
+private package. The running process was PID 19204. The exact-build,
+read-only `scripts/Capture-PrivateManyLights.ps1` recorded three fresh, advancing
+bridge samples under `artifacts/light-research/`:
+
+| Owner state | File suffix | Sequence / frame | Nearby count | Light within 0.5 gu of known fire `(-10529.755,611.292,-4420.300)` |
+|---|---|---:|---:|---|
+| AN | `201348-AN.json` | 232 / 25201 | 8 | 1 at `(-10529.738,611.467,-4420.300)`, sample #31 |
+| AUS | `201437-AUS.json` | 979 / 27817 | 7 | 0 |
+| AN | `201530-AN.json` | 1785 / 30650 | 8 | 1 at `(-10529.749,611.467,-4420.301)`, sample #24 |
+
+The paired camera X/Z remained identical to 0.001 gu; captures were 15–47 ms
+old. The sample index is transient, while the world-space location and the
+AN/AUS/AN response identify the fire contribution. This validates the native
+filtered ManyLights path for this fire on build 25477059, **not** the whole
+product, ambient, source visibility, all lights, or update stability. Keep the
+build definition in `research` status; do not promote it or publish `.2`.
+
+**One next step:** validate the remaining product paths on this build in
+separate bounded controls (starting with ambient/spatial and player movement),
+then consider an exact-build production package. Preserve these three raw
+captures and the old release package. When user action is needed, end the turn;
+do not poll or wait.
 
 # Game update 25477059 — checkpoint, 2026-09-23, Codex
 
