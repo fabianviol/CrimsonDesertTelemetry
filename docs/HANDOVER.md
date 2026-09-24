@@ -22,6 +22,14 @@ single-lamp RGB intervention at the current validated post-filter hook. Verify
 current bindings/state before writing; the old capture is not current runtime
 evidence. No production plugin/package changes.
 
+Targeted PIX re-read for control (no replay): event 779 `InjectEmitterLodLightCS`
+really multiplies RGB by `_lodLightScale`, reads named 80-byte `LodLightInfo`
+entries, and writes unfiltered resource 213. Event 685 uploads 14 such entries
+from UPLOAD resource 107 +86944 to 15397. Useful earlier alternative, NOT proof
+of controlling the nearby fire or every light. Details/caveats and the other
+named candidate fields are in `LIGHT_CONTROL_RESEARCH.md`; post-filter remains
+the bounded first proof. No new build, hook or live write in this check.
+
 # Historical 2.1.14 crash A/B and deployment correction — 2026-09-23, Codex
 
 The owner disabled only `CrimsonDesertTelemetry` in DMM, launched the same save,

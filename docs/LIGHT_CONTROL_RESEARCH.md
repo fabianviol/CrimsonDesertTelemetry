@@ -40,8 +40,8 @@ leave geometry, direction, fourth color component and live count intact. This
 lets the downstream tree read edited colors. Earlier bounds/average calculations
 (events 89/91) have already run: selection thresholds/normalization may therefore
 remain based on originals. This is a bounded candidate, not established safe or
-complete control of every lighting branch. A replay A/B should check the image,
-neighbors and restoration before any live hook is added.
+complete control of every lighting branch. A guarded live A/B must check the
+image, neighbors and restoration; the owner does not want a replay project.
 
 The existing product hook is already post-filter, but its readback does not
 change pipeline bindings. An extra compute pass WOULD: restore exact PSO/root
@@ -49,6 +49,55 @@ signature/root bindings/descriptor heaps and proper resource barriers. Never
 inject a dispatch assuming the engine rebinds all state afterward; the captured
 next pass reuses most of it. Never edit a previous frame's numeric light slot.
 The old capture proves this old frame's chain, not current-build addresses.
+
+## PIX revisited for control parameters, not playback
+
+Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,
+21574 and 21575 to `light-control-pix-20260924/`; no builds or live writes.
+The time-accurate binding resolver proves:
+
+- PSO 21562 `InjectEmitterLodLightCS`, event 779: t32/space37 is
+  `gpuLodLightInfoList`, resource 15397; t20/space37 is
+  `worldPositionSpawnBuffer`, resource 15359. Output u38/space39 is the
+  UNFILTERED ManyLights resource 213; counter u19/space39 is resource 234.
+- Its 80-byte `LodLightInfo` record explicitly names RGB at +0, packed
+  flags at +12, position at +16, and `_injectLightCoefficient` at +76.
+  The 16-byte `InjectEmitterLodLightRootSignature` has `_lightCount`,
+  `_worldLightCount`, `_lodLightScale` (+8), and flags. Shader lines 399-405
+  and 622-628 actually multiply RGB by `_lodLightScale` in both branches.
+  This is real arithmetic evidence, not just a suggestive field name.
+- Event 685 copies 1120 bytes (14 records) from resource 107 +86944 to
+  resource 15397. Resource 107 is a 1 MiB UPLOAD heap buffer. Thus THIS
+  branch has a precise CPU-upload route worth revisiting, not a heap search.
+- Root CBV `GetGpuva(21583,4352)` decodes as counts 14/114, scale 1.0,
+  flags 0x40000000. These are different domains, not 128 separate physical
+  lamps: the second branch uses spawn transforms and indexed LOD entries.
+
+Scope and pitfalls: this is LOD lighting, NOT proof it controls the nearby
+fire's detailed/pulsating components. Entries may be shared by instances;
+their position can be local or world space. `_injectLightCoefficient` also
+changes a non-RGB output term, so it is NOT a clean brightness-only knob.
+Setting a LOD scale to zero would not establish gameplay OFF or all-light OFF.
+The extracted `lod-light-info-15397.bin` holds INITIAL resource bytes; event
+685 overwrites its first 14 records. Do not label those initial values as
+event-779 input without following the upload source. Output/initial-state
+distinction matters even though both are readable offline.
+
+The captured `GPUSpawnPointUpdateCS` (PSO 21575, events 771/775) also binds
+u38 ->213 and u19 ->234. Its inspected ManyLights stores initialise zero
+RGB/group headers, not a demonstrated final color builder. Its reflected
+`GPUEmitterSimulationConstants` names `_injectLightIntensity` (+208) and
+`_particleLightColorScale` (+272); `CommonUpdateRootSignature` names
+`_globalParticleLightScale` (+60). These are CANDIDATES only until their
+actual uses and target-lamp association are proven. Related names were
+already catalogued in `research/light-source-tests/LIGHT_BUFFER_MAP.md` §12;
+do not present the strings as a wholly new discovery or adopt that section's
+superseded subsystem conclusions.
+
+Decision: keep post-filter RGB modulation as the first bounded proof for the
+known lamp (all captured contributions, frame-paired position). Preserve the
+LOD-upload branch as a concrete earlier alternative, not a reason to switch
+tracks or assume it covers all lights. No light has yet been controlled.
 
 ## Existing physical-source evidence and current-build check
 
