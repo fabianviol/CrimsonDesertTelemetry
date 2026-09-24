@@ -11,9 +11,16 @@ a precise candidate for a per-lamp RGB intervention; no control experiment or
 live write has run. Physical Source evidence survives in the old fire handover.
 Current RTTI lookup was repaired for renamed `.xdata`, with offline tests.
 Two bounded current-process position scans were incomplete, NOT negative.
-PID 13528 was running at the known four-lamp camp; no user toggle requested and
-no hook armed. Next: baseline/modified/baseline replay of the preserved capture
-for one lamp, in a separate copy. No production plugin/package changes.
+The owner closed PID 13528. No hook was armed and no live write ran.
+Owner clarification: use PIX as a source of captured data, NOT a scene-replay
+project. Stop replay work; the separate C++ build was terminated, its files and
+the original capture/export preserved. Baseline replay did run but both its
+output and the capture's stored original have HUD over a black scene (already
+noted in the historical handover). No visual light-control result follows.
+Next: use the proven captured bindings/layout to prepare a bounded, reversible
+single-lamp RGB intervention at the current validated post-filter hook. Verify
+current bindings/state before writing; the old capture is not current runtime
+evidence. No production plugin/package changes.
 
 # Historical 2.1.14 crash A/B and deployment correction — 2026-09-23, Codex
 

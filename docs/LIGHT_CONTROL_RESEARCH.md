@@ -85,12 +85,22 @@ completion/read-failure metadata; no generic scene-object inventory is dumped.
 It requires PS7. Tests also cover exact signature alignment and position/NaN
 filters. Saved-address reuse requires the same PID and process start time.
 
-## Next bounded step
+## Owner clarification and next bounded step
 
-Prefer a preserved-capture baseline/modified/baseline replay for one lamp's RGB
-before building a live write hook. First verify replay baseline actually works;
-keep original export and resources immutable, instrument a separate replay copy.
-If replay itself cannot run, report that tooling failure distinctly and return
-to the exact current post-filter hook with a private, guarded prototype. Keep
-the physical-object interaction route available without making it a prerequisite
-for the visual light-show goal. Published packages and live plugin are untouched.
+The owner intended PIX as access to captured data, not a scene-replay project.
+Do not continue the C++ replay build or make restoring its scene a prerequisite.
+The separate build was terminated; all files, original export and capture remain.
+Baseline PIX playback completed, but its final image and the capture's stored
+original show HUD over black. Intermediate events 15635/15637 were also black.
+This limitation was already recorded in the historical fire handover; its
+exposure explanation was a hypothesis, not established. No lamp was modified.
+Evidence: `artifacts/light-research/light-control-replay-20260924/`.
+
+Use the proven captured bindings/layout to prepare a private, bounded and
+reversible one-lamp RGB intervention at the current post-filter hook. Confirm
+current resource bindings/state and target matching before writes; an old capture
+does not validate current runtime addresses. Visual validation belongs in the
+live game, with explicit original/modified/restored states. Keep the physical
+object interaction route available without making it a prerequisite for the
+light-show goal. The game is closed. Published packages and live plugin remain
+untouched.
