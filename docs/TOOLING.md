@@ -277,6 +277,32 @@ All the Python tools read only preserved artifacts and never touch the game.
 
 ## Other existing workflows
 
+### World Builder source / offline anchors
+
+Full pinned clone: `external/crimson-desert-world-builder`, revision
+`ee1f05a3ad1a61cd4aee66946155d0315fdc14e7`. No build/install required to inspect it.
+Read [WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md) for the reusable paths,
+module inventory, licensing and unsafe-to-blindly-run upstream tools.
+
+```powershell
+python -B scripts/Inspect-WorldBuilderAnchors.py --exe artifacts/recovery/20260923-191056-build-25477059/CrimsonDesert.exe --source external/crimson-desert-world-builder/asi/cdmodkit/cdmodkit.cpp --out artifacts/light-research/<fresh-worldbuilder-report>.json
+python -B -m unittest discover -s tests/scripts -p test_worldbuilder_anchors.py
+```
+
+Use the actual Python path above if `python` resolves to a Windows alias. This
+stdlib-only tool reads source as text, scans executable PE sections by flags,
+reports all literal patterns, checks collector-vtable shape and world-global
+agreement, and refuses overwrite. It does NOT cover every upstream resolver,
+find profiler strings, approve compatibility or touch a game process.
+Current authoritative artifact: `worldbuilder-anchors-25477059-20260924-v2.json`
+under `artifacts/light-research/`; 10 targeted tests pass.
+The named-profiler check reused `artifacts/light-research/preset-static-20260924.py`
+(PE/Capstone, `--string` / `--function` / `--target` / fresh `--out`); result is
+`worldbuilder-profiler-25477059-20260924.json` in the same directory. It decodes
+bounded unwind ranges, not complete cross-range control flow or runtime unpacking.
+
+### Deployment and comparisons
+
 - DMM: `C:\Modding\CrimsonDesert\DMM\DMM.exe`. The user installs the WHOLE ZIP
   from `scripts/Build-ModManagerPackage.ps1 -Version <new-version>` through DMM;
   outputs are in `artifacts/mod-manager/`. Close the game before ASI replacement.

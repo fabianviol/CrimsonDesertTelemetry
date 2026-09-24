@@ -109,6 +109,24 @@ unfinished. Do not silently divide/smooth RGB while repairing compatibility.
 
 ## Preserve and revalidate
 
+### Additional native-object / physics anchors (2026-09-24)
+
+[WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md) records a pinned upstream
+source and current patch 2.03.02 checks: native create/enable, world global,
+actor/UUID routes and physics ray/shape functions. It also distinguishes useful
+alternative player/camera anchors from our stronger frame-paired production path.
+Use `scripts/Inspect-WorldBuilderAnchors.py` on each preserved new EXE to report
+all literal-signature matches; command and limitations are in TOOLING.md.
+
+For broken native-object/physics anchors, prefer named profiler string references
+plus unwind metadata, RTTI or collector-vtable shape as independent controls.
+Do not take the first candidate: current `TtCastShape` already has two functions.
+Keep source revision, EXE hash, all matches, calling context and live validation
+separate. This supplements our recovery procedure; it neither relocates the
+ManyLights/ambient producers nor proves unchanged field offsets or shader assets.
+
+### Existing evidence backup
+
 `scripts/Backup-UpdateEvidence.ps1 -ExecutablePath <baseline-exe>` creates and verifies
 private product/research Git bundles, a baseline EXE copy and the small selected
 shader evidence/index, with a hash manifest in `artifacts/recovery/<fresh>/`.

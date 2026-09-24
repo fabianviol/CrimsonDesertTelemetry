@@ -1,5 +1,11 @@
 # In-game light control — 2026-09-24, Codex
 
+Latest entry: [WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md). Native
+create/enable, server gimmick and UUID-lookup leads now exist, with offline
+current-EXE checks and the exact known lamp prefab in upstream's catalog.
+No native lamp toggle or RGB write is proven. Observation-only object capture
+is the next bounded step; older "next" actions below are preserved alternatives.
+
 Owner's goal: an in-game music/light show, no physical Hue output. Investigation
 and reversible experiments are authorized. No individual light has yet been
 programmatically switched. No plugin/game-memory writes were made in this step.

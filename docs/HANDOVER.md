@@ -1,4 +1,32 @@
-# Current: in-game light control research — 2026-09-24, Codex
+# Current: World Builder reuse / update recovery — 2026-09-24, Codex
+
+Owner broadened the investigation beyond switching lights: examine World Builder
+for unresolved occlusion/sky and alternative recovery of working telemetry too.
+Read **docs/WORLD_BUILDER_RESEARCH.md** first. Pinned full source clone is under
+`external/crimson-desert-world-builder`, commit `ee1f05a3ad1a61cd4aee66946155d0315fdc14e7`.
+
+Concrete findings: native scene create/enable and server gimmick paths, plus
+physics sphere sweeps for ground placement. The latter is a new route around
+our SDF false clears, NOT an already validated optical visibility solution.
+Public C/HTTP APIs only manage WB-owned objects; no ready-made lamp switch/RGB
+or all-world object API. Our exact known fire-lamp prefab occurs in its tables.
+Keep camera-paired ManyLights; WB's camera pose/heap ranking is not a replacement.
+
+Offline current patch 2.03.02 / EXE 1.0.0.2976 / build 25477059: 17 literal
+patterns checked, 15 unique, 1 absent on disk, and 15 references agreeing on one
+world global. Named create/ray/shape entry points also recovered; CastShape has
+two candidates. See the report for exact RVAs, limits and private evidence paths.
+New `scripts/Inspect-WorldBuilderAnchors.py` is read-only; 10 targeted tests pass.
+No third-party binary built/installed, live write, product build or release change.
+
+**Next bounded step:** prepare default-off observation-only capture at the native
+scene create/enable boundary for our known lamp; validate instructions/context
+before arming. Recover current object/child lifetime before a reversible write.
+Physics query validation is a separate next avenue, not silently enabled now.
+Do not ask for another broad scan or install a second ASI. The earlier preset
+read and post-filter modulation remain alternatives, not mandatory next actions.
+
+# Earlier light-control / preset checkpoint — 2026-09-24, Codex
 
 Owner now wants to investigate switching/dimming game lights for a music light
 show. The earlier release STOP below was superseded by the owner's explicit
