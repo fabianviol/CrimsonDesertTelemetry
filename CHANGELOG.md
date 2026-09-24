@@ -2,6 +2,14 @@
 
 ## Unreleased — production ambient and per-light occlusion
 
+- Extend automatic compatibility to the direct camera layout, so the camera stays
+  available after a game update that moves code and data without changing the
+  camera object layout. `build-25477059.json` becomes the direct-layout template:
+  scene global from its RIP-relative load pattern, scene vtable from two slot
+  fingerprints (the class has no MSVC RTTI locator). Relocated profiles still drop
+  `engineLights` and `nativeCapture`, keep all live decode/coherency checks and are
+  labelled `automatic`, never `tested`. Offline, the resolver reproduces the
+  validated 1.0.0.2976 profile exactly.
 - Fix ambient input layout: retain the full contiguous 768-byte GI context and
   respect padded GPU readback rows. Decoder offsets/math stay unchanged. Camera-local
   Ambient Occlusion passed a controlled open/enclosed/open route in OFF v2.1.9
