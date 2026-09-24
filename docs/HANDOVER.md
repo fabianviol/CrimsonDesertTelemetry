@@ -17,10 +17,15 @@ project. Stop replay work; the separate C++ build was terminated, its files and
 the original capture/export preserved. Baseline replay did run but both its
 output and the capture's stored original have HUD over a black scene (already
 noted in the historical handover). No visual light-control result follows.
-Next: use the proven captured bindings/layout to prepare a bounded, reversible
-single-lamp RGB intervention at the current validated post-filter hook. Verify
-current bindings/state before writing; the old capture is not current runtime
-evidence. No production plugin/package changes.
+Owner then recalled the `Let There Be Light` preset route; inspect that upstream
+route before implementing persistent render modulation. Current loader and
+owner paths are relocated OFFLINE: owner `module+0x6C8E9D0`, independent parent
+`module+0x6C8E978` -> **+0x778** (old +0x760 is obsolete). Details/evidence in
+`LIGHT_CONTROL_RESEARCH.md`. Next owner action: start/load the game. Then one
+bounded read-only comparison of both paths and named preset tables; no toggles,
+heap scan or writes. Existing direct consumers are Nit/material, NOT a proven
+Lumen/lamp path. The two paths are not yet live validated on this build.
+No production plugin/package changes; post-filter modulation remains fallback.
 
 Targeted PIX re-read for control (no replay): event 779 `InjectEmitterLodLightCS`
 really multiplies RGB by `_lodLightScale`, reads named 80-byte `LodLightInfo`

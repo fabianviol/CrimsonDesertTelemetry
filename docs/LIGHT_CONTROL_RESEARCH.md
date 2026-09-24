@@ -101,6 +101,53 @@ tracks or assume it covers all lights. No light has yet been controlled.
 
 ## Existing physical-source evidence and current-build check
 
+### Preset route relocated offline, 2026-09-24
+
+Owner recalled `Let There Be Light` (local XML under `research/Let There Be
+Light/files/0011/miscellaneous/lightpreset.xml`). Prefer checking its upstream
+preset route before building persistent renderer modulation. The mod's XML
+does not establish how its author researched it, hot reload, or per-instance
+control. `NATIVE_PRESET_TRACE.md` already proved MarkerA value 73.125 in both
+native Candlelight map/compact entries on an OLD build; do not redo that search.
+
+For exact EXE hash 57DA440D... above, disk-only findings:
+
+| Role | Current VA / path |
+| --- | --- |
+| XML path string | 0x145D01208, `.xdata` |
+| Loader, containing validated XML xref at 0x143994449 | 0x143994310..0x143995311 |
+| Setup loader call | 0x143BAF1B6, RCX from `[RDI+0x778]` |
+| Parent global published from same RDI | module+0x6C8E978 |
+| Direct preset owner published at 0x143DC9DB2 | module+0x6C8E9D0, from `[RCX+0x778]` |
+| Compact-table builder | 0x143995630..0x1439958EF |
+
+Parent member moved **+0x760 -> +0x778**. Map family remains owner+0x90,
+stride 0x20; builder still uses 24-byte compact elements and copies node
+value/color/temperature +0x10/+0x14/+0x18 to +8/+0xC/+0x10. Loader reads
+group scale +0x124/+0x128. These are code/layout observations, NOT current
+live pointer/table validation or proof of effective brightness units.
+
+Six unwind-aligned direct reads of the new owner global feed calls to
+0x143995B30 / 0x143995C00, all with group 2 (Nit), mirroring the historical
+material branch. Do not mistake these for Lumen/individual-lamp consumers.
+Two further raw xref candidates at 0x15416E0C0 and 0x154173A10 have no enclosing
+unwind function and remain UNVALIDATED; packed/unpacked code needs live bytes.
+The owner-publication instruction is decoded from an unwind start, but its
+whole larger function does not decode to its end. Never claim a complete CFG.
+
+Evidence/helper: `artifacts/light-research/preset-static-20260924.py` and
+`preset-static-25477059-{loader,owner,consumers,publisher,direct-readers,lookup-callers}.json`.
+Helper only reads disk, searches specific references and disassembles bounded
+unwind-covered functions; regex hits without boundaries stay candidates.
+
+Next bounded live action: after owner starts the game, READ and compare
+`*(module+0x6C8E9D0)` with `*(*(module+0x6C8E978)+0x778)`, validate named
+Lux/Lumen/Nit tables and save their current layout/values. Read the two exact
+unvalidated code windows if needed. No heap scan, no toggle request, no write
+or stale-address breakpoint. Only then decide how to trace a particular
+preset's consumers; do not assume modifying a shared table updates existing
+instances. The game is currently closed, no trace/hook is armed.
+
 Reuse `research/light-source-tests/CODEX_HANDOVER_FIRE.md`, section
 `CURRENT CHECKPOINT - 2026-09-06, source-to-render join and active child`.
 The persistent lamp Source was `pa::SceneObjectClient`, prefab
