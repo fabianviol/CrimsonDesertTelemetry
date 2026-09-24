@@ -2,13 +2,12 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-23): STOP the 2.1.14 release after a game-load
-DXGI_ERROR_DEVICE_HUNG crash. Diagnose it before building/publishing another ZIP.
-Preserve published 2.1.11 and immutable 2.1.14. A possible Win32 error 6
-bootstrap handle bug is fixed, but the external report is unconfirmed. The narrow
-source-visibility classifier remains included as EXPERIMENTAL and OFF by default
-because live false-visible verdicts were observed. Do not reopen renderer research
-for this release. Read HANDOVER first.
+Current user priority (2026-09-24): investigate reversible in-game light control
+for a music light show. Read HANDOVER and docs/LIGHT_CONTROL_RESEARCH.md first;
+reuse the old PIX capture and established lamp findings. Earlier release STOP
+was superseded by the owner's explicit publish instruction. Preserve published
+packages and historical crash evidence. Source visibility remains EXPERIMENTAL
+and OFF by default; this task does not authorize unrelated fixes or a new release.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.

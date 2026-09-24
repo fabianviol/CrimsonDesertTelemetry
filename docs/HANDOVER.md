@@ -1,4 +1,21 @@
-# 2.1.14 crash A/B and deployment correction — 2026-09-23, Codex
+# Current: in-game light control research — 2026-09-24, Codex
+
+Owner now wants to investigate switching/dimming game lights for a music light
+show. The earlier release STOP below was superseded by the owner's explicit
+publication instruction; preserve the released package and all historical crash
+evidence. Do not resume release/crash work implicitly.
+
+Read `docs/LIGHT_CONTROL_RESEARCH.md`. Old PIX export was reused to prove the
+filter-output -> light-tree binding (resources 213 -> 217 -> tree 248). It gives
+a precise candidate for a per-lamp RGB intervention; no control experiment or
+live write has run. Physical Source evidence survives in the old fire handover.
+Current RTTI lookup was repaired for renamed `.xdata`, with offline tests.
+Two bounded current-process position scans were incomplete, NOT negative.
+PID 13528 was running at the known four-lamp camp; no user toggle requested and
+no hook armed. Next: baseline/modified/baseline replay of the preserved capture
+for one lamp, in a separate copy. No production plugin/package changes.
+
+# Historical 2.1.14 crash A/B and deployment correction — 2026-09-23, Codex
 
 The owner disabled only `CrimsonDesertTelemetry` in DMM, launched the same save,
 and reported that it loaded and ran. DMM activity records the ASI disabled at
