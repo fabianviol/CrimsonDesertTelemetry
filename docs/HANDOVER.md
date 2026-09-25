@@ -1,13 +1,16 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current checkpoint: physics.5 installed; first live fan PASSED, PID35192.**
+**Current checkpoint: physics.5 visible-lantern AND wall fans PASSED, PID35192.**
 Owner requests PRACTICAL scope, not extended research: visible lanterns must not
-vanish because of cage bars; a wall must block them. Finish this small comparison,
-then use results for a bounded practical approach; no new broad investigation.
+vanish because of cage bars; a wall must block them. Small comparison is complete;
+next is bounded practical integration, not a new broad investigation.
 Usual visible lantern: center hit0.14528gu before source; inner0.05gu rays3hit/1clear,
 outer0.15gu rays1hit/3clear. All nine completed, matching control/guards/originals
-passed, no exception; deployed ASI matches .5, logv5. One transaction/10 extra
-calls used;14 extra calls remain, no pending query. Telemetry still playing.
+passed, no exception; deployed ASI matches .5, logv5. Wall fan: ALL9 hit, NO clear
+path, contacts0.38..0.49gu before source. This is a different outside-wall view
+from old PID37148 (camera now X=-10523.083), not a repeat of its5gu contact.
+Both transactions passed all controls.20 extra calls used;4 remain, insufficient
+for another fan. No pending query. Telemetry still playing.
 Evidence: final PHYSICS_QUERY_RESEARCH section (raw+decoded artifacts retained).
 New `rayfan`: one matching natural-ray control + nine same-context rays (center,
 four offsets at0.05gu, four at0.15gu). Diagnostic stencil, NOT source extent or
@@ -32,9 +35,12 @@ HUD source disappearance was NOT physics filtering: source counts recovered
 after darkening with unchanged view (usual lamp0/44 ->47/47 captures). Exact
 renderer rejection cause remains unisolated; absence != OFF or occluded.
 
-**One next step:** owner moves outside the closed shed wall, then one fresh-source
-fan to the SAME usual lamp. No restart/install needed. Each fan includes its own
-control. Full evidence,
+**One next step:** bounded experimental production integration: all sampled paths
+blocked -> blocked; any clear neighbors -> retain as visible/partial estimate;
+invalid/stale -> unknown. Preserve raw data and do NOT publish hit ratio as optical
+attenuation. Add temporal stability and bounded scheduling; current one-shot
+instrument does not validate sustained query rate. No more owner comparison or
+source-radius research needed for this first practical approach. Full evidence,
 budgets, invocation and limitations: final sections of `PHYSICS_QUERY_RESEARCH.md`.
 END turn for owner actions; do not poll/wait. Unrelated untracked work is untouched.
 

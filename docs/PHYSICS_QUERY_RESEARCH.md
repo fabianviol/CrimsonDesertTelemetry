@@ -1,7 +1,7 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
 **Current instrument: physics.5**, diagnostic nine-ray fan, described in the final
-section. First live fan passed in PID35192; wall fan pending. physics.4 ray controls passed in PID37148;
+section. Visible-lantern and wall fans passed in PID35192. physics.4 ray controls passed in PID37148;
 older sections below preserve earlier evidence, not the current package state.
 
 Owner priority: resolve geometric light occlusion before the new light-control
@@ -695,3 +695,31 @@ and `physics-rayfan-decoded-35192-lantern.json`. Decoder's aggregate collision=u
 is intentional; inspect fanComplete and samples, not single-segment summary counts.
 Next and only requested comparison: same lamp from outside the closed shed wall,
 one fan (10calls). No new package, no HUD/API changes or long waiting session.
+
+## physics.5 wall comparison completes the bounded experiment — PID35192
+
+Owner moved outside wall, same usual lamp; request
+`2b76d596cefc40cfb96966f4e0dfb32a`, frame18990/sample103, source age15ms.
+Camera(-10523.083008,612.528625,-4421.712891), source
+(-10529.749023,611.468567,-4420.300781). This is a different outside-wall view
+from previous PID37148; do not expect the old5.04gu contact distance.
+
+ALL9 rays HIT: center1/1, inner4/4, outer4/4. No clear neighboring ray.
+Contacts roughly0.38..0.49gu before each endpoint; same opaque body
+0x8000000001000AB5, mostly selector55FFFFFF, also2AFFFFFF and55BFFFFF.
+Geometry consistent for all9. Matching control, canaries and originals pass;
+exception0.20 extra calls used across two transactions,4 remain (no third fan).
+Afterward health playing, sequence20140,errornull. No source-visibility HUD change.
+
+Raw `physics-rayfan-35192-2b76d596cefc40cfb96966f4e0dfb32a.json`, decoded
+`physics-rayfan-decoded-35192-wall.json`, under artifacts/light-research.
+
+Practical conclusion in this paired test: visible fixture has clear neighbors
+(4/9), wall has none (0/9), despite both center rays hitting. This supports a
+conservative sampled-path classifier rather than single-hit removal. It is NOT
+general material/scene acceptance or a44% light-transmission measurement.
+Next: bounded experimental integration, keep some-clear lights rather than hide
+them, all-blocked classification with temporal stability, failed/stale ->unknown;
+retain raw streams. No further geometry research required before first practical
+implementation. Sustained query scheduling/performance still needs bounded tests;
+the one-shot diagnostic's success does not establish a safe per-frame all-light rate.
