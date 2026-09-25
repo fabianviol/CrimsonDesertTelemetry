@@ -1,4 +1,23 @@
-# Current: World Builder reuse / update recovery — 2026-09-24, Codex
+# Current: camera compatibility PR merged; research preserved — 2026-09-25, Codex
+
+Owner merged GitHub PR #2 (Moon-yungg, head `40f4d0d`, remote merge `9ce0b67`).
+Local merge `e09cc60` incorporates it without losing our five local research
+commits. Combined managed Release build: zero warnings/errors; 73/73 tests pass.
+No installed ASI, package or published release was replaced. No push performed.
+
+This is NOT an RTTI-name camera resolver: the camera vtable lacks the usual
+MSVC locator (independently checked). It enables automatic direct-camera
+relocation using the existing RIP load and two vtable-slot fingerprints.
+Offline review reproduced the exact current profile and also resolved preserved
+EXEs 1.0.0.2850 and 1.0.0.2949. Unknown builds still lose NativeCapture and
+EngineLights; layout/freshness validation remains. No live-game validation of
+the new automatic path. Minor review follow-up: the new NativeCapture-null
+assertion starts with null; seed a valid native contract to test its removal.
+
+The next research action remains the bounded object observation below; merging
+this contribution does not authorize a new release or restart broad discovery.
+
+## World Builder reuse / update recovery — 2026-09-24, Codex
 
 Owner broadened the investigation beyond switching lights: examine World Builder
 for unresolved occlusion/sky and alternative recovery of working telemetry too.
