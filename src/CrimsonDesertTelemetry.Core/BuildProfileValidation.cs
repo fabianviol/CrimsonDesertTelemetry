@@ -64,9 +64,9 @@ public static class BuildProfileValidation
                 Fail("Direct-camera profile must not declare a legacy context chain.");
         }
         if (definition.AllowAutomaticCompatibility && (definition.Status != "locally-validated" ||
-                camera.Layout != "renderer-camera-v1" || camera.CameraVtableFingerprints.Count < 2 ||
-                camera.ContextVtableFingerprints.Count < 2))
-            Fail("Automatic compatibility requires the implemented legacy layout and multi-slot fingerprints.");
+                camera.CameraVtableFingerprints.Count < 2 ||
+                (camera.Layout == "renderer-camera-v1" && camera.ContextVtableFingerprints.Count < 2)))
+            Fail("Automatic compatibility requires multi-slot fingerprints for every object its camera layout reads.");
         if (definition.EngineLights is { } lights)
         {
             Offset(lights.ArrayPointerOffset, 8);
@@ -108,9 +108,11 @@ public static class BuildProfileValidation
     private static void ValidateNative(BuildDefinition definition, NativeCaptureDefinition native)
     {
         var expectedContractId = $"manylights-filter-{definition.SteamBuildId}-v1";
+        // A profile may also serve as an automatic camera template: BuildCompatibility.Relocate
+        // drops NativeCapture and EngineLights, so only the exact executable ever runs this contract.
         if (native.SchemaVersion != 1 || native.ContractId != expectedContractId ||
             native.Status != definition.Status || native.Status is not ("locally-validated" or "research") ||
-            !native.RequiresExactExecutable || definition.AllowAutomaticCompatibility ||
+            !native.RequiresExactExecutable ||
             definition.EngineCamera?.Layout != "renderer-camera-direct-v1" ||
             definition.EngineLights?.Layout != "light-source-array-scene-global-v1")
             Fail("Native capture must use its supported exact-executable contract and coherent direct scene profile.");

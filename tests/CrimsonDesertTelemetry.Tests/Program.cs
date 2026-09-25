@@ -75,6 +75,7 @@ var tests = new (string Name, Action Run)[]
     ("update check distinguishes exact, missing and ambiguous anchors", UpdateCheckTests.ExactAndAmbiguous),
     ("embedded build definition", EmbeddedBuildDefinition),
     ("automatic compatibility relocates code, globals and tables", BuildCompatibilityTests.Relocation),
+    ("automatic compatibility relocates the direct camera layout", BuildCompatibilityTests.DirectLayoutRelocation),
     ("compatibility distinguishes exact executable identity", BuildCompatibilityTests.KnownHash),
     ("compatibility rejects missing and ambiguous code", BuildCompatibilityTests.MissingAndAmbiguousCode),
     ("compatibility validates RIP target sections", BuildCompatibilityTests.DataTargets),
@@ -218,8 +219,14 @@ static void EmbeddedBuildDefinition()
         "The automatically recognized and live-validated update is not embedded.");
     Assert(definitions.Single(definition => definition.SteamBuildId == "24994088").EngineLights is null,
         "Unvalidated light offsets leaked into the automatic reference build.");
-    Assert(definitions.Count(definition => definition.AllowAutomaticCompatibility) == 1,
-        "Automatic compatibility must have exactly one reference layout.");
+    Assert(definitions.Where(definition => definition.AllowAutomaticCompatibility)
+            .GroupBy(definition => definition.EngineCamera!.Layout).All(layout => layout.Count() == 1),
+        "Automatic compatibility must have at most one reference profile per camera layout.");
+    Assert(definitions.Any(definition => definition.SteamBuildId == "25477059" &&
+                                         definition.AllowAutomaticCompatibility &&
+                                         definition.EngineCamera is { Layout: "renderer-camera-direct-v1" } camera &&
+                                         camera.CameraVtableFingerprints.Count >= 2),
+        "The current direct-camera profile is not an automatic compatibility template.");
     Assert(definitions.Any(definition => definition.SteamBuildId == "25116796" &&
                                          definition.ExecutableVersion == "1.0.0.2760" &&
                                          definition.Status == "locally-validated" &&

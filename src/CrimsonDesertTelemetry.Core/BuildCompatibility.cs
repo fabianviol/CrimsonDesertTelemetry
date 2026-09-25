@@ -69,7 +69,9 @@ public static class BuildCompatibility
         definition.NativeCapture = null;
         var camera = definition.EngineCamera
             ?? throw new InvalidDataException("No native camera layout.");
-        if (camera.Layout != "renderer-camera-v1") throw new InvalidDataException("Unknown camera layout.");
+        if (camera.Layout is not ("renderer-camera-v1" or "renderer-camera-direct-v1"))
+            throw new InvalidDataException("Unknown camera layout.");
+        var direct = camera.Layout == "renderer-camera-direct-v1";
         var root = definition.PlayerRoot ?? throw new InvalidDataException("No player-root layout.");
         if (root.ExpectedTypeNames.Count != 3 || root.ExpectedTypeNames.Any(string.IsNullOrWhiteSpace))
             throw new InvalidDataException("Player-root type guards are missing.");
@@ -81,16 +83,26 @@ public static class BuildCompatibility
         }
         image.ResolveDataReference(root.WorldSystemPattern, 8);
 
-        (camera.MainRootReferenceRva, camera.MainRootGlobalRva) = image.ResolveDataReference(
-            new PatternDefinition { Pattern = camera.MainRootReferencePattern, RipOffset = 3, RipEnd = 7,
-                Name = "camera main root" }, 8);
         (camera.CameraReferenceRva, camera.CameraGlobalRva) = image.ResolveDataReference(
             new PatternDefinition { Pattern = camera.CameraReferencePattern, RipOffset = 3, RipEnd = 7,
                 Name = "camera global" }, 8);
+        // The renderer camera class has no MSVC RTTI locator (checked on 1.0.0.2976), so its
+        // type guard is the multi-slot vtable fingerprint; the player chain keeps its RTTI guards.
+        camera.CameraVtableRva = image.ResolveVtable(camera.CameraVtableFingerprints, "camera");
+        if (direct)
+        {
+            // The direct layout reads the camera global only; its struct offsets (source +0x428,
+            // frame counter) are carried unchanged and remain subject to the live decode checks.
+            if (camera.MainRootReferenceRva != 0 || camera.MainRootGlobalRva != 0 || camera.ContextVtableRva != 0)
+                throw new InvalidDataException("Direct-camera template declares a legacy context chain.");
+            return definition;
+        }
+        (camera.MainRootReferenceRva, camera.MainRootGlobalRva) = image.ResolveDataReference(
+            new PatternDefinition { Pattern = camera.MainRootReferencePattern, RipOffset = 3, RipEnd = 7,
+                Name = "camera main root" }, 8);
         if (camera.MainRootGlobalRva == camera.CameraGlobalRva)
             throw new InvalidDataException("Camera roots must be independent.");
         camera.ContextVtableRva = image.ResolveVtable(camera.ContextVtableFingerprints, "context");
-        camera.CameraVtableRva = image.ResolveVtable(camera.CameraVtableFingerprints, "camera");
         if (camera.ContextVtableRva == camera.CameraVtableRva)
             throw new InvalidDataException("Camera and context tables must differ.");
         return definition;

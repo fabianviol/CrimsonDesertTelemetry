@@ -28,6 +28,49 @@ internal static class BuildCompatibilityTests
         }
     }
 
+    public static void DirectLayoutRelocation()
+    {
+        foreach (var shift in new[] { 0u, 0x10000u })
+        {
+            using var fixture = DirectTemplate(shift);
+            fixture.Definition.EngineLights = new EngineLightsDefinition
+                { Layout = "light-source-array-scene-global-v1", SceneGlobalRva = 0xDEB0, SceneVtableRva = 0xDEA0 };
+            var resolved = fixture.Resolve();
+            var camera = resolved.Definition.EngineCamera!;
+            Check(resolved.Compatibility.Mode == "automatic" && resolved.GameBuild == "unknown",
+                "Direct template was labelled tested or inherited the reference build ID.");
+            Check(camera.Layout == "renderer-camera-direct-v1" && camera.FrameCounterOffset == 0x2C8,
+                "Direct layout or its frame counter was not carried.");
+            Check(camera.CameraReferenceRva == fixture.Code + 0x180 && camera.CameraGlobalRva == fixture.Data + 0x108 &&
+                camera.CameraVtableRva == fixture.Tables + 0x200, "Direct relocation used the reference RVAs.");
+            Check(camera.MainRootGlobalRva == 0 && camera.ContextVtableRva == 0, "Direct relocation invented a context chain.");
+            Check(resolved.Definition.EngineLights is null && resolved.Definition.NativeCapture is null,
+                "Direct relocation inherited exact-build light or native offsets.");
+            Check(fixture.Definition.EngineCamera!.CameraGlobalRva == 0xDEB0, "Direct relocation mutated the trusted profile.");
+        }
+        using var weak = DirectTemplate();
+        weak.Definition.EngineCamera!.CameraVtableFingerprints.RemoveAt(1);
+        Reject(() => weak.Resolve(), "Direct template with a single-slot camera fingerprint accepted.");
+        using var legacyChain = DirectTemplate();
+        legacyChain.Definition.EngineCamera!.MainRootGlobalRva = legacyChain.Data + 0x100;
+        Reject(() => legacyChain.Resolve(), "Direct template with a legacy context chain accepted.");
+        using var wrongTable = DirectTemplate();
+        wrongTable.Q(0x2600 + 16, wrongTable.ImageBase + wrongTable.Code + 0x840);
+        Reject(() => wrongTable.Resolve(), "Direct template accepted a table whose second slot differs.");
+    }
+
+    private static Fixture DirectTemplate(uint shift = 0)
+    {
+        // The direct layout needs only the camera global and the camera table; no context fingerprints.
+        var fixture = new Fixture(shift);
+        var camera = fixture.Definition.EngineCamera!;
+        camera.Layout = "renderer-camera-direct-v1"; camera.FrameCounterOffset = 0x2C8;
+        camera.MainRootReferenceRva = camera.MainRootGlobalRva = camera.ContextVtableRva = 0;
+        camera.ContextVtableFingerprints.Clear();
+        camera.CameraReferenceRva = 0xDEC0; camera.CameraGlobalRva = 0xDEB0;
+        return fixture;
+    }
+
     public static void KnownHash()
     {
         using var fixture = new Fixture();
