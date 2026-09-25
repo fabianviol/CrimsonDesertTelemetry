@@ -30,7 +30,8 @@ DMM with game closed. Nothing was installed automatically; no public release/pus
 **Current package: physics.2.** Owner closed the game. New opt-in `replay`
 and `segment` requests run after the original call returns, on the same thread
 while its caller stack is alive; guarded private copies and matching-result
-control, no queued stack pointers. This execution context is NOT yet live-tested.
+control, no queued stack pointers. This context has now passed the bounded live
+controls below; this is not general safety or optical-visibility acceptance.
 Read the final section in the physics doc before use; native hangs cannot be
 timed out safely. Segment inversion corrected; zero-axis convention refused.
 No result is published as optical visibility; max 12 replay transactions/process.
@@ -41,17 +42,30 @@ tests include copy isolation, control mismatch, fault latch, canaries and bounds
 Live replay and segment controls now succeeded in PID 5468 (see below).
 No public API/published release was changed.
 
-**Latest live result (PID 5468, installed physics.2 verified):** replay matched;
+**Earlier live result (PID 5468, installed physics.2 verified):** replay matched;
 ground control hit at fraction 0.311135 with upward normal. Two camp-lantern
 segments hit late (~0.907 / 0.911); stopping the first path 1 gu before its light
 gave no hit. Thus collision queries distinguish hit/no-hit, but endpoint/fixture
 contact is not established optical occlusion. All 5 transactions passed control,
 guards and original-data checks; no exception; ManyLights continued advancing.
-7 of the 12 replay transactions remain. Raw reports/log are archived; details in
+At that checkpoint 7 of the 12 replay transactions remained. Reports are archived;
 the physics doc. No further native change or reinstall needed for the wall test.
 
-**Next:** owner moves outside a closed wall of the camp shed, facing the lanterns
-through the wall, and returns. Request ONE current paired-frame light segment via
+**Latest: outside-wall test succeeded, same PID 5468.** Owner supplied a screenshot
+of the plank wall and considers all four lanterns covered; gaps between planks
+are visible. Two paired-camera segments contact at 7.25 / 7.22 gu from camera,
+4.96 / 9.91 gu BEFORE their lights, with near-horizontal, similarly oriented
+normals. This is strong evidence for intervening wall collision, unlike the prior
+near-source contacts; not proof of exact optical coverage through plank gaps.
+Both controls matched, guards/originals passed, no exception, telemetry advanced.
+One intervening request safely refused a natural query with a different fifth
+argument (`unknown-call-context`); NO extra call, not a miss or guard failure.
+7 replay transactions consumed, 5 remain. Evidence in the physics doc.
+Owner notes the lamps are wall-mounted: earlier endpoint contacts could indeed
+be their mounting wall; fixture identity was not established.
+
+**Next:** owner moves to the open side/doorway with one known lantern visibly
+unobstructed, then returns. Compare ONE paired-frame segment to that same source:
 `Start-PhysicsProbe.ps1 -Mode segment -NearLightPosition @(-10529.755,611.292,-4420.3)`
 (or another of the four present sources). Script now resolves the target within
 the same frame instead of reusing a transient index. Optional `-StopBeforeLight 1`

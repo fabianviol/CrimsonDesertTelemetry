@@ -239,3 +239,44 @@ request was not reused. Report endpoints are authoritative, not guessed names.
 Next: owner outside the shed's closed wall, looking toward the four lanterns.
 One wall-crossing segment, then compare with the retained camp results. Seven
 transactions remain in PID 5468; no active request and no waiting session.
+
+## Outside the plank wall — PID 5468, 2026-09-25
+
+Owner stood outside the known shed, supplied a screenshot, and judged the four
+lanterns covered. Plank gaps are visible, so this is not a solid optical barrier.
+Owner also clarifies the lanterns are wall-mounted: the earlier near-source
+contacts may be mounting-wall geometry, not necessarily the fixture itself.
+
+Same installed physics.2, no native change. Player (-10534.5635,608.9869,-4425.0371),
+paired camera (-10535.7783,611.6642,-4430.9141). Two successful light segments:
+
+| Request ID | Actual light endpoint | Fraction | Sweep-center contact | Before light |
+|---|---|---|---|---|
+| 132cf90ed3ec42d3aafbca0a277ab7fe | (-10529.7500,611.4661,-4420.3008) | 0.5939830244 | (-10532.1976,611.5465,-4424.6100) | 4.9564 gu |
+| 4e67fd9b9c0d43bc89667423319c5a0f | (-10536.1807,611.4673,-4413.7881) | 0.4216989279 | (-10535.9480,611.5812,-4423.6921) | 9.9074 gu |
+
+Contact distances from camera: 7.2510 / 7.2245 gu. Normals respectively
+(-0.182516,-0.001820,-0.983201) and (-0.247063,0.000624,-0.968999).
+Positions are start + fraction * displacement: sphere-center locations at
+contact, not decoded mesh contact points. Both controls matched, canaries intact,
+checked original ranges unchanged, exception=0, segment result plausible.
+Telemetry progressed from sequence 50975 / light frame 49093 to 56966 / 54459.
+
+An intervening request `201efeb922fe47128efbca267f5170f2` was refused as
+`unknown-call-context`: the captured natural query's fifth argument was NOT its
+collector. `controlCalled=false`, `segmentCalled=false`; false guard/preservation
+booleans are unexecuted defaults, NOT observed corruption. No replay budget used.
+One explicit retry supplied the accepted second segment above. Preserve this
+rejection as evidence; do not interpret its absent segment result as clear.
+
+Inference: two paths now hit intervening geometry consistent with the visible
+wall, well before either lamp. This supports native queries detecting objects /
+walls, not just terrain. It does not yet prove optical visibility classification:
+inherited sphere radius/mask, plank gaps and near-source collision remain limits.
+Next: a visually unobstructed view from the open side/doorway to one of these same
+sources, with paired endpoints again. No blanket endpoint cutoff or API change.
+
+Artifacts in `artifacts/light-research/`: `physics-wall-5468-<request ID>.json`
+for all three requests above, `physics-wall-5468-20260925.native.log`, and the
+owner screenshot `physics-wall-5468-20260925.png`. Seven replay transactions used,
+five remain in this process. No active request; no new plugin/install required.
