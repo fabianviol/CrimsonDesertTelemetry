@@ -49,10 +49,24 @@ One alternative full ray to currently supplied known brazier returned NO hit;
 different target, NOT a successful wall-versus-usual-lantern comparison. Five
 transactions consumed in PID 37148, seven remain; no pending request.
 
-**One next step:** owner rotates only camera at this same player position and
-returns `gedreht`; capture another bounded API stream and compare source coverage.
-No code fix, new package, guessed/stale target or visibility fallback. Then resume
-wall ray when the intended source is freshly supplied. No polling/waiting for owner.
+**Superseding result: darker scene, NO camera turn.** Owner returned after ~10min,
+reported game darker and more lights. New 3s capture has 47 unique native frames:
+94 active, 15 inside35gu, usual lamp present in ALL47 (previously0/44). Camera
+forward identical, X/Z identical, only tiny idle Y changes; no setting/package
+change. Strong temporal/lighting-state correlation, NOT proof of a particular
+exposure or time-of-day switch. Camera-direction-only explanation insufficient.
+Stored `physics-wall-darker-37148-20260925/`. No camera-turn request pending.
+
+Fresh-source wall ray NOW succeeded for usual lamp, request
+`1a1275fc96c84848a38bac7a52838ae8`: hit5.03646gu before source, almost horizontal
+wall normal, geometry residual0.00000153gu; all controls pass, no exception.
+Compare inside-view endpoint contact0.14522gu. SIX transactions used, six remain.
+No pending query. Do not conflate source absence with OFF/blocked or this wall
+hit with a complete partial-coverage classifier. **Next bounded development:**
+plan justified multi-point coverage around the source using retained sphere/ray
+evidence; source extent and optical-vs-collision limitations remain unresolved.
+No new build, production fix or public visibility behavior is authorized by these
+diagnostic results alone. No polling/waiting for owner.
 
 Keep wide sphere tests as complementary evidence. Owner rightly emphasizes
 partial cage-bar obstruction: a sphere hit does NOT mean full occlusion; one

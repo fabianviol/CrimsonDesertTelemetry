@@ -572,3 +572,45 @@ ray has not been visually confirmed. Decode file
 `physics-ray-decoded-37148-wall-brazier.json`. Five transactions now used; seven
 remain. Telemetry available through sequence55744/frame51636. No code/config or
 package changed. Ask owner to rotate only camera, then END turn, do not wait.
+
+## Same view after darkening: sources return; thin ray wall hit — PID37148
+
+Owner returned ~10min later, reported darker game and more HUD lights WITHOUT
+rotating camera. Supersedes the camera-turn request. Same read-only capture,
+3sec, `artifacts/light-research/physics-wall-darker-37148-20260925/`:
+181raw/180smoothed messages, 47unique native captures. Compare previous run:
+
+| Measure | Earlier brighter scene (44 captures) | Later darker scene (47 captures) |
+|---|---|---|
+| Active native records | 34..37 | 94 |
+| Sources inside35gu | 3..6 | 15 |
+| Usual test lamp present | 0/44 | 47/47 |
+| Malformed | 0 | 0 |
+
+Both camera forward exactly (0.28870547,-0.05402232,0.9558926); camera X/Z
+(-10537.567,-4431.202); player X/Z(-10536.61,-4425.2666). First-frame camera Y
+611.6074 vs611.6064, player Y608.978 vs608.9779 (idle variation). No config/code
+change, no new native query between the two captures. Same process37148.
+Thus a camera-direction-only explanation cannot account for this recovery.
+Brightness/time/scene-state-dependent selection is supported as a hypothesis,
+not isolated causation: no controlled day/night A-B-A or GPU branch trace.
+Retained actual PIX PSO475 lines725..758/1050..1075 also show light luminance and
+distance-related thresholds in addition to depth selection. Old-frame evidence
+does not prove which threshold changed now. Do NOT call missing source OFF or
+occluded. Camera-turn control no longer required as the immediate next step.
+
+With fresh paired source now available, usual test-lamp wall ray completed:
+`physics-ray-37148-1a1275fc96c84848a38bac7a52838ae8.json` and
+`physics-ray-decoded-37148-wall-lantern.json` under artifacts/light-research.
+Camera(-10537.567383,611.621460,-4431.202148) to source
+(-10529.740234,611.461548,-4420.299805), length13.422031gu. HIT fraction
+0.624761406, contact(-10532.677282,611.521553,-4424.390786), **5.036464gu before
+source**; normal(-0.241517,-0.000209,-0.970397), nearly horizontal. Surface/segment
+residual0.00000153gu. Opaque body0x8000000001000996, selector0x39FFFFFF; same
+selector as earlier sphere wall, body also used by ground (different selector).
+All control/guard/original/plausibility checks pass, exception0. This supports
+an intervening wall contact, unlike inside-view source-adjacent hit0.14522gu.
+It does not estimate plank-gap coverage or solve cage-bar partial occlusion.
+Six of12 replay transactions used; six remain; no pending query. No plugin/API
+or configuration change. Next work is principled spatial sampling/extent, not
+another equivalent wall test or arbitrary near-source hit suppression.
