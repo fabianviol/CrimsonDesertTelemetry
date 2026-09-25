@@ -51,7 +51,7 @@ guards and original-data checks; no exception; ManyLights continued advancing.
 At that checkpoint 7 of the 12 replay transactions remained. Reports are archived;
 the physics doc. No further native change or reinstall needed for the wall test.
 
-**Latest: outside-wall test succeeded, same PID 5468.** Owner supplied a screenshot
+**Outside-wall test succeeded, same PID 5468.** Owner supplied a screenshot
 of the plank wall and considers all four lanterns covered; gaps between planks
 are visible. Two paired-camera segments contact at 7.25 / 7.22 gu from camera,
 4.96 / 9.91 gu BEFORE their lights, with near-horizontal, similarly oriented
@@ -64,12 +64,25 @@ argument (`unknown-call-context`); NO extra call, not a miss or guard failure.
 Owner notes the lamps are wall-mounted: earlier endpoint contacts could indeed
 be their mounting wall; fixture identity was not established.
 
-**Next:** owner moves to the open side/doorway with one known lantern visibly
-unobstructed, then returns. Compare ONE paired-frame segment to that same source:
-`Start-PhysicsProbe.ps1 -Mode segment -NearLightPosition @(-10529.755,611.292,-4420.3)`
-(or another of the four present sources). Script now resolves the target within
-the same frame instead of reusing a transient index. Optional `-StopBeforeLight 1`
-is endpoint-isolation research ONLY, not a production occlusion threshold.
+**Latest: open-side comparison, same PID.** Owner confirmed three lanterns visible,
+usual test lamp (-10529.755,611.292,-4420.3) hidden. ALL FOUR measured with their
+own fresh paired ManyLights endpoints. The three visible sources hit only
+0.2054 / 0.1826 / 0.2153 gu before the source; hidden test lamp hits 5.4327 gu
+before it. All successful controls/guards/original checks passed; no exception.
+Two requests refused another fifth-argument context without an extra call; one
+retry each succeeded. 11 replay transactions consumed, only ONE remains.
+This is a positive wall/open-view comparison, not a ready optical classifier:
+every full segment hit, including visible lamps. Blind hit => blocked is wrong.
+No public visibility or plugin/package change; results/screenshot preserved.
+
+**Next bounded step:** use these captures plus existing WB/query code to establish
+the sphere radius and returned hit identity/filter fields, and design explicit
+source/fixture versus intervening-obstacle handling before a public classifier.
+Do not guess a universal endpoint cutoff, ask for another equivalent lamp test,
+or exhaust the remaining process budget by default. For any justified later live
+test use `Start-PhysicsProbe.ps1 -Mode segment -NearLightPosition @(x,y,z)`.
+The helper resolves the source in the same fresh camera-paired frame; never reuse
+a transient sample index. `-StopBeforeLight` remains diagnostic only.
 No active request remains; no waiting for owner input. Restart on replay faults.
 Collision outcome is not yet optical visibility. Current SDF classifications remain
 experimental/default-off; do not declare the open occlusion problem solved.

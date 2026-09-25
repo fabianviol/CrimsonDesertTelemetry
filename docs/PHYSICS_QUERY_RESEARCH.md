@@ -280,3 +280,50 @@ Artifacts in `artifacts/light-research/`: `physics-wall-5468-<request ID>.json`
 for all three requests above, `physics-wall-5468-20260925.native.log`, and the
 owner screenshot `physics-wall-5468-20260925.png`. Seven replay transactions used,
 five remain in this process. No active request; no new plugin/install required.
+
+## Open side: three visible, usual test lantern hidden — PID 5468
+
+Owner supplied `physics-open-side-5468-20260925.png` and explicitly identified
+three of four lanterns as visible, with the usual test lantern still hidden.
+Player (-10531.75,609.08557,-4412.77393); paired camera X/Z (-10532.015625,
+-4406.741211), Y 611.5155..611.52094 for successful measurements. Each target
+and camera come from the SAME fresh ManyLights snapshot for that request.
+
+Four successful reports, under `artifacts/light-research/`, named
+`physics-open-side-5468-<request ID>.json`:
+
+| Request ID | Target reference X/Z | Owner visibility | Fraction | Distance before source |
+|---|---|---|---|---|
+| 115fa56d845f4e90a822eaf36dd0a1d1 | -10536.194 / -4413.799 | Visible | 0.9748769999 | 0.205362 gu |
+| 228ae7173dda4d2a88460e85c67f0ffe | -10529.755 / -4420.300 | Hidden | 0.6048502922 | 5.432692 gu |
+| 307c615318b94274b9bb818302314af2 | -10536.044 / -4418.707 | Visible | 0.9854884744 | 0.182625 gu |
+| 6d2a22282c7a42e882d8e59247d65e41 | -10530.790 / -4415.122 | Visible | 0.9745518565 | 0.215312 gu |
+
+All four count=1, controlMatched/guardsIntact/originalsPreserved=true,
+segmentResultPlausible=true, callException=0. Hidden-source sweep-center contact
+(-10530.6423,611.4855,-4414.9427) is foreground geometry, near the front visible
+lamp/post. Do not claim its exact collider identity is known. Three visible paths
+have contact centers immediately near their respective endpoints. Therefore this
+supports distinct intervening versus source-adjacent collision, NOT four blocked
+lights. Together with the previous outside-wall view, the same source near
+(-10536.194,-4413.799) changes from 9.907 gu-before-end to 0.205 gu-before-end.
+
+Requests `ef7a35d2cd3f4375894a0fa9592111ea` and
+`2312889c08ed46c5bff2d529a1ab63de` again refused a captured natural context whose
+fifth argument differed from the collector (`unknown-call-context`). Neither
+ran control/segment or consumed replay budget; one explicit retry each succeeded.
+Their reports are preserved with the same filename convention. These are not
+collision misses or measured memory corruption. For a future instrument revision,
+consider filtering this known unsuitable context before one-shot claim, while
+preserving observation-only coverage and counting rejections; no live patch here.
+
+Log `physics-open-side-5468-20260925.native.log`; paired ManyLights remained
+available and telemetry reached sequence 84520 at 20:24:52 local. No ongoing
+request; 11 of 12 replay transactions now consumed. Do not use the last by default.
+No public API, INI, ASI or package changed. Captures are instrumented, not baseline.
+
+Next: inspect retained shape/query/collector evidence and the established native
+source to validate radius and hit/filter identity. Need principled fixture/self
+handling, not a fitted 0.22/0.5/1-gu cutoff. Collision filters, thin geometry,
+glass and streamed objects remain optical limits. No further equivalent owner
+scene setup is needed just to repeat this positive comparison.
