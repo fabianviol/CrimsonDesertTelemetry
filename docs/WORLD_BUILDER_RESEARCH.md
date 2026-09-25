@@ -1,5 +1,8 @@
 # World Builder / cdmodkit: reuse map — 2026-09-24, Codex
 
+**Priority changed 2026-09-25:** physics queries for unresolved occlusion FIRST;
+light switching deferred. Continue at `PHYSICS_QUERY_RESEARCH.md` and HANDOVER.
+
 ## Scope and evidence
 
 Owner explicitly requested a broad review: light control, unresolved visibility /

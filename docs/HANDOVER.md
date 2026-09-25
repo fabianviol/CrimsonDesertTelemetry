@@ -1,4 +1,34 @@
-# Current: camera compatibility PR merged; research preserved — 2026-09-25, Codex
+# Current: physics queries FIRST — 2026-09-25, Codex
+
+Owner explicitly deferred light switching in favor of unresolved occlusion.
+Read `docs/PHYSICS_QUERY_RESEARCH.md`; use World Builder's verified native-query
+route, not more SDF tolerance tuning. Working paired ManyLights remains the source.
+
+New research-only `PhysicsProbe` observes ONE natural player-near sphere cast,
+including input bytes, collector output, thread/caller and exact EXE. No replay,
+no extra physics call, no public visibility change. It is gated to patch 2.03.02 /
+EXE 1.0.0.2976 by hash, instruction bytes and collector vtable; other builds refuse.
+First draft replay was deliberately removed before build: capture actual lifetime
+and collector evidence first. Host forwarding/concurrency tests pass; game not tested.
+
+Private package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.1-ModManagers.zip`.
+Built and validated; SHA256 `0D5B720185DA6C628EB2D113586467F01E39AE5C42C1C18EFAE2708C2C7B4002`.
+25 synthetic physics checks and 5 focused native CTest suites pass, including
+build guard, render bridge/filter and HUD model. Saved current EXE passes actual
+hash verification. ZIP/expanded payload equality and INI/package self-tests pass.
+PhysicsProbe=1; Ambient and SourceVisibility/spatial diagnostics OFF for this run.
+Normal player/camera + ManyLights + HUD stay ON. User installs the WHOLE ZIP via
+DMM with game closed. Nothing was installed automatically; no public release/push.
+
+**Next:** when owner is in-game, run `scripts/Start-PhysicsProbe.ps1` once; it
+returns immediately, then inspect the new `bin64/physics-probe-PID-ID.json` and
+native log. No waiting/polling for owner input. If no matching query, examine
+the saved selection counters. Only after successful natural evidence, prepare a
+same-query native replay control, then clear/walled camera-to-ManyLights segments.
+Collision outcome is not yet optical visibility. Current SDF classifications remain
+experimental/default-off; do not declare the open occlusion problem solved.
+
+## Earlier: camera compatibility PR merged; research preserved
 
 Owner merged GitHub PR #2 (Moon-yungg, head `40f4d0d`, remote merge `9ce0b67`).
 Local merge `e09cc60` incorporates it without losing our five local research
@@ -14,8 +44,8 @@ EngineLights; layout/freshness validation remains. No live-game validation of
 the new automatic path. Minor review follow-up: the new NativeCapture-null
 assertion starts with null; seed a valid native contract to test its removal.
 
-The next research action remains the bounded object observation below; merging
-this contribution does not authorize a new release or restart broad discovery.
+The later physics-first checkpoint above supersedes the object observation below;
+merging this contribution does not authorize a new release or broad discovery.
 
 ## World Builder reuse / update recovery — 2026-09-24, Codex
 

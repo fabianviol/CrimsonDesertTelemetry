@@ -57,6 +57,15 @@ No source was copied from a repository without a verified compatible license. An
 
 ## Bundled native dependencies
 
+Private physics diagnostics adapt natural-query selection and structure layout
+from [World Builder / cdmodkit](https://github.com/Moon-yungg/crimson-desert-world-builder),
+revision `ee1f05a3ad1a61cd4aee66946155d0315fdc14e7`, MIT, Copyright (c) 2026 Moon-yungg.
+Affected files: native `physics_probe.cpp` / `physics_query.h`. Full notice is
+preserved in `licenses/WorldBuilder-MIT.txt` and appended to research package
+`THIRD-PARTY-NOTICES.txt`. No World Builder binary or game assets are bundled.
+This observation-only adaptation does not claim their ground-placement replay
+already solves optical light visibility; see `PHYSICS_QUERY_RESEARCH.md`.
+
 The native ASI builds against the following upstream libraries. Their source archives
 are pinned by version and SHA-256 in `native/CrimsonDesertTelemetry.Asi/CMakeLists.txt`.
 

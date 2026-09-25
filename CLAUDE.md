@@ -2,9 +2,10 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-24): investigate reversible in-game light control
-for a music light show. Read HANDOVER and docs/LIGHT_CONTROL_RESEARCH.md first;
-reuse the old PIX capture and established lamp findings. Earlier release STOP
+Current user priority (2026-09-25): investigate World Builder's native physics
+queries for the unresolved light-occlusion problem FIRST. Light switching is
+deferred. Read HANDOVER and docs/WORLD_BUILDER_RESEARCH.md; reuse existing SDF
+findings and the proven camera-paired ManyLights source. Earlier release STOP
 was superseded by the owner's explicit publish instruction. Preserve published
 packages and historical crash evidence. Source visibility remains EXPERIMENTAL
 and OFF by default; this task does not authorize unrelated fixes or a new release.

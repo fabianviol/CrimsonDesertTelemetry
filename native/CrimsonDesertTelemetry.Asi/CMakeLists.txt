@@ -44,7 +44,7 @@ target_include_directories(cdt_sdf_fire PUBLIC src)
 option(CDT_RESEARCH "Compile the private research instrumentation into the ASI" ON)
 if(CDT_RESEARCH)
     set(CDT_RESEARCH_SOURCES src/spatial_probe.cpp src/spatial_readback.cpp
-        src/spatial_sample.cpp src/spatial_thunk.asm src/source_visibility_bridge.cpp)
+        src/spatial_sample.cpp src/spatial_thunk.asm src/source_visibility_bridge.cpp src/physics_probe.cpp)
     set(CDT_SDF_LIBRARY cdt_sdf)
 else()
     set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/sdf_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
@@ -85,6 +85,11 @@ foreach(header imstb_rectpack.h imstb_textedit.h imstb_truetype.h)
     string(SUBSTRING "${stb_source}" ${license_start} -1 stb_license)
     file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt" "\n${header} (embedded in Dear ImGui)\n${stb_license}\n")
 endforeach()
+if(CDT_RESEARCH)
+    file(READ "${CDT_ROOT}/licenses/WorldBuilder-MIT.txt" worldbuilder_license)
+    file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt"
+        "\nWorld Builder / cdmodkit - physics query selection and layout\n${worldbuilder_license}\n")
+endif()
 
 set(CDT_CONSOLE_SOURCES
     src/console/breakpoint.cpp src/console/console.cpp src/console/debugcmd.cpp
@@ -129,6 +134,14 @@ target_compile_options(CrimsonDesertTelemetryBootstrapSmoke PRIVATE /W4 /WX /per
 target_link_libraries(CrimsonDesertTelemetryBootstrapSmoke PRIVATE ws2_32)
 
 enable_testing()
+add_executable(CrimsonDesertTelemetryPhysicsProbeTests tests/physics_probe_tests.cpp)
+target_compile_features(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE cxx_std_20)
+target_compile_options(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE /W4 /WX /permissive-)
+target_compile_definitions(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_include_directories(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE src)
+target_link_libraries(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE minhook nlohmann_json::nlohmann_json)
+add_test(NAME physics-natural-query-observer COMMAND CrimsonDesertTelemetryPhysicsProbeTests)
+set_tests_properties(physics-natural-query-observer PROPERTIES TIMEOUT 20)
 add_executable(CrimsonDesertTelemetrySpatialProbeTests tests/spatial_probe_tests.cpp tests/spatial_barrier_abi.cpp
     src/spatial_thunk.asm src/spatial_readback.cpp src/spatial_sample.cpp
     src/console/mem.cpp src/console/util.cpp)

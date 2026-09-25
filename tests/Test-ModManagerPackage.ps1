@@ -52,6 +52,7 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
     }
     if ($ProfileName -eq 'research') {
         $rules.Research = @{
+            PhysicsProbe = 'bool'
             SignedDistanceReadback = 'bool'; SignedDistanceReadbackCount = 'int:1:120'; SignedDistanceReadbackIntervalMs = 'int:250:10000'
             SpatialProbe = 'bool'; SpatialReadback = 'bool'; SpatialReadbackCount = 'int:1:8'
             SpatialReadbackIntervalMs = 'int:250:10000'; SpatialVisibilitySeconds = 'int:0:4294967295'; AmbientProbe = 'bool'
@@ -118,6 +119,8 @@ function Assert-IniConfiguration([string]$Ini, [ValidateSet('production', 'resea
     foreach ($requiredSection in $rules.Keys) {
         if (-not $sections.ContainsKey($requiredSection)) { throw "Missing INI section [$requiredSection]." }
         foreach ($requiredKey in $rules[$requiredSection].Keys) {
+            # Added in the physics diagnostic. Older research INIs default to OFF.
+            if ($requiredSection -eq 'Research' -and $requiredKey -eq 'PhysicsProbe') { continue }
             if (-not $sections[$requiredSection].ContainsKey($requiredKey)) { throw "Missing INI setting $requiredSection.$requiredKey." }
         }
     }
@@ -253,6 +256,8 @@ ResultFile=inject_result.txt
     $researchIni = $productionIni + "`n" + $researchTail
     Assert-IniConfiguration $researchIni 'research'
     Assert-IniConfiguration ($researchIni.Replace('EnableConsole=0', 'EnableConsole=1').Replace('SpatialProbe=0', 'SpatialProbe=1')) 'research'
+    Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=1")) 'research'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=2")) 'research' } 'Invalid PhysicsProbe boolean was accepted.'
     Assert-Rejected { Assert-IniConfiguration $productionIni 'unsupported' } 'An unsupported profile was accepted.'
     Assert-Rejected { Assert-IniConfiguration $researchIni 'production' } 'Research settings were accepted in production.'
     Assert-Rejected { Assert-IniConfiguration $productionIni 'research' } 'An incomplete research profile was accepted.'
