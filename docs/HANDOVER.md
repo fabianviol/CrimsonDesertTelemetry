@@ -36,11 +36,23 @@ Expanded: `artifacts/mod-manager/v2.1.15-physics.4-20260925-213046-194-423876cf/
 INI ready: PhysicsProbe=1; Ambient, SourceVisibility/spatial diagnostics OFF;
 normal telemetry/ManyLights/HUD ON. No automatic install/publish/push.
 
-**One next step:** owner moves to the known outside-wall view and returns.
-Use one full `-Mode raysegment -NearLightPosition @(-10529.755,611.292,-4420.300)`
-query with fresh paired ManyLights, compare intervening hit distance to current
-near-source contact. No package change/restart needed. No polling/waiting for
-owner. Native hangs cannot be safely timed out.
+**Latest: owner now outside wall, asks why most HUD lights vanished.** Bounded
+3-second API capture: 44 unique native captures, 34..37 active, 32..35 published,
+only 3..6 inside HUD radius 35; malformed=0. Usual test lantern absent in all
+44, despite its known location well inside radius. Later briefly present but
+fresh selector refused (no request sent). Missing entries precede HUD display;
+SourceVisibility/OcclusionTest/HideOccluded remain 0. Renderer/HUD reader code
+unchanged by physics.3->4. Old confirmed ProcessManyLightsCS has HiZ-based
+selection; this is a plausible cause, NOT proven current-frame rejection branch.
+Evidence: `artifacts/light-research/physics-wall-missing-lights-37148-20260925/`.
+One alternative full ray to currently supplied known brazier returned NO hit;
+different target, NOT a successful wall-versus-usual-lantern comparison. Five
+transactions consumed in PID 37148, seven remain; no pending request.
+
+**One next step:** owner rotates only camera at this same player position and
+returns `gedreht`; capture another bounded API stream and compare source coverage.
+No code fix, new package, guessed/stale target or visibility fallback. Then resume
+wall ray when the intended source is freshly supplied. No polling/waiting for owner.
 
 Keep wide sphere tests as complementary evidence. Owner rightly emphasizes
 partial cage-bar obstruction: a sphere hit does NOT mean full occlusion; one

@@ -525,3 +525,50 @@ was requested; it does NOT mean the replay control failed. Telemetry still
 available at sequence 15589/light frame 17229, 21:54 local. Four of twelve
 transactions consumed; eight remain. No code/package/API changes this turn.
 Next: one thin ray from known outside-wall viewpoint, no reinstall needed.
+
+## Outside-wall HUD disappearance investigation — PID 37148
+
+Owner's screenshot showed 2 shown / 0 hidden / 2 unknown, source visibility
+disabled. Owner moved to wall and asked to investigate unexpected reduction,
+not to treat it as successful physics integration. There is NO physics-to-HUD
+result bridge. Actual INI: SourceVisibility=0, HideOccluded=0, OcclusionTest=0,
+HUD radius35, API radius100. Git diff f6aafbc..781b5cb has no ManyLights capture,
+managed light reader or HUD code changes. Do not claim this excludes every
+possible indirect instrumentation effect; no baseline A/B was run.
+
+Reused `Capture-LightStreams.ps1 -Seconds 3`, saved raw/derived streams and
+before/after snapshots to `artifacts/light-research/physics-wall-missing-lights-37148-20260925/`.
+181 raw / 180 smoothed messages, 44 unique native capture sequences. Stationary
+player (-10536.61,608.978,-4425.2666), camera X/Z(-10537.567,-4431.202), slight idle
+Y movement. 34..37 active native records, 32..35 published, 3..6 inside35gu,
+malformed=0. Usual test lamp near(-10529.755,-4420.300) absent in ALL44. Most
+published records are distant camp sources. UI counts match the small local
+subset rather than an occlusion-based removal of dozens of available sources.
+
+RenderLightReader only accepts the paired GPU live-count prefix, pi markers,
+plausible fields and API radius. HUD uses radius/projection and optional blocked
+filter; unknown stays shown. Known lantern is within both radii, but absent from
+these API samples. This narrows disappearance to supplied/render-selected data
+or its acquisition, not the new physics classifier (there isn't one). Do not
+promote this to proof of a particular current GPU branch or lamp switched OFF.
+
+Existing evidence, NOT new shader research: LOCAL_ILLUMINATION_RESEARCH's
+"Separate depth-resource route" and actual old PIX PSO475 listing
+`light-control-pix-20260924/pso-475.ll` lines1020..1075 show five g_hiZMap samples
+feeding an inclusion branch before append. Other frustum/threshold paths exist.
+Thus view/depth-based renderer filtering is plausible; old capture does NOT
+prove why this new frame excludes a particular source. No SDF-produced-depth
+identity inferred from names. A stationary-camera-direction control is next.
+
+Later one snapshot briefly included usual test lamp; immediate fresh selector
+refused it as absent (NO native request/budget use). A separate fresh-source
+query to known brazier near(-10520.227,610.455,-4423.204) succeeded:
+`physics-ray-37148-b8155b729e9440ac9296b583de2ae98e.json`, full length19.099356gu,
+no hit/fraction1; controls/guards/original checks pass, no exception. Camera
+(-10537.567383,611.612549,-4431.202148), endpoint
+(-10520.260742,610.453369,-4423.207031). This is a DIFFERENT source/direction and
+does not prove a clear path through the pictured wall; geometry along that
+ray has not been visually confirmed. Decode file
+`physics-ray-decoded-37148-wall-brazier.json`. Five transactions now used; seven
+remain. Telemetry available through sequence55744/frame51636. No code/config or
+package changed. Ask owner to rotate only camera, then END turn, do not wait.
