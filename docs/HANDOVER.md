@@ -8,8 +8,15 @@ New research-only `PhysicsProbe` observes ONE natural player-near sphere cast,
 including input bytes, collector output, thread/caller and exact EXE. No replay,
 no extra physics call, no public visibility change. It is gated to patch 2.03.02 /
 EXE 1.0.0.2976 by hash, instruction bytes and collector vtable; other builds refuse.
-First draft replay was deliberately removed before build: capture actual lifetime
-and collector evidence first. Host forwarding/concurrency tests pass; game not tested.
+First draft replay was deliberately removed before build. Host tests pass; now
+TWO live natural-query observations succeeded in PID 12228 at the known camp.
+Installed ASI matches physics.1; ManyLights/telemetry remained live. Both raw
+results are no-hit, NOT a visibility result. Details/evidence in the physics doc.
+
+Critical live findings: +0x50.xyz holds reciprocals of +0x40.xyz, not a duplicate
+delta (confirmed twice). All query objects are stack-local and broad captured
+ranges overlap. Do not blindly copy WB's ground-replay vector writes or remap all
+qwords in overlapping windows. Caller is a forwarding wrapper, not the builder.
 
 Private package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.1-ModManagers.zip`.
 Built and validated; SHA256 `0D5B720185DA6C628EB2D113586467F01E39AE5C42C1C18EFAE2708C2C7B4002`.
@@ -20,11 +27,10 @@ PhysicsProbe=1; Ambient and SourceVisibility/spatial diagnostics OFF for this ru
 Normal player/camera + ManyLights + HUD stay ON. User installs the WHOLE ZIP via
 DMM with game closed. Nothing was installed automatically; no public release/push.
 
-**Next:** when owner is in-game, run `scripts/Start-PhysicsProbe.ps1` once; it
-returns immediately, then inspect the new `bin64/physics-probe-PID-ID.json` and
-native log. No waiting/polling for owner input. If no matching query, examine
-the saved selection counters. Only after successful natural evidence, prepare a
-same-query native replay control, then clear/walled camera-to-ManyLights segments.
+**Next:** owner closes the game for the next private plugin revision. Prepare a
+same-query replay control with validated execution/lifetime and segment field
+preparation, then clear/walled camera-to-ManyLights segments. No active request
+remains; both observations are complete and archived. No waiting for owner input.
 Collision outcome is not yet optical visibility. Current SDF classifications remain
 experimental/default-off; do not declare the open occlusion problem solved.
 

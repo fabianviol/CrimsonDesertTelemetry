@@ -88,3 +88,50 @@ focused native regression suites, exact saved-EXE hash verification and ZIP/INI
 validation passed. Package validator now recognizes the new research-only switch
 while accepting older INIs where it is absent (default OFF). Nothing installed
 or published. See HANDOVER for artifact hash and the single next live action.
+
+## Live observation — PID 12228, 2026-09-25
+
+Owner at the known camp. Installed ASI hash matches physics.1. Native log confirms
+the exact-build hook and playable-world ManyLights capture. Two explicit observer
+requests succeeded, 65.407 seconds apart; no added physics calls or game writes
+apart from the instrumentation itself. Telemetry was progressing, with 25 rendered
+ManyLights sources at the sampled control. No collision/visibility acceptance yet.
+
+Reports under `artifacts/light-research/`:
+
+- `physics-natural-12228-33035429dbee48b28667237c04a41772.json`
+- `physics-natural-12228-07a16c59e57244c0a684b10bd83effa9.json`
+- `physics-natural-12228-20260925.native.log`
+- `physics-natural-callers-12228-20260925.json` (saved-EXE disassembly, not live code)
+
+Both have thread 6164, caller `module+0x32554FA`, fifth argument = collector, valid
+before/after snapshots. First matched the second candidate, next the first. Count
+was zero in both; fraction changed from ~1.84467e19 to 1.0, normal remained zero.
+This is a natural no-hit result, NOT evidence that any lamp is unoccluded. These
+short, diagonal player-near casts are not established to be ground probes.
+
+Important new layout evidence (two independent samples):
+
+- `query+0x40.xyz` = (0.1697388, 0.2169189, -0.376709) in sample 1.
+- `query+0x50.xyz` = (5.891406, 4.610017, -2.654569). Componentwise products
+  with +0x40 are 1 within 4.2e-8. Sample 2 reproduces the reciprocal relationship.
+- `query+0x5C` matches the Euclidean length of +0x40 (0.46666342 / 0.46540228).
+  Thus +0x50 is observed inverse-displacement data, NOT a duplicate delta vector.
+  Do NOT blindly port WB's ground replay writes of -length into both Y fields.
+  A generic segment needs correct preparation, including zero-component handling.
+- All four objects are on the active thread stack: transform 0x13FE330,
+  query 0x13FE430, collector 0x13FE4D0, shape 0x13FE610. Broad WB-sized captured
+  ranges OVERLAP: query+0xA0 starts the collector, collector+0x140 starts the shape.
+  They are readback windows, not proven object extents. Other pointer-looking
+  words can be neighboring locals/stale hit payload, NOT established fields.
+  Never generically remap all qwords across these overlapping windows or retain
+  these stack addresses for a later asynchronous call.
+
+The immediate caller is a forwarding/profiling wrapper at RVA 0x3255210, dispatching
+five arguments through vtable+0x1F0; it does not build the query. Saved disassembly
+again confirms WorldCastShape's five-argument forwarding and world+0xB70/+0xBC0.
+
+Next private revision: controlled replay design with a valid execution context,
+owned/accurately rebased data, and an identical-query control BEFORE arbitrary
+segments. Observe-only physics.1 cannot replay; requires a closed-game package
+change. Preserve this successful capture instead of restarting anchor discovery.
