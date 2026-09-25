@@ -1,6 +1,14 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current checkpoint: private physics.5 built/tested, NOT installed or live-tested.**
+**Current checkpoint: physics.5 installed; first live fan PASSED, PID35192.**
+Owner requests PRACTICAL scope, not extended research: visible lanterns must not
+vanish because of cage bars; a wall must block them. Finish this small comparison,
+then use results for a bounded practical approach; no new broad investigation.
+Usual visible lantern: center hit0.14528gu before source; inner0.05gu rays3hit/1clear,
+outer0.15gu rays1hit/3clear. All nine completed, matching control/guards/originals
+passed, no exception; deployed ASI matches .5, logv5. One transaction/10 extra
+calls used;14 extra calls remain, no pending query. Telemetry still playing.
+Evidence: final PHYSICS_QUERY_RESEARCH section (raw+decoded artifacts retained).
 New `rayfan`: one matching natural-ray control + nine same-context rays (center,
 four offsets at0.05gu, four at0.15gu). Diagnostic stencil, NOT source extent or
 optical coverage %. Per-sample guards/fresh copies, freshness/time limits, shared
@@ -16,7 +24,7 @@ Expanded: `artifacts/mod-manager/v2.1.15-physics.5-20260925-222544-219-bc249ef1/
 Ready INI: PhysicsProbe=1, telemetry/ManyLights/HUD ON; Ambient/SourceVisibility/
 spatial diagnostics OFF. No automatic install, push or public release.
 
-Last observed game: PID37148 with physics.4, six transactions used/six remain,
+Previous game: PID37148 with physics.4, six transactions used/six remain,
 no pending request. Live thin ray: ground positive control passed; visible cage
 contact0.14522gu before source versus outside-wall contact5.03646gu before source.
 All controls passed. These are collision evidence, not full optical coverage.
@@ -24,9 +32,9 @@ HUD source disappearance was NOT physics filtering: source counts recovered
 after darkening with unchanged view (usual lamp0/44 ->47/47 captures). Exact
 renderer rejection cause remains unisolated; absence != OFF or occluded.
 
-**One next step:** after owner installs .5 and returns ready, verify ASI/logv5,
-then one fresh-source fan at outside wall; next owner action is visible-cage view.
-Each fan includes its own control. Do not issue rayfan to .4. Full evidence,
+**One next step:** owner moves outside the closed shed wall, then one fresh-source
+fan to the SAME usual lamp. No restart/install needed. Each fan includes its own
+control. Full evidence,
 budgets, invocation and limitations: final sections of `PHYSICS_QUERY_RESEARCH.md`.
 END turn for owner actions; do not poll/wait. Unrelated untracked work is untouched.
 

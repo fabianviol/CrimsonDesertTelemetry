@@ -1,7 +1,7 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
 **Current instrument: physics.5**, diagnostic nine-ray fan, described in the final
-section. It is not live-validated yet. physics.4 ray controls passed in PID37148;
+section. First live fan passed in PID35192; wall fan pending. physics.4 ray controls passed in PID37148;
 older sections below preserve earlier evidence, not the current package state.
 
 Owner priority: resolve geometric light occlusion before the new light-control
@@ -663,3 +663,35 @@ viewpoint changes; do not keep a waiting session. Example, not for current .4:
 `./scripts/Start-PhysicsProbe.ps1 -Mode rayfan -NearLightPosition @(-10529.755,611.292,-4420.300)`.
 Compare center/inner/outer contacts, not just total hits. This is a bounded probe
 of partial obstruction, not production acceptance or proof of material opacity.
+
+## physics.5 first live fan: visible usual lantern — PID35192
+
+Owner returned at usual lamp and explicitly requests user-relevant scope, not
+"rocket science". Practical acceptance: cage bars must not make visible lamps
+disappear; intervening walls must block them. Finish this small comparison before
+further instrumentation or theoretical extent research.
+
+Installed ASI hash matches .5; logv5, supported EXE unchanged, API playing.
+Request `2d72b9ca2eae45c4b34fbfdfd9abfbbd`, lightframe9819/sample34, source age46ms.
+Camera(-10535.707031,612.519470,-4417.542969), source
+(-10529.738281,611.466736,-4420.300781), center distance6.65881gu.
+
+| Sample group | Hit | No hit |
+|---|---|---|
+| Center | 1 | 0 |
+| +/-right/up at0.05gu | 3 | 1 |
+| +/-right/up at0.15gu | 1 | 3 |
+
+Center contact0.145281gu before source. All five hits within0.123316..0.177555gu
+of their target; same opaque body0x8000000002002438, selectors1BFFFFFF/1FFFFFFF/
+7FFFFFFF. All geometry residuals <0.00000004gu. This supports localized fixture
+obstruction with nearby clear paths, not fully blocked surroundings. It does NOT
+prove a specific bar identity or mean44% optical visibility. All9 completed;
+controlMatched/guards/originals true, exception0. Ten extra calls/one transaction
+consumed;14 extra calls remain. Health after test playing, sequence10142,errornull.
+
+Artifacts under light-research: `physics-rayfan-35192-2d72b9ca2eae45c4b34fbfdfd9abfbbd.json`
+and `physics-rayfan-decoded-35192-lantern.json`. Decoder's aggregate collision=unknown
+is intentional; inspect fanComplete and samples, not single-segment summary counts.
+Next and only requested comparison: same lamp from outside the closed shed wall,
+one fan (10calls). No new package, no HUD/API changes or long waiting session.
