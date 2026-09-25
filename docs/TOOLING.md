@@ -251,8 +251,10 @@ requires 7.4 or newer.
 
 ## Repository scripts
 
-Private physics.6 uses `[Experimental] PhysicsVisibility=1` for automatic HUD/API
+Private physics.6/.7 use `[Experimental] PhysicsVisibility=1` for automatic HUD/API
 sampling; do NOT send `Start-PhysicsProbe.ps1` commands while this mode is active.
+physics.7 has V2 batch mappings,32800bytes (32-byte header +256x128 entries), not
+the .6 single128-byte mappings. See SOURCE_VISIBILITY.md before decoding them.
 Manual diagnostic modes and their evidence remain preserved for explicit later use.
 
 | script | purpose |

@@ -1,6 +1,42 @@
 # Per-light source visibility
 
-## Current private implementation — physics.6 (2026-09-25)
+## Current private implementation — physics.7/.8 (2026-09-25)
+
+Install package physics.8; .7 was retained with an outdated INI comment saying24
+targets. The runtime implementation is identical (native logv7); .8 documents256.
+
+physics.6 LIVE returned valid clear/blocked fans in PID468, but was unsuitable
+while moving: the serial scheduler allowed only20 LIGHTS/sec, up to24 positions,
+so camera displacement>.25gu invalidated old verdicts faster than refresh.
+Owner observed correct hiding after ~1s stationary, then markers returning on
+movement. This was scheduling, not failure of the established collision query.
+
+physics.7 sends a SCENE batch at most20 times/sec, queueing up to256 nearest
+distinct rendered positions within35gu. All targets share ONE2ms native issue
+window, same natural-call lifetime and per-fan matching controls. Budget exhaustion
+skips the uncompleted fan/tail (code4), without manufacturing measurements or
+disabling later rounds. Oldest attempted targets go first; skipped targets have
+priority, whereas invalid targets rotate out of the front. Faults still latch.
+Neither a native call nor already-running game code can be safely interrupted.
+
+Versioned internal mappings are `PhysicsVisibilityQueryV2.<pid>` and
+`PhysicsVisibilityResultV2.<pid>` with the same Local/CDT prefix. Each is32800bytes:
+32-byte batch header (magic/version2/bytes/count/seqlock/sequence) followed by256
+128-byte packets. All requested entries must share epoch, camera, player, frame,
+capture and issue time. The host validates a complete reply before accepting any
+entry. Per-target completion ticks remain actual timestamps; a budget skip never
+refreshes a cached verdict. Existing API/method, .25gu displacement check,2500ms
+expiry and two-blocked-fan confirmation remain unchanged. No stale-pose hiding
+workaround. Fast movement or overloaded budgets can STILL be unknown; this is
+not a guarantee of256 completed fans every frame.
+
+Managed regression includes96 moving targets, skipped-tail priority, unknown on
+budget exhaustion and unchanged raw streams. Native checks include shared budget
+expiry partway through a fan and fault propagation across the remaining batch.
+Live .7 motion/performance acceptance remains REQUIRED; only synthetic behavior
+and package checks are established. Private ZIP is not a public release.
+
+## Historical physics.6 implementation (superseded scheduling only)
 
 Opt-in `[Experimental] PhysicsVisibility=1` in a research build selects native
 physics, not the legacy SDF paths below. Private .6 enables it and HUD hiding;

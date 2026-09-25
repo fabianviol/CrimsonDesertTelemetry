@@ -7,7 +7,8 @@ namespace CrimsonDesertTelemetry.Core;
 public sealed class PhysicsVisibilityClient : IDisposable
 {
     public const string Method = "physics-ray-fan";
-    public const int PacketBytes = 128, MaximumTargets = 24;
+    public const int PacketBytes = 128, MaximumTargets = 256;
+    public const int HeaderBytes = 32, BatchBytes = HeaderBytes + PacketBytes * MaximumTargets;
     public const long MaximumAgeMilliseconds = 2500;
     private readonly int _pid;
     private readonly ulong _born;
@@ -25,7 +26,7 @@ public sealed class PhysicsVisibilityClient : IDisposable
     private sealed class Entry(CameraVector3 position)
     {
         public CameraVector3 Position = position, Receiver = position;
-        public long Measured, LastRequested;
+        public long Measured, LastRequested, LastChecked;
         public ulong Capture;
         public uint Frame, Clear;
         public int BlockedStreak;
@@ -36,9 +37,9 @@ public sealed class PhysicsVisibilityClient : IDisposable
     {
         _pid = processId; _born = unchecked((ulong)processStartFileTime);
         _now = tickCount ?? (() => Environment.TickCount64);
-        _query = MemoryMappedFile.CreateOrOpen($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQuery.{_pid}",
-            PacketBytes, MemoryMappedFileAccess.ReadWrite);
-        _write = _query.CreateViewAccessor(0, PacketBytes, MemoryMappedFileAccess.ReadWrite);
+        _query = MemoryMappedFile.CreateOrOpen($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQueryV2.{_pid}",
+            BatchBytes, MemoryMappedFileAccess.ReadWrite);
+        _write = _query.CreateViewAccessor(0, BatchBytes, MemoryMappedFileAccess.ReadWrite);
     }
 
     public EngineLightsSnapshot Apply((float X, float Y, float Z) player, EngineLightsSnapshot input)
@@ -64,24 +65,28 @@ public sealed class PhysicsVisibilityClient : IDisposable
             targets.Add(source.Position);
         }
         foreach (var position in targets)
-            if (Find(position) is null && _cache.Count < 64) _cache.Add(new Entry(position));
+            if (Find(position) is null && _cache.Count < MaximumTargets * 2) _cache.Add(new Entry(position));
 
         if (!_faulted && now - _lastRequest >= 50 &&
             (_pending is null || _consumed == _sequence || now - _lastRequest > 400))
         {
+            // Refresh the scene together, rather than a 24-light round robin at
+            // 20 lights/sec. Oldest attempts first if native exhausts its
+            // shared time budget; skipped tail entries must not starve, and
+            // invalid targets must not occupy the front on every round.
             var next = targets.Select(p => (Position: p, Entry: Find(p)))
-                .Where(v => v.Entry is not null).OrderBy(v => v.Entry!.LastRequested).FirstOrDefault();
-            if (next.Entry is not null)
+                .Where(v => v.Entry is not null).OrderBy(v => v.Entry!.LastChecked).ToArray();
+            if (next.Length > 0)
             {
-                next.Entry.LastRequested = now;
-                Publish(player, camera, next.Position, rendered, now);
+                foreach (var item in next) item.Entry!.LastRequested = now;
+                Publish(player, camera, next.Select(v => v.Position).ToArray(), rendered, now);
             }
         }
         SourceVisibilitySnapshot Resolve(CameraVector3 position)
         {
             var e = Find(position);
             var reason = _faulted ? "physics-stopped-restart-required" : e is null ? "outside-physics-budget" :
-                e.Measured == 0 ? "waiting-for-physics" : now - e.Measured > MaximumAgeMilliseconds ? "stale-physics" :
+                e.Measured == 0 ? e.Reason : now - e.Measured > MaximumAgeMilliseconds ? "stale-physics" :
                 DistanceSquared(camera, e.Receiver) > .0625f ? "camera-moved" : e.Reason;
             var status = reason.Length == 0 ? e!.Status : "unknown";
             // Preserve actual measurement origin/capture; never pretend an older ray
@@ -98,18 +103,24 @@ public sealed class PhysicsVisibilityClient : IDisposable
     private Entry? Find(CameraVector3 p) => _cache.Where(e => DistanceSquared(e.Position, p) <= .0144f)
         .MinBy(e => DistanceSquared(e.Position, p));
 
-    private void Publish((float X, float Y, float Z) player, CameraVector3 camera, CameraVector3 target,
+    private void Publish((float X, float Y, float Z) player, CameraVector3 camera, CameraVector3[] targets,
         RenderLightsSnapshot rendered, long now)
     {
-        var p = new byte[PacketBytes];
-        Put(p, 0, 0x50564443u); Put(p, 4, 1u); Put(p, 8, 128u); Put(p, 24, (uint)_pid);
-        Put(p, 32, _born); Put(p, 40, ++_sequence); Put(p, 48, (ulong)now);
-        Put(p, 64, rendered.CaptureSequence!.Value); Put(p, 72, rendered.FrameNumber ?? 0);
-        Put(p, 84, (float)rendered.AgeMilliseconds!.Value);
-        Vector(p, 88, new(player.X, player.Y, player.Z)); Vector(p, 100, camera); Vector(p, 112, target);
+        var p = new byte[BatchBytes];
+        Put(p, 0, 0x50564443u); Put(p, 4, 2u); Put(p, 8, (uint)BatchBytes);
+        Put(p, 12, (uint)targets.Length); Put(p, 24, ++_sequence);
+        for (var n = 0; n < targets.Length; n++)
+        {
+            var o = HeaderBytes + n * PacketBytes;
+            Put(p, o, 0x50564443u); Put(p, o+4, 1u); Put(p, o+8, 128u); Put(p, o+24, (uint)_pid);
+            Put(p, o+32, _born); Put(p, o+40, _sequence); Put(p, o+48, (ulong)now);
+            Put(p, o+64, rendered.CaptureSequence!.Value); Put(p, o+72, rendered.FrameNumber ?? 0);
+            Put(p, o+84, (float)rendered.AgeMilliseconds!.Value);
+            Vector(p, o+88, new(player.X, player.Y, player.Z)); Vector(p, o+100, camera); Vector(p, o+112, targets[n]);
+        }
         var seq = _write.ReadInt64(16); if ((seq & 1) != 0) seq++;
         _write.Write(16, seq + 1); Thread.MemoryBarrier();
-        _write.WriteArray(0, p, 0, 16); _write.WriteArray(24, p, 24, 104);
+        _write.WriteArray(0, p, 0, 16); _write.WriteArray(24, p, 24, BatchBytes - 24);
         Thread.MemoryBarrier(); _write.Write(16, seq + 2);
         _pending = p; _lastRequest = now;
     }
@@ -122,27 +133,48 @@ public sealed class PhysicsVisibilityClient : IDisposable
             if (_read is null)
             {
                 if (now < _retry) return;
-                _result = MemoryMappedFile.OpenExisting($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityResult.{_pid}", MemoryMappedFileRights.Read);
-                _read = _result.CreateViewAccessor(0, PacketBytes, MemoryMappedFileAccess.Read);
+                _result = MemoryMappedFile.OpenExisting($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityResultV2.{_pid}", MemoryMappedFileRights.Read);
+                _read = _result.CreateViewAccessor(0, BatchBytes, MemoryMappedFileAccess.Read);
             }
-            var p = new byte[PacketBytes];
+            var p = new byte[BatchBytes];
             var seq = _read.ReadInt64(16); Thread.MemoryBarrier(); if ((seq & 1) != 0) return;
-            _read.ReadArray(0, p, 0, PacketBytes); Thread.MemoryBarrier();
+            _read.ReadArray(0, p, 0, BatchBytes); Thread.MemoryBarrier();
             if (_read.ReadInt64(16) != seq || BitConverter.ToInt64(p, 16) != seq) return;
-            if (U32(p, 0) != 0x53564443 || U32(p, 4) != 1 || U32(p, 8) != 128 ||
-                U32(p, 24) != _pid || U64(p, 32) != _born || U32(p, 12) != 1 ||
-                U64(p, 40) != _sequence || U64(p, 40) == _consumed) return;
-            // Response must belong to the exact request, including camera and source.
-            if (!p.AsSpan(64, 12).SequenceEqual(_pending.AsSpan(64, 12)) ||
-                !p.AsSpan(88, 36).SequenceEqual(_pending.AsSpan(88, 36)) || U64(p, 48) != U64(_pending, 48)) return;
-            var tick = U64(p, 56);
-            if (tick < U64(p, 48) || tick > (ulong)now || (ulong)now - tick > MaximumAgeMilliseconds) return;
+            if (U32(p, 0) != 0x53564443 || U32(p, 4) != 2 || U32(p, 8) != BatchBytes ||
+                U32(p, 12) != U32(_pending, 12) || U32(p, 12) is 0 or > MaximumTargets ||
+                U64(p, 24) != _sequence || _sequence == _consumed) return;
+            // Validate the entire batch BEFORE applying any entry. Every result
+            // must belong to its exact request, including camera, source and age.
+            for (var n = 0; n < U32(p, 12); n++)
+            {
+                var o = HeaderBytes + n * PacketBytes;
+                if (U32(p,o) != 0x53564443 || U32(p,o+4) != 1 || U32(p,o+8) != PacketBytes ||
+                    U32(p,o+24) != _pid || U64(p,o+32) != _born || U32(p,o+12) != 1 || U64(p,o+40) != _sequence ||
+                    !p.AsSpan(o+64,12).SequenceEqual(_pending.AsSpan(o+64,12)) ||
+                    !p.AsSpan(o+88,36).SequenceEqual(_pending.AsSpan(o+88,36)) || U64(p,o+48) != U64(_pending,o+48)) return;
+                var completed = U64(p,o+56);
+                if (completed < U64(p,o+48) || completed > (ulong)now || (ulong)now-completed > MaximumAgeMilliseconds) return;
+            }
             _consumed = _sequence;
-            var e = Find(Vector(p, 112)); if (e is null) return;
-            var code = U32(p, 28);
+            for (var n = 0; n < U32(p,12); n++) ApplyResponse(p, HeaderBytes + n*PacketBytes, now);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _read?.Dispose(); _result?.Dispose(); _read = null; _result = null; _retry = now + 250;
+        }
+    }
+    private void ApplyResponse(byte[] batch, int offset, long now)
+    {
+            var p = batch.AsSpan(offset,PacketBytes).ToArray();
+            var code = U32(p,28);
             if (code == 3) _faulted = true;
+            var e = Find(Vector(p,112)); if (e is null) return;
+            if (code == 4) // Budget skip is NOT a fresh measurement or a failed ray.
+            { if (e.Measured == 0) e.Reason = "physics-budget-pending"; return; }
+            e.LastChecked = now;
             if (code != 1 || U32(p, 76) != 9 || U32(p, 80) > 9)
             { e.Status = "unknown"; e.Reason = "physics-query-unavailable"; e.BlockedStreak = 0; return; }
+            var tick = U64(p,56);
             var receiver = Vector(p, 100);
             var consecutive = e.Measured > 0 && now - e.Measured <= MaximumAgeMilliseconds &&
                 DistanceSquared(receiver, e.Receiver) <= .0625f;
@@ -152,11 +184,6 @@ public sealed class PhysicsVisibilityClient : IDisposable
             e.Reason = e.Status == "unknown" ? "confirming-obstruction" : "";
             e.Receiver = receiver; e.Position = Vector(p, 112); e.Measured = (long)tick;
             e.Capture = U64(p, 64); e.Frame = U32(p, 72);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            _read?.Dispose(); _result?.Dispose(); _read = null; _result = null; _retry = now + 250;
-        }
     }
     private static uint U32(byte[] p, int i) => BitConverter.ToUInt32(p, i);
     private static ulong U64(byte[] p, int i) => BitConverter.ToUInt64(p, i);

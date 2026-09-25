@@ -391,7 +391,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
-| `sourceVisibility` | Optional geometric estimate: `clear`/`blocked`/`unknown`. Private physics.6 adds `method=physics-ray-fan` with sampled path counts, actual measured camera/capture and age; no SDF volume and no optical transmission %. Raw light records stay intact. Legacy SDF metadata remains supported separately. See [complete contract](SOURCE_VISIBILITY.md). |
+| `sourceVisibility` | Optional geometric estimate: `clear`/`blocked`/`unknown`. Private physics.6 adds `method=physics-ray-fan` with sampled path counts, actual measured camera/capture and age; physics.7 batches up to256 nearby positions within a shared time budget. No SDF volume or optical transmission %. Raw light records stay intact. Legacy SDF metadata remains supported separately. See [complete contract](SOURCE_VISIBILITY.md). |
 
 Diagnostics count active records, published records, malformed records and records
 outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and

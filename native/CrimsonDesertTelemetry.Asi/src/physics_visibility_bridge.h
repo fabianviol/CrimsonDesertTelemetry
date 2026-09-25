@@ -20,6 +20,15 @@ struct alignas(8) VisibilityPacket
 static_assert(sizeof(VisibilityPacket) == 128);
 static_assert(offsetof(VisibilityPacket, seqlock) == 16 && offsetof(VisibilityPacket, camera) == 100);
 inline constexpr std::uint32_t VisibilityQueryMagic = 0x50564443, VisibilityResultMagic = 0x53564443;
+inline constexpr unsigned MaximumVisibilityTargets = 256;
+struct alignas(8) VisibilityBatch
+{
+    std::uint32_t magic{}, version{2}, bytes{32 + 128 * MaximumVisibilityTargets}, count{};
+    volatile LONG64 seqlock{};
+    std::uint64_t sequence{};
+    std::array<VisibilityPacket, MaximumVisibilityTargets> entries{};
+};
+static_assert(sizeof(VisibilityBatch) == 32800 && offsetof(VisibilityBatch, entries) == 32);
 inline bool ValidVisibilityQuery(const VisibilityPacket& p, DWORD pid, std::uint64_t born, std::uint64_t now)
 {
     return p.magic == VisibilityQueryMagic && p.version == 1 && p.bytes == 128 &&
@@ -31,34 +40,48 @@ inline bool ValidVisibilityQuery(const VisibilityPacket& p, DWORD pid, std::uint
         Finite(p.player) && Finite(p.camera) && Finite(p.target) &&
         Distance(p.player, p.camera) <= 12 && Distance(p.camera, p.target) <= 35;
 }
+inline bool ValidVisibilityBatch(const VisibilityBatch& b, DWORD pid, std::uint64_t born, std::uint64_t now)
+{
+    if (b.magic != VisibilityQueryMagic || b.version != 2 || b.bytes != sizeof b ||
+        !b.sequence || !b.count || b.count > MaximumVisibilityTargets) return false;
+    const auto& first = b.entries[0];
+    for (unsigned i = 0; i < b.count; ++i)
+    {
+        const auto& p = b.entries[i];
+        if (!ValidVisibilityQuery(p, pid, born, now) || p.sequence != b.sequence ||
+            p.issued != first.issued || p.lightSequence != first.lightSequence || p.frame != first.frame ||
+            p.player != first.player || p.camera != first.camera) return false;
+    }
+    return true;
+}
 class VisibilityBridge
 {
     HANDLE queryHandle_{}, resultHandle_{};
-    const VisibilityPacket* query_{};
-    VisibilityPacket* result_{};
+    const VisibilityBatch* query_{};
+    VisibilityBatch* result_{};
     std::uint64_t born_{};
 public:
     bool Open(std::uint64_t born)
     {
         born_ = born;
-        const auto name = L"Local\\CrimsonDesertTelemetry.PhysicsVisibilityResult." + std::to_wstring(GetCurrentProcessId());
-        resultHandle_ = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, 128, name.c_str());
+        const auto name = L"Local\\CrimsonDesertTelemetry.PhysicsVisibilityResultV2." + std::to_wstring(GetCurrentProcessId());
+        resultHandle_ = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(VisibilityBatch), name.c_str());
         if (!resultHandle_) return false;
         if (GetLastError() == ERROR_ALREADY_EXISTS) { Close(); return false; }
-        result_ = static_cast<VisibilityPacket*>(MapViewOfFile(resultHandle_, FILE_MAP_WRITE, 0, 0, 128));
+        result_ = static_cast<VisibilityBatch*>(MapViewOfFile(resultHandle_, FILE_MAP_WRITE, 0, 0, sizeof(VisibilityBatch)));
         if (!result_) { Close(); return false; }
-        VisibilityPacket initial{}; initial.pid = GetCurrentProcessId(); initial.processStart = born;
+        VisibilityBatch initial{};
         Publish(initial); return true;
     }
-    bool Read(VisibilityPacket& p, std::uint64_t now)
+    bool Read(VisibilityBatch& p, std::uint64_t now)
     {
         if (!result_) return false;
         if (!query_)
         {
-            const auto name = L"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQuery." + std::to_wstring(GetCurrentProcessId());
+            const auto name = L"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQueryV2." + std::to_wstring(GetCurrentProcessId());
             queryHandle_ = OpenFileMappingW(FILE_MAP_READ, FALSE, name.c_str());
             if (!queryHandle_) return false;
-            query_ = static_cast<const VisibilityPacket*>(MapViewOfFile(queryHandle_, FILE_MAP_READ, 0, 0, 128));
+            query_ = static_cast<const VisibilityBatch*>(MapViewOfFile(queryHandle_, FILE_MAP_READ, 0, 0, sizeof(VisibilityBatch)));
             if (!query_) { CloseHandle(queryHandle_); queryHandle_ = nullptr; return false; }
         }
         for (unsigned attempt = 0; attempt < 3; ++attempt)
@@ -67,18 +90,18 @@ public:
             MemoryBarrier(); if (seq & 1) continue;
             std::memcpy(&p, query_, sizeof p); MemoryBarrier();
             if (seq == query_->seqlock && p.seqlock == seq)
-                return ValidVisibilityQuery(p, GetCurrentProcessId(), born_, now);
+                return ValidVisibilityBatch(p, GetCurrentProcessId(), born_, now);
         }
         return false;
     }
-    void Publish(VisibilityPacket p)
+    void Publish(VisibilityBatch p)
     {
         if (!result_) return;
         p.magic = VisibilityResultMagic;
         InterlockedIncrement64(&result_->seqlock); MemoryBarrier();
         // Never overwrite the live seqlock with the request's value.
         std::memcpy(result_, &p, 16);
-        std::memcpy(reinterpret_cast<char*>(result_) + 24, reinterpret_cast<char*>(&p) + 24, 104);
+        std::memcpy(reinterpret_cast<char*>(result_) + 24, reinterpret_cast<char*>(&p) + 24, sizeof p - 24);
         MemoryBarrier(); InterlockedIncrement64(&result_->seqlock);
     }
     void Close()

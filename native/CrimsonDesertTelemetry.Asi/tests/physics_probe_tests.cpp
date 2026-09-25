@@ -105,6 +105,7 @@ void SetupControl()
     calls = 0; mockMode = MockMode::Match;
     originalShape = MockReplay;
 }
+unsigned rayBatchExpireAt{};
 std::uint64_t __fastcall MockRayReplay(void* w, void* q, void* c)
 {
     // Reuse mock collector behavior, with no transform or fifth argument in the
@@ -113,6 +114,7 @@ std::uint64_t __fastcall MockRayReplay(void* w, void* q, void* c)
     for (size_t i = 0xA0; i < 0x100; ++i) if (bytes[i]) ++badArgs;
     if (rayFaultAt && calls + 1 == rayFaultAt) mockMode = MockMode::Fault;
     if (rayExpireAt && calls + 1 == rayExpireAt) work.captured = GetTickCount64() - 101;
+    if (rayBatchExpireAt && calls + 1 == rayBatchExpireAt) visibilityDeadline = std::chrono::steady_clock::now();
     const auto result = MockReplay(w, q, nullptr, c, c);
     std::array<double,3> start{}, delta{}, contact{};
     std::memcpy(start.data(), bytes+0x40, sizeof start); std::memcpy(delta.data(), bytes+0x60, sizeof delta);
@@ -131,7 +133,7 @@ void SetupRayControl()
     work.mode = "rayreplay"; work.caller = base + 0x32551AF;
     work.stackLow = reinterpret_cast<std::uint64_t>(&query);
     work.stackHigh = work.stackLow + sizeof query;
-    calls = 0; rayFaultAt = 0; rayExpireAt = 0; mockMode = MockMode::Match; originalRay = MockRayReplay;
+    calls = 0; rayFaultAt = 0; rayExpireAt = 0; rayBatchExpireAt = 0; mockMode = MockMode::Match; originalRay = MockRayReplay;
 }
 }
 int main()
@@ -358,5 +360,34 @@ int main()
     SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";rayExpireAt=2;
     work.segmentStart={-10535,612,-4421};work.segmentEnd={-10529,611,-4420};RunRayControl();
     Check(replayFaulted&&calls==2&&work.fanCompleted==1,"slow continuous context latches off instead of repeated stalls");
+    packet.target={15,21,35};
+    VisibilityBatch batch{}; batch.magic=VisibilityQueryMagic; batch.count=2; batch.sequence=1;
+    batch.entries[0]=packet; batch.entries[1]=packet; batch.entries[1].target={16,22,36};
+    Check(ValidVisibilityBatch(batch,123,456,1000),"batch ABI and shared provenance valid");
+    batch.entries[1].camera[0]+=1;
+    Check(!ValidVisibilityBatch(batch,123,456,1000),"mixed camera batch refused atomically");
+    batch.entries[1]=packet; batch.count=MaximumVisibilityTargets+1;
+    Check(!ValidVisibilityBatch(batch,123,456,1000),"oversized batch refused");
+    batch.count=0;
+    Check(!ValidVisibilityBatch(batch,123,456,1000),"empty batch refused");
+    SetupRayControl(); continuousVisibility=true; work.continuous=true; work.mode="rayfan";
+    visibilityRequest={}; visibilityRequest.count=2;
+    for(auto& p:visibilityRequest.entries) { p.camera={-10535,612,-4421};p.target={-10529,611,-4420}; }
+    RunVisibilityBatch();
+    Check(calls==20&&visibilityResult.entries[0].code==1&&visibilityResult.entries[1].code==1,
+        "two targets completed in same original lifetime, independent controls");
+    Check(visibilityResult.entries[0].samples==9&&visibilityResult.entries[1].samples==9&&
+        visibilityResult.entries[0].completed>0,"batch target counts and completion ticks");
+    calls=0; RunVisibilityBatch(std::chrono::microseconds(0));
+    Check(calls==0&&visibilityResult.entries[0].code==4&&visibilityResult.entries[1].code==4&&!replayFaulted,
+        "shared budget exhaustion skips safely without latching or fake results");
+    SetupRayControl();continuousVisibility=true;work.continuous=true;work.mode="rayfan";rayBatchExpireAt=2;
+    RunVisibilityBatch();
+    Check(calls==2&&visibilityResult.entries[0].code==4&&visibilityResult.entries[1].code==4&&!replayFaulted,
+        "mid-fan budget exhaustion skips entire incomplete fan and all later targets");
+    SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";rayFaultAt=4;
+    RunVisibilityBatch();
+    Check(calls==4&&replayFaulted&&visibilityResult.entries[0].code==3&&visibilityResult.entries[1].code==3,
+        "native fault prevents every remaining target and invalidates batch");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

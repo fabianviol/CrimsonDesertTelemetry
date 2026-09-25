@@ -44,7 +44,8 @@ unsigned extraCalls{};
 constexpr unsigned MaximumExtraCalls = 24;
 bool continuousVisibility{};
 VisibilityBridge visibilityBridge;
-VisibilityPacket visibilityRequest{};
+VisibilityBatch visibilityRequest{}, visibilityResult{};
+std::chrono::steady_clock::time_point visibilityDeadline{};
 std::uint64_t lastVisibilitySequence{}, lastVisibilityStart{};
 enum class Phase { Idle, Waiting, Capturing, Done };
 struct Work
@@ -399,6 +400,9 @@ void RunRayControl()
                 if (work.continuous) replayFaulted = true; // stop a slow continuous path, not repeated stalls
                 work.controlStatus = "unknown-fan-time-budget"; return;
             }
+            if (work.continuous && visibilityDeadline != std::chrono::steady_clock::time_point{} &&
+                std::chrono::steady_clock::now() >= visibilityDeadline)
+            { work.controlStatus = "unknown-batch-time-budget"; return; }
             segment = {};
             PrepareRayCopy(segment);
             if (!SetRaySegment(segment.query.data, work.segmentStart, sample.endpoint, work.player))
@@ -429,6 +433,43 @@ void RunRayControl()
     { replayFaulted = true; work.controlStatus = "unknown-segment-fault-restart-required"; return; }
     work.controlStatus = PlausibleResult(work.segmentAfter) ? "diagnostic-ray-segment-completed" : "unknown-segment-result";
 }
+// One small scene batch in the SAME natural-call lifetime. The 2ms issue budget
+// is shared by ALL targets, not multiplied by their count. Unvisited targets
+// remain unknown/retryable; no borrowed context is retained for later execution.
+void RunVisibilityBatch(std::chrono::microseconds budget = std::chrono::milliseconds(2))
+{
+    visibilityResult = visibilityRequest;
+    for (unsigned i = 0; i < visibilityResult.count; ++i)
+    {
+        auto& p = visibilityResult.entries[i];
+        p.magic = VisibilityResultMagic; p.state = 1; p.code = 4; // not sampled in this budget
+    }
+    visibilityDeadline = std::chrono::steady_clock::now() + budget;
+    for (unsigned i = 0; i < visibilityResult.count; ++i)
+    {
+        if (replayFaulted || std::chrono::steady_clock::now() >= visibilityDeadline) break;
+        auto& p = visibilityResult.entries[i];
+        work.segmentStart = p.camera; work.segmentEnd = p.target;
+        work.fan = {}; work.fanCompleted = 0;
+        work.controlCalled = work.controlMatched = work.guardsIntact = work.originalsPreserved = false;
+        work.callException = 0;
+        RunRayControl();
+        p.code = replayFaulted ? 3u : 2u;
+        if (work.fanCompleted == 9 && work.controlMatched && work.guardsIntact &&
+            work.originalsPreserved && !work.callException)
+        {
+            p.code = 1; p.samples = 9;
+            for (const auto& sample : work.fan)
+                if (Read<std::uint32_t>(sample.collector, 0xC) == 0) ++p.clear;
+        }
+        else if (work.controlStatus && !std::strcmp(work.controlStatus, "unknown-batch-time-budget")) p.code = 4;
+        // Actual completion tick per target, not delayed publication time.
+        p.completed = GetTickCount64();
+    }
+    if (replayFaulted)
+        for (unsigned i = 0; i < visibilityResult.count; ++i) visibilityResult.entries[i].code = 3;
+    visibilityDeadline = {};
+}
 std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
 {
     bool claimed = false;
@@ -452,7 +493,7 @@ std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
         work.rayQueryAfterCopied = Copy(reinterpret_cast<std::uint64_t>(query), work.rayQueryAfter.data(), work.rayQueryAfter.size());
         work.returnValue = result;
         work.controlStatus = work.afterCopied ? "observed-game-ray" : "unknown-ray-result-unreadable";
-        RunRayControl();
+        if (work.continuous) RunVisibilityBatch(); else RunRayControl();
         work.extraCallsAfter = extraCalls;
         work.phase = Phase::Done;
         ReleaseSRWLockExclusive(&mutex);
@@ -570,7 +611,7 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory, bool continuous)
     }
     continuousVisibility = continuous && rayEnabled.load() && visibilityBridge.Open(processStart);
     if (continuous && !continuousVisibility) { Stop(); return false; }
-    ch::Log("Physics probe v6 ready. Continuous sampled visibility=%s (max 20 fans/sec, 2ms issue window; unknown on failure).",
+    ch::Log("Physics probe v7 ready. Continuous sampled visibility=%s (max 20 scene batches/sec, 256 queued targets, shared 2ms issue window; unknown on failure).",
         continuousVisibility ? "enabled" : "disabled");
     ch::Log("Physics manual probe ready. Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
         rayEnabled.load() ? "ready" : "unavailable");
@@ -597,14 +638,13 @@ void Poll()
     ReleaseSRWLockExclusive(&mutex);
     if (complete && done.continuous)
     {
-        auto result = visibilityRequest;
-        result.state = 1; result.completed = now;
-        result.code = replayFaulted ? 3u : 2u;
-        if (done.fanCompleted == 9 && done.controlMatched && done.guardsIntact && done.originalsPreserved && !done.callException)
+        auto result = done.copied ? visibilityResult : visibilityRequest;
+        for (unsigned i = 0; i < result.count; ++i)
         {
-            result.code = 1; result.samples = 9;
-            for (const auto& sample : done.fan)
-                if (Read<std::uint32_t>(sample.collector, 0xC) == 0) ++result.clear;
+            auto& p = result.entries[i];
+            p.magic = VisibilityResultMagic; p.state = 1;
+            if (!done.copied) p.code = replayFaulted ? 3u : 2u;
+            if (!p.completed) p.completed = now;
         }
         visibilityBridge.Publish(result);
         if (replayFaulted) ch::Log("Continuous physics visibility stopped until restart: %s", done.reason.c_str());
@@ -614,15 +654,20 @@ void Poll()
     if (continuousVisibility)
     {
         if (now - lastVisibilityStart < 50) return;
-        VisibilityPacket request{};
+        VisibilityBatch request{};
         if (!visibilityBridge.Read(request, now) || request.sequence == lastVisibilitySequence) return;
         lastVisibilitySequence = request.sequence; lastVisibilityStart = now;
         if (replayFaulted)
-        { request.state = 1; request.code = 3; request.completed = now; visibilityBridge.Publish(request); return; }
+        {
+            for (unsigned i = 0; i < request.count; ++i)
+            { auto& p = request.entries[i]; p.magic = VisibilityResultMagic; p.state = 1; p.code = 3; p.completed = now; }
+            visibilityBridge.Publish(request); return;
+        }
+        const auto& first = request.entries[0];
         Work pending{};
-        pending.mode = "rayfan"; pending.continuous = true; pending.player = request.player;
-        pending.segmentStart = request.camera; pending.segmentEnd = request.target;
-        pending.issued = request.issued; pending.sourceAgeAtRequest = request.sourceAge;
+        pending.mode = "rayfan"; pending.continuous = true; pending.player = first.player;
+        pending.segmentStart = first.camera; pending.segmentEnd = first.target;
+        pending.issued = first.issued; pending.sourceAgeAtRequest = first.sourceAge;
         pending.phase = Phase::Waiting; visibilityRequest = request;
         AcquireSRWLockExclusive(&mutex); work = pending; armed = true; ReleaseSRWLockExclusive(&mutex);
         return; // no concurrent file-based manual probes in continuous mode

@@ -1,6 +1,38 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current: private physics.6 built and verified; NOT installed/live-tested.**
+**Current: physics.8 package / v7 batch refresh; .6 live worked only while stationary.**
+Owner observed .6 hides walls after ~1s but movement brings markers back. PID468,
+installed ASI matched .6; native/result mapping had valid9-ray results (including
+clear=0), API had clear plus14 camera-moved unknowns. Cause:20 individual fans/sec
+round-robin versus .25gu receiver-displacement invalidation, not a broken query.
+
+.7 batches the nearby scene at max20 rounds/sec with ONE shared2ms issue window.
+Owner rejected24-target ceiling: queue now holds up to256 distinct nearest
+positions within35gu, oldest attempted first (untested budget tail prioritized).
+Safety/context/controls, raw streams, .25gu invalidation, two-blocked confirmation
+unchanged. No pretending an old pose is current; motion/overload can still yield
+unknown. V2 MMFs32800bytes. Full contract in SOURCE_VISIBILITY.md.
+
+WHOLE private DMM ZIP, ready settings (same as .6):
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.8-ModManagers.zip`
+ZIP SHA256 `072975997028A02332D311CD44E3D6468835E64D812634B5BD7AFF473D7E8CCE`.
+ASI SHA256 `29A6438229447B4C7708C4720D6A05911026987F62F2858F0FBFFEDCA1982E9F`.
+Expanded `artifacts/mod-manager/v2.1.15-physics.8-20260925-232643-119-12e30330/CrimsonDesertTelemetry`.
+physics.7 ZIP retained but not delivered: its INI comment still said24 targets.
+physics.8 corrects this to256; same runtime implementation (native logv7).
+Experimental.PhysicsVisibility=1, HideOccluded=1; legacy/manual/ambient off.
+Managed suite includes96 moving positions and partial-budget queue fairness;
+138 native checks include mid-fan budget expiry and batch-wide fault stop.
+All31 CTest suites passed on this native binary; full managed suite and .8
+expanded/ZIP payload/config validation passed. No live .8 acceptance yet.
+No auto-install, push or public release. Old ZIPs/unrelated untracked work preserved.
+**Next:** close game, install WHOLE .8 ZIP via DMM, then normal movement past the
+known wall/visible cage. Check actual refresh/budget rates if HUD still falls back;
+no broad RE or blind drift-tolerance increase. END for owner action, never wait.
+
+## Historical physics.6 build checkpoint (superseded by live result above)
+
+**At build time: private physics.6 built and verified; NOT yet live-tested.**
 Owner closed game, authorized practical integration AND removal of legacy HUD
 visibility clutter. Continuous native physics now feeds rendered sourceVisibility,
 radar and fullscreen markers. Raw RGB/positions/authored lights remain unchanged.
