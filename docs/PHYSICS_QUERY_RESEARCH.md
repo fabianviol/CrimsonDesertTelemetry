@@ -198,3 +198,44 @@ Package/INI/payload equality checks pass. Request script parsed and its actual
 ground-coordinate assignments were exercised with synthetic camp coordinates.
 Not installed automatically; all native replay/segment behavior still needs a
 live game test. Default command remains observation-only.
+
+## Live control and segment results — PID 5468
+
+Installed physics.2 hash verified; five explicit transactions completed. All
+controls matched, all guards intact, checked original ranges unchanged, exception
+zero. ManyLights frame/telemetry sequence progressed throughout. No ASI replacement
+or public visibility change. These are instrumented observations, not untouched
+baseline evidence.
+
+Reports in `artifacts/light-research/`:
+
+| Report suffix (all .json) | Result |
+|---|---|
+| physics-control-5468-bc4e1385ec534e858d254af16f41dec8 | Natural no-hit reproduced exactly |
+| physics-ground-5468-b9b4206d67304b81941f4ab749950993 | Hit, fraction 0.3111352026, normal (0.000044, 1, 0.000031) |
+| physics-lantern-5468-a760c73276e242db958266b8cbb58e94 | First known lantern hit, fraction 0.9068721533 |
+| physics-lantern-5468-a32ced963ae34a4cb2e258af9d07a4b7 | Other known lantern hit, fraction 0.9109512568 |
+| physics-lantern-short-5468-ea5d1c1d0add4cb79c8f928e205972d3 | First path shortened by 1 gu: no hit, fraction 1 |
+
+Log: `physics-controls-5468-20260925.native.log`.
+Ground starts at player+(.6,1.5,.6), ends player+(.7,-3,.67); hit center Y about
+609.2566 vs player feet Y 609.1567. This is consistent with a small sphere, not
+a measured universal sphere radius. Natural inherited mask/radius were unchanged.
+
+First light full segment: camera (-10535.5684,613.0045,-4420.8491) to paired source
+(-10529.7480,611.4641,-4420.3008). Contact is about 0.56 gu before endpoint.
+Second target (-10536.1660,611.4647,-4413.7915), contact about 0.65 gu before end.
+Shortened first path misses. This localizes its collision to the endpoint vicinity;
+it does NOT identify the contacted object (fixture, character or nearby geometry).
+No visually confirmed wall/clear pair yet. Do not mark the near-light contact as
+an occluded lamp or solve it with a universal 1-gu cutoff.
+
+Script-only improvements need no new plugin: `-NearLightPosition x,y,z` picks the
+nearest actual ManyLights contribution within 0.5 gu IN THE SAME fresh paired
+snapshot as its camera. `-StopBeforeLight 1` shortens that measured ray only for
+endpoint-isolation experiments. A frame-local sample index from an earlier HTTP
+request was not reused. Report endpoints are authoritative, not guessed names.
+
+Next: owner outside the shed's closed wall, looking toward the four lanterns.
+One wall-crossing segment, then compare with the retained camp results. Seven
+transactions remain in PID 5468; no active request and no waiting session.

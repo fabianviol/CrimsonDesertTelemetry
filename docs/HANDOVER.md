@@ -38,13 +38,25 @@ ZIP: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.2-ModManagers
 SHA256 `CC84F118B1E92064B0389F89399CBC19F731D1ABCE0C42CA6334AF401A0E661F`.
 Same ready-made INI as physics.1. Package content/INI validation passed. Native
 tests include copy isolation, control mismatch, fault latch, canaries and bounds.
-No live replay result yet, and no public API/published release was changed.
+Live replay and segment controls now succeeded in PID 5468 (see below).
+No public API/published release was changed.
 
-**Next:** install the new full DMM ZIP, owner returns in-game. First run
-`Start-PhysicsProbe.ps1 -Mode replay` and inspect the report; only after it matches,
-run `-Mode segment -GroundControl` for a positive collision control, then a
-camera-to-current-ManyLights wall/clear test. No active request remains. No waiting
-for owner input; close/restart on any replay fault, never retry a faulted process.
+**Latest live result (PID 5468, installed physics.2 verified):** replay matched;
+ground control hit at fraction 0.311135 with upward normal. Two camp-lantern
+segments hit late (~0.907 / 0.911); stopping the first path 1 gu before its light
+gave no hit. Thus collision queries distinguish hit/no-hit, but endpoint/fixture
+contact is not established optical occlusion. All 5 transactions passed control,
+guards and original-data checks; no exception; ManyLights continued advancing.
+7 of the 12 replay transactions remain. Raw reports/log are archived; details in
+the physics doc. No further native change or reinstall needed for the wall test.
+
+**Next:** owner moves outside a closed wall of the camp shed, facing the lanterns
+through the wall, and returns. Request ONE current paired-frame light segment via
+`Start-PhysicsProbe.ps1 -Mode segment -NearLightPosition @(-10529.755,611.292,-4420.3)`
+(or another of the four present sources). Script now resolves the target within
+the same frame instead of reusing a transient index. Optional `-StopBeforeLight 1`
+is endpoint-isolation research ONLY, not a production occlusion threshold.
+No active request remains; no waiting for owner input. Restart on replay faults.
 Collision outcome is not yet optical visibility. Current SDF classifications remain
 experimental/default-off; do not declare the open occlusion problem solved.
 
