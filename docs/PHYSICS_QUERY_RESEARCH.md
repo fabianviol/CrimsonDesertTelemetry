@@ -481,3 +481,47 @@ Multiple spatially distributed rays may estimate coverage later, but require a
 justified source extent/sampling pattern; neither that classifier nor a fitted
 near-source cutoff is implemented. Do not discard a whole collision body, as
 one body can include both lamp surroundings and walls.
+
+## physics.4 first live ray controls — PID 37148, 2026-09-25
+
+Installed ASI matches physics.4 package, SHA256
+`5751B070A63E3F34BB11E96154A5B0989D4293E240F659413C91BDF6ED2D6809`.
+Log reports v4/ray ready; exact supported EXE hash unchanged. Owner stationary
+at (-10530.1015625,609.1566162109375,-4419.361328125). Four transactions:
+
+| Request ID | Query | Measured result |
+|---|---|---|
+| d86cdbc5ee3b4791993d21890855d0a8 | identical ray replay | natural HIT fraction 0.924002815, replay matched |
+| 11ee2d497e554f129247c9065ef78c52 | downward ground control | hit fraction 0.333321469, upward normal |
+| 122cd235b2114de5b87c1ae862edad54 | full camera to usual test lantern | hit fraction 0.976077206, 0.145219855 gu before source |
+| b5ec58b4fca54cdf899711e4cf6b8128 | stop 0.4 gu before fresh paired source | NO hit, fraction 1 |
+
+All controls match; guardsIntact/originalsPreserved true, exception 0; segment
+results plausible. Ground surface Y=609.156669601, essentially player feet,
+and surface equals start+fraction*delta within 0.00000188 gu. Confirms a thin
+ray's positive hit geometry, not just a no-hit replay. Sphere radius is absent.
+
+Full lamp ray starts (-10535.659180,612.110046,-4421.516602), source
+(-10529.747070,611.465393,-4420.299805). Surface contact
+(-10529.888505,611.480815,-4420.328914), normal
+(-0.993423,-0.027525,-0.111150). Geometry residual 0.0000000226 gu.
+Opaque handle 0x80000000020023CA, subshape 0x1FFFFFFF; do not identify this as
+the bars without further evidence. Ground uses handle 0x8000000001000996,
+subshape 0x6BFFFFFF. Handles changed across process: not persistent light IDs.
+
+Shortened comparison starts at camera Y=612.103516 (0.00653 gu different), ends
+(-10530.134766,611.505615,-4420.376953). Fresh ManyLights source also animates.
+Thus NOT an exact same-ray truncation test, but consistent with near-source
+contact rather than a broad intervening wall at this viewpoint. The 0.4-gu
+shortening is diagnostic ONLY, never a visibility tolerance. A thin ray still
+hits some visible cages; total/partial optical coverage remains unresolved.
+
+Artifacts: `physics-ray-37148-<requestId>.json`, decoded
+`physics-ray-decoded-37148-{controls,lantern,lantern-short}.json`,
+`physics-ray-short-request-37148-b5ec58b4fca54cdf899711e4cf6b8128.json`,
+`physics-ray-37148-20260925.native.log`, all under artifacts/light-research.
+Replay-only decoder row says collision=unknown because no diagnostic segment
+was requested; it does NOT mean the replay control failed. Telemetry still
+available at sequence 15589/light frame 17229, 21:54 local. Four of twelve
+transactions consumed; eight remain. No code/package/API changes this turn.
+Next: one thin ray from known outside-wall viewpoint, no reinstall needed.

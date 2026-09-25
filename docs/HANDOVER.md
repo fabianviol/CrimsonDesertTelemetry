@@ -1,7 +1,18 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current checkpoint: physics.4 built/tested, NOT installed/live-tested.**
-Owner is still running physics.3 at the camp, last PID 34448. TWO actual ray
+**Current checkpoint: physics.4 LIVE controls succeeded, PID 37148.** Deployed
+ASI matches package (SHA256 5751B070A63E3F34BB11E96154A5B0989D4293E240F659413C91BDF6ED2D6809).
+Identical native ray replay matched a natural HIT. Downward ray hit ground at
+Y=609.156670 (player feet 609.156616), normal up; surface/segment residual
+0.00000188 gu. Full ray to usual test lantern hit 0.14522 gu before its source;
+comparison stopping 0.4 gu before a fresh paired source had NO hit. This is
+source-adjacent collision, NOT established total optical occlusion or bar identity.
+Tiny camera/source drift between requests means this is not an identical-line
+truncation experiment. All controls/guards/original checks passed; no exception.
+Four transactions used, EIGHT remain. No pending request. Telemetry remained
+available (sequence 15589, light frame 17229). Evidence/details at end of physics doc.
+
+Previous PID 34448 ran physics.3. TWO actual ray
 observations succeeded; no replay/extra query in this process. Query uses
 double3 origin +0x40/delta +0x60, float3 inverse +0x80/length +0x8C. Prefix 0xA0
 unchanged. First collector is the established closest-hit type, starts at q+A0;
@@ -15,21 +26,21 @@ before a changed segment, guard/original checks, shared max 12 sphere/ray replay
 transactions/process. Faults latch disabled until restart. Zero-axis segments
 still refused. Sphere modes retained; NO public visibility classification.
 82 synthetic native checks, 11 decoder tests, five focused CTest suites and
-package INI/payload checks passed. Native ray replay/ground/light acceptance is
-still PENDING; a natural no-hit observation proves no arbitrary-query capability.
+package INI/payload checks passed. Native ray replay, ground hit and a light
+segment now passed the bounded live checks above; optical coverage is still open.
 
-WHOLE private ZIP for DMM, after owner closes game:
+Current WHOLE private ZIP (already installed):
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.4-ModManagers.zip`
 SHA256 `D24A0EBE22C0E369887F32156DA70621A2A20C06517F1E7084BEDCD4742A6FC6`.
 Expanded: `artifacts/mod-manager/v2.1.15-physics.4-20260925-213046-194-423876cf/CrimsonDesertTelemetry`.
 INI ready: PhysicsProbe=1; Ambient, SourceVisibility/spatial diagnostics OFF;
 normal telemetry/ManyLights/HUD ON. No automatic install/publish/push.
 
-**One next step:** owner closes, installs and returns. Verify deployed hash/log
-v4 then `scripts/Start-PhysicsProbe.ps1 -Mode rayreplay`. Only after a matching
-control: `-Mode raysegment -GroundControl` (positive hit/geometry consistency)
-before any light query. Then use one fresh camera-paired ManyLights source.
-No polling/waiting for owner. Native hangs cannot be safely timed out.
+**One next step:** owner moves to the known outside-wall view and returns.
+Use one full `-Mode raysegment -NearLightPosition @(-10529.755,611.292,-4420.300)`
+query with fresh paired ManyLights, compare intervening hit distance to current
+near-source contact. No package change/restart needed. No polling/waiting for
+owner. Native hangs cannot be safely timed out.
 
 Keep wide sphere tests as complementary evidence. Owner rightly emphasizes
 partial cage-bar obstruction: a sphere hit does NOT mean full occlusion; one
