@@ -45,7 +45,7 @@ std::uint64_t __fastcall OriginalRay(void* w, void* q, void* c)
 void Setup()
 {
     work = {}; query = {}; calls = 0; badArgs = 0;
-    replayFaulted = false; replayTransactions = 0;
+    replayFaulted = false; replayTransactions = 0; extraCalls = 0;
     work.mode = "observe";
     base = reinterpret_cast<std::uint64_t>(image.data());
     Put(image, 0x1F8, base + 0x100);
@@ -72,6 +72,7 @@ std::uint64_t Invoke()
 { return ShapeHook(worldBytes.data(), query.query.data(), query.transform.data(), query.collector.data(), query.collector.data()); }
 enum class MockMode { Match, Disagree, Fault, Overwrite };
 MockMode mockMode{};
+unsigned rayFaultAt{}, rayExpireAt{};
 std::uint64_t __fastcall MockReplay(void* w, void* q, void* xf, void* c, void* e)
 {
     ++calls;
@@ -109,6 +110,8 @@ std::uint64_t __fastcall MockRayReplay(void* w, void* q, void* c)
     // actual ray ABI. Check that query cloning stopped before the old collector.
     auto* bytes = static_cast<const std::uint8_t*>(q);
     for (size_t i = 0xA0; i < 0x100; ++i) if (bytes[i]) ++badArgs;
+    if (rayFaultAt && calls + 1 == rayFaultAt) mockMode = MockMode::Fault;
+    if (rayExpireAt && calls + 1 == rayExpireAt) work.captured = GetTickCount64() - 101;
     return MockReplay(w, q, nullptr, c, c);
 }
 void SetupRayControl()
@@ -122,7 +125,7 @@ void SetupRayControl()
     work.mode = "rayreplay"; work.caller = base + 0x32551AF;
     work.stackLow = reinterpret_cast<std::uint64_t>(&query);
     work.stackHigh = work.stackLow + sizeof query;
-    calls = 0; mockMode = MockMode::Match; originalRay = MockRayReplay;
+    calls = 0; rayFaultAt = 0; rayExpireAt = 0; mockMode = MockMode::Match; originalRay = MockRayReplay;
 }
 }
 int main()
@@ -286,5 +289,49 @@ int main()
     Put(query.query, 0x40, std::array<double,3>{-529.755, 615.7, -420.3});
     RayHook(worldBytes.data(), query.query.data(), query.collector.data());
     Check(calls == 1 && work.copied && work.nearPlayer == 1 && !work.controlCalled, "ray elevated player-near selection, wrong test caller no replay");
+    std::array<Vec3, 9> fanTargets{};
+    Check(RayFanTargets({-10535,612,-4421}, {-10529,611,-4420}, fanTargets), "diagnostic fan generated");
+    Check(fanTargets[0] == Vec3{-10529,611,-4420}, "fan center exact");
+    for (size_t i = 1; i < fanTargets.size(); ++i)
+    {
+        const float expected = i < 5 ? .05f : .15f;
+        Check(std::abs(Distance(fanTargets[i],fanTargets[0])-expected) < .0015f, "fan diagnostic distance preserved at world-coordinate precision");
+        const Vec3 delta{fanTargets[i][0]+10529,fanTargets[i][1]-611,fanTargets[i][2]+4420};
+        Check(std::abs(delta[0]*6-delta[1]+delta[2]) < .007f, "fan offset plane perpendicular to sightline");
+    }
+    Check(RayFanTargets({0,0,0}, {0,2,0}, fanTargets) && Finite(fanTargets[1]), "vertical stencil has stable basis");
+    Check(!RayFanTargets({0,0,0}, {.01f,.01f,.01f}, fanTargets), "too-close fan refused");
+    SetupRayControl(); work.mode = "rayfan";
+    work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420};
+    RunRayControl();
+    Check(work.controlMatched && work.fanCompleted == 9 && calls == 10 && extraCalls == 10 && badArgs == 0, "fan performs one matching control and nine rays");
+    Check(work.guardsIntact && work.originalsPreserved && !work.segmentCalled &&
+        std::strcmp(work.controlStatus,"diagnostic-ray-fan-completed") == 0, "fan separate from single-ray result");
+    for (const auto& item : work.fan)
+        Check(item.called && item.plausible && item.guards && item.originals, "each fan sample independently checked");
+    SetupRayControl(); work.mode = "rayfan"; mockMode = MockMode::Disagree;
+    work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420}; RunRayControl();
+    Check(calls == 1 && !work.controlMatched && work.fanCompleted == 0, "fan mismatch prevents all samples");
+    SetupRayControl(); work.mode = "rayfan"; rayFaultAt = 4;
+    work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420}; RunRayControl();
+    Check(calls == 4 && work.fanCompleted == 2 && replayFaulted && !work.fan[3].called, "fan stops on first native failure, no invented clear samples");
+    SetupRayControl(); work.mode = "rayfan"; extraCalls = 15;
+    work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420}; RunRayControl();
+    Check(calls == 0 && extraCalls == 15, "whole fan budget reserved before first query");
+    SetupRayControl(); work.mode = "rayfan";
+    work.segmentStart = {-10529,611,-4421}; work.segmentEnd = {-10529,611,-4420}; RunRayControl();
+    Check(calls == 0, "fan invalid axis rejected before control");
+    SetupRayControl(); work.mode = "rayfan"; work.sourceAgeAtRequest = 250; work.issued = work.captured - 300;
+    RunRayControl();
+    Check(calls == 0 && std::strcmp(work.controlStatus,"unknown-fan-source-stale") == 0, "fan includes request delay in source freshness");
+    SetupRayControl(); work.mode = "rayfan"; work.issued = work.captured + 1;
+    RunRayControl();
+    Check(calls == 0 && std::strcmp(work.controlStatus,"unknown-fan-source-stale") == 0, "fan rejects future issue time");
+    SetupRayControl(); work.mode = "rayfan"; rayExpireAt = 2;
+    work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420}; RunRayControl();
+    Check(calls == 2 && work.fanCompleted == 1 && !work.fan[1].called &&
+        std::strcmp(work.controlStatus,"unknown-fan-time-budget") == 0, "fan stops further calls on expired original context");
+    SetupControl(); work.mode = "segment"; extraCalls = 23; RunControl();
+    Check(calls == 0, "sphere obeys shared extra-call budget too");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

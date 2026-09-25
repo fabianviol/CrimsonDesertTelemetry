@@ -255,8 +255,8 @@ requires 7.4 or newer.
 |---|---|
 | `Build-ModManagerPackage.ps1` | builds a package; `-IniOverrides @{...}` bakes research switches into private builds, refused for versions without a prerelease suffix |
 | `Start-SpatialProbe.ps1` | signals the plugin's capture event; ONE transaction series per process, including failures |
-| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1: default observe; sphere replay/segment retained; `rayobserve` records one original native ray; physics.4 adds guarded `rayreplay` / `raysegment`. Segment selectors: `-NearLightPosition @(x,y,z)` (fresh camera-paired ManyLights) or `-GroundControl`. Returns immediately; never waits for owner. |
-| `Decode-PhysicsProbe.py` | offline exact-build sphere / experimental ray report decoder: radius, surface contact, opaque hit handle/subshape selector, control checks; NEVER optical classification. Example: `--directory artifacts/light-research --pattern 'physics-*-5468-*.json' --out <fresh>.json` |
+| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1: default observe; sphere replay/segment retained; `rayobserve`, guarded `rayreplay` / `raysegment`; physics.5 adds `rayfan` (center + 8 diagnostic offsets, NOT coverage %). Use `-NearLightPosition @(x,y,z)` for fresh paired ManyLights; single segments also accept `-GroundControl`. Shared max12 transactions/24 extra calls; fan costs10. Returns immediately; never waits for owner. |
+| `Decode-PhysicsProbe.py` | offline exact-build sphere/ray/fan decoder: radius, per-sample contact/opaque handle/subshape, control checks; incomplete fans stay unknown. NEVER optical classification. Example: `--directory artifacts/light-research --pattern 'physics-*-5468-*.json' --out <fresh>.json` |
 | `Decode-SpatialReadback.py` | decodes a spatial capture; also hosts the shared `sample_world`, `select_clipmap` and `march_segment` helpers |
 | `Verify-NativeSampler.py` | compares the native sampler against the decoder on preserved captures |
 | `Verify-AmbientAnchors.py` | checks the hardcoded ambient hook RVAs in `ambient_probe.h` against a game executable, and derives the shift when an update moves them |

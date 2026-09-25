@@ -38,6 +38,32 @@ inline float Distance(const Vec3& a, const Vec3& b)
     for (unsigned i = 0; i < 3; ++i) squared += (a[i] - b[i]) * (a[i] - b[i]);
     return std::sqrt(squared);
 }
+// Diagnostic sensitivity stencil, NOT an emitter radius/area or visibility %.
+// Center, +/-right/up at 0.05 and 0.15 gu, in the plane normal to the sightline.
+inline bool RayFanTargets(const Vec3& start, const Vec3& center, std::array<Vec3, 9>& targets)
+{
+    if (!Finite(start) || !Finite(center)) return false;
+    const float distance = Distance(start, center);
+    if (distance < .25f || distance > 49.5f) return false;
+    Vec3 forward{};
+    for (unsigned i = 0; i < 3; ++i) forward[i] = (center[i] - start[i]) / distance;
+    Vec3 right{forward[2], 0, -forward[0]};
+    float length = Distance(right, Vec3{});
+    if (length < .01f) { right = {0, -forward[2], forward[1]}; length = Distance(right, Vec3{}); }
+    for (auto& v : right) v /= length;
+    const Vec3 up{forward[1]*right[2]-forward[2]*right[1],
+        forward[2]*right[0]-forward[0]*right[2], forward[0]*right[1]-forward[1]*right[0]};
+    targets[0] = center;
+    size_t index = 1;
+    for (float radius : {.05f, .15f})
+        for (const auto& axis : {right, up})
+            for (float sign : {1.f, -1.f})
+            {
+                for (unsigned i = 0; i < 3; ++i) targets[index][i] = center[i] + radius*sign*axis[i];
+                ++index;
+            }
+    return true;
+}
 // Native ray captures (physics.3): double origin/delta, float inverse/length.
 // Keep the zero-axis convention refused for now despite one FLT_MAX observation.
 template<std::size_t N> bool SetRaySegment(std::array<std::uint8_t, N>& q,

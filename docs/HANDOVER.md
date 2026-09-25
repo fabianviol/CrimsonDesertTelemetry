@@ -1,5 +1,37 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
+**Current checkpoint: private physics.5 built/tested, NOT installed or live-tested.**
+New `rayfan`: one matching natural-ray control + nine same-context rays (center,
+four offsets at0.05gu, four at0.15gu). Diagnostic stencil, NOT source extent or
+optical coverage %. Per-sample guards/fresh copies, freshness/time limits, shared
+max12 transactions AND24 extra calls/process. No HUD/API visibility integration.
+121 synthetic native checks, 15 decoder tests, five focused CTest suites,
+PowerShell syntax and expanded/ZIP/INI package checks pass.
+
+Install the WHOLE private ZIP via DMM with game CLOSED:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.5-ModManagers.zip`
+ZIP SHA256 `103A9C5B05CF35FBF79926D694A1AE24A22AD6692B0750770F80A3F601EBE78C`.
+ASI SHA256 `28EBB3BD3AB2883FD9726C95A49E7607229DB6DAD4E4A17F2351EBCCF7B7AD79`.
+Expanded: `artifacts/mod-manager/v2.1.15-physics.5-20260925-222544-219-bc249ef1/CrimsonDesertTelemetry`.
+Ready INI: PhysicsProbe=1, telemetry/ManyLights/HUD ON; Ambient/SourceVisibility/
+spatial diagnostics OFF. No automatic install, push or public release.
+
+Last observed game: PID37148 with physics.4, six transactions used/six remain,
+no pending request. Live thin ray: ground positive control passed; visible cage
+contact0.14522gu before source versus outside-wall contact5.03646gu before source.
+All controls passed. These are collision evidence, not full optical coverage.
+HUD source disappearance was NOT physics filtering: source counts recovered
+after darkening with unchanged view (usual lamp0/44 ->47/47 captures). Exact
+renderer rejection cause remains unisolated; absence != OFF or occluded.
+
+**One next step:** after owner installs .5 and returns ready, verify ASI/logv5,
+then one fresh-source fan at outside wall; next owner action is visible-cage view.
+Each fan includes its own control. Do not issue rayfan to .4. Full evidence,
+budgets, invocation and limitations: final sections of `PHYSICS_QUERY_RESEARCH.md`.
+END turn for owner actions; do not poll/wait. Unrelated untracked work is untouched.
+
+## Historical physics.4 checkpoints (superseded by current checkpoint above)
+
 **Current checkpoint: physics.4 LIVE controls succeeded, PID 37148.** Deployed
 ASI matches package (SHA256 5751B070A63E3F34BB11E96154A5B0989D4293E240F659413C91BDF6ED2D6809).
 Identical native ray replay matched a natural HIT. Downward ray hit ground at

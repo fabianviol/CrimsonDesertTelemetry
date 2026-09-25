@@ -4,9 +4,11 @@
 # and not a replay. No target selector in that mode; inspect raw layout first.
 # physics.4 rayreplay validates a same-context copy; raysegment changes its
 # segment only after a matching control. Collision is NOT optical visibility.
+# physics.5 rayfan uses nine same-context diagnostic rays at explicit 0/.05/.15
+# gu offsets, NOT a measured source extent or an optical coverage percentage.
 [CmdletBinding()]
 param(
-    [ValidateSet('observe','replay','segment','rayobserve','rayreplay','raysegment')][string]$Mode = 'observe',
+    [ValidateSet('observe','replay','segment','rayobserve','rayreplay','raysegment','rayfan')][string]$Mode = 'observe',
     # Segment target is an EXACT current filtered ManyLights sample. Its paired
     # camera supplies the start; never substitute the authored-light vector.
     [int]$LightSampleIndex = -1,
@@ -30,6 +32,7 @@ if ($ini -notmatch '(?ms)^\[Research\]\s*\r?\n(?:(?!^\[).)*?^PhysicsProbe=1\s*$'
 }
 $health = Invoke-RestMethod 'http://127.0.0.1:27311/v1/health' -TimeoutSec 3
 if ($health.status -ne 'playing' -or -not $health.supportedBuild) { throw 'Live supported telemetry required.' }
+$snapshotRequestTick = [Environment]::TickCount64
 $snapshot = Invoke-RestMethod 'http://127.0.0.1:27311/v1/snapshot' -TimeoutSec 3
 $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]$snapshot.capturedAt).TotalMilliseconds
 if ($age -lt -100 -or $age -gt 500 -or $snapshot.game.state -ne 'playing' -or $null -eq $snapshot.player.position) {
@@ -47,7 +50,8 @@ $request = [ordered]@{
     player = $player; issuedTickMs = [Environment]::TickCount64
     snapshotSequence = $snapshot.sequence; snapshotCapturedAt = $snapshot.capturedAt
 }
-if ($Mode -in @('segment','raysegment')) {
+if ($Mode -in @('segment','raysegment','rayfan')) {
+    if ($Mode -eq 'rayfan' -and ($GroundControl -or $StopBeforeLight -ne 0)) { throw 'Rayfan requires a full fresh light target.' }
     if (($GroundControl -and ($LightSampleIndex -ge 0 -or $NearLightPosition)) -or
         ($LightSampleIndex -ge 0 -and $NearLightPosition)) { throw 'Choose one target selector.' }
     if ($GroundControl) {
@@ -77,6 +81,11 @@ if ($Mode -in @('segment','raysegment')) {
         $request.end = @($light.x, $light.y, $light.z)
         $request.lightSampleIndex = $matches[0].sampleIndex
         $request.lightFrame = $rendered.frameNumber
+        if ($Mode -eq 'rayfan') {
+            $request.sourceAgeAtRequestMilliseconds = $rendered.ageMilliseconds
+            # Count the HTTP round trip conservatively in the native age guard.
+            $request.issuedTickMs = $snapshotRequestTick
+        }
         if ($StopBeforeLight -gt 0) {
             $target = @($request.end)
             $delta = @(0..2 | ForEach-Object { $target[$_] - $request.start[$_] })

@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 import math
 import struct
 import unittest
@@ -94,6 +95,37 @@ class PhysicsDecodeTests(unittest.TestCase):
     def test_observation_cannot_become_ray_clear(self):
         r = fixture(False); r['primitive'] = 'native-ray-observation'; r['segmentCalled'] = False
         self.assertEqual(decoder.decode(r)['collision'], 'unknown')
+
+    def fan_fixture(self):
+        r = fixture(False)
+        r.update(mode='rayfan', controlCalled=True, controlStatus='diagnostic-ray-fan-completed', segmentCalled=False)
+        sample = dict(endpoint=r['segmentEnd'], called=True, plausible=True,
+                      guardsIntact=True, originalsPreserved=True, collectorHex=r['segmentCollectorHex'])
+        r['fan'] = dict(completed=9, expected=9, samples=[copy.deepcopy(sample) for _ in range(9)])
+        return r
+
+    def test_fan_keeps_sample_counts_not_optical_percentage(self):
+        r = decoder.decode(self.fan_fixture())
+        self.assertTrue(r['fanComplete'])
+        self.assertEqual(r['clearSamples'], 9)
+        self.assertEqual(r['collision'], 'unknown')
+        self.assertEqual(r['opticalVisibility'], 'not-classified')
+        self.assertNotIn('attenuationFactor', r)
+
+    def test_partial_fan_never_all_clear(self):
+        r = self.fan_fixture(); r['fan']['completed'] = 2
+        result = decoder.decode(r)
+        self.assertFalse(result['fanComplete'])
+        self.assertNotIn('clearSamples', result)
+
+    def test_failed_fan_member_rejected(self):
+        for field in ('called', 'plausible', 'guardsIntact', 'originalsPreserved'):
+            r = self.fan_fixture(); r['fan']['samples'][4][field] = False
+            self.assertFalse(decoder.decode(r)['fanComplete'])
+
+    def test_fan_unknown_native_status_not_clear(self):
+        r = self.fan_fixture(); r['controlStatus'] = 'unknown-fan-time-budget'
+        self.assertFalse(decoder.decode(r)['fanComplete'])
 
 
 if __name__ == '__main__':

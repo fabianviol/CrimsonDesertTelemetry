@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include <intrin.h>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -38,6 +39,8 @@ std::uint64_t base{}, processStart{}, lastPoll{};
 std::string lastId;
 bool replayFaulted{};
 unsigned replayTransactions{};
+unsigned extraCalls{};
+constexpr unsigned MaximumExtraCalls = 24;
 enum class Phase { Idle, Waiting, Capturing, Done };
 struct Work
 {
@@ -62,10 +65,21 @@ struct Work
     Vec3 segmentStart{}, segmentEnd{};
     std::array<std::uint8_t, 0x300> controlAfter{}, segmentAfter{};
     std::array<std::uint8_t, 0x200> segmentQuery{};
+    struct RaySample
+    {
+        Vec3 endpoint{};
+        bool called{}, plausible{}, guards{}, originals{};
+        std::array<std::uint8_t, 0x300> collector{};
+    };
+    std::array<RaySample, 9> fan{};
+    unsigned fanCompleted{}, extraCallsAfter{};
+    std::uint64_t lightFrame{}, snapshotSequence{};
+    double sourceAgeAtRequest{};
+    int lightSampleIndex{-1};
 };
 Work work;
 bool RayMode(const std::string& mode)
-{ return mode == "rayobserve" || mode == "rayreplay" || mode == "raysegment"; }
+{ return mode == "rayobserve" || mode == "rayreplay" || mode == "raysegment" || mode == "rayfan"; }
 bool Copy(std::uint64_t address, void* destination, std::size_t size)
 {
     return address >= 0x10000 && address <= 0x00007FFFFFFFFFFFULL - size &&
@@ -120,6 +134,7 @@ bool Capture(void* world, void* query, void* transform, void* collector, void* e
 }
 bool CallCopy(NativeCopy& copy, DWORD& exception) noexcept
 {
+    ++extraCalls;
     __try
     {
         originalShape(reinterpret_cast<void*>(work.world), copy.query.data.data(), copy.transform.data.data(),
@@ -158,7 +173,8 @@ bool OriginalsIntact()
 void RunControl()
 {
     if (work.mode == "observe") return;
-    if (replayFaulted || replayTransactions >= 12) { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
+    if (replayFaulted || replayTransactions >= 12 || extraCalls + (work.mode == "segment" ? 2u : 1u) > MaximumExtraCalls)
+    { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
     if (!work.afterCopied || work.caller != base + 0x32554FA || work.extra != work.addresses[2] ||
         work.thread != GetCurrentThreadId() || GetTickCount64() - work.captured > 100)
     { work.controlStatus = "unknown-call-context"; return; }
@@ -235,6 +251,7 @@ std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* ext
         work.afterCopied = Copy(reinterpret_cast<std::uint64_t>(c), work.collectorAfter.data(), work.collectorAfter.size());
         work.returnValue = result;
         RunControl();
+        work.extraCallsAfter = extraCalls;
         work.phase = Phase::Done;
         ReleaseSRWLockExclusive(&mutex);
     }
@@ -281,6 +298,7 @@ bool CaptureRay(void* world, void* query, void* collector)
 }
 bool CallRayCopy(NativeRayCopy& copy, DWORD& exception) noexcept
 {
+    ++extraCalls;
     __try
     {
         originalRay(reinterpret_cast<void*>(work.world), copy.query.data.data(), copy.collector.data.data());
@@ -310,10 +328,16 @@ bool RayOriginalsIntact()
 void RunRayControl()
 {
     if (work.mode == "rayobserve") return;
-    if (replayFaulted || replayTransactions >= 12) { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
+    const bool fan = work.mode == "rayfan";
+    const unsigned requiredCalls = fan ? 10u : work.mode == "raysegment" ? 2u : 1u;
+    if (replayFaulted || replayTransactions >= 12 || extraCalls + requiredCalls > MaximumExtraCalls)
+    { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
     if (!work.afterCopied || !work.rayQueryAfterCopied || work.caller != base + 0x32551AF ||
         work.thread != GetCurrentThreadId() || GetTickCount64() - work.captured > 100)
     { work.controlStatus = "unknown-call-context"; return; }
+    if (fan && (work.captured < work.issued ||
+        work.sourceAgeAtRequest + static_cast<double>(GetTickCount64() - work.issued) > 500))
+    { work.controlStatus = "unknown-fan-source-stale"; return; }
     if (work.stackHigh < 0x140 || work.stackLow >= work.stackHigh)
     { work.controlStatus = "unknown-object-lifetime"; return; }
     for (auto address : {work.addresses[0], work.addresses[2]})
@@ -326,6 +350,19 @@ void RunRayControl()
     { work.controlStatus = "unknown-input-change-or-result"; return; }
     NativeRayCopy control{}, segment{};
     PrepareRayCopy(control);
+    if (fan)
+    {
+        std::array<Vec3, 9> endpoints{};
+        if (!RayFanTargets(work.segmentStart, work.segmentEnd, endpoints))
+        { work.controlStatus = "invalid-fan-geometry"; return; }
+        // Validate EVERY endpoint before even the control is executed.
+        for (size_t i = 0; i < endpoints.size(); ++i)
+        {
+            if (!SetRaySegment(segment.query.data, work.segmentStart, endpoints[i], work.player))
+            { work.controlStatus = "invalid-fan-or-unverified-zero-component"; return; }
+            work.fan[i].endpoint = endpoints[i];
+        }
+    }
     if (work.mode == "raysegment")
     {
         PrepareRayCopy(segment);
@@ -343,6 +380,34 @@ void RunRayControl()
     work.controlMatched = SameResult(work.collectorAfter, work.controlAfter);
     if (!work.controlMatched) { work.controlStatus = "unknown-control-disagrees"; return; }
     work.controlStatus = "control-matches-natural-ray";
+    if (fan)
+    {
+        const auto began = std::chrono::steady_clock::now();
+        for (auto& sample : work.fan)
+        {
+            // A synchronous native call cannot be interrupted safely. This
+            // stops issuing further calls if the small series runs long.
+            if (std::chrono::steady_clock::now() - began > std::chrono::milliseconds(10) || GetTickCount64() - work.captured > 100)
+            { work.controlStatus = "unknown-fan-time-budget"; return; }
+            segment = {};
+            PrepareRayCopy(segment);
+            if (!SetRaySegment(segment.query.data, work.segmentStart, sample.endpoint, work.player))
+            { work.controlStatus = "invalid-fan-geometry"; return; }
+            sample.called = true;
+            const bool ok = CallRayCopy(segment, work.callException);
+            sample.collector = segment.collector.data;
+            sample.guards = segment.Intact(); sample.originals = RayOriginalsIntact();
+            sample.plausible = ok && PlausibleResult(sample.collector);
+            work.guardsIntact = work.guardsIntact && sample.guards;
+            work.originalsPreserved = work.originalsPreserved && sample.originals;
+            if (!ok || !sample.guards || !sample.originals)
+            { replayFaulted = true; work.controlStatus = "unknown-fan-fault-restart-required"; return; }
+            if (!sample.plausible) { work.controlStatus = "unknown-fan-result"; return; }
+            ++work.fanCompleted;
+        }
+        work.controlStatus = "diagnostic-ray-fan-completed";
+        return;
+    }
     if (work.mode != "raysegment") return;
     work.segmentCalled = true;
     const bool segmentReturned = CallRayCopy(segment, work.callException);
@@ -375,6 +440,7 @@ std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
         work.returnValue = result;
         work.controlStatus = work.afterCopied ? "observed-game-ray" : "unknown-ray-result-unreadable";
         RunRayControl();
+        work.extraCallsAfter = extraCalls;
         work.phase = Phase::Done;
         ReleaseSRWLockExclusive(&mutex);
     }
@@ -396,7 +462,7 @@ void Save(const Work& done)
 {
     const bool ray = RayMode(done.mode);
     const bool knownCollector = done.copied && Read<std::uint64_t>(done.snapshot.collector, 0) == base + 0x5D13528;
-    const Json report{{"schemaVersion", 2}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
+    Json report{{"schemaVersion", 2}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
         {"processStartFileTime", processStart}, {"mode", done.mode}, {"reason", done.reason},
         {"scope", "Private physics diagnostic; bounded original-context queries, NOT optical visibility"},
         {"primitive", ray ? "native-ray" : "sphere"},
@@ -431,6 +497,21 @@ void Save(const Work& done)
             {"fraction", Read<double>(done.collectorAfter, 0x10)}, {"normal", Read<Vec3>(done.collectorAfter, 0x80)}} : Json(nullptr)},
         {"queryHex", Hex(done.snapshot.query)}, {"transformHex", Hex(done.snapshot.transform)},
         {"collectorBeforeHex", Hex(done.snapshot.collector)}, {"collectorAfterHex", Hex(done.collectorAfter)}, {"shapeHex", Hex(done.snapshot.shape)}};
+    report["extraCallsUsed"] = done.extraCallsAfter;
+    report["extraCallLimit"] = MaximumExtraCalls;
+    if (done.mode == "rayfan")
+    {
+        report["fan"] = {{"pattern", "center,right+,right-,up+,up- at 0.05 then 0.15 gu"},
+            {"meaning", "diagnostic offsets; NOT source extent or optical coverage"},
+            {"completed", done.fanCompleted}, {"expected", 9},
+            {"lightFrame", done.lightFrame}, {"lightSampleIndex", done.lightSampleIndex},
+            {"sourceAgeAtRequestMilliseconds", done.sourceAgeAtRequest},
+            {"snapshotSequence", done.snapshotSequence}, {"samples", Json::array()}};
+        for (const auto& sample : done.fan)
+            report["fan"]["samples"].push_back({{"endpoint", sample.endpoint}, {"called", sample.called},
+                {"plausible", sample.plausible}, {"guardsIntact", sample.guards},
+                {"originalsPreserved", sample.originals}, {"collectorHex", Hex(sample.collector)}});
+    }
     const auto path = folder / ("physics-probe-" + std::to_string(GetCurrentProcessId()) + "-" + done.id + ".json");
     HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) { ch::Log("Physics probe output failed: %lu", GetLastError()); return; }
@@ -474,7 +555,7 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory)
         if (MH_EnableHook(rayTarget) == MH_OK) rayEnabled = true;
         else MH_RemoveHook(rayTarget); // Never enabled, so no in-flight trampoline.
     }
-    ch::Log("Physics probe v4 ready (private, idle). Ray observer=%s; explicit requests only; max 12 total replay transactions per process.",
+    ch::Log("Physics probe v5 ready (private, idle). Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
         rayEnabled.load() ? "ready" : "unavailable");
     return true;
 }
@@ -520,10 +601,20 @@ void Poll()
         pending.mode = request.at("mode").get<std::string>();
         pending.player = request.at("player").get<Vec3>();
         pending.issued = request.at("issuedTickMs").get<std::uint64_t>();
-        if (pending.mode == "segment" || pending.mode == "raysegment")
+        if (pending.mode == "segment" || pending.mode == "raysegment" || pending.mode == "rayfan")
         {
             pending.segmentStart = request.at("start").get<Vec3>();
             pending.segmentEnd = request.at("end").get<Vec3>();
+        }
+        if (pending.mode == "rayfan")
+        {
+            pending.lightFrame = request.at("lightFrame").get<std::uint64_t>();
+            pending.lightSampleIndex = request.at("lightSampleIndex").get<int>();
+            pending.snapshotSequence = request.at("snapshotSequence").get<std::uint64_t>();
+            pending.sourceAgeAtRequest = request.at("sourceAgeAtRequestMilliseconds").get<double>();
+            if (!pending.lightFrame || !pending.snapshotSequence || pending.lightSampleIndex < 0 || pending.lightSampleIndex >= 32768 ||
+                !std::isfinite(pending.sourceAgeAtRequest) || pending.sourceAgeAtRequest < 0 || pending.sourceAgeAtRequest > 250)
+            { pending.reason = "invalid-fan-source-context"; Save(pending); return; }
         }
         if (pending.issued > now || now - pending.issued > 1000 || !Finite(pending.player) ||
             (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment" && !RayMode(pending.mode)))

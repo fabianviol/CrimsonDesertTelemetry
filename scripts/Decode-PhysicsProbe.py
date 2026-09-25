@@ -25,6 +25,8 @@ def vec(value):
 def decode(report):
     if report.get('schemaVersion') != 2 or report.get('executableSha256', '').lower() != EXE_HASH:
         raise ValueError('Unverified report schema or executable')
+    if report.get('mode') == 'rayfan':
+        return decode_fan(report)
     result = dict(requestId=report['requestId'], pid=report['pid'],
                   nativeStatus=report.get('reason'), collision='unknown',
                   opticalVisibility='not-classified')
@@ -78,6 +80,34 @@ def decode(report):
                   opaqueCollisionHandle=f"0x{struct.unpack_from('<Q', collector, 0xE0)[0]:016X}",
                   rawBodyId=f"0x{struct.unpack_from('<I', collector, 0xE8)[0]:08X}",
                   rawSubshapeSelector=f"0x{struct.unpack_from('<I', collector, 0xF0)[0]:08X}")
+    return result
+
+
+def decode_fan(report):
+    result = dict(requestId=report['requestId'], pid=report['pid'],
+                  nativeStatus=report.get('reason'), collision='unknown',
+                  opticalVisibility='not-classified', fanComplete=False,
+                  meaning='Diagnostic offset samples, NOT a visible-area percentage')
+    fan = report.get('fan', {})
+    samples = fan.get('samples', [])
+    if (report.get('controlStatus') != 'diagnostic-ray-fan-completed'
+            or not all(report.get(k) is True for k in ('controlCalled', 'controlMatched', 'guardsIntact', 'originalsPreserved'))
+            or report.get('callException') != 0 or fan.get('completed') != 9
+            or fan.get('expected') != 9 or len(samples) != 9):
+        return result  # Partial/failed batches never become an all-clear result.
+    decoded = []
+    for index, sample in enumerate(samples):
+        if not all(sample.get(k) is True for k in ('called', 'plausible', 'guardsIntact', 'originalsPreserved')):
+            return result
+        child = dict(report, mode='raysegment', primitive='native-ray', segmentCalled=True,
+                     segmentEnd=sample['endpoint'], segmentCollectorHex=sample['collectorHex'],
+                     segmentResultPlausible=True)
+        row = decode(child)
+        row.update(sample=index, diagnosticOffset=0 if index == 0 else .05 if index < 5 else .15)
+        decoded.append(row)
+    result.update(samples=decoded, fanComplete=True,
+                  hitSamples=sum(r['collision'] == 'hit' for r in decoded),
+                  clearSamples=sum(r['collision'] == 'no-hit' for r in decoded))
     return result
 
 

@@ -1,7 +1,8 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
-**Current instrument: physics.2**, described in the final section. physics.1
-below is the preserved observation-only baseline, not the new replay behavior.
+**Current instrument: physics.5**, diagnostic nine-ray fan, described in the final
+section. It is not live-validated yet. physics.4 ray controls passed in PID37148;
+older sections below preserve earlier evidence, not the current package state.
 
 Owner priority: resolve geometric light occlusion before the new light-control
 idea. Reuse World Builder's native query knowledge, not another SDF threshold.
@@ -614,3 +615,51 @@ It does not estimate plank-gap coverage or solve cage-bar partial occlusion.
 Six of12 replay transactions used; six remain; no pending query. No plugin/API
 or configuration change. Next work is principled spatial sampling/extent, not
 another equivalent wall test or arbitrary near-source hit suppression.
+
+## physics.5: bounded same-context diagnostic fan (not live-validated)
+
+No validated physical flame/source radius was found in the existing ManyLights
+contract. Reused old PIX PSO479 `BuildLightTreeLevel0CS`, preserved listing
+`artifacts/light-research/light-control-pix-20260924/pso-479.ll`: the tree's
+`_radiusSqr` at node+20 derives from luminance and scene thresholds (roughly
+lines326..369). It is NOT a justified emitting-area radius. No new shader search
+or public schema change. Retain broad sphere sweeps as complementary evidence:
+they detect some contact in a volume, never a blocked-area fraction.
+
+New explicit `rayfan` captures a fresh camera-paired filtered ManyLights target.
+Nine endpoints: exact source center, then +/-right and +/-up at **0.05 and 0.15
+game units**, in the plane normal to the sightline. These are diagnostic probe
+offsets, NOT inferred flame dimensions. Samples can lie outside the emitter;
+hit/no-hit counts must NOT be exported as optical attenuation or visibility %.
+
+One matched natural replay control precedes all nine rays, on the same original
+thread/stack lifetime. Each ray uses a fresh copy of the original pre-query input
+and collector. All endpoints validated before control; per-sample canaries,
+original preservation and plausible-result checks. Stop on any fault/guard failure
+(latched off until restart), implausible result, >10ms series duration or >100ms
+original context age. A synchronous native call itself cannot be safely timed out.
+Target age includes conservative HTTP transit plus time until the hook: <=250ms
+reported source age at request, <=500ms including dispatch delay. Missing/stale
+source means refused, never replaced with a guessed authored-light target.
+
+Budget remains max12 transactions/process, now also **max24 actual extra native
+calls shared across all sphere/ray modes** (fan reserves10 before execution).
+Reports retain each endpoint and collector plus frame/sample/sequence provenance.
+Decoder reports per-sample contacts and hit/clear counts only for a fully completed,
+guarded batch; partial/failed batch stays unknown, with no aggregate clear result.
+No diagnostic-to-HUD/API bridge, no INI visibility enablement, no public release.
+
+Validation: 121 synthetic native checks (including stale source, mid-series context
+expiry, fault stop and shared budget); 15 decoder tests; five focused native CTest
+suites pass. These do NOT validate game collision coverage. Private .5 ZIP carries
+PhysicsProbe=1, normal telemetry/ManyLights/HUD on, Ambient/SourceVisibility/spatial
+diagnostics off. Exact package hash/current deployment status: HANDOVER.
+
+Next live step after owner installs whole .5 ZIP with game closed: verify actual
+ASI hash/log v5; one fresh-source fan outside the known wall, then one at the visible
+cage. Each fan already contains its matching natural replay control. Ground control
+can consume2 extra calls if needed; two fans consume20 (within24). Stop for owner
+viewpoint changes; do not keep a waiting session. Example, not for current .4:
+`./scripts/Start-PhysicsProbe.ps1 -Mode rayfan -NearLightPosition @(-10529.755,611.292,-4420.300)`.
+Compare center/inner/outer contacts, not just total hits. This is a bounded probe
+of partial obstruction, not production acceptance or proof of material opacity.
