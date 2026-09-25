@@ -39,6 +39,8 @@ std::uint64_t __fastcall Original(void* w, void* q, void* xf, void* c, void* e)
 void Setup()
 {
     work = {}; query = {}; calls = 0; badArgs = 0;
+    replayFaulted = false; replayTransactions = 0;
+    work.mode = "observe";
     base = reinterpret_cast<std::uint64_t>(image.data());
     Put(image, 0x1F8, base + 0x100);
     Put(image, 0x100, std::uint32_t{1});
@@ -62,6 +64,39 @@ void Setup()
 }
 std::uint64_t Invoke()
 { return ShapeHook(worldBytes.data(), query.query.data(), query.transform.data(), query.collector.data(), query.collector.data()); }
+enum class MockMode { Match, Disagree, Fault, Overwrite };
+MockMode mockMode{};
+std::uint64_t __fastcall MockReplay(void* w, void* q, void* xf, void* c, void* e)
+{
+    ++calls;
+    if (w != worldBytes.data() || q == query.query.data() || xf == query.transform.data() ||
+        c == query.collector.data() || c != e) ++badArgs;
+    auto* bytes = static_cast<std::uint8_t*>(c);
+    std::uint64_t hits{};
+    std::memcpy(&hits, bytes + 0x20, sizeof hits);
+    if (hits != reinterpret_cast<std::uint64_t>(c) + 0x30) ++badArgs;
+    if (mockMode == MockMode::Fault) RaiseException(0xE001ABCD, 0, 0, nullptr);
+    const std::uint32_t count = 1;
+    const double fraction = mockMode == MockMode::Disagree ? .75 : .25;
+    const Vec3 normal{0, 1, 0};
+    std::memcpy(bytes + 0xC, &count, sizeof count);
+    std::memcpy(bytes + 0x10, &fraction, sizeof fraction);
+    std::memcpy(bytes + 0x80, &normal, sizeof normal);
+    if (mockMode == MockMode::Overwrite) bytes[0x300] ^= 1; // synthetic native overrun into own guard
+    return 0;
+}
+void SetupControl()
+{
+    Setup(); Invoke();
+    // Fixture takes the natural snapshot then supplies its pre-call empty count.
+    Put(work.snapshot.collector, 0xC, std::uint32_t{0});
+    work.mode = "replay";
+    work.caller = base + 0x32554FA;
+    work.stackLow = reinterpret_cast<std::uint64_t>(&query);
+    work.stackHigh = work.stackLow + sizeof query;
+    calls = 0; mockMode = MockMode::Match;
+    originalShape = MockReplay;
+}
 }
 int main()
 {
@@ -105,5 +140,39 @@ int main()
     Check(work.phase == Phase::Done && work.attempts == 1 && work.copied && work.afterCopied, "concurrent one-shot claim");
     Check(!Copy(0, bytes.data(), bytes.size()), "null read rejected");
     Check(!Start(base, L"."), "synthetic module cannot pass instruction guard");
+    std::array<std::uint8_t, 0x200> segment{};
+    Check(SetSegment(segment, {-10529,611,-4419}, {-10528,608,-4417}, {-10529,609,-4419}), "bounded segment accepted");
+    Check(Read<Vec3>(segment, 0x30) == Vec3{-529,611,-419}, "segment tile origin");
+    Check(Read<Vec3>(segment, 0x40) == Vec3{1,-3,2}, "segment displacement");
+    Check(Read<Vec3>(segment, 0x50) == Vec3{1,-1.f/3,.5f}, "reciprocal displacement NOT duplicated delta");
+    Check(std::abs(Read<float>(segment, 0x5C) - std::sqrt(14.f)) < 1e-6f, "segment length");
+    const auto unchanged = segment;
+    Check(!SetSegment(segment, {100,1,100}, {100,2,101}, {100,0,100}) && segment == unchanged, "unknown zero-axis rejected before mutation");
+    Check(!SetSegment(segment, {100,1,100}, {101,2,200}, {100,0,100}), "long segment rejected");
+    Check(!SetSegment(segment, {100,1,100}, {101,2,101}, {200,0,100}), "remote origin rejected");
+    SetupControl(); const auto originalBytes = query;
+    RunControl();
+    Check(work.controlMatched && work.guardsIntact && calls == 1 && badArgs == 0, "owned replay matches natural control");
+    Check(query.query == originalBytes.query && query.collector == originalBytes.collector &&
+        query.transform == originalBytes.transform && query.shape == originalBytes.shape, "original inputs/output unchanged");
+    SetupControl(); work.mode = "segment"; work.segmentStart = {-10529,611,-4419}; work.segmentEnd = {-10528,608,-4417};
+    RunControl();
+    Check(work.controlMatched && work.segmentCalled && calls == 2 && work.guardsIntact, "segment only after matching control");
+    SetupControl(); mockMode = MockMode::Disagree; work.mode = "segment";
+    work.segmentStart = {-10529,611,-4419}; work.segmentEnd = {-10528,608,-4417}; RunControl();
+    Check(!work.controlMatched && !work.segmentCalled && calls == 1, "mismatch prevents segment");
+    SetupControl(); work.caller = 0; RunControl();
+    Check(calls == 0, "wrong context rejects replay");
+    SetupControl(); work.stackHigh = work.stackLow + 16; RunControl();
+    Check(calls == 0, "missing lifetime rejects replay");
+    SetupControl(); Put(query.query, 0x30, 99.f); RunControl();
+    Check(calls == 0, "changed input rejects replay");
+    SetupControl(); mockMode = MockMode::Fault; RunControl();
+    Check(replayFaulted && work.callException == 0xE001ABCD && !work.segmentCalled, "native fault disables future replay");
+    calls = 0; RunControl(); Check(calls == 0, "fault latch prevents retry");
+    SetupControl(); mockMode = MockMode::Overwrite; RunControl();
+    Check(replayFaulted && !work.guardsIntact, "canary damage disables replay");
+    SetupControl(); replayTransactions = 12; RunControl();
+    Check(calls == 0, "per-process replay bound");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

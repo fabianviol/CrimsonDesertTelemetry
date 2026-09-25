@@ -29,6 +29,8 @@ std::filesystem::path folder;
 std::filesystem::file_time_type lastRequestWrite{};
 std::uint64_t base{}, processStart{}, lastPoll{};
 std::string lastId;
+bool replayFaulted{};
+unsigned replayTransactions{};
 enum class Phase { Idle, Waiting, Capturing, Done };
 struct Work
 {
@@ -44,6 +46,12 @@ struct Work
     std::uint64_t caller{}, returnValue{};
     unsigned attempts{}, spheres{}, collectors{}, nearPlayer{};
     bool copied{}, afterCopied{};
+    bool controlCalled{}, controlMatched{}, segmentCalled{}, guardsIntact{}, originalsPreserved{};
+    DWORD callException{};
+    const char* controlStatus{}; // string literals only: no allocation in callback.
+    Vec3 segmentStart{}, segmentEnd{};
+    std::array<std::uint8_t, 0x300> controlAfter{}, segmentAfter{};
+    std::array<std::uint8_t, 0x200> segmentQuery{};
 };
 Work work;
 bool Copy(std::uint64_t address, void* destination, std::size_t size)
@@ -94,6 +102,97 @@ bool Capture(void* world, void* query, void* transform, void* collector, void* e
     work.copied = true;
     return true;
 }
+bool CallCopy(NativeCopy& copy, DWORD& exception) noexcept
+{
+    __try
+    {
+        originalShape(reinterpret_cast<void*>(work.world), copy.query.data.data(), copy.transform.data.data(),
+            copy.collector.data.data(), copy.collector.data.data());
+        return true;
+    }
+    __except (exception = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+void PrepareCopy(NativeCopy& copy)
+{
+    copy.query.data = work.snapshot.query;
+    copy.transform.data = work.snapshot.transform;
+    copy.shape.data = work.snapshot.shape;
+    std::memcpy(copy.collector.data.data(), work.snapshot.collector.data(), work.snapshot.collector.size());
+    // Only these two pointers have established ownership. No generic rebasing
+    // of overlapping readback windows. Other references remain live until THIS
+    // ShapeHook returns; copies are never queued or used asynchronously.
+    Write(copy.query.data, 0x28, reinterpret_cast<std::uint64_t>(copy.shape.data.data()));
+    Write(copy.collector.data, 0x20, reinterpret_cast<std::uint64_t>(copy.collector.data.data()) + 0x30);
+}
+bool OriginalsIntact()
+{
+    std::array<std::uint8_t, 0xA0> q{};
+    std::array<std::uint8_t, 0x40> xf{}, shape{};
+    std::array<std::uint8_t, 0x140> collector{};
+    return Copy(work.addresses[0], q.data(), q.size()) &&
+        Copy(work.addresses[1], xf.data(), xf.size()) &&
+        Copy(work.addresses[2], collector.data(), collector.size()) &&
+        Copy(work.addresses[3], shape.data(), shape.size()) &&
+        !std::memcmp(q.data(), work.snapshot.query.data(), q.size()) &&
+        !std::memcmp(xf.data(), work.snapshot.transform.data(), xf.size()) &&
+        !std::memcmp(collector.data(), work.collectorAfter.data(), collector.size()) &&
+        !std::memcmp(shape.data(), work.snapshot.shape.data(), shape.size());
+}
+void RunControl()
+{
+    if (work.mode == "observe") return;
+    if (replayFaulted || replayTransactions >= 12) { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
+    if (!work.afterCopied || work.caller != base + 0x32554FA || work.extra != work.addresses[2] ||
+        work.thread != GetCurrentThreadId() || GetTickCount64() - work.captured > 100)
+    { work.controlStatus = "unknown-call-context"; return; }
+    for (auto address : work.addresses)
+        if (address < work.stackLow || address > work.stackHigh - 0x200)
+        { work.controlStatus = "unknown-object-lifetime"; return; }
+    std::uint64_t inner{}, filter{};
+    std::array<std::uint8_t, 0xA0> liveQuery{};
+    std::array<std::uint8_t, 0x40> liveTransform{}, liveShape{};
+    if (!Get(work.world + 0xB70, inner) || inner != work.worldInner ||
+        !Get(work.world + 0xBC0, filter) || filter != work.worldFilter ||
+        !Copy(work.addresses[0], liveQuery.data(), liveQuery.size()) ||
+        !Copy(work.addresses[1], liveTransform.data(), liveTransform.size()) ||
+        !Copy(work.addresses[3], liveShape.data(), liveShape.size()) ||
+        std::memcmp(liveQuery.data(), work.snapshot.query.data(), liveQuery.size()) ||
+        std::memcmp(liveTransform.data(), work.snapshot.transform.data(), liveTransform.size()) ||
+        std::memcmp(liveShape.data(), work.snapshot.shape.data(), liveShape.size()) ||
+        Read<std::uint32_t>(work.snapshot.collector, 0xC) != 0 || !PlausibleResult(work.collectorAfter))
+    { work.controlStatus = "unknown-input-change-or-result"; return; }
+    NativeCopy control{}, segment{};
+    PrepareCopy(control);
+    if (work.mode == "segment")
+    {
+        PrepareCopy(segment);
+        if (!SetSegment(segment.query.data, work.segmentStart, work.segmentEnd, work.player))
+        { work.controlStatus = "invalid-segment-or-unverified-zero-component"; return; }
+        work.segmentQuery = segment.query.data;
+    }
+    ++replayTransactions;
+    work.controlCalled = true;
+    const bool returned = CallCopy(control, work.callException);
+    work.guardsIntact = control.Intact();
+    work.originalsPreserved = OriginalsIntact();
+    work.controlAfter = control.collector.data;
+    if (!returned || !work.guardsIntact || !work.originalsPreserved)
+    { replayFaulted = true; work.controlStatus = "unknown-control-fault-restart-required"; return; }
+    work.controlMatched = SameResult(work.collectorAfter, work.controlAfter);
+    if (!work.controlMatched) { work.controlStatus = "unknown-control-disagrees"; return; }
+    work.controlStatus = "control-matches-natural-query";
+    if (work.mode != "segment") return;
+    work.segmentCalled = true;
+    const bool segmentReturned = CallCopy(segment, work.callException);
+    work.guardsIntact = segment.Intact();
+    work.originalsPreserved = OriginalsIntact();
+    work.segmentAfter = segment.collector.data;
+    if (!segmentReturned || !work.guardsIntact || !work.originalsPreserved)
+    { replayFaulted = true; work.controlStatus = "unknown-segment-fault-restart-required"; return; }
+    work.controlStatus = PlausibleResult(work.segmentAfter) ? "diagnostic-segment-completed" : "unknown-segment-result";
+    // Neither status means optical visibility. Radius/filter come from the
+    // natural sphere query, including any player/body collision exclusions.
+}
 std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* extra)
 {
     bool claimed = false;
@@ -109,13 +208,15 @@ std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* ext
         ReleaseSRWLockExclusive(&mutex);
     }
     // Exactly the original call on the original thread, with unchanged arguments.
-    // No additional physics query, logging, or allocation in this hook.
+    // Observe mode adds no call. Explicit control/segment mode uses own copies
+    // only AFTER this original call returns, on this same native thread.
     const auto result = originalShape(w, q, x, c, extra);
     if (claimed)
     {
         AcquireSRWLockExclusive(&mutex);
         work.afterCopied = Copy(reinterpret_cast<std::uint64_t>(c), work.collectorAfter.data(), work.collectorAfter.size());
         work.returnValue = result;
+        RunControl();
         work.phase = Phase::Done;
         ReleaseSRWLockExclusive(&mutex);
     }
@@ -135,9 +236,20 @@ template<std::size_t N> std::string Hex(const std::array<std::uint8_t, N>& bytes
 }
 void Save(const Work& done)
 {
-    const Json report{{"schemaVersion", 1}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
+    const Json report{{"schemaVersion", 2}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
         {"processStartFileTime", processStart}, {"mode", done.mode}, {"reason", done.reason},
-        {"scope", "Natural physics query observation only; NO replay or optical visibility claim"},
+        {"scope", "Private physics diagnostic; explicit replay/segment, NOT optical visibility"},
+        {"controlStatus", done.controlStatus ? done.controlStatus : "not-requested"},
+        {"controlCalled", done.controlCalled}, {"controlMatched", done.controlMatched},
+        {"segmentCalled", done.segmentCalled}, {"guardsIntact", done.guardsIntact}, {"callException", done.callException},
+        {"originalsPreserved", done.originalsPreserved},
+        {"segmentResultPlausible", done.segmentCalled && done.controlMatched && done.callException == 0 &&
+            done.guardsIntact && done.originalsPreserved && PlausibleResult(done.segmentAfter)},
+        {"segmentStart", done.segmentStart}, {"segmentEnd", done.segmentEnd},
+        {"controlCollectorHex", Hex(done.controlAfter)}, {"segmentCollectorHex", Hex(done.segmentAfter)},
+        {"segmentQueryHex", Hex(done.segmentQuery)},
+        {"segmentRawResult", done.segmentCalled ? Json{{"count", Read<std::uint32_t>(done.segmentAfter, 0xC)},
+            {"fraction", Read<double>(done.segmentAfter, 0x10)}, {"normal", Read<Vec3>(done.segmentAfter, 0x80)}} : Json(nullptr)},
         {"buildId", native_contract::BuildId}, {"executableSha256", Hex(native_contract::ExecutableSha256)},
         {"moduleBase", base}, {"worldCastShapeRva", 0x42B0C50}, {"collectorVtableRva", 0x5D13528},
         {"player", done.player},
@@ -186,7 +298,7 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory)
     if (MH_CreateHook(shapeTarget, ShapeHook, reinterpret_cast<void**>(&originalShape)) != MH_OK) return false;
     if (MH_EnableHook(shapeTarget) != MH_OK) { MH_RemoveHook(shapeTarget); return false; }
     enabled = true;
-    ch::Log("Physics observation ready (private, idle). No added physics calls. Request file physics-probe-request.json.");
+    ch::Log("Physics probe v2 ready (private, idle). Explicit observe/replay/segment requests only; max 12 replay transactions per process.");
     return true;
 }
 void Poll()
@@ -202,7 +314,8 @@ void Poll()
     if (complete)
     {
         done = work;
-        if (done.copied) done.reason = done.afterCopied ? "observed-game-query" : "unknown-result-unreadable";
+        if (done.copied) done.reason = done.controlStatus ? done.controlStatus :
+            (done.afterCopied ? "observed-game-query" : "unknown-result-unreadable");
         work = {};
     }
     const bool idle = work.phase == Phase::Idle;
@@ -230,8 +343,13 @@ void Poll()
         pending.mode = request.at("mode").get<std::string>();
         pending.player = request.at("player").get<Vec3>();
         pending.issued = request.at("issuedTickMs").get<std::uint64_t>();
+        if (pending.mode == "segment")
+        {
+            pending.segmentStart = request.at("start").get<Vec3>();
+            pending.segmentEnd = request.at("end").get<Vec3>();
+        }
         if (pending.issued > now || now - pending.issued > 1000 || !Finite(pending.player) ||
-            pending.mode != "observe")
+            (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment"))
         { pending.reason = "invalid-or-stale-request"; Save(pending); return; }
         pending.phase = Phase::Waiting;
         AcquireSRWLockExclusive(&mutex);

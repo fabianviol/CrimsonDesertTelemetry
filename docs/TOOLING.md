@@ -255,7 +255,7 @@ requires 7.4 or newer.
 |---|---|
 | `Build-ModManagerPackage.ps1` | builds a package; `-IniOverrides @{...}` bakes research switches into private builds, refused for versions without a prerelease suffix |
 | `Start-SpatialProbe.ps1` | signals the plugin's capture event; ONE transaction series per process, including failures |
-| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1 package: requests one natural player-near physics-query observation, returns immediately; no replay or public visibility mutation |
+| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1: default observe; physics.2 adds explicit `-Mode replay` and controlled `-Mode segment -GroundControl` / `-LightSampleIndex N`; returns immediately, no public visibility mutation |
 | `Decode-SpatialReadback.py` | decodes a spatial capture; also hosts the shared `sample_world`, `select_clipmap` and `march_segment` helpers |
 | `Verify-NativeSampler.py` | compares the native sampler against the decoder on preserved captures |
 | `Verify-AmbientAnchors.py` | checks the hardcoded ambient hook RVAs in `ambient_probe.h` against a game executable, and derives the shift when an update moves them |

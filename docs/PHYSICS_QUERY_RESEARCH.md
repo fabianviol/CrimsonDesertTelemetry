@@ -1,5 +1,8 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
+**Current instrument: physics.2**, described in the final section. physics.1
+below is the preserved observation-only baseline, not the new replay behavior.
+
 Owner priority: resolve geometric light occlusion before the new light-control
 idea. Reuse World Builder's native query knowledge, not another SDF threshold.
 The SDF false-clear limitation remains measured in `SDF_BAND_LIMIT.md`.
@@ -135,3 +138,63 @@ Next private revision: controlled replay design with a valid execution context,
 owned/accurately rebased data, and an identical-query control BEFORE arbitrary
 segments. Observe-only physics.1 cannot replay; requires a closed-game package
 change. Preserve this successful capture instead of restarting anchor discovery.
+
+## physics.2: bounded control and segment requests
+
+Owner closed the game after the two successful natural observations. This revision
+keeps the default `observe` command and adds explicit `replay` / `segment` modes.
+No automatic extra query at startup, no change to public visibility or raw lights.
+
+Execution deliberately differs from WB's deferred movement-tick service: the
+extra call runs **after the original WorldCastShape returns, before ShapeHook
+returns to the still-active caller**. Same thread, fresh known caller, same world
+and live source stack. This avoids dangling captured pointers and a second hook.
+It is a new experimental context, NOT yet proven safe in this game. No locks from
+our observer are held by the original engine call; the extra query uses the
+trampoline and private buffers. A native deadlock cannot be canceled safely by
+this instrument; the request/attempt caps are not a timeout for a stuck engine.
+
+All four inputs are copied into guarded private buffers. Only the established
+query-shape pointer and collector-inline-buffer pointer are rebased. No blanket
+rebasing of the overlapping readback windows. Remaining references are usable
+only while the captured caller is alive. Copies never escape for later execution.
+Captured sizes still exceed proven extents; canaries are detection, not a proof
+against all native bugs. Original query/transform/shape prefixes and the original
+collector result are compared after calls; detected changes or exceptions disable
+further replay in the process. SEH does not guarantee a faulted engine is healthy:
+any such failure requires a restart, no retry in that process.
+
+Each request makes at most one identical-query control and (segment mode only)
+one modified segment. The latter is skipped if count/fraction/normal disagree
+with the original, input context changes, result is implausible, or guards fail.
+Maximum 12 replay transactions per process. A matching no-hit control alone is
+weak evidence: require a positive ground control before interpreting wall tests.
+
+Segment +0x50 is populated with reciprocal displacement, +0x5C with length.
+Unverified zero/near-zero component convention is refused, not guessed. Limits:
+length 0.05..50 gu, origin within 20 gu of player. Sphere radius and collision
+filter remain inherited; contact/penetration is NOT automatically optical blocking.
+
+Commands (one-shot, return immediately; no owner-waiting session):
+
+```powershell
+./scripts/Start-PhysicsProbe.ps1 -Mode replay
+./scripts/Start-PhysicsProbe.ps1 -Mode segment -GroundControl
+./scripts/Start-PhysicsProbe.ps1 -Mode segment -LightSampleIndex <current-index>
+```
+
+Run these in order only after inspecting the preceding report. Ground control
+uses a slightly diagonal downward path near the player to keep all delta
+components nonzero. Light mode takes start AND source from the same fresh,
+filtered ManyLights snapshot and uses its paired camera. The sample index is
+frame-local, not stable lamp identity. Reports retain exact world endpoints.
+Do not automatically classify all lights, raycast every frame, or touch the SDF
+pipeline. First assess ground, known open path, known wall, then limitations.
+
+Built `CrimsonDesertTelemetry-v2.1.15-physics.2-ModManagers.zip`; SHA256
+`CC84F118B1E92064B0389F89399CBC19F731D1ABCE0C42CA6334AF401A0E661F`.
+44 synthetic physics checks and five focused native regression suites pass.
+Package/INI/payload equality checks pass. Request script parsed and its actual
+ground-coordinate assignments were exercised with synthetic camp coordinates.
+Not installed automatically; all native replay/segment behavior still needs a
+live game test. Default command remains observation-only.

@@ -28,6 +28,69 @@ template<class T, std::size_t N> T Read(const std::array<std::uint8_t, N>& b, st
     if (offset <= N && sizeof(T) <= N - offset) std::memcpy(&value, b.data() + offset, sizeof value);
     return value;
 }
+template<class T, std::size_t N> void Write(std::array<std::uint8_t, N>& b, std::size_t offset, const T& value)
+{
+    if (offset <= N && sizeof(T) <= N - offset) std::memcpy(b.data() + offset, &value, sizeof value);
+}
+inline float Distance(const Vec3& a, const Vec3& b)
+{
+    float squared = 0;
+    for (unsigned i = 0; i < 3; ++i) squared += (a[i] - b[i]) * (a[i] - b[i]);
+    return std::sqrt(squared);
+}
+// Live captures establish reciprocal delta at +0x50 and length at +0x5C.
+// Zero-component convention is unverified: reject near-axis cases instead of
+// inventing infinity/FLT_MAX behavior. This remains a private sphere sweep.
+template<std::size_t N> bool SetSegment(std::array<std::uint8_t, N>& q,
+    const Vec3& start, const Vec3& end, const Vec3& player)
+{
+    if (!Finite(start) || !Finite(end) || !Finite(player)) return false;
+    const float length = Distance(start, end);
+    if (N < 0x60 || length < .05f || length > 50.f || Distance(start, player) > 20.f) return false;
+    Vec3 delta{}, inverse{}, local = start;
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        delta[i] = end[i] - start[i];
+        if (std::abs(delta[i]) < .0001f) return false;
+        inverse[i] = 1.f / delta[i];
+    }
+    local[0] -= static_cast<float>(static_cast<int>(player[0] * .001f)) * 1000.f;
+    local[2] -= static_cast<float>(static_cast<int>(player[2] * .001f)) * 1000.f;
+    Write(q, 0x30, local); Write(q, 0x3C, 0.f);
+    Write(q, 0x40, delta); Write(q, 0x4C, 1.f);
+    Write(q, 0x50, inverse); Write(q, 0x5C, length);
+    return true;
+}
+template<std::size_t N> bool PlausibleResult(const std::array<std::uint8_t, N>& c)
+{
+    const auto count = Read<std::uint32_t>(c, 0xC);
+    const auto fraction = Read<double>(c, 0x10);
+    return count <= 64 && std::isfinite(fraction) && fraction >= -1 && fraction <= 1.00001 &&
+        (count == 0 || Finite(Read<Vec3>(c, 0x80)));
+}
+template<std::size_t N, std::size_t M> bool SameResult(const std::array<std::uint8_t, N>& a,
+    const std::array<std::uint8_t, M>& b)
+{
+    return PlausibleResult(a) && PlausibleResult(b) && Read<std::uint32_t>(a, 0xC) == Read<std::uint32_t>(b, 0xC) &&
+        std::abs(Read<double>(a, 0x10) - Read<double>(b, 0x10)) <= .00001 &&
+        (Read<std::uint32_t>(a, 0xC) == 0 || Distance(Read<Vec3>(a, 0x80), Read<Vec3>(b, 0x80)) < .001f);
+}
+template<std::size_t N> struct alignas(16) GuardedBytes
+{
+    static constexpr std::array<std::uint64_t, 2> Tag{0xDFC521184390B7A6ULL, 0x84B176A204EF95C3ULL};
+    std::array<std::uint64_t, 2> before{Tag};
+    alignas(16) std::array<std::uint8_t, N> data{};
+    std::array<std::uint64_t, 2> after{Tag};
+    bool Intact() const { return before == Tag && after == Tag; }
+};
+struct NativeCopy
+{
+    GuardedBytes<0x200> query;
+    GuardedBytes<0x100> transform;
+    GuardedBytes<0x300> collector;
+    GuardedBytes<0x200> shape;
+    bool Intact() const { return query.Intact() && transform.Intact() && collector.Intact() && shape.Intact(); }
+};
 struct alignas(16) QueryCopy
 {
     alignas(16) std::array<std::uint8_t, 0x200> query{};

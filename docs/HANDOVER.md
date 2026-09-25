@@ -4,7 +4,7 @@ Owner explicitly deferred light switching in favor of unresolved occlusion.
 Read `docs/PHYSICS_QUERY_RESEARCH.md`; use World Builder's verified native-query
 route, not more SDF tolerance tuning. Working paired ManyLights remains the source.
 
-New research-only `PhysicsProbe` observes ONE natural player-near sphere cast,
+**physics.1 baseline:** research-only `PhysicsProbe` observes ONE natural player-near sphere cast,
 including input bytes, collector output, thread/caller and exact EXE. No replay,
 no extra physics call, no public visibility change. It is gated to patch 2.03.02 /
 EXE 1.0.0.2976 by hash, instruction bytes and collector vtable; other builds refuse.
@@ -18,7 +18,7 @@ delta (confirmed twice). All query objects are stack-local and broad captured
 ranges overlap. Do not blindly copy WB's ground-replay vector writes or remap all
 qwords in overlapping windows. Caller is a forwarding wrapper, not the builder.
 
-Private package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.1-ModManagers.zip`.
+Earlier package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.1-ModManagers.zip`.
 Built and validated; SHA256 `0D5B720185DA6C628EB2D113586467F01E39AE5C42C1C18EFAE2708C2C7B4002`.
 25 synthetic physics checks and 5 focused native CTest suites pass, including
 build guard, render bridge/filter and HUD model. Saved current EXE passes actual
@@ -27,10 +27,24 @@ PhysicsProbe=1; Ambient and SourceVisibility/spatial diagnostics OFF for this ru
 Normal player/camera + ManyLights + HUD stay ON. User installs the WHOLE ZIP via
 DMM with game closed. Nothing was installed automatically; no public release/push.
 
-**Next:** owner closes the game for the next private plugin revision. Prepare a
-same-query replay control with validated execution/lifetime and segment field
-preparation, then clear/walled camera-to-ManyLights segments. No active request
-remains; both observations are complete and archived. No waiting for owner input.
+**Current package: physics.2.** Owner closed the game. New opt-in `replay`
+and `segment` requests run after the original call returns, on the same thread
+while its caller stack is alive; guarded private copies and matching-result
+control, no queued stack pointers. This execution context is NOT yet live-tested.
+Read the final section in the physics doc before use; native hangs cannot be
+timed out safely. Segment inversion corrected; zero-axis convention refused.
+No result is published as optical visibility; max 12 replay transactions/process.
+ZIP: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.2-ModManagers.zip`.
+SHA256 `CC84F118B1E92064B0389F89399CBC19F731D1ABCE0C42CA6334AF401A0E661F`.
+Same ready-made INI as physics.1. Package content/INI validation passed. Native
+tests include copy isolation, control mismatch, fault latch, canaries and bounds.
+No live replay result yet, and no public API/published release was changed.
+
+**Next:** install the new full DMM ZIP, owner returns in-game. First run
+`Start-PhysicsProbe.ps1 -Mode replay` and inspect the report; only after it matches,
+run `-Mode segment -GroundControl` for a positive collision control, then a
+camera-to-current-ManyLights wall/clear test. No active request remains. No waiting
+for owner input; close/restart on any replay fault, never retry a faulted process.
 Collision outcome is not yet optical visibility. Current SDF classifications remain
 experimental/default-off; do not declare the open occlusion problem solved.
 

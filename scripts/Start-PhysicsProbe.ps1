@@ -1,7 +1,15 @@
 #requires -Version 7.4
-# One observation request, then return immediately. No live memory writes or replay.
+# One explicit private request, then return immediately; never waits for the owner.
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet('observe','replay','segment')][string]$Mode = 'observe',
+    # Segment target is an EXACT current filtered ManyLights sample. Its paired
+    # camera supplies the start; never substitute the authored-light vector.
+    [int]$LightSampleIndex = -1,
+    # Bounded downward positive control, with nonzero horizontal components
+    # because the engine's zero-inverse convention is not yet established.
+    [switch]$GroundControl
+)
 $ErrorActionPreference = 'Stop'
 $games = @(Get-Process -Name CrimsonDesert -ErrorAction SilentlyContinue)
 if ($games.Count -ne 1) { throw 'Exactly one CrimsonDesert process must be running.' }
@@ -25,13 +33,41 @@ foreach ($coordinate in $player) {
 }
 $requestId = [Guid]::NewGuid().ToString('N')
 $request = [ordered]@{
-    id = $requestId; mode = 'observe'; pid = $game.Id
+    id = $requestId; mode = $Mode; pid = $game.Id
     processStartFileTime = [uint64]$game.StartTime.ToUniversalTime().ToFileTimeUtc()
     player = $player; issuedTickMs = [Environment]::TickCount64
     snapshotSequence = $snapshot.sequence; snapshotCapturedAt = $snapshot.capturedAt
 }
+if ($Mode -eq 'segment') {
+    if ($GroundControl -and $LightSampleIndex -ge 0) { throw 'Choose ground OR light, not both.' }
+    if ($GroundControl) {
+        $request.start = @(($player[0]+0.6), ($player[1]+1.5), ($player[2]+0.6))
+        $request.end = @(($player[0]+0.7), ($player[1]-3), ($player[2]+0.67))
+    } else {
+        $rendered = $snapshot.lights.rendered
+        if ($LightSampleIndex -lt 0 -or $rendered.status -ne 'available' -or $null -eq $rendered.camera -or
+            $null -eq $rendered.ageMilliseconds -or $rendered.ageMilliseconds -gt 250) {
+            throw 'Requires a fresh paired ManyLights frame and -LightSampleIndex, or explicit -GroundControl.'
+        }
+        $matches = @($rendered.sources | Where-Object sampleIndex -eq $LightSampleIndex)
+        if ($matches.Count -ne 1) { throw 'Light sample is absent/ambiguous in the current frame. No request sent.' }
+        $p = $rendered.camera.position; $light = $matches[0].position
+        $request.start = @($p.x, $p.y, $p.z)
+        $request.end = @($light.x, $light.y, $light.z)
+        $request.lightSampleIndex = $LightSampleIndex
+        $request.lightFrame = $rendered.frameNumber
+    }
+    # All endpoint validation is repeated natively before any extra call.
+    $squared = 0.0
+    for ($i=0; $i -lt 3; $i++) {
+        $d = $request.end[$i]-$request.start[$i]
+        if (-not [double]::IsFinite($d) -or [math]::Abs($d) -lt 0.0001) { throw 'Invalid or unverified zero-component segment.' }
+        $squared += $d*$d
+    }
+    if ($squared -gt 2500 -or $squared -lt 0.0025) { throw 'Segment length outside 0.05..50 game units.' }
+} elseif ($GroundControl -or $LightSampleIndex -ge 0) { throw 'Targets require -Mode segment.' }
 $temporary = Join-Path $gameDirectory "physics-probe-request-$requestId.tmp"
 $destination = Join-Path $gameDirectory 'physics-probe-request.json'
 [IO.File]::WriteAllText($temporary, ($request | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
 [IO.File]::Move($temporary, $destination, $true)
-Write-Output "Observation requested (no replay). Result: $(Join-Path $gameDirectory "physics-probe-$($game.Id)-$requestId.json")"
+Write-Output "Physics $Mode requested. Result: $(Join-Path $gameDirectory "physics-probe-$($game.Id)-$requestId.json")"
