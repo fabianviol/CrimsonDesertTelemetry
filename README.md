@@ -277,4 +277,6 @@ See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), 
 
 Created and maintained by [fabianviol](https://github.com/fabianviol), developed with **Claude** and **Codex (OpenAI)**. Runtime third-party components are credited in [provenance](docs/PROVENANCE.md) and the package's `THIRD-PARTY-NOTICES.txt`.
 
+Thanks to [Moon-yungg and the World Builder project](https://github.com/Moon-yungg/crimson-desert-world-builder) for contributing [automatic direct-camera compatibility](https://github.com/fabianviol/CrimsonDesertTelemetry/pull/2) and sharing engine research that informs ongoing work.
+
 This unofficial community project is not affiliated with or endorsed by Pearl Abyss. Use it only where game terms and applicable restrictions permit; no anti-cheat bypass or competitive advantage is provided. Source is licensed under the [MIT License](LICENSE).
