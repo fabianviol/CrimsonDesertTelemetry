@@ -202,7 +202,9 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
-    const bool sourceVisibility = GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+    const bool physicsVisibility = CDT_RESEARCH &&
+        GetPrivateProfileIntW(L"Experimental", L"PhysicsVisibility", 0, iniPath.c_str()) != 0;
+    const bool sourceVisibility = !physicsVisibility && GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
     // OFF uses the narrow render-capture path with its paired camera. ON keeps
     // that path disabled and uses the player/all-known-source bridge below.
     render::SetSourceVisibilityEnabled(!CDT_RESEARCH && sourceVisibility);
@@ -212,7 +214,7 @@ void RunImpl(HANDLE stopEvent)
         ch::Log("Source visibility query bridge could not initialize; light records remain available without geometry metadata.");
 #endif
 #if CDT_RESEARCH
-    const bool hudOcclusion = GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
+    const bool hudOcclusion = !physicsVisibility && GetPrivateProfileIntW(L"LightOverlay", L"Enabled", 0, iniPath.c_str()) != 0 &&
         GetPrivateProfileIntW(L"LightOverlay", L"OcclusionTest", 0, iniPath.c_str()) != 0;
     const bool spatialProbe = captureEnabled && (sourceVisibility || hudOcclusion || GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0 ||
         GetPrivateProfileIntW(L"Research", L"SpatialProbe", 0, iniPath.c_str()) != 0);
@@ -243,10 +245,13 @@ void RunImpl(HANDLE stopEvent)
         ch::Log("Spatial binding probe refused initialization; existing telemetry remains independent.");
     uint32_t reportedCaptureError = 0;
 #if CDT_RESEARCH
-    const bool physicsRequested = GetPrivateProfileIntW(L"Research", L"PhysicsProbe", 0, iniPath.c_str()) != 0;
+    const bool physicsRequested = physicsVisibility || GetPrivateProfileIntW(L"Research", L"PhysicsProbe", 0, iniPath.c_str()) != 0;
     const bool physicsStarted = physicsRequested && physics::Start(ch::g_game.moduleBase,
-        std::filesystem::path(moduleDirectory).c_str());
+        std::filesystem::path(moduleDirectory).c_str(), physicsVisibility);
     if (physicsRequested && !physicsStarted) ch::Log("Physics observation refused initialization; no physics capture available.");
+    if (physicsVisibility && !physicsStarted)
+        overlay::SetLocalFault("physics-visibility", "Experimental light visibility unavailable",
+            "The validated physics hook or data bridge could not start. Raw light data is unaffected; check the native log.");
 #endif
     while (WaitForSingleObject(stopEvent, 5) == WAIT_TIMEOUT)
     {

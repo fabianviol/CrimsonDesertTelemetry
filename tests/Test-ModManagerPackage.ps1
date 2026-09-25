@@ -51,6 +51,7 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
         }
     }
     if ($ProfileName -eq 'research') {
+        $rules.Experimental = @{ PhysicsVisibility = 'bool' }
         $rules.Research = @{
             PhysicsProbe = 'bool'
             SignedDistanceReadback = 'bool'; SignedDistanceReadbackCount = 'int:1:120'; SignedDistanceReadbackIntervalMs = 'int:250:10000'
@@ -117,6 +118,8 @@ function Assert-IniConfiguration([string]$Ini, [ValidateSet('production', 'resea
         }
     }
     foreach ($requiredSection in $rules.Keys) {
+        # New private opt-in; old research packages remain valid with default OFF.
+        if ($requiredSection -eq 'Experimental' -and -not $sections.ContainsKey($requiredSection)) { continue }
         if (-not $sections.ContainsKey($requiredSection)) { throw "Missing INI section [$requiredSection]." }
         foreach ($requiredKey in $rules[$requiredSection].Keys) {
             # Added in the physics diagnostic. Older research INIs default to OFF.
@@ -257,11 +260,13 @@ ResultFile=inject_result.txt
     Assert-IniConfiguration $researchIni 'research'
     Assert-IniConfiguration ($researchIni.Replace('EnableConsole=0', 'EnableConsole=1').Replace('SpatialProbe=0', 'SpatialProbe=1')) 'research'
     Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=1")) 'research'
+    Assert-IniConfiguration ($researchIni + "`n[Experimental]`nPhysicsVisibility=1`n") 'research'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni + "`n[Experimental]`nPhysicsVisibility=2`n") 'research' } 'Invalid PhysicsVisibility boolean was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=2")) 'research' } 'Invalid PhysicsProbe boolean was accepted.'
     Assert-Rejected { Assert-IniConfiguration $productionIni 'unsupported' } 'An unsupported profile was accepted.'
     Assert-Rejected { Assert-IniConfiguration $researchIni 'production' } 'Research settings were accepted in production.'
     Assert-Rejected { Assert-IniConfiguration $productionIni 'research' } 'An incomplete research profile was accepted.'
-    foreach ($forbidden in @('Research', 'Console', 'Explorer')) {
+    foreach ($forbidden in @('Research', 'Console', 'Explorer', 'Experimental')) {
         Assert-Rejected { Assert-IniConfiguration ($productionIni + "`n[$forbidden]`n") 'production' } "Forbidden section [$forbidden] was accepted."
     }
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nOcclusionTest=0`n") 'production' } 'The legacy research key was accepted in production.'

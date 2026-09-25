@@ -91,6 +91,37 @@ SourceVisibility ReadSourceVisibility(const Json& value, const Json& capture)
     {
         SourceVisibility result;
         result.status=value.at("status").get<std::string>();
+        if(value.value("method",std::string{})=="physics-ray-fan")
+        {
+            result.physicsSampled=true;
+            const auto reference=LightVector(value.at("referencePosition"));
+            const auto camera=LightVector(capture.at("camera").at("position"));
+            const double dx=reference.x-camera.x,dy=reference.y-camera.y,dz=reference.z-camera.z;
+            if(!value.at("lightCaptureSequence").is_number_integer()||value.at("lightCaptureSequence")<=0||
+                value.at("lightCaptureSequence")>capture.at("captureSequence"))
+                throw std::runtime_error("Invalid physics provenance");
+            if(!value.at("volumeAgeMillisecondsAtCapture").is_null())
+                result.volumeAgeMillisecondsAtCapture=Number(value.at("volumeAgeMillisecondsAtCapture"));
+            if(result.status=="unknown")
+            {
+                result.reason=value.at("reason").get<std::string>();
+                if(result.reason.empty()||!value.at("attenuationFactor").is_null())throw std::runtime_error("Invalid unknown physics");
+                return result;
+            }
+            if((result.status!="clear"&&result.status!="blocked")||!value.at("reason").is_null()||
+                value.at("sampleCount")!=9||!value.at("clearSampleCount").is_number_integer()||
+                !result.volumeAgeMillisecondsAtCapture||*result.volumeAgeMillisecondsAtCapture<0||
+                !value.at("contextFrame").is_number_integer())throw std::runtime_error("Invalid physics result");
+            result.clearSamples=value.at("clearSampleCount").get<int>();
+            result.attenuationFactor=Number(value.at("attenuationFactor"));
+            if(result.clearSamples<0||result.clearSamples>9||
+                (result.status=="blocked"?result.clearSamples!=0:result.clearSamples==0)||
+                *result.attenuationFactor!=(result.status=="blocked"?0.0:1.0))throw std::runtime_error("Invalid physics verdict");
+            if(dx*dx+dy*dy+dz*dz>.0625)
+            { result.status="unknown";result.reason="camera-moved";result.attenuationFactor.reset(); }
+            else result.reason.clear();
+            return result;
+        }
         const auto& sequence=value.at("lightCaptureSequence");
         const auto& pairedSequence=capture.at("captureSequence");
         if(!sequence.is_number_integer()||sequence<=0||!pairedSequence.is_number_integer()||
@@ -365,7 +396,7 @@ std::vector<std::vector<size_t>> GroupLightDetails(const std::span<const LightRe
 float HudNaturalHeight(const Config& config, const bool details)
 {
     const float base = config.radar3D ? 550.f : 344.f;
-    return base + (details ? 380.f + (config.occlusionTest ? 44.f : 0.f) : 0.f);
+    return base + (details ? 380.f : 0.f);
 }
 
 float HudScale(float width, float height, const Config& config, bool details)
@@ -535,8 +566,8 @@ SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& vi
         *result.volumeAgeMillisecondsAtCapture<0)return unknown("invalid-metadata");
     // Include transport age as well as time spent in this view. This is a
     // conservative bound; metadata itself remains frozen with its capture.
-    if(*result.volumeAgeMillisecondsAtCapture+*view.sample.renderedLights.ageMilliseconds+AgeMs(view,now)>1500)
-        return unknown("stale-volume");
+    if(*result.volumeAgeMillisecondsAtCapture+*view.sample.renderedLights.ageMilliseconds+AgeMs(view,now)>(result.physicsSampled?2500:1500))
+        return unknown(result.physicsSampled?"stale-physics":"stale-volume");
     return result;
 }
 SourceVisibilityCounts CountSourceVisibility(const View& view,const Clock::time_point now,const float radius)

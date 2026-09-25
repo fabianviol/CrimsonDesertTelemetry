@@ -261,7 +261,9 @@ DWORD RunBootstrap()
     const int sampleRate = std::clamp(requestedRate, 1, 240);
     const bool lightsEnabled = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, iniPath.c_str()) != 0;
 #if CDT_RESEARCH
-    const bool researchSourceVisibility = lightsEnabled &&
+    const bool physicsVisibility = lightsEnabled &&
+        GetPrivateProfileIntW(L"Experimental", L"PhysicsVisibility", 0, iniPath.c_str()) != 0;
+    const bool researchSourceVisibility = lightsEnabled && !physicsVisibility &&
         GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
 #endif
     const int nearbyRadius = std::clamp(
@@ -381,6 +383,7 @@ DWORD RunBootstrap()
         commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
 #if CDT_RESEARCH
     if (researchSourceVisibility) commandLine += L" --research-source-visibility";
+    if (physicsVisibility) commandLine += L" --physics-visibility";
 #endif
     commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
         L" --light-group-radius " + std::format(L"{}", groupRadius);

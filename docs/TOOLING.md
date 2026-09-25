@@ -251,6 +251,10 @@ requires 7.4 or newer.
 
 ## Repository scripts
 
+Private physics.6 uses `[Experimental] PhysicsVisibility=1` for automatic HUD/API
+sampling; do NOT send `Start-PhysicsProbe.ps1` commands while this mode is active.
+Manual diagnostic modes and their evidence remain preserved for explicit later use.
+
 | script | purpose |
 |---|---|
 | `Build-ModManagerPackage.ps1` | builds a package; `-IniOverrides @{...}` bakes research switches into private builds, refused for versions without a prerelease suffix |

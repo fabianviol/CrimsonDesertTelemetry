@@ -1,5 +1,44 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
+**Current: private physics.6 built and verified; NOT installed/live-tested.**
+Owner closed game, authorized practical integration AND removal of legacy HUD
+visibility clutter. Continuous native physics now feeds rendered sourceVisibility,
+radar and fullscreen markers. Raw RGB/positions/authored lights remain unchanged.
+Any clear neighbor retains a source; all9 blocked needs2 consecutive valid fans.
+Unknown/stale/moved remains visible. No optical percentage. New method metadata
+records actual measured camera/capture, not falsely paired to a later frame.
+
+Budget:24 nearest unique rendered positions within35gu; max20 fans/sec (one control
++9 rays each). Same original thread/lifetime;2ms further-call issue window; slow or
+faulted native path latches off. Cache expires2500ms, camera movement>.25gu invalidates.
+Geometry/contact consistency checked; no body skipping/near-source hit cutoff.
+This bounded implementation still needs live sustained-load acceptance; .5 proved
+only individual fans. Missing renderer-selected light is not OFF/blocked.
+
+WHOLE DMM ZIP, config ready:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.6-ModManagers.zip`
+ZIP SHA256 `82A5612C3C7C1A70699F27844B869FD87E8F63C8549DF0BCCAAE4B0D1C4AF4B5`.
+ASI SHA256 `9522B3044A2DA70BCB7A3366218ACB9468C94609165B38F2B923B9D8CFD70E50`.
+Expanded `artifacts/mod-manager/v2.1.15-physics.6-20260925-230019-258-2a46e1b6/CrimsonDesertTelemetry`.
+Experimental.PhysicsVisibility=1; HideOccluded=1 (F11 toggles); legacy SourceVisibility,
+PhysicsProbe/manual requests, Ambient/spatial diagnostics OFF; normal telemetry/HUD ON.
+Default research template keeps new feature OFF. Legacy SDF HUD traces and misleading
+contribution-percent labels removed; old research implementation/artifacts preserved.
+
+Validation: all31 native CTest suites,129 physics checks, full managed test suite,
+new MMF/hysteresis/freshness/raw-preservation tests and package profile/payload checks
+pass. Initial package validator lacked new Experimental section; fixed validator
+and revalidated the SAME immutable ZIP successfully (no binary/package rewrite).
+No installation/publish/push. Unrelated untracked work untouched.
+
+**Next:** owner installs whole ZIP via DMM, returns at visible lamp. Verify ASI/logv6,
+read API briefly and use HUD; then wall comparison. No additional manual rayfan
+requests (continuous mode owns instrument). END for owner actions; never wait/poll.
+Implementation/contract: `docs/SOURCE_VISIBILITY.md`, `physics_probe.cpp`,
+`physics_visibility_bridge.h`, `PhysicsVisibilityClient.cs`. No new broad research.
+
+## Historical physics.5 acceptance checkpoint
+
 **Current checkpoint: physics.5 visible-lantern AND wall fans PASSED, PID35192.**
 Owner requests PRACTICAL scope, not extended research: visible lanterns must not
 vanish because of cage bars; a wall must block them. Small comparison is complete;

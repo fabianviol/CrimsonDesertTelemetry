@@ -52,6 +52,7 @@ var tests = new (string Name, Action Run)[]
     ("source visibility metadata preserves raw records and fails unknown", RenderLightReaderTests.VisibilityMetadata),
     ("source visibility mapping and smoothed capture preservation", RenderLightReaderTests.VisibilityMappingAndSmoothing),
     ("player-to-all-known-source visibility exchange", SourceVisibilityClientTests.ExchangeAndAttach),
+    ("sampled physics visibility, hysteresis, provenance, freshness and raw preservation", PhysicsVisibilityTests.Exchange),
     ("render publication races preserve only the fresh complete capture", RenderLightReaderTests.PublicationRaces),
     ("smoothed local lights group/sum without mutating raw data", SmoothedLightTests.Grouping),
     ("smoothed local lights rate-independent EMA and spatial tracking", SmoothedLightTests.Smoothing),

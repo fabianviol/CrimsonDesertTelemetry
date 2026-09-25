@@ -126,6 +126,30 @@ template<std::size_t N, std::size_t M> bool SameResult(const std::array<std::uin
         std::abs(Read<double>(a, 0x10) - Read<double>(b, 0x10)) <= .00001 &&
         (Read<std::uint32_t>(a, 0xC) == 0 || Distance(Read<Vec3>(a, 0x80), Read<Vec3>(b, 0x80)) < .001f);
 }
+
+// The continuous classifier uses the same contact consistency check as the
+// offline ray decoder; malformed/penetrating results never become "blocked".
+template<std::size_t N> bool ValidRaySample(const std::array<std::uint8_t, N>& c,
+    const Vec3& start, const Vec3& end, const Vec3& player)
+{
+    const auto count = Read<std::uint32_t>(c, 0xC);
+    const auto fraction = Read<double>(c, 0x10);
+    if (!std::isfinite(fraction) || count > 1 || fraction < 0 || fraction > 1.00001) return false;
+    if (!count) return std::abs(fraction - 1) < .00001;
+    const auto normal = Read<Vec3>(c, 0x80);
+    if (!Finite(normal) || std::abs(Distance(normal, Vec3{}) - 1) > .01f) return false;
+    auto contact = Read<std::array<double,3>>(c, 0x90);
+    contact[0] += std::trunc(static_cast<double>(player[0])/1000)*1000;
+    contact[2] += std::trunc(static_cast<double>(player[2])/1000)*1000;
+    double error = 0;
+    for (unsigned i=0;i<3;++i)
+    {
+        const double d = contact[i] - (start[i] + fraction*(static_cast<double>(end[i])-start[i]));
+        if (!std::isfinite(d)) return false;
+        error += d*d;
+    }
+    return error < .000025; // 0.005gu, same as offline decoder
+}
 template<std::size_t N> struct alignas(16) GuardedBytes
 {
     static constexpr std::array<std::uint64_t, 2> Tag{0xDFC521184390B7A6ULL, 0x84B176A204EF95C3ULL};

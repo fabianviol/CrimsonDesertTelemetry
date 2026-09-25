@@ -358,7 +358,29 @@ void SourceVisibilityTests(nlohmann::json json,std::chrono::system_clock::time_p
     invalid=json;invalid["lights"]["rendered"].erase("captureSequence");checkInvalid(invalid);
     invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]["status"]="unknown";checkInvalid(invalid);
     invalid=json;invalid["lights"]["rendered"]["sources"][0]["sourceVisibility"]=nullptr;checkInvalid(invalid);
-    std::cout<<"PASS HUD source visibility metadata, off-screen counts, independent freshness and malformed preservation\n";
+    auto physics=json;
+    auto& pm=physics["lights"]["rendered"]["sources"][0]["sourceVisibility"];
+    pm=metadata;pm["method"]="physics-ray-fan";pm["sampleCount"]=9;pm["clearSampleCount"]=4;
+    pm["volumeSequence"]=nullptr;pm["closestApproach"]=nullptr;pm["lightCaptureSequence"]=6;
+    pm["volumeAgeMillisecondsAtCapture"]=100;
+    auto physicsParsed=ParseSample(physics.dump(),now);
+    Require(physicsParsed.renderedLights.records->at(0).sourceVisibility->physicsSampled&&
+        physicsParsed.renderedLights.records->at(0).sourceVisibility->status=="clear",
+        "Sampled visibility must preserve honest older measurement provenance");
+    pm["status"]="blocked";pm["attenuationFactor"]=0;pm["clearSampleCount"]=0;
+    View physicsView=view;physicsView.sample=ParseSample(physics.dump(),now);
+    Require(HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
+        "Physics blocking not connected to HUD hide toggle");
+    pm["referencePosition"]["x"]=1.3;
+    Require(ParseSample(physics.dump(),now).renderedLights.records->at(0).sourceVisibility->status=="unknown",
+        "HUD must reject physics result after camera moved");
+    pm["referencePosition"]=cameraPosition;pm["clearSampleCount"]=1;checkInvalid(physics);
+    pm["clearSampleCount"]=0;pm["lightCaptureSequence"]=8;checkInvalid(physics);
+    pm["lightCaptureSequence"]=6;pm["volumeAgeMillisecondsAtCapture"]=2490;
+    physicsView.sample=ParseSample(physics.dump(),now);
+    Require(!HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
+        "Stale physics evidence must never hide current raw light");
+    std::cout<<"PASS HUD source visibility metadata, physics estimates, hiding, freshness and malformed preservation\n";
 }
 void ShortcutTests()
 {

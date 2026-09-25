@@ -583,7 +583,8 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default, bool privateExac
                 }
             }
             return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered,
-                visibility, lightOptions);
+                visibility, lightOptions.PhysicsVisibility && exactLightProfile
+                    ? new PhysicsVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc()) : null, lightOptions);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -714,6 +715,7 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
     var values = new List<string>();
     var enabled = false;
     var sourceVisibilityQuery = false;
+    var physicsVisibility = false;
     var radius = LightOptions.DefaultRadius;
     error = null;
     for (var index = 0; index < arguments.Length; index++)
@@ -724,6 +726,8 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
             enabled = true;
             continue;
         }
+        if (argument.Equals("--physics-visibility", StringComparison.OrdinalIgnoreCase))
+        { enabled = true; physicsVisibility = true; continue; }
         if (argument.Equals("--research-source-visibility", StringComparison.OrdinalIgnoreCase))
         {
             enabled = true;
@@ -753,7 +757,7 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
         return false;
     }
     positional = values.ToArray();
-    options = new LightOptions(enabled, radius, sourceVisibilityQuery);
+    options = new LightOptions(enabled, radius, sourceVisibilityQuery && !physicsVisibility, physicsVisibility);
     return true;
 }
 
@@ -767,6 +771,7 @@ sealed class RuntimeContext(
     EngineLightReader? lights,
     RenderLightReader? rendered,
     SourceVisibilityClient? visibility,
+    PhysicsVisibilityClient? physicsVisibility,
     LightOptions lightOptions) : IDisposable
 {
     public Process Process { get; } = process;
@@ -780,6 +785,7 @@ sealed class RuntimeContext(
     public EngineLightReader? Lights { get; } = lights;
     public RenderLightReader? Rendered { get; } = rendered;
     public SourceVisibilityClient? Visibility { get; } = visibility;
+    public PhysicsVisibilityClient? PhysicsVisibility { get; } = physicsVisibility;
     /// <summary>
     /// The sky reader attaches on any exactly tested build. It used to require build
     /// 25116796 by name, which silently killed the ambient feed on 25246367 even
@@ -840,7 +846,7 @@ sealed class RuntimeContext(
         var authored = Lights?.Capture(player, LightOptions.NearbyRadius) ?? UnsupportedLights();
         var combined = authored with { Rendered = Rendered?.Capture(player, LightOptions.NearbyRadius)
             ?? RenderLightReader.Unavailable("unsupported-build") };
-        return Visibility?.Apply(player, combined) ?? combined;
+        return PhysicsVisibility?.Apply(player, combined) ?? Visibility?.Apply(player, combined) ?? combined;
     }
 
     public EngineLightsSnapshot? UnavailableLights(string reason)
@@ -859,13 +865,14 @@ sealed class RuntimeContext(
     {
         Rendered?.Dispose();
         Visibility?.Dispose();
+        PhysicsVisibility?.Dispose();
         Sky?.Dispose();
         Reader.Dispose();
         Process.Dispose();
     }
 }
 
-readonly record struct LightOptions(bool Enabled, float NearbyRadius, bool SourceVisibilityQuery)
+readonly record struct LightOptions(bool Enabled, float NearbyRadius, bool SourceVisibilityQuery, bool PhysicsVisibility = false)
 {
     public const float DefaultRadius = 100f;
 }

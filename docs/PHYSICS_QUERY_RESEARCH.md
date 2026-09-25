@@ -1,5 +1,11 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
+**physics.6 integration supersedes the diagnostic-only state below:** continuous
+experimental camera-to-rendered-light fans now feed API/HUD, bounded scheduling
+and hysteresis. Built/host-tested, NOT live-tested. See current HANDOVER and
+SOURCE_VISIBILITY.md for package, exact scope and limitations. The .5 evidence
+below is the rationale, not acceptance of the continuous load.
+
 **Current instrument: physics.5**, diagnostic nine-ray fan, described in the final
 section. Visible-lantern and wall fans passed in PID35192. physics.4 ray controls passed in PID37148;
 older sections below preserve earlier evidence, not the current package state.

@@ -3,6 +3,7 @@
 // Pinned provenance and exact-build evidence: docs/PHYSICS_QUERY_RESEARCH.md.
 #include "physics_probe.h"
 #include "physics_query.h"
+#include "physics_visibility_bridge.h"
 #include "console/common.h"
 #include "console/mem.h"
 #include "native_contract.generated.h"
@@ -41,6 +42,10 @@ bool replayFaulted{};
 unsigned replayTransactions{};
 unsigned extraCalls{};
 constexpr unsigned MaximumExtraCalls = 24;
+bool continuousVisibility{};
+VisibilityBridge visibilityBridge;
+VisibilityPacket visibilityRequest{};
+std::uint64_t lastVisibilitySequence{}, lastVisibilityStart{};
 enum class Phase { Idle, Waiting, Capturing, Done };
 struct Work
 {
@@ -76,6 +81,7 @@ struct Work
     std::uint64_t lightFrame{}, snapshotSequence{};
     double sourceAgeAtRequest{};
     int lightSampleIndex{-1};
+    bool continuous{};
 };
 Work work;
 bool RayMode(const std::string& mode)
@@ -327,10 +333,12 @@ bool RayOriginalsIntact()
 }
 void RunRayControl()
 {
+    const auto began = std::chrono::steady_clock::now();
     if (work.mode == "rayobserve") return;
     const bool fan = work.mode == "rayfan";
     const unsigned requiredCalls = fan ? 10u : work.mode == "raysegment" ? 2u : 1u;
-    if (replayFaulted || replayTransactions >= 12 || extraCalls + requiredCalls > MaximumExtraCalls)
+    if (replayFaulted || (work.continuous && !continuousVisibility) ||
+        (!work.continuous && (replayTransactions >= 12 || extraCalls + requiredCalls > MaximumExtraCalls)))
     { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
     if (!work.afterCopied || !work.rayQueryAfterCopied || work.caller != base + 0x32551AF ||
         work.thread != GetCurrentThreadId() || GetTickCount64() - work.captured > 100)
@@ -382,13 +390,15 @@ void RunRayControl()
     work.controlStatus = "control-matches-natural-ray";
     if (fan)
     {
-        const auto began = std::chrono::steady_clock::now();
         for (auto& sample : work.fan)
         {
             // A synchronous native call cannot be interrupted safely. This
             // stops issuing further calls if the small series runs long.
-            if (std::chrono::steady_clock::now() - began > std::chrono::milliseconds(10) || GetTickCount64() - work.captured > 100)
-            { work.controlStatus = "unknown-fan-time-budget"; return; }
+            if (std::chrono::steady_clock::now() - began > std::chrono::milliseconds(work.continuous ? 2 : 10) || GetTickCount64() - work.captured > 100)
+            {
+                if (work.continuous) replayFaulted = true; // stop a slow continuous path, not repeated stalls
+                work.controlStatus = "unknown-fan-time-budget"; return;
+            }
             segment = {};
             PrepareRayCopy(segment);
             if (!SetRaySegment(segment.query.data, work.segmentStart, sample.endpoint, work.player))
@@ -398,6 +408,8 @@ void RunRayControl()
             sample.collector = segment.collector.data;
             sample.guards = segment.Intact(); sample.originals = RayOriginalsIntact();
             sample.plausible = ok && PlausibleResult(sample.collector);
+            if (sample.plausible && work.continuous)
+                sample.plausible = ValidRaySample(sample.collector, work.segmentStart, sample.endpoint, work.player);
             work.guardsIntact = work.guardsIntact && sample.guards;
             work.originalsPreserved = work.originalsPreserved && sample.originals;
             if (!ok || !sample.guards || !sample.originals)
@@ -423,6 +435,7 @@ std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
     if (armed.load(std::memory_order_relaxed) && TryAcquireSRWLockExclusive(&mutex))
     {
         if (RayMode(work.mode) && work.phase == Phase::Waiting &&
+            (!work.continuous || reinterpret_cast<std::uint64_t>(_ReturnAddress()) == base + 0x32551AF) &&
             GetTickCount64() - work.issued < 2000 && work.attempts < 512 && CaptureRay(world, query, collector))
         {
             work.phase = Phase::Capturing;
@@ -522,7 +535,7 @@ void Save(const Work& done)
     ch::Log("Physics probe %s: %s; report %s (%s)", done.id.c_str(), done.reason.c_str(), path.string().c_str(), ok ? "saved" : "write failed");
 }
 }
-bool Start(std::uint64_t moduleBase, const wchar_t* directory)
+bool Start(std::uint64_t moduleBase, const wchar_t* directory, bool continuous)
 {
     // Instruments::Run already verified the loaded EXE against this contract.
     // Also pin this diagnostic to its actual research hash, not just a build label.
@@ -555,18 +568,22 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory)
         if (MH_EnableHook(rayTarget) == MH_OK) rayEnabled = true;
         else MH_RemoveHook(rayTarget); // Never enabled, so no in-flight trampoline.
     }
-    ch::Log("Physics probe v5 ready (private, idle). Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
+    continuousVisibility = continuous && rayEnabled.load() && visibilityBridge.Open(processStart);
+    if (continuous && !continuousVisibility) { Stop(); return false; }
+    ch::Log("Physics probe v6 ready. Continuous sampled visibility=%s (max 20 fans/sec, 2ms issue window; unknown on failure).",
+        continuousVisibility ? "enabled" : "disabled");
+    ch::Log("Physics manual probe ready. Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
         rayEnabled.load() ? "ready" : "unavailable");
     return true;
 }
 void Poll()
 {
     const auto now = GetTickCount64();
-    if (!enabled.load() || now - lastPoll < 100) return;
+    if (!enabled.load() || now - lastPoll < (continuousVisibility ? 10u : 100u)) return;
     lastPoll = now;
     Work done;
     AcquireSRWLockExclusive(&mutex);
-    if ((work.phase == Phase::Waiting) && now - work.issued > 2500)
+    if ((work.phase == Phase::Waiting) && now - work.issued > (work.continuous ? 350u : 2500u))
     { armed = false; work.reason = "unknown-no-matching-natural-query"; work.phase = Phase::Done; }
     const bool complete = work.phase == Phase::Done;
     if (complete)
@@ -578,8 +595,38 @@ void Poll()
     }
     const bool idle = work.phase == Phase::Idle;
     ReleaseSRWLockExclusive(&mutex);
-    if (complete) Save(done);
+    if (complete && done.continuous)
+    {
+        auto result = visibilityRequest;
+        result.state = 1; result.completed = now;
+        result.code = replayFaulted ? 3u : 2u;
+        if (done.fanCompleted == 9 && done.controlMatched && done.guardsIntact && done.originalsPreserved && !done.callException)
+        {
+            result.code = 1; result.samples = 9;
+            for (const auto& sample : done.fan)
+                if (Read<std::uint32_t>(sample.collector, 0xC) == 0) ++result.clear;
+        }
+        visibilityBridge.Publish(result);
+        if (replayFaulted) ch::Log("Continuous physics visibility stopped until restart: %s", done.reason.c_str());
+    }
+    else if (complete) Save(done);
     if (!idle) return;
+    if (continuousVisibility)
+    {
+        if (now - lastVisibilityStart < 50) return;
+        VisibilityPacket request{};
+        if (!visibilityBridge.Read(request, now) || request.sequence == lastVisibilitySequence) return;
+        lastVisibilitySequence = request.sequence; lastVisibilityStart = now;
+        if (replayFaulted)
+        { request.state = 1; request.code = 3; request.completed = now; visibilityBridge.Publish(request); return; }
+        Work pending{};
+        pending.mode = "rayfan"; pending.continuous = true; pending.player = request.player;
+        pending.segmentStart = request.camera; pending.segmentEnd = request.target;
+        pending.issued = request.issued; pending.sourceAgeAtRequest = request.sourceAge;
+        pending.phase = Phase::Waiting; visibilityRequest = request;
+        AcquireSRWLockExclusive(&mutex); work = pending; armed = true; ReleaseSRWLockExclusive(&mutex);
+        return; // no concurrent file-based manual probes in continuous mode
+    }
     try
     {
         const auto path = folder / L"physics-probe-request.json";
@@ -634,6 +681,7 @@ void Stop()
     armed = false;
     if (rayEnabled.exchange(false)) MH_DisableHook(rayTarget);
     if (enabled.exchange(false)) MH_DisableHook(shapeTarget);
+    visibilityBridge.Close();
     // Keep trampolines alive for any in-flight original call; module is pinned.
 }
 bool OwnsCodeAddress(std::uint64_t address)

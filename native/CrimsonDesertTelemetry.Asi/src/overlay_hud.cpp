@@ -1,5 +1,4 @@
 #include "overlay.h"
-#include "sdf_visibility.h"
 #include <imgui.h>
 #include <algorithm>
 #include <array>
@@ -69,6 +68,11 @@ float DistanceSquared(Vec3 a, Vec3 b)
 }
 const char* VisibilityReasonText(const std::string& reason)
 {
+    if(reason=="waiting-for-physics"||reason=="physics-query-unavailable")return "waiting for physics";
+    if(reason=="confirming-obstruction")return "confirming obstruction";
+    if(reason=="camera-moved"||reason=="stale-physics")return "refreshing after movement";
+    if(reason=="outside-physics-budget")return "outside sampled range/budget";
+    if(reason=="physics-stopped-restart-required")return "physics stopped - restart required";
     if(reason=="stale-volume"||reason=="stale-source")return "waiting for fresh data";
     if(reason=="waiting-for-volume")return "waiting for data";
     if(reason=="disabled")return "disabled";
@@ -367,7 +371,7 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20,diagnostics+156,Muted,"Player up       " + VectorText(sample.playerUp,3),13);
     text(20,diagnostics+177,Muted,"Build " + view.sample.build,13);
     text(20,diagnostics+198,Muted,std::string(GraphicsOutputLabel())+
-        (config.occlusionTest?"  |  instrumented SDF test":"  |  passive HUD")+"  |  no mouse capture",13);
+        "  |  telemetry HUD  |  no mouse capture",13);
     text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
     const bool ambientLive=config.showAmbient&&AmbientLive(view,now);
     text(20,diagnostics+251,Cyan,"AMBIENT / SKY EXPOSURE",12);
@@ -393,15 +397,6 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20,diagnostics+356,ambientLive&&view.ambient.localEnvironmentAmbientEstimateWorking?White:Amber,
         "Local estimate RGB  "+VectorText(ambientLive?view.ambient.localEnvironmentAmbientEstimateWorking:std::nullopt,4)+
         (ambientLive&&view.ambient.localEstimateStale?"  |  STALE":""),12);
-    if (config.occlusionTest)
-    {
-        const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
-        text(20,diagnostics+381,Cyan,"RESEARCH SDF TRACE",12);
-        text(20,diagnostics+402,sdfStatus.available?White:Amber,sdfStatus.available
-            ? std::format("Volume #{}  |  age {} ms  |  CPU context frame {}",
-                sdfStatus.sequence,sdfStatus.ageMilliseconds,sdfStatus.contextFrame)
-            : "SDF test unavailable: "+sdfStatus.reason,12);
-    }
 }
 
 void DrawLightOverlay(const View& view, const Config& config)
@@ -482,18 +477,7 @@ void DrawLightOverlay(const View& view, const Config& config)
         ? std::format("SOURCE VISIBILITY  /  {} visible  /  {} blocked  /  {} unknown  /  includes off-screen",
             visibilityCounts.visible,visibilityCounts.blocked,visibilityCounts.unknown)
         : "SOURCE VISIBILITY  /  unavailable";
-    const std::string caveat =
-#if CDT_RESEARCH
-        config.occlusionTest
-        ? [&]
-        {
-            const auto sdfStatus=sdf::CurrentStatus(GetTickCount64());
-            return sdfStatus.available?std::format("SDF A volume age {} ms / aim at a light for LOS",sdfStatus.ageMilliseconds)
-                : "SDF A UNKNOWN / "+sdfStatus.reason;
-        }()
-        :
-#endif
-        "Captured light sources / HDR swatches / spot arrows schematic";
+    const std::string caveat = "Sampled visibility is an estimate / unknown sources stay visible";
     float legendWidth = 0;
     for (const auto* line : std::array<const std::string*,4>{&headline,&controls,&visibilityLine,&caveat})
         legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
@@ -616,23 +600,12 @@ void DrawLightOverlay(const View& view, const Config& config)
                 value.colorLinear.x,value.colorLinear.y,value.colorLinear.z,value.luminanceLinear),White});
             const auto visibility=CurrentSourceVisibility(value,view,now);
             if(visibility.status=="clear")
-                lines.push_back({"SOURCE VISIBLE  /  contribution 100%",Cyan});
+                lines.push_back({visibility.physicsSampled ?
+                    std::format("SAMPLED VISIBLE  /  {} of 9 paths clear",visibility.clearSamples) : "SOURCE VISIBLE  /  estimate",Cyan});
             else if(visibility.status=="blocked")
-                lines.push_back({"SOURCE BLOCKED  /  contribution 0%",Amber});
+                lines.push_back({visibility.physicsSampled ? "SAMPLED BLOCKED  /  9 of 9 paths blocked" : "SOURCE BLOCKED  /  estimate",Amber});
             else
                 lines.push_back({std::string("SOURCE UNKNOWN  /  ")+VisibilityReasonText(visibility.reason),Muted});
-#if CDT_RESEARCH
-            if(config.occlusionTest&&visibility.status=="unknown")
-            {
-                const auto trace=sdf::Trace({value.position.x,value.position.y,value.position.z},GetTickCount64());
-                if(!trace.available)
-                    lines.push_back({"SDF A LOS UNKNOWN  /  "+trace.reason,Amber});
-                else
-                    lines.push_back({std::format("SDF A LOS {}  /  closest {:+.5f} gu  /  volume {} ms",
-                        sdf::VerdictName(trace.verdict),trace.closest,trace.ageMilliseconds),
-                        trace.verdict==sdf::Verdict::Clear?Cyan:trace.verdict==sdf::Verdict::Blocked?Amber:Muted});
-            }
-#endif
         }
         if (group.size() > shown)
             lines.push_back({std::format("+{} more contributions; all raw values remain in API",group.size()-shown),Muted});

@@ -46,6 +46,7 @@ void Setup()
 {
     work = {}; query = {}; calls = 0; badArgs = 0;
     replayFaulted = false; replayTransactions = 0; extraCalls = 0;
+    continuousVisibility = false;
     work.mode = "observe";
     base = reinterpret_cast<std::uint64_t>(image.data());
     Put(image, 0x1F8, base + 0x100);
@@ -112,7 +113,12 @@ std::uint64_t __fastcall MockRayReplay(void* w, void* q, void* c)
     for (size_t i = 0xA0; i < 0x100; ++i) if (bytes[i]) ++badArgs;
     if (rayFaultAt && calls + 1 == rayFaultAt) mockMode = MockMode::Fault;
     if (rayExpireAt && calls + 1 == rayExpireAt) work.captured = GetTickCount64() - 101;
-    return MockReplay(w, q, nullptr, c, c);
+    const auto result = MockReplay(w, q, nullptr, c, c);
+    std::array<double,3> start{}, delta{}, contact{};
+    std::memcpy(start.data(), bytes+0x40, sizeof start); std::memcpy(delta.data(), bytes+0x60, sizeof delta);
+    for(unsigned i=0;i<3;++i) contact[i]=start[i]+delta[i]*.25;
+    std::memcpy(static_cast<std::uint8_t*>(c)+0x90,contact.data(),sizeof contact);
+    return result;
 }
 void SetupRayControl()
 {
@@ -333,5 +339,24 @@ int main()
         std::strcmp(work.controlStatus,"unknown-fan-time-budget") == 0, "fan stops further calls on expired original context");
     SetupControl(); work.mode = "segment"; extraCalls = 23; RunControl();
     Check(calls == 0, "sphere obeys shared extra-call budget too");
+    VisibilityPacket packet{};
+    packet.magic=VisibilityQueryMagic;packet.pid=123;packet.processStart=456;packet.sequence=1;packet.lightSequence=7;
+    packet.issued=900;packet.sourceAge=20;packet.player={10,20,30};packet.camera={11,22,31};packet.target={15,21,35};
+    Check(ValidVisibilityQuery(packet,123,456,1000), "continuous query ABI valid");
+    Check(!ValidVisibilityQuery(packet,124,456,1000)&&!ValidVisibilityQuery(packet,123,457,1000), "continuous PID/epoch mismatch rejected");
+    Check(!ValidVisibilityQuery(packet,123,456,1200)&&!ValidVisibilityQuery(packet,123,456,800), "continuous stale/future query refused");
+    packet.sourceAge=std::numeric_limits<float>::quiet_NaN();
+    Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous NaN age refused");
+    packet.sourceAge=20;packet.camera={50,22,31};
+    Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous camera far from player refused");
+    packet.camera={11,22,31};packet.target={150,21,35};
+    Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous target range bounded");
+    SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";
+    extraCalls=100;replayTransactions=100;work.segmentStart={-10535,612,-4421};work.segmentEnd={-10529,611,-4420};
+    RunRayControl();
+    Check(calls==10&&work.fanCompleted==9,"explicit continuous mode uses per-series rather than manual lifetime budget");
+    SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";rayExpireAt=2;
+    work.segmentStart={-10535,612,-4421};work.segmentEnd={-10529,611,-4420};RunRayControl();
+    Check(replayFaulted&&calls==2&&work.fanCompleted==1,"slow continuous context latches off instead of repeated stalls");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

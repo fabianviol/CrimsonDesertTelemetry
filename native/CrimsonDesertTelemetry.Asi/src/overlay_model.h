@@ -18,6 +18,8 @@ struct SourceVisibility
 {
     std::string status = "unknown", reason = "not-reported";
     std::optional<double> attenuationFactor, volumeAgeMillisecondsAtCapture;
+    bool physicsSampled{};
+    int clearSamples{};
 };
 struct LightRecord
 {

@@ -1,5 +1,49 @@
 # Per-light source visibility
 
+## Current private implementation — physics.6 (2026-09-25)
+
+Opt-in `[Experimental] PhysicsVisibility=1` in a research build selects native
+physics, not the legacy SDF paths below. Private .6 enables it and HUD hiding;
+default template leaves it OFF. Individual fan comparisons passed (visible cage:
+4/9 clear; wall:0/9). Continuous integration is built/tested, **not live accepted**.
+
+- Only fresh camera-paired filtered ManyLights; authored arrays remain untouched.
+  At most24 nearest spatially merged positions within35gu of the paired camera.
+- One9-ray fan + matching natural control at most every50ms; exact-build/context
+  guards and fresh per-ray copies. Stop further calls after2ms; a native call itself
+  cannot be interrupted. Fault/slow series latches disabled until game restart.
+- Any clear neighbor means `clear` (retain), not unobstructed emitter area. All9
+  hits need2 consecutive valid fans before `blocked`. First obstruction, error,
+  unavailable context, source/camera movement or age>2500ms gives `unknown`.
+  Cache source match<=.12gu and camera drift<=.25gu are explicit heuristics.
+- Positions/RGB/raw records are never removed or rescaled. HUD F11 toggles hiding
+  **confirmed blocked** records in both radar and markers. Unknown stays visible.
+  Legacy SDF trace labels and contribution-percent claims removed from HUD.
+
+Additive `sourceVisibility.method="physics-ray-fan"`, `sampleCount=9`,
+`clearSampleCount=0..9`. Counts are NOT optical transmission or source-area %.
+The existing binary `attenuationFactor` is a retain/hide policy only (0/1/null),
+not measured light energy. `referencePosition` and `lightCaptureSequence` are the
+ACTUAL older measurement origin/capture, not the current GPU capture. `contextFrame`
+is that measurement's light frame; `volumeSequence` and `closestApproach` null
+(no SDF volume). The retained field `volumeAgeMillisecondsAtCapture` represents
+measurement age at publication for this method. Consumers must add transport age
+and reject camera drift/staleness. HUD explicitly validates this method separately.
+
+Two128-byte seqlock mappings `Local\\CrimsonDesertTelemetry.PhysicsVisibilityQuery.<pid>`
+and `...PhysicsVisibilityResult.<pid>` are isolated from legacy SDF mappings.
+PID/start epoch, exact query identity, timestamp, origin/target and capture pairing
+are checked. Managed host handles bounded scheduling/cache/hysteresis; native hook
+executes only in the proven original ray caller and stack lifetime. Continuous
+mode does not accept file-driven diagnostic requests. No deferred game pointers.
+
+129 native physics checks,31 CTest suites and full managed suite pass, including
+new exchange/false-clear/movement/freshness/raw-preservation cases. Game materials
+(glass/foliage), tiny openings and renderer omissions remain limitations, not a
+claim of exact optical visibility. Sustained live performance remains to verify.
+
+## Preserved legacy SDF implementations (not active in physics.6)
+
 ## Goal and current status
 
 For every local source already present in the authored or rendered light feeds,
