@@ -327,3 +327,26 @@ source to validate radius and hit/filter identity. Need principled fixture/self
 handling, not a fitted 0.22/0.5/1-gu cutoff. Collision filters, thin geometry,
 glass and streamed objects remain optical limits. No further equivalent owner
 scene setup is needed just to repeat this positive comparison.
+
+## Fire bowl clear-path counterexample — PID 5468
+
+Owner explained the lanterns have steel cage bars, then requested the fire bowl
+directly ahead. Fresh ManyLights nearest source near (-10520.221,610.448,-4423.204)
+was about 2 gu forward in X / -1.12 in Z from the player, matching the player's
+forward (0.87707,0,-0.48036). Used position selector, not stale sample index.
+
+Report `artifacts/light-research/physics-brazier-5468-c64c4027a2bb4317813ccbd11147bf7f.json`:
+paired camera (-10527.284180,613.093567,-4419.924316), actual source
+(-10520.226563,610.455139,-4423.204102), player
+(-10522.221680,608.776794,-4422.083008). Full unshortened segment returned count=0,
+fraction=0.9999999850988388, zero normal. Control matched; guard/preservation/
+plausibility checks passed, exception=0. Native log archived as
+`physics-brazier-5468-20260925.native.log`; telemetry remained available afterward.
+
+Thus source-directed queries do NOT inherently hit every light: this fire bowl
+has a clear measured path. Consistent with steel bars/fixture contact causing
+the visible lantern hits, but no collision-object/material identity is proven.
+This does not establish that all bowls are unoccluded or all lantern contacts
+are their bars. No code/API/package change. Twelve replay transactions consumed;
+process guard now prevents further replay until restart. Next step is offline
+radius/hit-identity/filter analysis, no immediate owner action or restart needed.

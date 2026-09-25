@@ -75,6 +75,14 @@ This is a positive wall/open-view comparison, not a ready optical classifier:
 every full segment hit, including visible lamps. Blind hit => blocked is wrong.
 No public visibility or plugin/package change; results/screenshot preserved.
 
+**Brazier follow-up:** owner moved in front of a fire bowl. Closest paired source
+near (-10520.227,610.455,-4423.204), aligned with player forward, gave NO collision:
+count=0, fraction~1, successful control/guards/original checks, exception=0. This
+is a clear full-length source path, unlike the three visible cage-lantern hits.
+Supports (does not prove) owner's cage-bars explanation. Full result in physics
+doc. ALL 12 replay transactions are now consumed in PID 5468; no more replay in
+this process. No restart needed for the next offline step, and none requested.
+
 **Next bounded step:** use these captures plus existing WB/query code to establish
 the sphere radius and returned hit identity/filter fields, and design explicit
 source/fixture versus intervening-obstacle handling before a public classifier.
