@@ -13,8 +13,19 @@ dotnet run --project src/CrimsonDesertTelemetry.Cli -c Release -- check-update '
 This reads the EXE on disk; it neither opens the process nor installs hooks, writes
 a profile, or promotes an unknown build. Read each anchor result, not just the exit
 code. A relocated candidate is a lead, not proof of compatible object layouts.
-The older `check-compatibility` command concerns automatic compatibility of the
-historical camera layout; its failure is not absence of the current direct path.
+The `check-compatibility` command runs the runtime automatic-compatibility resolver.
+It now has one template per camera layout: `build-24994088.json` (historical context
+chain) and `build-25477059.json` (direct camera). The direct template relocates only
+the camera: the scene global comes from the RIP-relative load pattern, the scene
+vtable from two slot fingerprints. The renderer camera/scene class has **no MSVC
+RTTI locator** (the qword before vtable RVA0x5D20718 on 1.0.0.2976 is an ordinary
+function pointer), so RTTI cannot guard it; the slot fingerprints are its type guard,
+while the player chain keeps its three RTTI names. Slot 2 is byte-identical to the
+1.0.0.2658 camera fingerprint; slot 1 differs only in two register-allocation bytes,
+which are wildcarded. On the 1.0.0.2976 EXE the resolver reproduces the validated
+profile exactly (reference RVA0x2D14367, global RVA0x6C8CF30, vtable RVA0x5D20718,
+frame counter +0x2C8). A relocated profile never inherits `engineLights` or
+`nativeCapture`: lights and native instrumentation stay exact-EXE-only.
 
 The shared baseline is `definitions/build-25116796.json`, including `nativeCapture`.
 CMake generates the native contract from it. Build hash, scene global, hook and
