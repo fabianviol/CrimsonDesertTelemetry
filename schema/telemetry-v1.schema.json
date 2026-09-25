@@ -225,7 +225,7 @@
     "sourceVisibility": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Optional geometric metadata; raw lights are unchanged. Legacy SDF uses its recorded receiver. Experimental method physics-ray-fan uses the measured camera origin and older lightCaptureSequence; sample counts are NOT transmission percentages. Its binary attenuationFactor is only a retain/hide policy, not radiometry. Physics results expire after 2500ms or 0.25gu camera movement. No permanent identity or exact optical visibility is implied.",
+      "description": "Optional geometric metadata; raw lights are unchanged. Legacy SDF uses its recorded receiver. Experimental method physics-ray-fan reports the latest complete measurement at its measured camera origin and older lightCaptureSequence, without motion invalidation or temporal confirmation. Sample counts are NOT transmission percentages. Its binary attenuationFactor is only a retain/hide policy, not radiometry. Current physics results expire after 500ms; the schema retains older private samples up to 2500ms. No permanent identity or exact current-pose optical visibility is implied.",
       "required": ["status", "attenuationFactor", "reason", "referencePosition", "lightCaptureSequence", "volumeSequence", "contextFrame", "volumeAgeMillisecondsAtCapture", "closestApproach"],
       "properties": {
         "status": { "enum": ["clear", "blocked", "unknown"] },
@@ -239,7 +239,9 @@
         "closestApproach": { "type": ["number", "null"] },
         "method": { "const": "physics-ray-fan" },
         "sampleCount": { "const": 9 },
-        "clearSampleCount": { "type": "integer", "minimum": 0, "maximum": 9 }
+        "clearSampleCount": { "type": "integer", "minimum": 0, "maximum": 9 },
+        "measurementSequence": { "type": "integer", "minimum": 1, "description": "Physics batch sequence; unlike lightCaptureSequence, changes for every completed new query round. Process-local, not a light ID." },
+        "measuredAtTickMilliseconds": { "type": "integer", "minimum": 1, "description": "Native measurement completion timestamp in Windows monotonic uptime milliseconds, NOT Unix time. Use published age plus elapsed transport time for remote freshness." }
       },
       "allOf": [
         {

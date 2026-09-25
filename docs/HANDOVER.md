@@ -1,5 +1,35 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
+**Current: physics.9 implements owner's direct/raw-measurement policy.**
+Owner: camera orbit alone makes .8 show all hidden markers as "refreshing after
+movement"; explicitly no more ingame checks. Asked to REMOVE movement analysis
+and consume latest complete measurements. This supersedes the proposed native
+rewrite and the earlier "do not remove distance gate alone" recommendation below.
+
+API+HUD no longer invalidate on camera movement; no two-measurement confirmation.
+Each complete9-ray result applies immediately. Frame/camera provenance remains
+ACTUAL measured data. New optional measurementSequence + measuredAtTickMilliseconds
+(Windows uptime, not UTC) allow consumers to distinguish real samples from repeat
+delivery. Age cap500ms; invalid/incomplete/fault ->unknown; skipped budget doesn't
+refresh age. HUD no longer adds unrelated GPU age to physics age. Raw light data
+unchanged. Native ray code/rate/budget/256-target queue unchanged (log stillv7).
+
+Focused checks: managed physics test now rapid orbit and immediate alternating
+verdicts for96 targets, raw metadata/JSON and expiry; native overlay-model movement,
+hiding, transport age and expiry. No ingame access/new scene experiment this turn.
+Both focused tests PASS; .9 expanded/ZIP/config validation PASS. No live acceptance.
+Ready WHOLE ZIP: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.9-ModManagers.zip`.
+ZIP SHA256 `391F185D462CA520A4B7DC2C810A737819FA98BAF261612E4785729800C50913`.
+ASI SHA256 `7DEB0F584A3582A7B0E8080F1CD6101879FF0510243082DCB9111AF6EF1C5136`.
+Expanded `artifacts/mod-manager/v2.1.15-physics.9-20260925-235907-563-e7b75063/CrimsonDesertTelemetry`.
+PhysicsVisibility/HideOccluded ON; old visibility/manual/ambient paths OFF as .8.
+**Next:** private .9 whole ZIP via DMM with game CLOSED, no INI hand edits; owner
+can judge direct response on ordinary camera movement. No public release/push.
+Do not claim live acceptance or assume higher Hz; max20 rounds/sec is not a
+guaranteed per-light rate when shared2ms budget is exhausted. End for owner action.
+
+## Historical physics.8 moving failure and superseded design proposal
+
 **Current: physics.8 FAILED moving acceptance; stationary works (owner report).**
 Owner sees all markers "refreshing after movement" while running, correct hiding
 when stationary. Explicitly NO further ingame inspection requested; none performed.

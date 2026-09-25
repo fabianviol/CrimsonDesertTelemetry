@@ -94,9 +94,9 @@ SourceVisibility ReadSourceVisibility(const Json& value, const Json& capture)
         if(value.value("method",std::string{})=="physics-ray-fan")
         {
             result.physicsSampled=true;
-            const auto reference=LightVector(value.at("referencePosition"));
-            const auto camera=LightVector(capture.at("camera").at("position"));
-            const double dx=reference.x-camera.x,dy=reference.y-camera.y,dz=reference.z-camera.z;
+            // Preserve/validate the measured pose; movement does not invalidate
+            // the latest raw sample. It is not claimed to be the current pose.
+            (void)LightVector(value.at("referencePosition"));
             if(!value.at("lightCaptureSequence").is_number_integer()||value.at("lightCaptureSequence")<=0||
                 value.at("lightCaptureSequence")>capture.at("captureSequence"))
                 throw std::runtime_error("Invalid physics provenance");
@@ -117,9 +117,7 @@ SourceVisibility ReadSourceVisibility(const Json& value, const Json& capture)
             if(result.clearSamples<0||result.clearSamples>9||
                 (result.status=="blocked"?result.clearSamples!=0:result.clearSamples==0)||
                 *result.attenuationFactor!=(result.status=="blocked"?0.0:1.0))throw std::runtime_error("Invalid physics verdict");
-            if(dx*dx+dy*dy+dz*dz>.0625)
-            { result.status="unknown";result.reason="camera-moved";result.attenuationFactor.reset(); }
-            else result.reason.clear();
+            result.reason.clear();
             return result;
         }
         const auto& sequence=value.at("lightCaptureSequence");
@@ -566,7 +564,10 @@ SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& vi
         *result.volumeAgeMillisecondsAtCapture<0)return unknown("invalid-metadata");
     // Include transport age as well as time spent in this view. This is a
     // conservative bound; metadata itself remains frozen with its capture.
-    if(*result.volumeAgeMillisecondsAtCapture+*view.sample.renderedLights.ageMilliseconds+AgeMs(view,now)>(result.physicsSampled?2500:1500))
+    // Physics age already starts at native measurement completion. Adding the
+    // unrelated GPU readback age again would prematurely expire this sample.
+    const double sourceAge=result.physicsSampled?0:*view.sample.renderedLights.ageMilliseconds;
+    if(*result.volumeAgeMillisecondsAtCapture+sourceAge+AgeMs(view,now)>(result.physicsSampled?500:1500))
         return unknown(result.physicsSampled?"stale-physics":"stale-volume");
     return result;
 }

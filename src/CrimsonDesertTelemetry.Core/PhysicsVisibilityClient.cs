@@ -9,7 +9,9 @@ public sealed class PhysicsVisibilityClient : IDisposable
     public const string Method = "physics-ray-fan";
     public const int PacketBytes = 128, MaximumTargets = 256;
     public const int HeaderBytes = 32, BatchBytes = HeaderBytes + PacketBytes * MaximumTargets;
-    public const long MaximumAgeMilliseconds = 2500;
+    // Latest measurement, not a prediction for today's camera pose. Do not
+    // retain a hidden marker for seconds if queries stop delivering results.
+    public const long MaximumAgeMilliseconds = 500;
     private readonly int _pid;
     private readonly ulong _born;
     private readonly Func<long> _now;
@@ -27,9 +29,8 @@ public sealed class PhysicsVisibilityClient : IDisposable
     {
         public CameraVector3 Position = position, Receiver = position;
         public long Measured, LastRequested, LastChecked;
-        public ulong Capture;
+        public ulong Capture, MeasurementSequence;
         public uint Frame, Clear;
-        public int BlockedStreak;
         public string Status = "unknown", Reason = "waiting-for-physics";
     }
 
@@ -86,15 +87,15 @@ public sealed class PhysicsVisibilityClient : IDisposable
         {
             var e = Find(position);
             var reason = _faulted ? "physics-stopped-restart-required" : e is null ? "outside-physics-budget" :
-                e.Measured == 0 ? e.Reason : now - e.Measured > MaximumAgeMilliseconds ? "stale-physics" :
-                DistanceSquared(camera, e.Receiver) > .0625f ? "camera-moved" : e.Reason;
+                e.Measured == 0 ? e.Reason : now - e.Measured > MaximumAgeMilliseconds ? "stale-physics" : e.Reason;
             var status = reason.Length == 0 ? e!.Status : "unknown";
             // Preserve actual measurement origin/capture; never pretend an older ray
             // was executed on the current frame. HUD understands this method explicitly.
             return new SourceVisibilitySnapshot(status, status == "unknown" ? null : status == "blocked" ? 0 : 1,
                 status == "unknown" ? reason : null, e?.Receiver ?? camera, e?.Capture > 0 ? e.Capture : rendered.CaptureSequence.Value,
                 null, e?.Frame, e?.Measured > 0 ? now - e.Measured : null, null,
-                Method, e?.Measured > 0 ? 9 : null, e?.Measured > 0 ? (int)e.Clear : null);
+                Method, e?.Measured > 0 ? 9 : null, e?.Measured > 0 ? (int)e.Clear : null,
+                e?.Measured > 0 ? e.MeasurementSequence : null, e?.Measured > 0 ? e.Measured : null);
         }
         return input with { Rendered = rendered with
             { Sources = rendered.Sources.Select(s => s with { SourceVisibility = Resolve(s.Position) }).ToArray() } };
@@ -173,16 +174,14 @@ public sealed class PhysicsVisibilityClient : IDisposable
             { if (e.Measured == 0) e.Reason = "physics-budget-pending"; return; }
             e.LastChecked = now;
             if (code != 1 || U32(p, 76) != 9 || U32(p, 80) > 9)
-            { e.Status = "unknown"; e.Reason = "physics-query-unavailable"; e.BlockedStreak = 0; return; }
+            { e.Status = "unknown"; e.Reason = "physics-query-unavailable"; return; }
             var tick = U64(p,56);
             var receiver = Vector(p, 100);
-            var consecutive = e.Measured > 0 && now - e.Measured <= MaximumAgeMilliseconds &&
-                DistanceSquared(receiver, e.Receiver) <= .0625f;
             e.Clear = U32(p, 80);
-            e.BlockedStreak = e.Clear > 0 ? 0 : consecutive ? e.BlockedStreak + 1 : 1;
-            e.Status = e.Clear > 0 ? "clear" : e.BlockedStreak >= 2 ? "blocked" : "unknown";
-            e.Reason = e.Status == "unknown" ? "confirming-obstruction" : "";
+            e.Status = e.Clear > 0 ? "clear" : "blocked";
+            e.Reason = "";
             e.Receiver = receiver; e.Position = Vector(p, 112); e.Measured = (long)tick;
+            e.MeasurementSequence = U64(p,40);
             e.Capture = U64(p, 64); e.Frame = U32(p, 72);
     }
     private static uint U32(byte[] p, int i) => BitConverter.ToUInt32(p, i);

@@ -25,7 +25,7 @@ internal static class PhysicsVisibilityTests
         const int header = PhysicsVisibilityClient.HeaderBytes;
         Check(input.ReadUInt32(0)==0x50564443 && input.ReadUInt32(4)==2 && input.ReadUInt32(8)==PhysicsVisibilityClient.BatchBytes && input.ReadUInt64(header+64)==17,"query ABI/provenance");
         Check(input.ReadSingle(header+104)==22 && input.ReadSingle(header+92)==20 && input.ReadSingle(header+112)==11,"paired camera, player and rendered-only target");
-        void Reply(uint clear, uint code=1, bool wrongOrigin=false, int completedTargets=int.MaxValue)
+        void Reply(uint clear, uint code=1, bool wrongOrigin=false, int completedTargets=int.MaxValue, uint samples=9)
         {
             var bytes = new byte[PhysicsVisibilityClient.BatchBytes]; input.ReadArray(0,bytes,0,bytes.Length);
             BitConverter.TryWriteBytes(bytes.AsSpan(0),0x53564443u);
@@ -35,21 +35,30 @@ internal static class PhysicsVisibilityTests
                 BitConverter.TryWriteBytes(bytes.AsSpan(o),0x53564443u);
                 BitConverter.TryWriteBytes(bytes.AsSpan(o+12),1u); BitConverter.TryWriteBytes(bytes.AsSpan(o+28),n<completedTargets ? code : 4u);
                 BitConverter.TryWriteBytes(bytes.AsSpan(o+56),(ulong)now);
-                BitConverter.TryWriteBytes(bytes.AsSpan(o+76),9u); BitConverter.TryWriteBytes(bytes.AsSpan(o+80),clear);
+                BitConverter.TryWriteBytes(bytes.AsSpan(o+76),samples); BitConverter.TryWriteBytes(bytes.AsSpan(o+80),clear);
                 if(wrongOrigin) BitConverter.TryWriteBytes(bytes.AsSpan(o+100),123f);
             }
             output.Write(16,1L); output.WriteArray(0,bytes,0,16); output.WriteArray(24,bytes,24,bytes.Length-24); output.Write(16,2L);
         }
         now+=60; Reply(0); var pending=Apply();
-        Check(Visibility(pending).Status=="unknown" && Visibility(pending).Reason=="confirming-obstruction","one blocked sample must not hide");
+        Check(Visibility(pending) is {Status:"blocked",MeasurementSequence:1} && Visibility(pending).MeasuredAtTickMilliseconds==now,
+            "first complete blocked sample emitted immediately with native measurement identity/time");
+        using (var json=System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(Visibility(pending),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))))
+            Check(json.RootElement.GetProperty("measurementSequence").GetUInt64()==1 &&
+                json.RootElement.GetProperty("measuredAtTickMilliseconds").GetInt64()==now,
+                "raw measurement sequence/time serialized with documented API names");
         now+=60; Reply(0); var blocked=Apply();
-        Check(Visibility(blocked) is {Status:"blocked",AttenuationFactor:0,Method:PhysicsVisibilityClient.Method,SampleCount:9,ClearSampleCount:0},"two complete blocked fans confirm");
+        Check(Visibility(blocked) is {Status:"blocked",AttenuationFactor:0,Method:PhysicsVisibilityClient.Method,SampleCount:9,ClearSampleCount:0,MeasurementSequence:2},"next blocked measurement advances independently of light frame");
         now+=60; Reply(4); var clear=Apply();
         Check(Visibility(clear) is {Status:"clear",AttenuationFactor:1,ClearSampleCount:4},"free neighbors restore immediately, not 4/9 attenuation");
         Check(clear.Sources![0]==authored && clear.Rendered!.Sources![0].ColorLinear==source.ColorLinear && clear.Rendered.Sources[0].LuminanceLinear==source.LuminanceLinear,"raw authored/rendered fields preserved");
         now+=60; Reply(0,wrongOrigin:true); Check(Visibility(Apply()).Status=="clear","wrong-origin result must not replace known result");
         snapshot=snapshot with { Rendered=rendered with {Camera=camera with {Position=new(10.3f,22,30)}} };
-        Check(Visibility(Apply()).Status=="unknown","camera movement invalidates immediately");
+        var moved=Visibility(Apply());
+        Check(moved.Status=="clear" && moved.ReferencePosition==camera.Position &&
+            moved.MeasuredAtTickMilliseconds==Visibility(clear).MeasuredAtTickMilliseconds,
+            "camera movement retains latest raw result and its ORIGINAL pose/time, never rebrands it current");
         snapshot=snapshot with {Rendered=rendered}; now+=2600;
         Check(Visibility(Apply()).Status=="unknown","expired result cannot suppress raw light");
         // Regression: ALL queued lights refresh in one round while the receiver
@@ -67,10 +76,14 @@ internal static class PhysicsVisibilityTests
             "untested targets are explicitly pending, never false clear");
         for(var step=1;step<=6;step++)
         {
-            now+=60; Reply(0);
-            snapshot=snapshot with {Rendered=snapshot.Rendered! with {Camera=camera with {Position=new(10+step*.2f,22,30)}}};
+            now+=60; Reply(step%2==0 ? 0u : 4u);
+            // Much faster than the failed test's 0.2gu/60ms, including camera
+            // orbit around the stationary player. Both verdicts must flip NOW.
+            snapshot=snapshot with {Rendered=snapshot.Rendered! with {Camera=camera with {
+                Position=new(10+4*MathF.Sin(step*.5f),22,30+4*MathF.Cos(step*.5f))}}};
             var moving=Apply();
-            if(step>=2) Check(moving.Rendered!.Sources!.All(s=>s.SourceVisibility!.Status=="blocked"),"moving scene has no per-light round-robin gap");
+            Check(moving.Rendered!.Sources!.All(s=>s.SourceVisibility!.Status==(step%2==0 ? "blocked" : "clear")),
+                "96 lights immediately follow raw verdicts during rapid camera orbit, no confirmation or movement reset");
         }
         // A budget skip keeps only genuinely recent measurements, does not
         // invent a new tick or erase them, and remains first in retry order.
@@ -80,6 +93,14 @@ internal static class PhysicsVisibilityTests
             "budget skip does not fabricate measurement provenance");
         Check(skipped.Rendered.Sources[0].SourceVisibility!.VolumeAgeMillisecondsAtCapture > beforeSkip.Rendered.Sources[0].SourceVisibility!.VolumeAgeMillisecondsAtCapture,
             "budget skip does not refresh age");
+        Check(Visibility(skipped).MeasurementSequence==Visibility(beforeSkip).MeasurementSequence &&
+            Visibility(skipped).MeasuredAtTickMilliseconds==Visibility(beforeSkip).MeasuredAtTickMilliseconds,
+            "skipped round retains actual measurement sequence/time");
+        now+=60; Reply(0,samples:8);
+        Check(Visibility(Apply()).Status=="unknown","incomplete measurement cannot claim blocked");
+        now+=60; Reply(4); Check(Visibility(Apply()).Status=="clear","one complete result restores immediately after incomplete result");
+        now+=500; Check(Visibility(Apply()).Status=="clear","latest result usable at exact 500ms boundary");
+        now++; Check(Visibility(Apply()).Reason=="stale-physics","501ms without a new result expires, not endless hidden hold");
         now+=60; Reply(0,3); Check(Visibility(Apply()).Reason=="physics-stopped-restart-required","native fault exposed, not clear");
         var seq=input.ReadUInt64(24); now+=1000; Apply(); Check(input.ReadUInt64(24)==seq,"latched fault stops scheduling");
         snapshot=snapshot with {Rendered=rendered with {AgeMilliseconds=500}};

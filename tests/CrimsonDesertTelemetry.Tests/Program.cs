@@ -3,9 +3,15 @@ using System.Text.Json;
 
 if (args.Length != 0)
 {
+    if (args.Length == 1 && args[0] == "--physics-visibility")
+    {
+        PhysicsVisibilityTests.Exchange();
+        Console.WriteLine("PASS raw physics measurements, rapid camera orbit, provenance, budget and expiry");
+        return 0;
+    }
     if (args.Length == 2 && args[0] == "--replay-sky") return SkyAmbientTests.Replay(args[1]);
     if (args.Length == 2 && args[0] == "--replay-camera-right") return CameraCopyReplay.Run(args[1]);
-    Console.Error.WriteLine("Usage: tests [--replay-camera-right <private-trace.jsonl>]");
+    Console.Error.WriteLine("Usage: tests [--physics-visibility | --replay-camera-right <private-trace.jsonl>]");
     return 2;
 }
 
@@ -52,7 +58,7 @@ var tests = new (string Name, Action Run)[]
     ("source visibility metadata preserves raw records and fails unknown", RenderLightReaderTests.VisibilityMetadata),
     ("source visibility mapping and smoothed capture preservation", RenderLightReaderTests.VisibilityMappingAndSmoothing),
     ("player-to-all-known-source visibility exchange", SourceVisibilityClientTests.ExchangeAndAttach),
-    ("sampled physics visibility, hysteresis, provenance, freshness and raw preservation", PhysicsVisibilityTests.Exchange),
+    ("raw physics visibility, rapid camera orbit, provenance, freshness and raw preservation", PhysicsVisibilityTests.Exchange),
     ("render publication races preserve only the fresh complete capture", RenderLightReaderTests.PublicationRaces),
     ("smoothed local lights group/sum without mutating raw data", SmoothedLightTests.Grouping),
     ("smoothed local lights rate-independent EMA and spatial tracking", SmoothedLightTests.Smoothing),

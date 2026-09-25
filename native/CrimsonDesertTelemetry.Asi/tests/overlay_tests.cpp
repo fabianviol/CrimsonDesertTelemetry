@@ -372,11 +372,18 @@ void SourceVisibilityTests(nlohmann::json json,std::chrono::system_clock::time_p
     Require(HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
         "Physics blocking not connected to HUD hide toggle");
     pm["referencePosition"]["x"]=1.3;
-    Require(ParseSample(physics.dump(),now).renderedLights.records->at(0).sourceVisibility->status=="unknown",
-        "HUD must reject physics result after camera moved");
+    physicsView.sample=ParseSample(physics.dump(),now);
+    Require(HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
+        "HUD must use latest complete raw physics result without movement reset");
     pm["referencePosition"]=cameraPosition;pm["clearSampleCount"]=1;checkInvalid(physics);
     pm["clearSampleCount"]=0;pm["lightCaptureSequence"]=8;checkInvalid(physics);
-    pm["lightCaptureSequence"]=6;pm["volumeAgeMillisecondsAtCapture"]=2490;
+    pm["lightCaptureSequence"]=6;pm["volumeAgeMillisecondsAtCapture"]=500;
+    physicsView.sample=ParseSample(physics.dump(),now);
+    Require(HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
+        "Physics age must not double-count unrelated GPU capture age");
+    Require(!HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received+std::chrono::milliseconds(1),true),
+        "Physics expiry must include elapsed transport/display time");
+    pm["volumeAgeMillisecondsAtCapture"]=501;
     physicsView.sample=ParseSample(physics.dump(),now);
     Require(!HideOccludedLight(physicsView.sample.renderedLights.records->at(0),physicsView,physicsView.received,true),
         "Stale physics evidence must never hide current raw light");

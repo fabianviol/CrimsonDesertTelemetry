@@ -1,6 +1,36 @@
 # Per-light source visibility
 
-## Current private implementation — physics.7/.8 (2026-09-25)
+## Current private implementation — physics.9: latest complete measurement
+
+Owner explicitly requested removal of movement analysis rather than a larger
+native-scheduling rewrite. Keep the proven nine-ray fan, native controls, existing
+V2 batch transport, max20 rounds/sec,256 queued targets/35gu and shared2ms budget.
+Each complete result is emitted directly: any clear ray -> clear; all9 blocked
+-> blocked IMMEDIATELY. No second-result confirmation, receiver-distance reset,
+smoothing or camera-movement invalidation in either API or HUD. This is the latest
+measured geometry at the RECORDED camera, not a guarantee about the current pose.
+
+Bad/incomplete/native-fault results remain unknown. Budget skips do not renew
+measurement timestamps. A result expires after500ms without a new valid result;
+HUD adds elapsed transport/display time, NOT the unrelated GPU light-snapshot age
+again. Loading/unavailable raw sources still invalidate. Raw RGB/positions and
+authored records are untouched; the existing light-smoothing stream is unchanged.
+
+Optional `measurementSequence` identifies the completed query round (not a light
+ID or GPU capture). `measuredAtTickMilliseconds` is its native completion timestamp
+in Windows monotonic uptime milliseconds, NOT Unix time. Reference camera, actual
+older lightCaptureSequence/frame,9-ray sample counts and age remain published.
+`volumeAgeMillisecondsAtCapture` retains its legacy API name but is measurement
+age here. Old private schema samples up to2500ms remain readable by the schema;
+the current producer/HUD applies500ms. No fake-fresh relabelling when camera moves.
+
+Tests now cover first-result blocking, direct blocked/clear changes through rapid
+camera orbit (>25cm per sample),96 targets, original provenance, incomplete/budget
+responses, native-fault latch and exact500/501ms expiry. No ingame inspection or
+live acceptance yet. Targeted managed physics and native overlay-model tests only;
+no full research suite needed for this consumer-policy change.
+
+## Historical private implementation — physics.7/.8 (2026-09-25)
 
 **Live acceptance FAILED while running.** Owner reports stationary hiding works,
 but moving yields "refreshing after movement" for all sources. No additional

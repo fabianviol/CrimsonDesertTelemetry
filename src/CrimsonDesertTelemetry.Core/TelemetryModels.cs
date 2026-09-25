@@ -121,7 +121,9 @@ public sealed record SourceVisibilitySnapshot(
     double? ClosestApproach,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Method = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SampleCount = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ClearSampleCount = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ClearSampleCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ulong? MeasurementSequence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? MeasuredAtTickMilliseconds = null);
 
 public sealed record RenderLightDiagnosticsSnapshot(
     int ActiveRecords, int PublishedRecords, int Malformed, int OutsideRadius);
