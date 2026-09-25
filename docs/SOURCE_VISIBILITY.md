@@ -2,6 +2,17 @@
 
 ## Current private implementation — physics.7/.8 (2026-09-25)
 
+**Live acceptance FAILED while running.** Owner reports stationary hiding works,
+but moving yields "refreshing after movement" for all sources. No additional
+ingame investigation performed (owner explicitly declined it). The .25gu check
+is used both for cache validity AND consecutive blocked-result confirmation;
+at20Hz, straight motion>5gu/sec defeats the latter even without IPC latency.
+The synthetic96-light test used.2gu/60ms, only3.33gu/sec, so it did not cover this.
+Batching alone does not solve moving acceptance. Next design must distinguish
+measurement pose/time, consumer freshness and temporal verdict confirmation.
+Preserve collision findings and raw streams; do not promote .8 or silently hold
+stale hidden markers. See current HANDOVER for the proposed native scheduling path.
+
 Install package physics.8; .7 was retained with an outdated INI comment saying24
 targets. The runtime implementation is identical (native logv7); .8 documents256.
 

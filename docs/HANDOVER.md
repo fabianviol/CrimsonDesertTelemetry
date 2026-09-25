@@ -1,6 +1,34 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current: physics.8 package / v7 batch refresh; .6 live worked only while stationary.**
+**Current: physics.8 FAILED moving acceptance; stationary works (owner report).**
+Owner sees all markers "refreshing after movement" while running, correct hiding
+when stationary. Explicitly NO further ingame inspection requested; none performed.
+Do not call .8 accepted or ask for the same wall test again. No new ZIP this turn.
+
+Offline code confirms TWO pose-distance gates: PhysicsVisibilityClient.Resolve
+invalidates displacement>.25gu; ApplyResponse also resets blocked confirmation
+unless successive measurement receivers stay within.25gu. HUD repeats the first
+gate. With max20Hz requests, straight movement>5gu/sec already defeats consecutive
+confirmation even with zero round-trip overhead. The96-source synthetic movement
+test only moves.2gu/60ms (=3.33gu/sec), so it did not cover running. This is a test
+gap and a freshness/hysteresis design flaw, not disproven physics geometry.
+
+Next direction (NOT IMPLEMENTED): keep proven ray fans/ManyLights, but native-side
+scheduling using owned camera-paired capture copies, avoiding managed-host query
+round trip; native calls remain in validated original physics context, NEVER on
+render/readback worker using borrowed game pointers. Treat separately (a) each
+measurement's actual camera/frame/time, (b) bounded display/consumer latency, and
+(c) temporal confirmation of successive NEW results. Ordinary continuous motion
+must not require a stationary receiver to confirm fresh blocked results. Teleport,
+loading, source change, missing/expired measurement still invalidate. Removing
+the distance gate alone, relabelling old results fresh or enlarging queues is not
+an accepted fix. Need high-speed/delayed-response regressions before next package.
+Native PublishSample already has paired scene/lights/counters after GPU fence;
+this is an existing input boundary, NOT proof of zero latency or a safe query thread.
+
+## Historical physics.8 build checkpoint
+
+**At build time: physics.8 package / v7 batch refresh; .6 live worked only while stationary.**
 Owner observed .6 hides walls after ~1s but movement brings markers back. PID468,
 installed ASI matched .6; native/result mapping had valid9-ray results (including
 clear=0), API had clear plus14 camera-moved unknowns. Cause:20 individual fans/sec
@@ -26,7 +54,7 @@ Managed suite includes96 moving positions and partial-budget queue fairness;
 All31 CTest suites passed on this native binary; full managed suite and .8
 expanded/ZIP payload/config validation passed. No live .8 acceptance yet.
 No auto-install, push or public release. Old ZIPs/unrelated untracked work preserved.
-**Next:** close game, install WHOLE .8 ZIP via DMM, then normal movement past the
+**Historical next step (now completed, movement FAILED):** install WHOLE .8 ZIP via DMM, then normal movement past the
 known wall/visible cage. Check actual refresh/budget rates if HUD still falls back;
 no broad RE or blind drift-tolerance increase. END for owner action, never wait.
 
