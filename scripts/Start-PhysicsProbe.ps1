@@ -2,9 +2,11 @@
 # One explicit private request, then return immediately; never waits for the owner.
 # physics.3 rayobserve records ONE game-originated ray, not a camera/light test
 # and not a replay. No target selector in that mode; inspect raw layout first.
+# physics.4 rayreplay validates a same-context copy; raysegment changes its
+# segment only after a matching control. Collision is NOT optical visibility.
 [CmdletBinding()]
 param(
-    [ValidateSet('observe','replay','segment','rayobserve')][string]$Mode = 'observe',
+    [ValidateSet('observe','replay','segment','rayobserve','rayreplay','raysegment')][string]$Mode = 'observe',
     # Segment target is an EXACT current filtered ManyLights sample. Its paired
     # camera supplies the start; never substitute the authored-light vector.
     [int]$LightSampleIndex = -1,
@@ -45,7 +47,7 @@ $request = [ordered]@{
     player = $player; issuedTickMs = [Environment]::TickCount64
     snapshotSequence = $snapshot.sequence; snapshotCapturedAt = $snapshot.capturedAt
 }
-if ($Mode -eq 'segment') {
+if ($Mode -in @('segment','raysegment')) {
     if (($GroundControl -and ($LightSampleIndex -ge 0 -or $NearLightPosition)) -or
         ($LightSampleIndex -ge 0 -and $NearLightPosition)) { throw 'Choose one target selector.' }
     if ($GroundControl) {
@@ -93,7 +95,7 @@ if ($Mode -eq 'segment') {
         $squared += $d*$d
     }
     if ($squared -gt 2500 -or $squared -lt 0.0025) { throw 'Segment length outside 0.05..50 game units.' }
-} elseif ($GroundControl -or $LightSampleIndex -ge 0 -or $NearLightPosition -or $StopBeforeLight -ne 0) { throw 'Targets require -Mode segment.' }
+} elseif ($GroundControl -or $LightSampleIndex -ge 0 -or $NearLightPosition -or $StopBeforeLight -ne 0) { throw 'Targets require -Mode segment or raysegment.' }
 $temporary = Join-Path $gameDirectory "physics-probe-request-$requestId.tmp"
 $destination = Join-Path $gameDirectory 'physics-probe-request.json'
 [IO.File]::WriteAllText($temporary, ($request | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))

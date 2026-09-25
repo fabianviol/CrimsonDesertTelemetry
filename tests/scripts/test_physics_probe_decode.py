@@ -75,6 +75,26 @@ class PhysicsDecodeTests(unittest.TestCase):
         r['segmentCollectorHex'] = c.hex()
         self.assertFalse(decoder.decode(r)['geometryConsistent'])
 
+    def test_ray_contact_must_lie_on_segment(self):
+        r = fixture(); r['primitive'] = 'native-ray'; r['shapeHex'] = ''
+        c = bytearray.fromhex(r['segmentCollectorHex'])
+        struct.pack_into('<3d', c, 0x90, -529.5, 610, -419.5)
+        r['segmentCollectorHex'] = c.hex()
+        result = decoder.decode(r)
+        self.assertEqual(result['radius'], 0)
+        self.assertTrue(result['geometryConsistent'])
+        self.assertEqual(result['opticalVisibility'], 'not-classified')
+
+    def test_ray_unknown_collector_rejected(self):
+        r = fixture(); r['primitive'] = 'native-ray'
+        c = bytearray.fromhex(r['segmentCollectorHex']); struct.pack_into('<Q', c, 0, 1)
+        r['segmentCollectorHex'] = c.hex()
+        with self.assertRaises(ValueError): decoder.decode(r)
+
+    def test_observation_cannot_become_ray_clear(self):
+        r = fixture(False); r['primitive'] = 'native-ray-observation'; r['segmentCalled'] = False
+        self.assertEqual(decoder.decode(r)['collision'], 'unknown')
+
 
 if __name__ == '__main__':
     unittest.main()

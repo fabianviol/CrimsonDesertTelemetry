@@ -22,7 +22,8 @@ using Json = nlohmann::json;
 // Five pointer/integer parameters verified in the current-build wrapper; preserve RAX.
 using ShapeFn = std::uint64_t(__fastcall*)(void*, void*, void*, void*, void*);
 // Current-build TtWorldCastRay wrapper forwards world, query, collector only.
-// Observe originals; a constructible/replayable ray query is NOT established.
+// Optional private replay uses the observed layout and same-call lifetime only;
+// this is not an optical classifier or a generally supported physics API.
 using RayFn = std::uint64_t(__fastcall*)(void*, void*, void*);
 ShapeFn originalShape{};
 RayFn originalRay{};
@@ -63,6 +64,8 @@ struct Work
     std::array<std::uint8_t, 0x200> segmentQuery{};
 };
 Work work;
+bool RayMode(const std::string& mode)
+{ return mode == "rayobserve" || mode == "rayreplay" || mode == "raysegment"; }
 bool Copy(std::uint64_t address, void* destination, std::size_t size)
 {
     return address >= 0x10000 && address <= 0x00007FFFFFFFFFFFULL - size &&
@@ -213,7 +216,7 @@ std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* ext
     bool claimed = false;
     if (armed.load(std::memory_order_relaxed) && TryAcquireSRWLockExclusive(&mutex))
     {
-        if (work.mode != "rayobserve" && work.phase == Phase::Waiting && GetTickCount64() - work.issued < 2000 && work.attempts < 512 && Capture(w, q, x, c, extra))
+        if (!RayMode(work.mode) && work.phase == Phase::Waiting && GetTickCount64() - work.issued < 2000 && work.attempts < 512 && Capture(w, q, x, c, extra))
         {
             work.phase = Phase::Capturing;
             work.caller = reinterpret_cast<std::uint64_t>(_ReturnAddress());
@@ -243,6 +246,25 @@ bool CaptureRay(void* world, void* query, void* collector)
     const auto w = reinterpret_cast<std::uint64_t>(world);
     const auto q = reinterpret_cast<std::uint64_t>(query);
     const auto c = reinterpret_cast<std::uint64_t>(collector);
+    if (work.mode != "rayobserve")
+    {
+        std::uint64_t vt{}, hits{};
+        std::array<double, 3> position{};
+        if (!Get(c, vt) || vt != base + 0x5D13528 || !Get(c + 0x20, hits) || hits != c + 0x30)
+        { ++work.contextRejected; return false; }
+        ++work.collectors;
+        if (!Get(q + 0x40, position)) return false;
+        Vec3 start{};
+        for (unsigned i = 0; i < 3; ++i)
+        {
+            if (!std::isfinite(position[i]) || std::abs(position[i]) > 1000000) return false;
+            start[i] = static_cast<float>(position[i]);
+        }
+        // Observed native ray starts up to 4.44 gu above the player's feet.
+        auto horizontalPlayer = work.player; horizontalPlayer[1] = start[1];
+        if (!NearPlayer(start, horizontalPlayer) || std::abs(start[1] - work.player[1]) > 6.f) return false;
+        ++work.nearPlayer;
+    }
     // Bounded raw windows, NOT proven object extents. No collector callbacks,
     // hit-pointer traversal, assumed positions or radius writes in this mode.
     if (!Copy(q, work.snapshot.query.data(), 0x100) ||
@@ -257,12 +279,85 @@ bool CaptureRay(void* world, void* query, void* collector)
     work.copied = true;
     return true;
 }
+bool CallRayCopy(NativeRayCopy& copy, DWORD& exception) noexcept
+{
+    __try
+    {
+        originalRay(reinterpret_cast<void*>(work.world), copy.query.data.data(), copy.collector.data.data());
+        return true;
+    }
+    __except (exception = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+void PrepareRayCopy(NativeRayCopy& copy)
+{
+    // Observed collector begins at query+0xA0 in the known context. Do NOT copy
+    // its overlapping bytes as part of the query or generically rebase qwords.
+    std::memcpy(copy.query.data.data(), work.snapshot.query.data(), 0xA0);
+    std::memcpy(copy.collector.data.data(), work.snapshot.collector.data(), 0x140);
+    Write(copy.collector.data, 0x20, reinterpret_cast<std::uint64_t>(copy.collector.data.data()) + 0x30);
+}
+bool RayOriginalsIntact()
+{
+    std::array<std::uint8_t, 0xA0> query{};
+    std::array<std::uint8_t, 0x140> collector{};
+    std::uint64_t inner{};
+    return Get(work.world + 0xB70, inner) && inner == work.worldInner &&
+        Copy(work.addresses[0], query.data(), query.size()) &&
+        Copy(work.addresses[2], collector.data(), collector.size()) &&
+        !std::memcmp(query.data(), work.snapshot.query.data(), query.size()) &&
+        !std::memcmp(collector.data(), work.collectorAfter.data(), collector.size());
+}
+void RunRayControl()
+{
+    if (work.mode == "rayobserve") return;
+    if (replayFaulted || replayTransactions >= 12) { work.controlStatus = "unknown-replay-disabled-for-process"; return; }
+    if (!work.afterCopied || !work.rayQueryAfterCopied || work.caller != base + 0x32551AF ||
+        work.thread != GetCurrentThreadId() || GetTickCount64() - work.captured > 100)
+    { work.controlStatus = "unknown-call-context"; return; }
+    if (work.stackHigh < 0x140 || work.stackLow >= work.stackHigh)
+    { work.controlStatus = "unknown-object-lifetime"; return; }
+    for (auto address : {work.addresses[0], work.addresses[2]})
+        if (address < work.stackLow || address > work.stackHigh - 0x140)
+        { work.controlStatus = "unknown-object-lifetime"; return; }
+    if (!RayOriginalsIntact() || std::memcmp(work.snapshot.query.data(), work.rayQueryAfter.data(), 0xA0) ||
+        Read<std::uint64_t>(work.snapshot.collector, 0) != base + 0x5D13528 ||
+        Read<std::uint64_t>(work.snapshot.collector, 0x20) != work.addresses[2] + 0x30 ||
+        Read<std::uint32_t>(work.snapshot.collector, 0xC) != 0 || !PlausibleResult(work.collectorAfter))
+    { work.controlStatus = "unknown-input-change-or-result"; return; }
+    NativeRayCopy control{}, segment{};
+    PrepareRayCopy(control);
+    if (work.mode == "raysegment")
+    {
+        PrepareRayCopy(segment);
+        if (!SetRaySegment(segment.query.data, work.segmentStart, work.segmentEnd, work.player))
+        { work.controlStatus = "invalid-segment-or-unverified-zero-component"; return; }
+        std::memcpy(work.segmentQuery.data(), segment.query.data.data(), segment.query.data.size());
+    }
+    ++replayTransactions;
+    work.controlCalled = true;
+    const bool returned = CallRayCopy(control, work.callException);
+    work.guardsIntact = control.Intact(); work.originalsPreserved = RayOriginalsIntact();
+    work.controlAfter = control.collector.data;
+    if (!returned || !work.guardsIntact || !work.originalsPreserved)
+    { replayFaulted = true; work.controlStatus = "unknown-control-fault-restart-required"; return; }
+    work.controlMatched = SameResult(work.collectorAfter, work.controlAfter);
+    if (!work.controlMatched) { work.controlStatus = "unknown-control-disagrees"; return; }
+    work.controlStatus = "control-matches-natural-ray";
+    if (work.mode != "raysegment") return;
+    work.segmentCalled = true;
+    const bool segmentReturned = CallRayCopy(segment, work.callException);
+    work.guardsIntact = segment.Intact(); work.originalsPreserved = RayOriginalsIntact();
+    work.segmentAfter = segment.collector.data;
+    if (!segmentReturned || !work.guardsIntact || !work.originalsPreserved)
+    { replayFaulted = true; work.controlStatus = "unknown-segment-fault-restart-required"; return; }
+    work.controlStatus = PlausibleResult(work.segmentAfter) ? "diagnostic-ray-segment-completed" : "unknown-segment-result";
+}
 std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
 {
     bool claimed = false;
     if (armed.load(std::memory_order_relaxed) && TryAcquireSRWLockExclusive(&mutex))
     {
-        if (work.mode == "rayobserve" && work.phase == Phase::Waiting &&
+        if (RayMode(work.mode) && work.phase == Phase::Waiting &&
             GetTickCount64() - work.issued < 2000 && work.attempts < 512 && CaptureRay(world, query, collector))
         {
             work.phase = Phase::Capturing;
@@ -279,6 +374,7 @@ std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
         work.rayQueryAfterCopied = Copy(reinterpret_cast<std::uint64_t>(query), work.rayQueryAfter.data(), work.rayQueryAfter.size());
         work.returnValue = result;
         work.controlStatus = work.afterCopied ? "observed-game-ray" : "unknown-ray-result-unreadable";
+        RunRayControl();
         work.phase = Phase::Done;
         ReleaseSRWLockExclusive(&mutex);
     }
@@ -298,11 +394,12 @@ template<std::size_t N> std::string Hex(const std::array<std::uint8_t, N>& bytes
 }
 void Save(const Work& done)
 {
-    const bool ray = done.mode == "rayobserve";
+    const bool ray = RayMode(done.mode);
+    const bool knownCollector = done.copied && Read<std::uint64_t>(done.snapshot.collector, 0) == base + 0x5D13528;
     const Json report{{"schemaVersion", 2}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
         {"processStartFileTime", processStart}, {"mode", done.mode}, {"reason", done.reason},
-        {"scope", "Private physics diagnostic; ray observation or bounded sphere replay, NOT optical visibility"},
-        {"primitive", ray ? "native-ray-observation" : "sphere"},
+        {"scope", "Private physics diagnostic; bounded original-context queries, NOT optical visibility"},
+        {"primitive", ray ? "native-ray" : "sphere"},
         {"captureWindowBytes", {{"query", ray ? 0x100 : 0x200}, {"collector", ray ? 0x140 : 0x200},
             {"transform", ray ? 0 : 0x100}, {"shape", ray ? 0 : 0x200}}},
         {"controlStatus", done.controlStatus ? done.controlStatus : "not-requested"},
@@ -330,7 +427,7 @@ void Save(const Work& done)
             {"nearPlayer", done.nearPlayer}, {"contextRejected", done.contextRejected}}},
         {"templateCaptured", done.copied}, {"collectorAfterCaptured", done.afterCopied},
         {"rayQueryAfterCaptured", done.rayQueryAfterCopied}, {"rayQueryAfterHex", ray ? Json(Hex(done.rayQueryAfter)) : Json(nullptr)},
-        {"rawResult", done.afterCopied && !ray ? Json{{"count", Read<std::uint32_t>(done.collectorAfter, 0xC)},
+        {"rawResult", done.afterCopied && knownCollector ? Json{{"count", Read<std::uint32_t>(done.collectorAfter, 0xC)},
             {"fraction", Read<double>(done.collectorAfter, 0x10)}, {"normal", Read<Vec3>(done.collectorAfter, 0x80)}} : Json(nullptr)},
         {"queryHex", Hex(done.snapshot.query)}, {"transformHex", Hex(done.snapshot.transform)},
         {"collectorBeforeHex", Hex(done.snapshot.collector)}, {"collectorAfterHex", Hex(done.collectorAfter)}, {"shapeHex", Hex(done.snapshot.shape)}};
@@ -377,7 +474,7 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory)
         if (MH_EnableHook(rayTarget) == MH_OK) rayEnabled = true;
         else MH_RemoveHook(rayTarget); // Never enabled, so no in-flight trampoline.
     }
-    ch::Log("Physics probe v3 ready (private, idle). Ray observer=%s; explicit requests only; max 12 sphere replay transactions per process.",
+    ch::Log("Physics probe v4 ready (private, idle). Ray observer=%s; explicit requests only; max 12 total replay transactions per process.",
         rayEnabled.load() ? "ready" : "unavailable");
     return true;
 }
@@ -423,15 +520,15 @@ void Poll()
         pending.mode = request.at("mode").get<std::string>();
         pending.player = request.at("player").get<Vec3>();
         pending.issued = request.at("issuedTickMs").get<std::uint64_t>();
-        if (pending.mode == "segment")
+        if (pending.mode == "segment" || pending.mode == "raysegment")
         {
             pending.segmentStart = request.at("start").get<Vec3>();
             pending.segmentEnd = request.at("end").get<Vec3>();
         }
         if (pending.issued > now || now - pending.issued > 1000 || !Finite(pending.player) ||
-            (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment" && pending.mode != "rayobserve"))
+            (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment" && !RayMode(pending.mode)))
         { pending.reason = "invalid-or-stale-request"; Save(pending); return; }
-        if (pending.mode == "rayobserve" && !rayEnabled.load())
+        if (RayMode(pending.mode) && !rayEnabled.load())
         { pending.reason = "unknown-ray-observer-unavailable"; Save(pending); return; }
         pending.phase = Phase::Waiting;
         AcquireSRWLockExclusive(&mutex);

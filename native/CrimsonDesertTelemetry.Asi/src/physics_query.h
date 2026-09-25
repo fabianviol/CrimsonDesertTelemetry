@@ -38,6 +38,31 @@ inline float Distance(const Vec3& a, const Vec3& b)
     for (unsigned i = 0; i < 3; ++i) squared += (a[i] - b[i]) * (a[i] - b[i]);
     return std::sqrt(squared);
 }
+// Native ray captures (physics.3): double origin/delta, float inverse/length.
+// Keep the zero-axis convention refused for now despite one FLT_MAX observation.
+template<std::size_t N> bool SetRaySegment(std::array<std::uint8_t, N>& q,
+    const Vec3& start, const Vec3& end, const Vec3& player)
+{
+    if constexpr (N < 0x90) return false;
+    if (!Finite(start) || !Finite(end) || !Finite(player) || Distance(start, player) > 20.f) return false;
+    std::array<double, 3> local{}, delta{};
+    Vec3 inverse{};
+    double squared = 0;
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        local[i] = start[i]; delta[i] = static_cast<double>(end[i]) - start[i];
+        if (std::abs(delta[i]) < .0001) return false;
+        inverse[i] = static_cast<float>(1.0 / delta[i]); squared += delta[i] * delta[i];
+    }
+    const double length = std::sqrt(squared);
+    if (length < .05 || length > 50) return false;
+    local[0] -= static_cast<int>(player[0] * .001f) * 1000.0;
+    local[2] -= static_cast<int>(player[2] * .001f) * 1000.0;
+    Write(q, 0x40, local); Write(q, 0x58, 0.0);
+    Write(q, 0x60, delta); Write(q, 0x78, 1.0);
+    Write(q, 0x80, inverse); Write(q, 0x8C, static_cast<float>(length));
+    return true;
+}
 // Live captures establish reciprocal delta at +0x50 and length at +0x5C.
 // Zero-component convention is unverified: reject near-axis cases instead of
 // inventing infinity/FLT_MAX behavior. This remains a private sphere sweep.
@@ -90,6 +115,12 @@ struct NativeCopy
     GuardedBytes<0x300> collector;
     GuardedBytes<0x200> shape;
     bool Intact() const { return query.Intact() && transform.Intact() && collector.Intact() && shape.Intact(); }
+};
+struct NativeRayCopy
+{
+    GuardedBytes<0x100> query;
+    GuardedBytes<0x300> collector;
+    bool Intact() const { return query.Intact() && collector.Intact(); }
 };
 struct alignas(16) QueryCopy
 {

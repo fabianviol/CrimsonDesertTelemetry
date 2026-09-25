@@ -422,3 +422,62 @@ No radius edits, ray replay, multi-ray visibility classifier or source-ID join.
 57 native synthetic checks and five focused CTest suites pass; eight decoder tests
 pass. New ray prologue guard also matches the saved exact EXE. Game validation of
 the new hook remains pending, distinct from the successful physics.2 controls.
+
+## Native ray observed; physics.4 controlled replay prepared — 2026-09-25
+
+Owner loaded physics.3 at the camp, PID 34448. Deployed ASI matches package
+SHA256 `09B57CD53565E0FD93C6B4FDE69F109993A28C24DCAEA4C5157E271160CE478F`;
+log says ray observer ready. TWO original rays captured, no extra query:
+
+- `physics-ray-natural-34448-35138d057ee44b4090e90000dcb16bbc.json`
+- `physics-ray-natural-34448-14d2dc18586342a2b93d31350d02639a.json`
+
+Both archived under artifacts/light-research. Caller RVA 0x32551AF is the world
+forwarder (enclosing function 0x3254EE0); static evidence is
+`physics-ray-caller-static-20260925.json`, not a newly found query constructor.
+Prefix 0xA0 bytes was unchanged after both original calls. Observed ray fields:
+
+| Offset | Observed representation |
+|---|---|
+| +0x40 | tile-local origin double3 (negative X/Z tiles truncate toward zero) |
+| +0x58 | double 0 |
+| +0x60 | displacement double3 |
+| +0x78 | double 1 |
+| +0x80 | reciprocal displacement float3 |
+| +0x8C | length float |
+| +0x90 / +0x98 | retained opaque fields, not decoded |
+
+First ray: local origin (-529.544922,613.590027,-419.810547), displacement
+(0.01953125,-0.19903564453125,-0.00390625), length ~0.20003. Collector vtable
+RVA 0x5D13528 is the established closest-hit collector, count=0, fraction=1.
+Collector begins EXACTLY at query+0xA0. The raw 0x100 observation window therefore
+overlaps it: do NOT clone that overlapping tail as query state. Its origin is
+~4.43 gu above player feet; ray context selection allows <=3 gu horizontal,
+<=6 vertical. Second ray starts at player, has a DIFFERENT collector vtable;
+no closest-hit semantics assigned. Its zero Y displacement uses near-FLT_MAX
+inverse, but one occurrence does not establish all zero-axis conventions.
+
+physics.4 adds opt-in `rayreplay` / `raysegment`. It clones only query prefix
+0xA0 and collector 0x140, rebasing only the proven inline hit pointer +0x20.
+Known collector/caller, original thread, current stack lifetime, <=100 ms age,
+unchanged query/world/output, initial empty collector, canaries and bounded
+segments are required. Control must reproduce the original result before any
+changed segment. A fault or original/guard damage latches replay disabled until
+restart. Sphere and ray share 12 transactions/process; native hangs cannot be
+safely timed out. No pointer use after hook return, no API/HUD visibility change.
+Axis-aligned segments remain refused; unknown filter fields are preserved.
+
+**Not live-validated yet:** ray replay, segment construction and ray hit geometry.
+Next order: identical ray control, downward positive ground control, then one
+known light using fresh paired ManyLights. A matching natural no-hit alone is
+NOT evidence that modified queries can detect geometry. Decoder's ray branch
+checks surface ~= segment point (radius 0); this is a consistency check awaiting
+live evidence, not optical classification.
+
+Owner clarified that cage bars can cause PARTIAL obstruction. Keep sphere
+sweeps: a wide-sweep hit indicates some contact in the swept volume, not full
+coverage or a blocked percentage. A single ray can also strike one bar.
+Multiple spatially distributed rays may estimate coverage later, but require a
+justified source extent/sampling pattern; neither that classifier nor a fitted
+near-source cutoff is implemented. Do not discard a whole collision body, as
+one body can include both lamp surroundings and walls.

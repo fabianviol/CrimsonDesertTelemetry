@@ -103,6 +103,27 @@ void SetupControl()
     calls = 0; mockMode = MockMode::Match;
     originalShape = MockReplay;
 }
+std::uint64_t __fastcall MockRayReplay(void* w, void* q, void* c)
+{
+    // Reuse mock collector behavior, with no transform or fifth argument in the
+    // actual ray ABI. Check that query cloning stopped before the old collector.
+    auto* bytes = static_cast<const std::uint8_t*>(q);
+    for (size_t i = 0xA0; i < 0x100; ++i) if (bytes[i]) ++badArgs;
+    return MockReplay(w, q, nullptr, c, c);
+}
+void SetupRayControl()
+{
+    Setup(); originalRay = OriginalRay; work.mode = "rayobserve";
+    Put(query.query, 0x40, std::array<double, 3>{-529.755, 615.7, -420.3});
+    // Simulate an overlapping observer window, which must NOT be cloned.
+    std::fill(query.query.begin() + 0xA0, query.query.begin() + 0x100, std::uint8_t{0xCC});
+    RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Put(work.snapshot.collector, 0xC, std::uint32_t{0});
+    work.mode = "rayreplay"; work.caller = base + 0x32551AF;
+    work.stackLow = reinterpret_cast<std::uint64_t>(&query);
+    work.stackHigh = work.stackLow + sizeof query;
+    calls = 0; mockMode = MockMode::Match; originalRay = MockRayReplay;
+}
 }
 int main()
 {
@@ -214,5 +235,56 @@ int main()
     Setup(); originalRay = OriginalRay;
     RayHook(worldBytes.data(), query.query.data(), query.collector.data());
     Check(!work.copied && work.attempts == 0 && calls == 1, "ray hook cannot consume sphere observation");
+    std::array<std::uint8_t, 0x100> raySegment{};
+    Put(raySegment, 0x98, std::uint64_t{0x12345678});
+    Check(SetRaySegment(raySegment, {-10529,611,-4419}, {-10528,608,-4417}, {-10529,609,-4419}), "ray bounded segment accepted");
+    Check(Read<std::array<double,3>>(raySegment, 0x40) == std::array<double,3>{-529,611,-419}, "ray double tile origin");
+    Check(Read<std::array<double,3>>(raySegment, 0x60) == std::array<double,3>{1,-3,2}, "ray double displacement");
+    Check(Read<Vec3>(raySegment, 0x80) == Vec3{1,-1.f/3,.5f} &&
+        std::abs(Read<float>(raySegment, 0x8C)-std::sqrt(14.f)) < 1e-6f, "ray float reciprocal and length");
+    Check(Read<double>(raySegment, 0x58) == 0 && Read<double>(raySegment, 0x78) == 1 &&
+        Read<std::uint64_t>(raySegment, 0x98) == 0x12345678, "ray vector fourth lanes and opaque tail preserved");
+    const auto rayUnchanged = raySegment;
+    Check(!SetRaySegment(raySegment, {100,1,100}, {100,2,101}, {100,0,100}) && raySegment == rayUnchanged, "ray zero component rejected without mutation");
+    Check(!SetRaySegment(raySegment, {100,1,100}, {101,2,200}, {100,0,100}), "ray long segment rejected");
+    Check(!SetRaySegment(raySegment, {100,1,100}, {101,2,101}, {200,0,100}), "ray remote origin rejected");
+    Check(!SetRaySegment(bytes, {100,1,100}, {101,2,101}, {100,0,100}), "ray undersized query rejected");
+    SetupRayControl(); const auto rayOriginal = query;
+    RunRayControl();
+    Check(work.controlMatched && work.guardsIntact && work.originalsPreserved && calls == 1 && badArgs == 0, "ray isolated replay matches control");
+    Check(query.query == rayOriginal.query && query.collector == rayOriginal.collector, "ray originals unchanged");
+    SetupRayControl(); work.mode = "raysegment";
+    work.segmentStart = {-10529,611,-4419}; work.segmentEnd = {-10528,608,-4417}; RunRayControl();
+    Check(work.controlMatched && work.segmentCalled && calls == 2 && badArgs == 0 && work.guardsIntact, "ray segment after matching control only");
+    SetupRayControl(); work.mode = "raysegment"; mockMode = MockMode::Disagree;
+    work.segmentStart = {-10529,611,-4419}; work.segmentEnd = {-10528,608,-4417}; RunRayControl();
+    Check(calls == 1 && !work.controlMatched && !work.segmentCalled, "ray control mismatch blocks segment");
+    SetupRayControl(); work.caller = 0; RunRayControl();
+    Check(calls == 0, "ray wrong caller rejected");
+    SetupRayControl(); work.stackHigh = 0; RunRayControl();
+    Check(calls == 0, "ray invalid stack rejected without underflow");
+    SetupRayControl(); work.captured = GetTickCount64()-101; RunRayControl();
+    Check(calls == 0, "ray expired original context rejected");
+    SetupRayControl(); Put(query.query, 0x60, 99.0); RunRayControl();
+    Check(calls == 0, "ray changed input rejected");
+    SetupRayControl(); Put(work.snapshot.collector, 0, base + 0x123); RunRayControl();
+    Check(calls == 0, "ray foreign collector cannot replay");
+    SetupRayControl(); Put(worldBytes, 0xB70, base + 0x900); RunRayControl();
+    Check(calls == 0, "ray changed world rejected");
+    SetupRayControl(); mockMode = MockMode::Fault; RunRayControl();
+    Check(replayFaulted && work.callException == 0xE001ABCD, "ray fault latches replay disable");
+    calls = 0; RunRayControl(); Check(calls == 0, "ray fault retry prevented");
+    SetupRayControl(); mockMode = MockMode::Overwrite; RunRayControl();
+    Check(replayFaulted && !work.guardsIntact, "ray canary damage latches disable");
+    SetupRayControl(); replayTransactions = 12; RunRayControl();
+    Check(calls == 0, "ray shares process replay budget");
+    Setup(); originalRay = OriginalRay; work.mode = "rayreplay";
+    Put(query.collector, 0, base + 0x123);
+    RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Check(calls == 1 && !work.copied && work.contextRejected == 1, "ray foreign collector passed through without claim");
+    Setup(); originalRay = OriginalRay; work.mode = "rayreplay";
+    Put(query.query, 0x40, std::array<double,3>{-529.755, 615.7, -420.3});
+    RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Check(calls == 1 && work.copied && work.nearPlayer == 1 && !work.controlCalled, "ray elevated player-near selection, wrong test caller no replay");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

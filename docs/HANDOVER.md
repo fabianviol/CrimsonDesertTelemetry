@@ -1,34 +1,40 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
-**Current checkpoint: physics.3 built, NOT installed/live-tested.** Owner closed
-PID 5468. Reused saved physics.2 captures: radius confirmed at shape+0x68,
-surface point at collector+0x90 (double3); all nine hits satisfy center ~= surface
-+ radius * normal within 0.001 gu. Last four lantern tests used radius 0.1.
-One earlier test used 0.36157, so its shortened-vs-full comparison was confounded;
-corrected in the physics doc. Hit handle/subshape fields recovered; not lamp IDs.
-Full details and exact static artifacts: final sections of PHYSICS_QUERY_RESEARCH.
+**Current checkpoint: physics.4 built/tested, NOT installed/live-tested.**
+Owner is still running physics.3 at the camp, last PID 34448. TWO actual ray
+observations succeeded; no replay/extra query in this process. Query uses
+double3 origin +0x40/delta +0x60, float3 inverse +0x80/length +0x8C. Prefix 0xA0
+unchanged. First collector is the established closest-hit type, starts at q+A0;
+second is a different type and is NOT assigned those semantics. Reports and
+`physics-ray-natural-34448-20260925.native.log` archived under light-research.
+Details, coordinates and static caller evidence: final PHYSICS_QUERY_RESEARCH section.
 
-New `Decode-PhysicsProbe.py` decodes retained sphere reports, not optical status.
-New native mode `rayobserve` records ONE ORIGINAL game ray at exact-guarded
-TtWorldCastRay RVA 0x42B0B50, with three original args/return preserved and raw
-query/collector before/after. No extra ray, radius change, pointer chasing or
-public visibility mutation. Captured ray is not yet linked to camera or a lamp.
-57 synthetic native checks, eight decoder tests, five focused CTest suites and
-ZIP payload/INI checks passed. Saved EXE matches the new ray-entry byte guard.
+physics.4 adds explicit `rayreplay` / `raysegment`: same original thread/stack
+lifetime, known caller/collector, isolated bounded copies, matching control
+before a changed segment, guard/original checks, shared max 12 sphere/ray replay
+transactions/process. Faults latch disabled until restart. Zero-axis segments
+still refused. Sphere modes retained; NO public visibility classification.
+82 synthetic native checks, 11 decoder tests, five focused CTest suites and
+package INI/payload checks passed. Native ray replay/ground/light acceptance is
+still PENDING; a natural no-hit observation proves no arbitrary-query capability.
 
-Install WHOLE private ZIP via DMM (game already closed):
-`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.3-ModManagers.zip`
-SHA256 `384259FF7E79E99C0DD110541911FA44E650C9961F34AA18286E0CCC6BC1ADFD`.
-Expanded: `artifacts/mod-manager/v2.1.15-physics.3-20260925-211022-631-ec6beb29/CrimsonDesertTelemetry`.
-INI ready: PhysicsProbe=1; Ambient, SourceVisibility and spatial diagnostics OFF;
-normal telemetry/ManyLights/HUD ON. No install/publish/push performed.
+WHOLE private ZIP for DMM, after owner closes game:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.4-ModManagers.zip`
+SHA256 `D24A0EBE22C0E369887F32156DA70621A2A20C06517F1E7084BEDCD4742A6FC6`.
+Expanded: `artifacts/mod-manager/v2.1.15-physics.4-20260925-213046-194-423876cf/CrimsonDesertTelemetry`.
+INI ready: PhysicsProbe=1; Ambient, SourceVisibility/spatial diagnostics OFF;
+normal telemetry/ManyLights/HUD ON. No automatic install/publish/push.
 
-**One next step:** after owner installs and loads, verify deployed hash + log
-`Ray observer=ready`, then `scripts/Start-PhysicsProbe.ps1 -Mode rayobserve`.
-Read one report; it is raw layout evidence, NOT a light visibility result. If no
-native ray fires, preserve timeout and request a brief aim/interaction only on a
-subsequent owner turn; no background waiting/polling for input. Never replay a
-ray or transplant the sphere layout based on the three-argument wrapper alone.
+**One next step:** owner closes, installs and returns. Verify deployed hash/log
+v4 then `scripts/Start-PhysicsProbe.ps1 -Mode rayreplay`. Only after a matching
+control: `-Mode raysegment -GroundControl` (positive hit/geometry consistency)
+before any light query. Then use one fresh camera-paired ManyLights source.
+No polling/waiting for owner. Native hangs cannot be safely timed out.
+
+Keep wide sphere tests as complementary evidence. Owner rightly emphasizes
+partial cage-bar obstruction: a sphere hit does NOT mean full occlusion; one
+thin ray can also hit a bar. Multiple justified spatial samples are a later
+step, not implemented or validated. No arbitrary near-source cutoff/body skip.
 
 ## Preserved evidence leading to physics.3 (earlier checkpoints)
 

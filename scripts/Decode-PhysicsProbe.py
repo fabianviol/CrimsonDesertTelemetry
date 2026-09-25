@@ -1,4 +1,4 @@
-"""Offline physics.2 report decoder for the validated 25477059 layout.
+"""Offline sphere / experimental physics.4 ray decoder for exact build 25477059.
 
 Never opens the game. Hit handles are opaque, process-local collision data, NOT
 lamp IDs. A contact (including one near the source) is NOT optical occlusion.
@@ -32,24 +32,33 @@ def decode(report):
                 'originalsPreserved', 'segmentResultPlausible')
     if not all(report.get(key) is True for key in required) or report.get('callException') != 0:
         return result  # Do not decode zero/default/stale output as a no-hit.
-    shape = bytes.fromhex(report['shapeHex'])
+    primitive = report.get('primitive', 'sphere')
+    if primitive not in ('sphere', 'native-ray'):
+        raise ValueError('Unverified query primitive')
     collector = bytes.fromhex(report['segmentCollectorHex'])
-    if len(shape) < 0x6C or len(collector) < 0x120:
+    if len(collector) < 0x120:
         raise ValueError('Truncated native bytes')
     base = report['moduleBase']
-    if struct.unpack_from('<Q', shape)[0] != base + 0x530ACE8 or struct.unpack_from('<Q', collector)[0] != base + 0x5D13528:
-        raise ValueError('Unverified sphere or collector vtable')
-    radius = struct.unpack_from('<f', shape, 0x68)[0]
+    if struct.unpack_from('<Q', collector)[0] != base + 0x5D13528:
+        raise ValueError('Unverified collector vtable')
+    radius = 0.0
+    if primitive == 'sphere':
+        shape = bytes.fromhex(report['shapeHex'])
+        if len(shape) < 0x6C or struct.unpack_from('<Q', shape)[0] != base + 0x530ACE8:
+            raise ValueError('Truncated shape or unverified sphere vtable')
+        radius = struct.unpack_from('<f', shape, 0x68)[0]
+        if not math.isfinite(radius) or not 0 < radius <= 10:
+            raise ValueError('Implausible sphere radius')
     count = struct.unpack_from('<I', collector, 0xC)[0]
     fraction = struct.unpack_from('<d', collector, 0x10)[0]
-    if not math.isfinite(radius) or not 0 < radius <= 10 or count not in (0, 1) or not math.isfinite(fraction) or not -1 <= fraction <= 1.00001:
-        raise ValueError('Implausible radius or closest-hit result')
+    if count not in (0, 1) or not math.isfinite(fraction) or not -1 <= fraction <= 1.00001:
+        raise ValueError('Implausible closest-hit result')
     start, end, player = (vec(report[key]) for key in ('segmentStart', 'segmentEnd', 'player'))
     delta = [b-a for a, b in zip(start, end)]
     length = math.dist(start, end)
     if not .05 <= length <= 50:
         raise ValueError('Segment outside diagnostic bounds')
-    result.update(radius=radius, start=start, end=end, length=length, fraction=fraction,
+    result.update(primitive=primitive, radius=radius, start=start, end=end, length=length, fraction=fraction,
                   collision='hit' if count else 'no-hit')
     if not count:
         return result  # Unused hit payload can retain unrelated stack bytes.
