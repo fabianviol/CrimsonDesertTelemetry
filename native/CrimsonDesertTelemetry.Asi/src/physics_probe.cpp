@@ -21,9 +21,15 @@ namespace
 using Json = nlohmann::json;
 // Five pointer/integer parameters verified in the current-build wrapper; preserve RAX.
 using ShapeFn = std::uint64_t(__fastcall*)(void*, void*, void*, void*, void*);
+// Current-build TtWorldCastRay wrapper forwards world, query, collector only.
+// Observe originals; a constructible/replayable ray query is NOT established.
+using RayFn = std::uint64_t(__fastcall*)(void*, void*, void*);
 ShapeFn originalShape{};
+RayFn originalRay{};
 void* shapeTarget{};
+void* rayTarget{};
 std::atomic<bool> enabled{}, armed{};
+std::atomic<bool> rayEnabled{};
 SRWLOCK mutex = SRWLOCK_INIT;
 std::filesystem::path folder;
 std::filesystem::file_time_type lastRequestWrite{};
@@ -45,7 +51,10 @@ struct Work
     std::array<std::uint8_t, 0x200> collectorAfter{};
     std::uint64_t caller{}, returnValue{};
     unsigned attempts{}, spheres{}, collectors{}, nearPlayer{};
+    unsigned contextRejected{};
     bool copied{}, afterCopied{};
+    bool rayQueryAfterCopied{};
+    std::array<std::uint8_t, 0x100> rayQueryAfter{};
     bool controlCalled{}, controlMatched{}, segmentCalled{}, guardsIntact{}, originalsPreserved{};
     DWORD callException{};
     const char* controlStatus{}; // string literals only: no allocation in callback.
@@ -78,6 +87,10 @@ bool Capture(void* world, void* query, void* transform, void* collector, void* e
     const auto x = reinterpret_cast<std::uint64_t>(transform);
     const auto c = reinterpret_cast<std::uint64_t>(collector);
     ++work.attempts;
+    // The live refusals had a different fifth argument. Do not consume a replay
+    // one-shot on that context; observation-only captures still retain it.
+    if (work.mode != "observe" && extra != collector)
+    { ++work.contextRejected; return false; }
     std::uint64_t shape{}, hits{}, table{};
     Vec3 start{};
     if (!Get(q + 0x28, shape) || !Sphere(shape)) return false;
@@ -127,7 +140,8 @@ void PrepareCopy(NativeCopy& copy)
 bool OriginalsIntact()
 {
     std::array<std::uint8_t, 0xA0> q{};
-    std::array<std::uint8_t, 0x40> xf{}, shape{};
+    std::array<std::uint8_t, 0x40> xf{};
+    std::array<std::uint8_t, 0x70> shape{}; // includes confirmed radius and packed margin fields
     std::array<std::uint8_t, 0x140> collector{};
     return Copy(work.addresses[0], q.data(), q.size()) &&
         Copy(work.addresses[1], xf.data(), xf.size()) &&
@@ -150,7 +164,8 @@ void RunControl()
         { work.controlStatus = "unknown-object-lifetime"; return; }
     std::uint64_t inner{}, filter{};
     std::array<std::uint8_t, 0xA0> liveQuery{};
-    std::array<std::uint8_t, 0x40> liveTransform{}, liveShape{};
+    std::array<std::uint8_t, 0x40> liveTransform{};
+    std::array<std::uint8_t, 0x70> liveShape{};
     if (!Get(work.world + 0xB70, inner) || inner != work.worldInner ||
         !Get(work.world + 0xBC0, filter) || filter != work.worldFilter ||
         !Copy(work.addresses[0], liveQuery.data(), liveQuery.size()) ||
@@ -198,7 +213,7 @@ std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* ext
     bool claimed = false;
     if (armed.load(std::memory_order_relaxed) && TryAcquireSRWLockExclusive(&mutex))
     {
-        if (work.phase == Phase::Waiting && GetTickCount64() - work.issued < 2000 && work.attempts < 512 && Capture(w, q, x, c, extra))
+        if (work.mode != "rayobserve" && work.phase == Phase::Waiting && GetTickCount64() - work.issued < 2000 && work.attempts < 512 && Capture(w, q, x, c, extra))
         {
             work.phase = Phase::Capturing;
             work.caller = reinterpret_cast<std::uint64_t>(_ReturnAddress());
@@ -222,6 +237,53 @@ std::uint64_t __fastcall ShapeHook(void* w, void* q, void* x, void* c, void* ext
     }
     return result;
 }
+bool CaptureRay(void* world, void* query, void* collector)
+{
+    ++work.attempts;
+    const auto w = reinterpret_cast<std::uint64_t>(world);
+    const auto q = reinterpret_cast<std::uint64_t>(query);
+    const auto c = reinterpret_cast<std::uint64_t>(collector);
+    // Bounded raw windows, NOT proven object extents. No collector callbacks,
+    // hit-pointer traversal, assumed positions or radius writes in this mode.
+    if (!Copy(q, work.snapshot.query.data(), 0x100) ||
+        !Copy(c, work.snapshot.collector.data(), 0x140) ||
+        !Get(w + 0xB70, work.worldInner) || !work.worldInner) return false;
+    work.world = w; work.addresses = {q, 0, c, 0};
+    work.thread = GetCurrentThreadId();
+    ULONG_PTR low{}, high{};
+    GetCurrentThreadStackLimits(&low, &high);
+    work.stackLow = low; work.stackHigh = high;
+    work.captured = GetTickCount64();
+    work.copied = true;
+    return true;
+}
+std::uint64_t __fastcall RayHook(void* world, void* query, void* collector)
+{
+    bool claimed = false;
+    if (armed.load(std::memory_order_relaxed) && TryAcquireSRWLockExclusive(&mutex))
+    {
+        if (work.mode == "rayobserve" && work.phase == Phase::Waiting &&
+            GetTickCount64() - work.issued < 2000 && work.attempts < 512 && CaptureRay(world, query, collector))
+        {
+            work.phase = Phase::Capturing;
+            work.caller = reinterpret_cast<std::uint64_t>(_ReturnAddress());
+            armed = false; claimed = true;
+        }
+        ReleaseSRWLockExclusive(&mutex);
+    }
+    const auto result = originalRay(world, query, collector); // exactly once, unmodified
+    if (claimed)
+    {
+        AcquireSRWLockExclusive(&mutex);
+        work.afterCopied = Copy(reinterpret_cast<std::uint64_t>(collector), work.collectorAfter.data(), 0x140);
+        work.rayQueryAfterCopied = Copy(reinterpret_cast<std::uint64_t>(query), work.rayQueryAfter.data(), work.rayQueryAfter.size());
+        work.returnValue = result;
+        work.controlStatus = work.afterCopied ? "observed-game-ray" : "unknown-ray-result-unreadable";
+        work.phase = Phase::Done;
+        ReleaseSRWLockExclusive(&mutex);
+    }
+    return result;
+}
 template<std::size_t N> bool Guard(std::uint64_t address, const std::array<std::uint8_t, N>& expected)
 {
     std::array<std::uint8_t, N> actual{};
@@ -236,9 +298,13 @@ template<std::size_t N> std::string Hex(const std::array<std::uint8_t, N>& bytes
 }
 void Save(const Work& done)
 {
+    const bool ray = done.mode == "rayobserve";
     const Json report{{"schemaVersion", 2}, {"pid", GetCurrentProcessId()}, {"requestId", done.id},
         {"processStartFileTime", processStart}, {"mode", done.mode}, {"reason", done.reason},
-        {"scope", "Private physics diagnostic; explicit replay/segment, NOT optical visibility"},
+        {"scope", "Private physics diagnostic; ray observation or bounded sphere replay, NOT optical visibility"},
+        {"primitive", ray ? "native-ray-observation" : "sphere"},
+        {"captureWindowBytes", {{"query", ray ? 0x100 : 0x200}, {"collector", ray ? 0x140 : 0x200},
+            {"transform", ray ? 0 : 0x100}, {"shape", ray ? 0 : 0x200}}},
         {"controlStatus", done.controlStatus ? done.controlStatus : "not-requested"},
         {"controlCalled", done.controlCalled}, {"controlMatched", done.controlMatched},
         {"segmentCalled", done.segmentCalled}, {"guardsIntact", done.guardsIntact}, {"callException", done.callException},
@@ -251,16 +317,20 @@ void Save(const Work& done)
         {"segmentRawResult", done.segmentCalled ? Json{{"count", Read<std::uint32_t>(done.segmentAfter, 0xC)},
             {"fraction", Read<double>(done.segmentAfter, 0x10)}, {"normal", Read<Vec3>(done.segmentAfter, 0x80)}} : Json(nullptr)},
         {"buildId", native_contract::BuildId}, {"executableSha256", Hex(native_contract::ExecutableSha256)},
-        {"moduleBase", base}, {"worldCastShapeRva", 0x42B0C50}, {"collectorVtableRva", 0x5D13528},
+        {"moduleBase", base}, {"worldCastShapeRva", 0x42B0C50}, {"collectorVtableRva", ray ? Json(nullptr) : Json(0x5D13528)},
+        {"capturedCollectorVtable", done.copied ? Json(Read<std::uint64_t>(done.snapshot.collector, 0)) : Json(nullptr)},
+        {"worldCastRayRva", 0x42B0B50},
         {"player", done.player},
         {"capturedTickMs", done.captured}, {"captureThread", done.thread}, {"world", done.world},
         {"worldInner", done.worldInner}, {"worldFilter", done.worldFilter},
         {"caller", done.caller}, {"returnValue", done.returnValue}, {"queryTransformCollectorShape", done.addresses},
         {"stackLow", done.stackLow}, {"stackHigh", done.stackHigh}, {"extraArgument", done.extra},
         {"extraArgumentEqualsCollector", done.copied && done.extra == done.addresses[2]},
-        {"candidates", {{"attempts", done.attempts}, {"sphere", done.spheres}, {"collector", done.collectors}, {"nearPlayer", done.nearPlayer}}},
+        {"candidates", {{"attempts", done.attempts}, {"sphere", done.spheres}, {"collector", done.collectors},
+            {"nearPlayer", done.nearPlayer}, {"contextRejected", done.contextRejected}}},
         {"templateCaptured", done.copied}, {"collectorAfterCaptured", done.afterCopied},
-        {"rawResult", done.afterCopied ? Json{{"count", Read<std::uint32_t>(done.collectorAfter, 0xC)},
+        {"rayQueryAfterCaptured", done.rayQueryAfterCopied}, {"rayQueryAfterHex", ray ? Json(Hex(done.rayQueryAfter)) : Json(nullptr)},
+        {"rawResult", done.afterCopied && !ray ? Json{{"count", Read<std::uint32_t>(done.collectorAfter, 0xC)},
             {"fraction", Read<double>(done.collectorAfter, 0x10)}, {"normal", Read<Vec3>(done.collectorAfter, 0x80)}} : Json(nullptr)},
         {"queryHex", Hex(done.snapshot.query)}, {"transformHex", Hex(done.snapshot.transform)},
         {"collectorBeforeHex", Hex(done.snapshot.collector)}, {"collectorAfterHex", Hex(done.collectorAfter)}, {"shapeHex", Hex(done.snapshot.shape)}};
@@ -298,7 +368,17 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory)
     if (MH_CreateHook(shapeTarget, ShapeHook, reinterpret_cast<void**>(&originalShape)) != MH_OK) return false;
     if (MH_EnableHook(shapeTarget) != MH_OK) { MH_RemoveHook(shapeTarget); return false; }
     enabled = true;
-    ch::Log("Physics probe v2 ready (private, idle). Explicit observe/replay/segment requests only; max 12 replay transactions per process.");
+    constexpr std::array<std::uint8_t, 24> rayHead{0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,
+        0x48,0x89,0x74,0x24,0x18,0x57,0x41,0x56,0x41,0x57,0x48,0x83,0xEC,0x30};
+    rayTarget = reinterpret_cast<void*>(base + 0x42B0B50);
+    if (Guard(base + 0x42B0B50, rayHead) &&
+        MH_CreateHook(rayTarget, RayHook, reinterpret_cast<void**>(&originalRay)) == MH_OK)
+    {
+        if (MH_EnableHook(rayTarget) == MH_OK) rayEnabled = true;
+        else MH_RemoveHook(rayTarget); // Never enabled, so no in-flight trampoline.
+    }
+    ch::Log("Physics probe v3 ready (private, idle). Ray observer=%s; explicit requests only; max 12 sphere replay transactions per process.",
+        rayEnabled.load() ? "ready" : "unavailable");
     return true;
 }
 void Poll()
@@ -349,8 +429,10 @@ void Poll()
             pending.segmentEnd = request.at("end").get<Vec3>();
         }
         if (pending.issued > now || now - pending.issued > 1000 || !Finite(pending.player) ||
-            (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment"))
+            (pending.mode != "observe" && pending.mode != "replay" && pending.mode != "segment" && pending.mode != "rayobserve"))
         { pending.reason = "invalid-or-stale-request"; Save(pending); return; }
+        if (pending.mode == "rayobserve" && !rayEnabled.load())
+        { pending.reason = "unknown-ray-observer-unavailable"; Save(pending); return; }
         pending.phase = Phase::Waiting;
         AcquireSRWLockExclusive(&mutex);
         work = pending;
@@ -362,11 +444,13 @@ void Poll()
 void Stop()
 {
     armed = false;
+    if (rayEnabled.exchange(false)) MH_DisableHook(rayTarget);
     if (enabled.exchange(false)) MH_DisableHook(shapeTarget);
     // Keep trampolines alive for any in-flight original call; module is pinned.
 }
 bool OwnsCodeAddress(std::uint64_t address)
 {
-    return enabled.load() && address >= base + 0x42B0C50 && address < base + 0x42B0C50 + 32;
+    return (enabled.load() && address >= base + 0x42B0C50 && address < base + 0x42B0C50 + 32) ||
+        (rayEnabled.load() && address >= base + 0x42B0B50 && address < base + 0x42B0B50 + 32);
 }
 }

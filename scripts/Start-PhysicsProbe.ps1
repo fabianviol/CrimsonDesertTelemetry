@@ -1,8 +1,10 @@
 #requires -Version 7.4
 # One explicit private request, then return immediately; never waits for the owner.
+# physics.3 rayobserve records ONE game-originated ray, not a camera/light test
+# and not a replay. No target selector in that mode; inspect raw layout first.
 [CmdletBinding()]
 param(
-    [ValidateSet('observe','replay','segment')][string]$Mode = 'observe',
+    [ValidateSet('observe','replay','segment','rayobserve')][string]$Mode = 'observe',
     # Segment target is an EXACT current filtered ManyLights sample. Its paired
     # camera supplies the start; never substitute the authored-light vector.
     [int]$LightSampleIndex = -1,

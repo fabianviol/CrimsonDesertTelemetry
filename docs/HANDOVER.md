@@ -1,5 +1,37 @@
 # Current: physics queries FIRST — 2026-09-25, Codex
 
+**Current checkpoint: physics.3 built, NOT installed/live-tested.** Owner closed
+PID 5468. Reused saved physics.2 captures: radius confirmed at shape+0x68,
+surface point at collector+0x90 (double3); all nine hits satisfy center ~= surface
++ radius * normal within 0.001 gu. Last four lantern tests used radius 0.1.
+One earlier test used 0.36157, so its shortened-vs-full comparison was confounded;
+corrected in the physics doc. Hit handle/subshape fields recovered; not lamp IDs.
+Full details and exact static artifacts: final sections of PHYSICS_QUERY_RESEARCH.
+
+New `Decode-PhysicsProbe.py` decodes retained sphere reports, not optical status.
+New native mode `rayobserve` records ONE ORIGINAL game ray at exact-guarded
+TtWorldCastRay RVA 0x42B0B50, with three original args/return preserved and raw
+query/collector before/after. No extra ray, radius change, pointer chasing or
+public visibility mutation. Captured ray is not yet linked to camera or a lamp.
+57 synthetic native checks, eight decoder tests, five focused CTest suites and
+ZIP payload/INI checks passed. Saved EXE matches the new ray-entry byte guard.
+
+Install WHOLE private ZIP via DMM (game already closed):
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.3-ModManagers.zip`
+SHA256 `384259FF7E79E99C0DD110541911FA44E650C9961F34AA18286E0CCC6BC1ADFD`.
+Expanded: `artifacts/mod-manager/v2.1.15-physics.3-20260925-211022-631-ec6beb29/CrimsonDesertTelemetry`.
+INI ready: PhysicsProbe=1; Ambient, SourceVisibility and spatial diagnostics OFF;
+normal telemetry/ManyLights/HUD ON. No install/publish/push performed.
+
+**One next step:** after owner installs and loads, verify deployed hash + log
+`Ray observer=ready`, then `scripts/Start-PhysicsProbe.ps1 -Mode rayobserve`.
+Read one report; it is raw layout evidence, NOT a light visibility result. If no
+native ray fires, preserve timeout and request a brief aim/interaction only on a
+subsequent owner turn; no background waiting/polling for input. Never replay a
+ray or transplant the sphere layout based on the three-argument wrapper alone.
+
+## Preserved evidence leading to physics.3 (earlier checkpoints)
+
 Owner explicitly deferred light switching in favor of unresolved occlusion.
 Read `docs/PHYSICS_QUERY_RESEARCH.md`; use World Builder's verified native-query
 route, not more SDF tolerance tuning. Working paired ManyLights remains the source.

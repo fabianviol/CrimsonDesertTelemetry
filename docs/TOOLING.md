@@ -255,7 +255,8 @@ requires 7.4 or newer.
 |---|---|
 | `Build-ModManagerPackage.ps1` | builds a package; `-IniOverrides @{...}` bakes research switches into private builds, refused for versions without a prerelease suffix |
 | `Start-SpatialProbe.ps1` | signals the plugin's capture event; ONE transaction series per process, including failures |
-| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1: default observe; physics.2 adds explicit `-Mode replay` and controlled `-Mode segment -GroundControl` / `-LightSampleIndex N`; returns immediately, no public visibility mutation |
+| `Start-PhysicsProbe.ps1` | private PhysicsProbe=1: default observe; physics.2 explicit replay/segment; use `-NearLightPosition @(x,y,z)` for same-frame paired source selection or `-GroundControl`; physics.3 adds `-Mode rayobserve` (one original native ray, NO extra cast); returns immediately |
+| `Decode-PhysicsProbe.py` | offline exact-build physics.2/3 sphere-report decoder: radius, surface contact, opaque hit handle/subshape selector, control checks; NEVER optical classification. Example: `--directory artifacts/light-research --pattern 'physics-*-5468-*.json' --out <fresh>.json` |
 | `Decode-SpatialReadback.py` | decodes a spatial capture; also hosts the shared `sample_world`, `select_clipmap` and `march_segment` helpers |
 | `Verify-NativeSampler.py` | compares the native sampler against the decoder on preserved captures |
 | `Verify-AmbientAnchors.py` | checks the hardcoded ambient hook RVAs in `ambient_probe.h` against a game executable, and derives the shift when an update moves them |

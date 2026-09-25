@@ -36,6 +36,12 @@ std::uint64_t __fastcall Original(void* w, void* q, void* xf, void* c, void* e)
     // Do not mutate shared synthetic arguments in concurrent pass-through test.
     return 0x123456789ABCDEF0ULL;
 }
+std::uint64_t __fastcall OriginalRay(void* w, void* q, void* c)
+{
+    ++calls;
+    if (w != worldBytes.data() || q != query.query.data() || c != query.collector.data()) ++badArgs;
+    return 0xFE123456789ABCDEULL;
+}
 void Setup()
 {
     work = {}; query = {}; calls = 0; badArgs = 0;
@@ -167,6 +173,8 @@ int main()
     Check(calls == 0, "missing lifetime rejects replay");
     SetupControl(); Put(query.query, 0x30, 99.f); RunControl();
     Check(calls == 0, "changed input rejects replay");
+    SetupControl(); Put(query.shape, 0x68, .5f); RunControl();
+    Check(calls == 0, "changed radius rejects replay");
     SetupControl(); mockMode = MockMode::Fault; RunControl();
     Check(replayFaulted && work.callException == 0xE001ABCD && !work.segmentCalled, "native fault disables future replay");
     calls = 0; RunControl(); Check(calls == 0, "fault latch prevents retry");
@@ -174,5 +182,37 @@ int main()
     Check(replayFaulted && !work.guardsIntact, "canary damage disables replay");
     SetupControl(); replayTransactions = 12; RunControl();
     Check(calls == 0, "per-process replay bound");
+    Setup(); work.mode = "segment";
+    ShapeHook(worldBytes.data(), query.query.data(), query.transform.data(), query.collector.data(), nullptr);
+    Check(!work.copied && work.contextRejected == 1 && calls == 1, "unsuitable fifth argument passed through without claiming replay");
+    Setup(); originalRay = OriginalRay; work.mode = "rayobserve";
+    Invoke();
+    Check(!work.copied && work.attempts == 0, "sphere hook cannot claim ray request");
+    calls = 0;
+    const auto rayReturn = RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Check(rayReturn == 0xFE123456789ABCDEULL && calls == 1 && badArgs == 0, "ray three-argument call and return preserved");
+    Check(work.copied && work.afterCopied && !work.controlCalled && !work.segmentCalled && replayTransactions == 0, "ray observation adds no query");
+    Check(!std::memcmp(work.snapshot.query.data(), query.query.data(), 0x100) &&
+        !std::memcmp(work.collectorAfter.data(), query.collector.data(), 0x140), "ray bounded owned snapshots");
+    Check(work.rayQueryAfterCopied && !std::memcmp(work.rayQueryAfter.data(), query.query.data(), 0x100), "ray query captured after original too");
+    Check(work.phase == Phase::Done && !armed && std::strcmp(work.controlStatus, "observed-game-ray") == 0, "ray one-shot completed");
+    Setup(); originalRay = OriginalRay; work.mode = "rayobserve";
+    RayHook(worldBytes.data(), nullptr, query.collector.data());
+    Check(!work.copied && calls == 1, "unreadable ray query passed through");
+    Setup(); originalRay = OriginalRay; work.mode = "rayobserve";
+    work.issued = GetTickCount64() - 3000;
+    RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Check(!work.copied && calls == 1, "expired ray request passed through");
+    Setup(); originalRay = OriginalRay; work.mode = "rayobserve";
+    threads.clear();
+    for (unsigned t = 0; t < 8; ++t) threads.emplace_back([] {
+        for (unsigned n = 0; n < 64; ++n) RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    });
+    for (auto& thread : threads) thread.join();
+    Check(calls == 512 && badArgs == 0 && work.attempts == 1 && work.copied && work.afterCopied, "concurrent ray originals preserved, one capture");
+    Check(replayTransactions == 0 && !work.segmentCalled, "concurrent ray observer never replays");
+    Setup(); originalRay = OriginalRay;
+    RayHook(worldBytes.data(), query.query.data(), query.collector.data());
+    Check(!work.copied && work.attempts == 0 && calls == 1, "ray hook cannot consume sphere observation");
     std::cout << checks << " physics observer synthetic checks passed; no live-game claim.\n";
 }

@@ -225,8 +225,11 @@ a measured universal sphere radius. Natural inherited mask/radius were unchanged
 First light full segment: camera (-10535.5684,613.0045,-4420.8491) to paired source
 (-10529.7480,611.4641,-4420.3008). Contact is about 0.56 gu before endpoint.
 Second target (-10536.1660,611.4647,-4413.7915), contact about 0.65 gu before end.
-Shortened first path misses. This localizes its collision to the endpoint vicinity;
-it does NOT identify the contacted object (fixture, character or nearby geometry).
+Shortened first path misses. CORRECTION from the later offline decode: the full
+first cast used radius 0.36157, the shortened cast 0.1. This was NOT a controlled
+endpoint-isolation pair and cannot establish that shortening alone removed the hit.
+The full cast itself places its center contact near the endpoint; it does NOT
+identify the contacted object (fixture, character or nearby geometry).
 No visually confirmed wall/clear pair yet. Do not mark the near-light contact as
 an occluded lamp or solve it with a universal 1-gu cutoff.
 
@@ -350,3 +353,72 @@ This does not establish that all bowls are unoccluded or all lantern contacts
 are their bars. No code/API/package change. Twelve replay transactions consumed;
 process guard now prevents further replay until restart. Next step is offline
 radius/hit-identity/filter analysis, no immediate owner action or restart needed.
+
+## Offline radius, surface point and collision identity — 2026-09-25
+
+Owner closed PID 5468. Reused saved EXE and reports only. New stdlib tool
+`scripts/Decode-PhysicsProbe.py` has eight synthetic tests and rejects unknown
+builds, wrong vtables, truncated bytes and failed controls. No-hit reports never
+decode stale hit payload; collision is never promoted to optical visibility.
+Saved result: `artifacts/light-research/physics-decoded-5468-20260925.json`.
+
+**Radius is now measured, not estimated from feet:** sphere constructor at
+RVA 0x42079E0 passes its float argument to base constructor 0x4286850, which writes
+it to shape+0x68. It sets sphere vtable RVA 0x530ACE8. The closest-hit collector
+method 0x39DBE20 copies a 0xA0-byte result to collector+0x80. The copied result has
+normal float3 at +0x80 and tile-local surface position double3 at +0x90; fraction
+double at +0xB0 also agrees with +0x10. Across ALL NINE successful hit reports:
+
+`start + fraction * delta ~= surfacePositionWorld + radius * normal`
+
+Residuals range from 0.0000104 to 0.000949 gu. Eight hit probes have radius 0.1;
+the first inside-lantern hit `a760c732...` has radius 0.3615695. All four open-side
+lantern comparisons have the SAME 0.1 radius; that comparison stands. Both no-hit
+segments (shortened and brazier) also have radius 0.1. Ground surface Y=609.156555
+versus player feet Y=609.156677 corroborates the coordinate conversion. Diameter
+0.2 can contact bars a thin ray would miss; this is not yet a measured ray result.
+
+**Hit identity is richer than a position but not yet object naming:** collector
+filter at RVA 0x39DB920 passes result+0x60/+0x70 (collector+0xE0/+0xF0) into resolver
+0x3A04DC0. It checks result+0x68 low24 against 0xFFFFFF. Resolver uses the second
+argument's high bits to select a child of a compound shape in one branch. Thus
+keep opaque 64-bit collision handle + raw body ID + subshape selector together,
+not a pointer guess or persistent lamp ID. No live resolver call was made.
+
+- Ground and both outside-wall hits share handle `0x80000000010007C8` but different
+  subshape selectors (0x6BFFFFFF / 0x39FFFFFF / 0x397FFFFF). A body can represent
+  aggregated world geometry, so ignoring an entire body could also ignore a wall.
+- Open-side hidden test-lamp hit and front visible-lamp hit share handle
+  `0x8000000002002219`, selectors 0x25FFFFFF / 0x07FFFFFF. Contact positions are
+  near that front fixture/post; this supports a foreground obstruction but does
+  not yet identify steel bars or mesh material.
+- Physics surface contact is NOT a renderer illumination sample. These queries
+  are camera-to-source, not rays emitted by the light in all directions.
+
+Static evidence (all under artifacts/light-research):
+`physics-radius-hit-static-20260925.json`, `physics-radius-layout-static-20260925.json`,
+`physics-hit-resolver-static-20260925.json`. The radius-derived helper at
+0x14428CAD0 is a jump to runtime code 0x155415340, not decoded by the unwind helper.
+Packed shape+0x6C/+0x6E fields are also initialized by the constructor. A one-float
+radius patch is therefore NOT established as a valid smaller-sphere constructor.
+
+## physics.3: observe an actual native ray, no replay
+
+Next bounded instrument adds `Start-PhysicsProbe.ps1 -Mode rayobserve` alongside
+the preserved sphere modes. It hooks the exact-byte-guarded TtWorldCastRay wrapper
+RVA 0x42B0B50, whose three arguments are verified by disassembly. One native call
+is observed with original args/return untouched. Query 0x100 and collector 0x140
+raw windows are copied before/after on that original thread; no additional ray,
+no guessed collector interpretation, no pointer traversal, no public API change.
+Captured query is not yet confirmed player-near or camera-to-light; owner/player
+snapshot provides context only. Timeout is unknown, not proof of no native rays.
+Reports mark primitive=native-ray-observation, rawResult=null, and report actual
+window sizes. Observe-only ray mode does not consume sphere replay budget.
+
+Sphere replay selection now skips unsuitable fifth-argument contexts before
+claiming its one-shot (observation mode still records them). Original sphere
+shape-preservation checks now include radius/packed fields through +0x70.
+No radius edits, ray replay, multi-ray visibility classifier or source-ID join.
+57 native synthetic checks and five focused CTest suites pass; eight decoder tests
+pass. New ray prologue guard also matches the saved exact EXE. Game validation of
+the new hook remains pending, distinct from the successful physics.2 controls.
