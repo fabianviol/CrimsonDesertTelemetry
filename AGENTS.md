@@ -2,13 +2,12 @@
 
 Documentation is for the assistants, not homework for the user.
 
-Current user priority (2026-09-25): investigate World Builder's native physics
-queries for the unresolved light-occlusion problem FIRST. Light switching is
-deferred. Read HANDOVER and docs/WORLD_BUILDER_RESEARCH.md; reuse existing SDF
-findings and the proven camera-paired ManyLights source. Earlier release STOP
-was superseded by the owner's explicit publish instruction. Preserve published
-packages and historical crash evidence. Source visibility remains EXPERIMENTAL
-and OFF by default; this task does not authorize unrelated fixes or a new release.
+Current user priority (2026-09-26): release 2.2.0 = all-around ManyLights input
+plus physics source visibility, ON by default in production (owner decision).
+Publish on GitHub only, and only after the owner live-confirms the exact ZIP.
+GitHub owner is now ZappendusterFX (formerly fabianviol). Light switching is
+deferred. Read HANDOVER first. Preserve published packages and historical crash
+evidence. This does not authorize unrelated fixes.
 
 1. Keep work scoped. Implement, test proportionately, save and stop. No unrelated cleanup.
 2. Reuse existing findings. On takeover check Git status and `docs/HANDOVER.md`; follow its relevant research links before new experiments.

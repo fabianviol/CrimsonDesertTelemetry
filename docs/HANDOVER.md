@@ -1,4 +1,40 @@
-# Current checkpoint — 2026-09-26, Claude: all-around engine lights integrated
+# Current checkpoint — 2026-09-26, Claude: release candidate 2.2.0 built, NOT published
+
+Owner asked for a new release after upstream.1 worked. Decisions (owner): version
+**2.2.0**; physics visibility is "DAS MAIN FEATURE von 2.2" -> production, ON by
+default; publish on **GitHub only**, after the owner live-tests the exact ZIP. The
+owner renamed the GitHub account to **ZappendusterFX**: origin now points to
+https://github.com/ZappendusterFX/CrimsonDesertTelemetry.git; current-facing texts
+use the new name, historical notes keep old links (GitHub redirects).
+
+- Code (27259c6): OFF compiles `physics_probe.cpp`; `[SourceVisibility] Enabled=1`
+  drives the continuous 9-ray fan (`Start` refuses non-continuous in OFF, manual
+  probe log is ON-only). OFF sets the SDF `sourceVisibility` path false. Physics
+  test target builds with `CDT_RESEARCH=1`. Template: Upstream=1, Enabled=1,
+  HideOccluded=0, Radius=100 (35 settings). Docs, changelog, `docs/releases/v2.2.0.md`,
+  packaged READMEs and description drafts updated. Nexus BBCode keeps a
+  `VALIDATION_PENDING` placeholder for the live/scan result (not for Nexus now).
+- Tests: managed 78/78 PASS; native CTest 34/34 on the exact package build
+  (`build/native-package-release`, `CDT_RESEARCH:BOOL=OFF`); package self-test,
+  expanded payload and ZIP payload PASS. ASI strings: "Light visibility
+  unavailable" and "ManyLights INPUT stream enabled" present, "Physics manual probe
+  ready" absent.
+- Package: `artifacts/mod-manager/CrimsonDesertTelemetry-v2.2.0-ModManagers.zip`
+  ZIP SHA256 `9DEACE1ACAA6E953FA72140E0C7A7A3C13CC4FDCE7708D703DAC130792F6C014`,
+  ASI `CDEAB32F8559A39803C70CE036F60B6B476A411BDDF58F4890A67D29BC866A98`.
+  Expanded: `artifacts/mod-manager/v2.2.0-20260926-173840-107-ce091b02/`.
+- Not done: live test of this exact ZIP, VirusTotal (upload needs owner OK),
+  `git push`, tag `v2.2.0`, GitHub release, GitHub About text (draft in
+  PUBLIC_DESCRIPTIONS.md). Local main is ahead of origin/main (fast-forward).
+
+**One next step:** owner closes the game, removes the upstream.1 package in DMM,
+deploys the exact 2.2.0 ZIP, and checks HUD/radar all around, a wall (blocked)
+and a lantern (clear), plus API `/v1/snapshot` schema 1.6. On "passt": push,
+tag v2.2.0 and create the GitHub release with the ZIP and `docs/releases/v2.2.0.md`.
+
+# Previous checkpoint — 2026-09-26, Claude: all-around engine lights integrated
+
+Owner result: the private 2.1.15-upstream.1 package below "Funktioniert Problemfrei".
 
 Owner asked to put the ManyLights-input findings into plugin and HUD, changing
 existing behaviour where sensible. **Implemented; NOT yet live-tested in the game.**
@@ -50,7 +86,7 @@ Radar should keep them as hollow rings, with the legend showing ENGINE LIGHTS.
 Check the native log for "ManyLights INPUT stream enabled" and no "INPUT unavailable"
 spam. End for owner action; do not poll.
 
-# Previous checkpoint — 2026-09-26, Claude: PIX question answered
+# Earlier checkpoint — 2026-09-26, Claude: PIX question answered
 
 **Codex's pending PIX question is answered OFFLINE; the requested PIX UI screenshot
 is not needed.** The complete access history of ManyLights input 213 was derived
