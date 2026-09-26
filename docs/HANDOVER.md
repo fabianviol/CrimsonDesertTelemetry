@@ -1,4 +1,18 @@
-# Current checkpoint — 2026-09-26, Claude: release candidate 2.2.0 built, NOT published
+# Current checkpoint — 2026-09-26, Codex: 2.2.0 PUBLISHED on GitHub
+
+Owner explicitly authorized publication after the exact-ZIP live test and scans.
+[GitHub release v2.2.0](https://github.com/ZappendusterFX/CrimsonDesertTelemetry/releases/tag/v2.2.0)
+is public, non-prerelease and latest, published 2026-09-26 16:57:22 UTC.
+Tag points to `31c88361fdbb54e29b6bd976f04ba4d9cc78541c`. Release ID397320736,
+asset ID591055272, ZIP905575bytes. GitHub's asset digest matches the tested ZIP:
+`9DEACE1ACAA6E953FA72140E0C7A7A3C13CC4FDCE7708D703DAC130792F6C014`.
+Unauthenticated public API verification confirmed release and asset. GitHub About
+now uses the prepared all-around lights / physics visibility description.
+Corrected smoothing fallback wording and full ZIP0/67 / ASI4/71 / Defender results
+are in the published release notes. No binary rebuild/repack; Nexus untouched.
+No release work remains for this request. Prior candidate checklist below is history.
+
+## Previous checkpoint — Claude: release candidate 2.2.0
 
 **Antivirus COMPLETE, Codex:** owner requested VirusTotal checking; exact ZIP
 and ASI submitted. ZIP: 0/67 detections (1 engine failure, 7 unsupported).
