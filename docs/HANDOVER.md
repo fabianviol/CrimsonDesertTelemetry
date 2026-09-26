@@ -1,5 +1,30 @@
 # Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
 
+**LATEST: input bounds + group semantics resolved offline on saved live pairs.**
+Use `groups.json` in each of the four pair directories, not full-capacity PI
+counts as current counts. PIX PSO475 reads SAME structure counter DWORD0 as
+input thread bound and DWORD1 as append/output count. This is NOT the separate
+producer/free-list counter from older research. Live pair bounds are2441/1641/
+1749/1833. A group header has signed int32 at+40=-2, +44=count; its next count
+records with color.w<0 are summed, not standalone lights. Group-member standalone
+threads skip when color.w<0 AND half(+46)<0. Header itself need not have PI marker.
+Rear bowl121 proximity hits =32 in current input bound +89 out-of-bound tail;
+two explicit16-member groups at headers1383/1570. Sum RGB, apply shader5% luminance
+channel floor then exact3x3 matrix -> output slots40/37, max errors1.925e-7/1.754e-8.
+L1 at front80 hits =16 current members +64 tail -> ONE group/contribution. Blue3
+=1 current standalone +2 tail. Shrine220 includes192 tail and28 matched current
+members belonging to TWO16-member groups (4 members outside proximity tolerance).
+All known front-facing lamp/glass output colors agree within4.41e-8; current
+groups/standalones persist with camera away even though output matches vanish.
+Tool `scripts/Analyze-ManyLightsInputGroups.py` +6 tests added; combined12 tests PASS.
+This is strong live agreement with the captured shader rules, NOT proof current
+shader bytecode is identical or all upstream records are product-ready. Exact
+group render-position uses additional constants/blue-noise selection; special
+negative RGB needs exposure constants (3 such prefix slots in front pair).
+Next: finish position/special-case handling or explicitly scoped derived semantics
+before wiring a new current upstream feed. No public API/plugin/HUD change yet;
+no more camera-turn tests needed for this finding. Do not dedup arbitrarily.
+
 Private `2.1.15-manylights.1` adds a bounded input/output snapshot at the EXISTING
 post-ProcessManyLights hook. No new hook, no public API change, no 360-coverage
 claim. Installed and first paired readback LIVE-validated in PID2252, started
@@ -19,9 +44,8 @@ legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
 Four requests consumed4 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
-directory. **Rotation comparison COMPLETE. Next: resolve which upstream input
-records are current/active and their conversion, using the saved pairs and
-existing producer/ProcessManyLights evidence. No more camera turns required now.**
+directory. **Rotation comparison and known-source group/color controls COMPLETE.
+Next follows the LATEST checkpoint above. No more camera turns required now.**
 Do not publish all PI candidates or replace raw output with retained history.
 Decode with `scripts/Decode-ManyLightsPair.py --input-space world` for this build;
 `--anchor NAME X Y Z` repeats. INPUT positions are already WORLD coordinates;

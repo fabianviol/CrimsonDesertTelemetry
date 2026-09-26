@@ -199,6 +199,58 @@ and explicit world-input decode. Next is bounded offline input validity and
 conversion analysis from saved pairs/known producer code, not another rotation
 or arbitrary restoration of output tails. No public feed changed.
 
+### Input bound and explicit group controls — 2026-09-26
+
+Bounded offline follow-up, all four saved PID2252 pairs, no additional game
+request. `Analyze-ManyLightsInputGroups.py` records results as `groups.json` in
+each pair directory;6 new tests plus6 pair-decoder tests pass.
+
+Captured PSO475 `ProcessManyLightsCS` provides specific rules:
+
+- Lines256-261: thread index must be below DWORD0 of bound
+  `g_structureCounterBufferUAV` (the SAME resource whose DWORD1 bounds output).
+  This is not the separate free-list/producer counter from older research.
+- Lines282-291: signed look.x at byte40 == -2 and clamped signed look.y at44 >0
+  denotes a header; following records form its group. Header has zero position
+  and need not carry the PI marker; a PI-only inventory misses the header.
+- Lines319-366: sum RGB/positions for group members with color.w<0; average the
+  positions. Subsequent loop uses constants, luminance-weighted selection and
+  blue noise to derive the final position/bounds. Do not substitute the mean
+  and claim it is the exact renderer position.
+- Lines574-582: ordinary member thread exits when color.w<0 and half at46<0.
+  Negative color.w alone does not mean dead: group headers consume these members.
+- Lines724-730/1086-1105: floor each channel at5% luminance then apply the literal
+  3x3 matrix. Special negative RGB follows an additional exposure branch not
+  implemented by this offline control.
+
+Live bound values in pair order1/2/3/4:2441/1641/1749/1833. Group counts52/18/25/27.
+Confirmed on the *specific rear bowl*, not the shrine:121 full-capacity position
+hits =32 within input bound +89 retained out-of-bound slots. Those32 belong to
+headers1383 and1570, each with16 members. Shader-rule color calculation:
+
+| Header | Summed input RGB | Paired output slot | Max absolute RGB error |
+| --- | --- | ---: | ---: |
+| 1383 | 1.635361195 /0.231083632 /0.004843412 | 40 | 1.925e-7 |
+| 1570 | 0.606457710 /0.090048455 /0.004302041 | 37 | 1.754e-8 |
+
+For front-facing pair2, every known lamp/glass contribution agrees within4.41e-8
+after this calculation. L1's80 position hits comprise16 current members +64 tail,
+forming ONE group. Other lanterns'79 comprise15 matched members +64 tail; their
+16th group member is outside the original0.45gu positional match. Shrine220
+comprises28 matched current members in TWO16-member groups +192 tail. Blue3
+comprises1 current standalone +2 tail; Twilight Glass has1 current standalone.
+Those groups/standalones remain in the input prefix with camera away, where their
+output matches disappear. Thus prior full-capacity counts are not active counts.
+
+Scope: numerical agreement establishes these rules for measured known sources,
+not full current shader identity, global completeness or every special branch.
+Pair2 has3 special negative-RGB prefix records, reported unsupported. The input
+position/count/color investigation is now substantially resolved for ordinary
+groups and singles. Remaining product work: exact group position (requires
+generation constants/noise or honestly specified derived position), special
+records and runtime integration. Keep renderer output as reference/selection
+stream; do not silently rename the input control as a finished light feed.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,
