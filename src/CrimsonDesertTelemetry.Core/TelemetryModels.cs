@@ -54,7 +54,9 @@ public sealed record EngineLightsSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? UnavailableReason = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    RenderLightsSnapshot? Rendered = null);
+    RenderLightsSnapshot? Rendered = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    UpstreamLightsSnapshot? Upstream = null);
 
 public sealed record EngineLightSnapshot(
     CameraVector3 Position,
@@ -127,3 +129,44 @@ public sealed record SourceVisibilitySnapshot(
 
 public sealed record RenderLightDiagnosticsSnapshot(
     int ActiveRecords, int PublishedRecords, int Malformed, int OutsideRadius);
+
+/// <summary>
+/// Current engine light records before the renderer's view selection, paired with the
+/// filtered output of the SAME capture (sequence, frame, camera, fence). Includes sources
+/// behind the camera. Not a persistent object registry: sample indices change per frame.
+/// </summary>
+public sealed record UpstreamLightsSnapshot(
+    string Status,
+    string Source,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ulong? CaptureSequence,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? FrameNumber,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? CapturedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AgeMilliseconds,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? InputRecords,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<UpstreamLightSnapshot>? Sources,
+    UpstreamLightDiagnosticsSnapshot Diagnostics,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UnavailableReason = null);
+
+/// <summary>
+/// One current light: a standalone record or an engine group (e.g. a fire's flame particles).
+/// A group position is the derived member mean, not the renderer's noisy per-frame choice.
+/// RendererSelected means THIS capture's filtered output contains the same contribution.
+/// </summary>
+public sealed record UpstreamLightSnapshot(
+    int SampleIndex,
+    string Type,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? MemberCount,
+    CameraVector3 Position,
+    CameraVector3 ColorLinear,
+    float LuminanceLinear,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CameraVector3? Direction,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] float? ConeHalfAngleDegrees,
+    bool RendererSelected,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RenderedSampleIndex,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SourceVisibilitySnapshot? SourceVisibility = null);
+
+public sealed record UpstreamLightDiagnosticsSnapshot(
+    int Groups, int GroupMembers, int Standalone, int GlobalRecords, int SkippedMemberRecords,
+    int SpecialExcluded, int ZeroColor, int Malformed, int OutsideRadius, int PublishedRecords,
+    int RendererSelected, int RenderedUnmatched);

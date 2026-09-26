@@ -11,6 +11,8 @@ if (args.Length != 0)
     }
     if (args.Length == 2 && args[0] == "--replay-sky") return SkyAmbientTests.Replay(args[1]);
     if (args.Length == 2 && args[0] == "--replay-camera-right") return CameraCopyReplay.Run(args[1]);
+    if (args.Length is 6 or 7 && args[0] == "--replay-manylights-pair")
+        return UpstreamLightTests.Replay(args[1], args[2], args[3], args[4], args[5], args.ElementAtOrDefault(6));
     Console.Error.WriteLine("Usage: tests [--physics-visibility | --replay-camera-right <private-trace.jsonl>]");
     return 2;
 }
@@ -60,6 +62,10 @@ var tests = new (string Name, Action Run)[]
     ("player-to-all-known-source visibility exchange", SourceVisibilityClientTests.ExchangeAndAttach),
     ("raw physics visibility, rapid camera orbit, provenance, freshness and raw preservation", PhysicsVisibilityTests.Exchange),
     ("render publication races preserve only the fresh complete capture", RenderLightReaderTests.PublicationRaces),
+    ("ManyLights input follows ProcessManyLightsCS group/skip/special/colour rules and pairs output", UpstreamLightTests.DecodeRules),
+    ("v4 bridge pairs input with its own sample and isolates input failures", UpstreamLightTests.BridgeProtocol),
+    ("input lights including behind-camera sources drive physics targets", UpstreamLightTests.PhysicsTargets),
+    ("configured input stream owns smoothing with honest coverage labels", UpstreamLightTests.Smoothing),
     ("smoothed local lights group/sum without mutating raw data", SmoothedLightTests.Grouping),
     ("smoothed local lights rate-independent EMA and spatial tracking", SmoothedLightTests.Smoothing),
     ("smoothed local lights fail closed and remove missing groups", SmoothedLightTests.Freshness),

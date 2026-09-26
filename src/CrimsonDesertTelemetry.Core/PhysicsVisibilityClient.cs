@@ -54,25 +54,41 @@ public sealed class PhysicsVisibilityClient : IDisposable
         var now = _now();
         ReadResponse(now);
         var rendered = input.Rendered;
+        var upstream = input.Upstream;
         if (rendered?.Status != "available" || rendered.Camera is null || rendered.Sources is null ||
             rendered.CaptureSequence is not > 0 || rendered.AgeMilliseconds is not >= 0 or > 250)
         {
             _cache.Clear();
-            return input with { Rendered = rendered is null ? null : rendered with
-                { Sources = rendered.Sources?.Select(s => s with { SourceVisibility = null }).ToArray() } };
+            return input with
+            {
+                Rendered = rendered is null ? null : rendered with
+                    { Sources = rendered.Sources?.Select(s => s with { SourceVisibility = null }).ToArray() },
+                Upstream = upstream is null ? null : upstream with
+                    { Sources = upstream.Sources?.Select(s => s with { SourceVisibility = null }).ToArray() }
+            };
         }
+        // The pre-selection input of the SAME capture covers sources behind the camera.
+        // Its derived group centre is the ray target; a paired filtered contribution
+        // reuses that result instead of chasing its noisy per-frame member position.
+        var current = upstream is { Status: "available", Sources: not null } &&
+            upstream.CaptureSequence == rendered.CaptureSequence ? upstream.Sources : null;
+        var renderedTarget = new Dictionary<int, CameraVector3>();
+        foreach (var light in current ?? [])
+            if (light.RenderedSampleIndex is { } index) renderedTarget[index] = light.Position;
         var camera = rendered.Camera.Position;
         var center = new CameraVector3(player.X, player.Y, player.Z);
         _cache.RemoveAll(e => now - Math.Max(e.Measured, e.LastRequested) > 5000);
         var targets = new List<CameraVector3>();
         // Match the HUD's player-centered sphere; rays still originate at the
         // paired camera. A third-person offset must not exclude edge markers.
-        foreach (var source in rendered.Sources.OrderBy(s => DistanceSquared(s.Position, center)))
+        var positions = (current?.Select(light => light.Position) ?? []).Concat(rendered.Sources
+            .Where(source => !renderedTarget.ContainsKey(source.SampleIndex)).Select(source => source.Position));
+        foreach (var position in positions.OrderBy(p => DistanceSquared(p, center)))
         {
-            if (DistanceSquared(source.Position, center) > _radiusSquared) continue;
-            if (targets.Any(p => DistanceSquared(p, source.Position) <= .01f)) continue;
+            if (DistanceSquared(position, center) > _radiusSquared) continue;
+            if (targets.Any(p => DistanceSquared(p, position) <= .01f)) continue;
             if (targets.Count == MaximumTargets) break;
-            targets.Add(source.Position);
+            targets.Add(position);
         }
         foreach (var position in targets)
             if (Find(position) is null && _cache.Count < MaximumTargets * 2) _cache.Add(new Entry(position));
@@ -108,8 +124,20 @@ public sealed class PhysicsVisibilityClient : IDisposable
                 Method, e?.Measured > 0 ? 9 : null, e?.Measured > 0 ? (int)e.Clear : null,
                 e?.Measured > 0 ? e.MeasurementSequence : null, e?.Measured > 0 ? e.Measured : null);
         }
-        return input with { Rendered = rendered with
-            { Sources = rendered.Sources.Select(s => s with { SourceVisibility = Resolve(s.Position) }).ToArray() } };
+        return input with
+        {
+            Rendered = rendered with
+            {
+                Sources = rendered.Sources.Select(s => s with { SourceVisibility = Resolve(
+                    renderedTarget.TryGetValue(s.SampleIndex, out var target) ? target : s.Position) }).ToArray()
+            },
+            Upstream = upstream is null ? null : upstream with
+            {
+                Sources = current is null
+                    ? upstream.Sources?.Select(s => s with { SourceVisibility = null }).ToArray()
+                    : current.Select(s => s with { SourceVisibility = Resolve(s.Position) }).ToArray()
+            }
+        };
     }
 
     private Entry? Find(CameraVector3 p) => _cache.Where(e => DistanceSquared(e.Position, p) <= .0144f)

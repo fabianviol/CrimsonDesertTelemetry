@@ -29,6 +29,7 @@ uint32_t AmbientSamplesForTest();
 void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path);
 void EnableSkyForTest();
 bool InitializePairForTest(const wchar_t* directory);
+bool InitializeUpstreamForTest();
 }
 // The smoke executable links only memory/log support from imported research.
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t) { return false; } }
@@ -100,8 +101,9 @@ int main(int argc, char** argv)
     const bool mixedTest=argc==2 && (std::string(argv[1])=="--sky-shared" || std::string(argv[1])=="--sky-first");
     const bool skyFirst=argc==2 && std::string(argv[1])=="--sky-first";
     const bool pairTest=argc==2 && std::string(argv[1])=="--manylights-pair";
+    const bool upstreamTest=argc==2 && std::string(argv[1])=="--upstream";
     ComPtr<ID3D12Debug> debug;
-    if(pairTest && SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) debug->EnableDebugLayer();
+    if((pairTest||upstreamTest) && SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) debug->EnableDebugLayer();
     ComPtr<IDXGIFactory4> factory; Hr(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory)),"factory");
     ComPtr<IDXGIAdapter> warp; Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)),"WARP");
     ComPtr<ID3D12Device> device; Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
@@ -177,11 +179,99 @@ int main(int argc, char** argv)
     std::array<uint8_t,0x900> owner{};
     std::array<uint8_t,16> holder{}; std::array<uint8_t,0x808> command{};
     Put(holder,8,reinterpret_cast<uint64_t>(list.Get())); Put(command,0x800,reinterpret_cast<uint64_t>(holder.data()));
-    Check(OpenBridge(),"bridge");
+    Check(OpenBridge(upstreamTest),"bridge");
     const auto mappingName=L"Local\\CrimsonDesertTelemetry.Render."+std::to_wstring(GetCurrentProcessId());
     HANDLE mapHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,mappingName.c_str());
-    const auto* bridge=static_cast<const Mapping*>(MapViewOfFile(mapHandle,FILE_MAP_READ,0,0,MappingBytes));
+    const auto* bridge=static_cast<const Mapping*>(MapViewOfFile(mapHandle,FILE_MAP_READ,0,0,
+        upstreamTest ? InputMappingBytes : MappingBytes));
     Check(bridge!=nullptr,"read bridge");
+    const auto validateDebugLayer=[&]
+    {
+        ComPtr<ID3D12InfoQueue> info;
+        if(!debug || FAILED(device.As(&info))) return;
+        for(UINT64 i=0;i<info->GetNumStoredMessages();++i)
+        {
+            SIZE_T bytes{}; info->GetMessage(i,nullptr,&bytes); std::vector<uint8_t> data(bytes);
+            auto* message=reinterpret_cast<D3D12_MESSAGE*>(data.data()); Hr(info->GetMessage(i,message,&bytes),"debug message");
+            if(message->Severity<=D3D12_MESSAGE_SEVERITY_ERROR)
+            { std::cerr<<message->pDescription<<'\n'; Check(false,"D3D12 validation error"); }
+        }
+    };
+    if(upstreamTest)
+    {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
+        Hr(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12,&options,sizeof(options)),"enhanced barriers query");
+        Check(options.EnhancedBarriersSupported,"enhanced barriers required for upstream test");
+        Check(bridge->header.version==InputVersion && bridge->header.totalBytes==InputMappingBytes &&
+            bridge->header.inputBytes==InputBytes && bridge->header.inputState==InputState::Unavailable,"input bridge ABI");
+        const auto directory=std::filesystem::absolute(L"upstream-smoke-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+        Check(std::filesystem::create_directory(directory),"upstream directory");
+        Check(InitializePairForTest(directory.c_str()),"pair control beside continuous input");
+        Check(InitializeUpstreamForTest(),"upstream control");
+        Check(!InitializeUpstreamForTest(),"duplicate upstream setup accepted");
+        std::array<uint8_t,0x200> inputInner{}; std::array<uint8_t,0x38> inputOuter{};
+        Put(inputInner,0xC0,RecordStride); Put(inputInner,0xC4,RecordCount);
+        Put(inputInner,0x168,reinterpret_cast<uint64_t>(source2.Get()));
+        Put(inputOuter,0x30,reinterpret_cast<uint64_t>(inputInner.data()));
+        Put(owner,PairInputOwnerOffset,reinterpret_cast<uint64_t>(inputOuter.data()));
+        // A distinctive input tail proves the full capacity is transported and that
+        // input bytes never enter the filtered output block.
+        barrier.Transition.pResource=source2.Get();
+        barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        list->ResourceBarrier(1,&barrier);
+        list->CopyBufferRegion(source2.Get(),LightBytes-RecordStride,counterUpload.Get(),0,RecordStride);
+        barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
+        barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        list->ResourceBarrier(1,&barrier);
+        InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase));
+        const auto capture=[&] { CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
+            reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data())); };
+        const auto eventName=L"Local\\CrimsonDesertTelemetry.ManyLightsPair."+std::to_wstring(GetCurrentProcessId());
+        HANDLE request=OpenEventW(EVENT_MODIFY_STATE,FALSE,eventName.c_str()); Check(request!=nullptr,"pair event");
+        const auto files=[&] { size_t count=0; for(const auto& entry:std::filesystem::directory_iterator(directory)) { (void)entry; ++count; } return count; };
+        SignalCaptureReady(); capture(); PollCapture();
+        CheckCapture(std::strcmp(CapturePhaseForTest(),"ready (no copy recorded)")==0,bridge,device.Get(),"upstream prepare");
+        ComPtr<ID3D12Fence> gate; Hr(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"upstream gate");
+        ID3D12CommandList* lists[]{list.Get()};
+        // Sample 1 has an invalid input layout and must keep only the filtered output.
+        // It also executes the legacy-state test setup: buffers decay to COMMON at
+        // the submission boundary, as the game's enhanced-barrier input always is.
+        // Sample 2 recovers; sample 3 additionally serves one explicit pair save.
+        for(uint32_t n=0;n<3;++n)
+        {
+            if(n>0) { Hr(allocator->Reset(),"upstream allocator reset"); Hr(list->Reset(allocator.Get(),nullptr),"upstream list reset"); }
+            Put(constants,0x20,uint32_t{100+n});
+            Put(inputInner,0xC0,n==0 ? uint32_t{4} : RecordStride);
+            if(n==2) { Check(SetEvent(request)!=FALSE,"pair request"); PollCapture(); }
+            capture();
+            Hr(list->Close(),"upstream close"); Hr(queue->Wait(gate.Get(),n+1),"upstream GPU block");
+            queue->ExecuteCommandLists(1,lists); PollCapture();
+            Check(bridge->header.sampleSequence==n,"upstream published before fence");
+            Hr(gate->Signal(n+1),"upstream GPU release");
+            WaitForSample(bridge,device.Get(),n+1,100+n,"upstream sample failed");
+            Check(memcmp(bridge->lights,light.data(),sizeof(light))==0 && bridge->lights[LightBytes-RecordStride]==0 &&
+                memcmp(bridge->counters,counterData.data(),CounterBytes)==0,"input polluted filtered output/counter");
+            if(n==0)
+            {
+                Check(bridge->header.inputState==InputState::Unavailable && bridge->header.inputResource==0,
+                    "invalid input layout was published as paired");
+                continue;
+            }
+            const auto* block=InputBlock(bridge);
+            Check(bridge->header.inputState==InputState::Paired &&
+                bridge->header.inputResource==reinterpret_cast<uint64_t>(source2.Get()) &&
+                memcmp(block,light.data(),sizeof(light))==0 &&
+                memcmp(block+LightBytes-RecordStride,counterData.data(),RecordStride)==0,"paired input bytes/provenance");
+        }
+        Check(files()==1,"pair request beside continuous input did not save exactly one file");
+        CheckSubmissions(); StopCapture(); CloseHandle(request);
+        validateDebugLayer();
+        Check(device->GetDeviceRemovedReason()==S_OK,"upstream device lost");
+        UnmapViewOfFile(bridge); CloseHandle(mapHandle); VirtualFree(fakeBase,0,MEM_RELEASE);
+        std::cout<<"ManyLights INPUT stream: v4 bridge, every-sample paired input on the same list/fence, invalid layout isolated to the input, recovery, pair save beside continuous input and D3D12 validation passed.\n";
+        return 0;
+    }
     if(pairTest)
     {
         D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
@@ -255,17 +345,7 @@ int main(int argc, char** argv)
                 memcmp(payload.data()+SceneBytes+PairCopyBytes-RecordStride,counterData.data(),RecordStride)==0,"pair bytes mismatch");
         }
         CheckSubmissions(); StopCapture(); start(); Check(files().size()==2,"stopped pair rearmed"); CloseHandle(request);
-        ComPtr<ID3D12InfoQueue> info;
-        if(debug && SUCCEEDED(device.As(&info)))
-        {
-            for(UINT64 i=0;i<info->GetNumStoredMessages();++i)
-            {
-                SIZE_T bytes{}; info->GetMessage(i,nullptr,&bytes); std::vector<uint8_t> data(bytes);
-                auto* message=reinterpret_cast<D3D12_MESSAGE*>(data.data()); Hr(info->GetMessage(i,message,&bytes),"debug message");
-                if(message->Severity<=D3D12_MESSAGE_SEVERITY_ERROR)
-                { std::cerr<<message->pDescription<<'\n'; Check(false,"D3D12 validation error"); }
-            }
-        }
+        validateDebugLayer();
         Check(device->GetDeviceRemovedReason()==S_OK,"pair device lost");
         std::cout<<"ManyLights pair: explicit bounded requests, invalid layout isolation, SRV round-trip, full input/output/counter/scene bytes, blocked GPU fences, repeated requests and unchanged public feed passed.\n";
         return 0;

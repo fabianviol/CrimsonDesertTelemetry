@@ -15,6 +15,7 @@ namespace
 {
 HANDLE mappingHandle{};
 Mapping* mapping{};
+bool inputMapped{};
 SRWLOCK publishLock = SRWLOCK_INIT;
 std::atomic<bool> sourceVisibilityEnabled{};
 struct PreparedVisibility
@@ -104,22 +105,26 @@ void SetSourceVisibilityEnabled(bool enabled)
 void SetBeforeVisibilityTraceForTest(void(*observer)()){beforeVisibilityTrace.store(observer);}
 #endif
 
-bool OpenBridge()
+bool OpenBridge(bool includeInput)
 {
     const auto name = L"Local\\CrimsonDesertTelemetry.Render." + std::to_wstring(GetCurrentProcessId());
-    mappingHandle = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, MappingBytes, name.c_str());
+    const uint32_t bytes = includeInput ? InputMappingBytes : MappingBytes;
+    mappingHandle = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, bytes, name.c_str());
     if (!mappingHandle) return false;
     // Never take over another producer's mapping, including duplicate ASI copies.
     if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(mappingHandle); mappingHandle = nullptr; return false; }
-    mapping = static_cast<Mapping*>(MapViewOfFile(mappingHandle, FILE_MAP_WRITE, 0, 0, MappingBytes));
+    mapping = static_cast<Mapping*>(MapViewOfFile(mappingHandle, FILE_MAP_WRITE, 0, 0, bytes));
     if (!mapping) { CloseHandle(mappingHandle); mappingHandle = nullptr; return false; }
+    inputMapped = includeInput;
     FILETIME created{}, exited{}, kernel{}, user{};
     GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
     BeginWrite();
     mapping->header.magic = Magic;
-    mapping->header.version = Version;
+    mapping->header.version = includeInput ? InputVersion : Version;
     mapping->header.headerBytes = sizeof(Header);
-    mapping->header.totalBytes = MappingBytes;
+    mapping->header.totalBytes = bytes;
+    mapping->header.inputBytes = includeInput ? InputBytes : 0;
+    mapping->header.inputState = includeInput ? InputState::Unavailable : InputState::Disabled;
     mapping->header.pid = GetCurrentProcessId();
     mapping->header.processStartFileTime = (static_cast<uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime;
     mapping->header.sceneBytes = SceneBytes;
@@ -148,10 +153,26 @@ void PublishStatus(Status state, uint32_t error, uint32_t flags)
     ReleaseSRWLockExclusive(&publishLock);
 }
 
+void PublishInputState(InputState state)
+{
+    if (!mapping || !inputMapped) return;
+    AcquireSRWLockExclusive(&publishLock);
+    BeginWrite();
+    mapping->header.inputState = state;
+    mapping->header.inputResource = 0;
+    EndWrite();
+    ReleaseSRWLockExclusive(&publishLock);
+}
+
 void PublishSample(const void* scene, const void* lights, const void* counters, uint64_t capturedTickMs,
-    uint64_t outputResource, uint64_t counterResource, uint64_t owner, uint32_t bufferIndex)
+    uint64_t outputResource, uint64_t counterResource, uint64_t owner, uint32_t bufferIndex,
+    const void* input, uint64_t inputResource, InputState inputState)
 {
     if (!mapping) return;
+    // An unpaired or absent input block is never published as this sample's.
+    if (!inputMapped) inputState = InputState::Disabled;
+    else if (inputState == InputState::Paired && (!input || !inputResource)) inputState = InputState::Unavailable;
+    else if (inputState == InputState::Disabled) inputState = InputState::Unavailable;
     AcquireSRWLockExclusive(&publishLock);
     const auto publishedTickMs = GetTickCount64();
     try
@@ -173,6 +194,14 @@ void PublishSample(const void* scene, const void* lights, const void* counters, 
     memcpy(mapping->lights, lights, LightBytes);
     memcpy(mapping->counters, counters, CounterBytes);
     memcpy(mapping->visibility, preparedVisibility.entries.data(), sizeof(mapping->visibility));
+    if (inputMapped)
+    {
+        // Readers ignore stale block bytes unless this sample marks them paired.
+        if (inputState == InputState::Paired)
+            memcpy(reinterpret_cast<uint8_t*>(mapping) + MappingBytes, input, InputBytes);
+        mapping->header.inputState = inputState;
+        mapping->header.inputResource = inputState == InputState::Paired ? inputResource : 0;
+    }
     ++mapping->header.sampleSequence;
     mapping->header.capturedTickMs = capturedTickMs;
     mapping->header.publishedTickMs = publishedTickMs;

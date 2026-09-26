@@ -339,7 +339,8 @@ int wmain(int argc, wchar_t** argv)
         const bool scRgb = scRgbNotices || (argc > 1 && (_wcsicmp(argv[1], L"--scrgb") == 0 || _wcsicmp(argv[1], L"--scrgb-all-ui") == 0));
         const bool noticesOnly = scRgbNotices || (argc > 1 && _wcsicmp(argv[1], L"--notices") == 0);
         const bool lightsOnly = argc > 1 && _wcsicmp(argv[1], L"--lights-only") == 0;
-        const bool lightsMode = allOn || lightsOnly || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
+        const bool engineLights = argc > 1 && _wcsicmp(argv[1], L"--engine-lights") == 0;
+        const bool lightsMode = allOn || lightsOnly || engineLights || (argc > 1 && _wcsicmp(argv[1], L"--lights") == 0);
         config.enabled = !noticesOnly && !lightsOnly;
         config.notifications = allOn || noticesOnly;
         config.lightOverlay = lightsMode;
@@ -438,6 +439,49 @@ int wmain(int argc, wchar_t** argv)
         MaintainGraphics();
         Require(std::string(GraphicsStatus()).find("Overlay ready") != std::string::npos,
             "HUD did not adopt the replacement swapchain");
+        if (engineLights)
+        {
+            // Engine-input view: the renderer's selection plus current lights it did
+            // not select (hollow), including sources behind the camera.
+            SetVisibleForTest(true); SetLightVisibleForTest(true);
+            const auto engineView = [&](float aspect)
+            {
+                auto view = LightFixture(aspect);
+                view.sample.schemaVersion = "1.6";
+                auto records = *view.sample.renderedLights.records;
+                records[0].memberCount = 16; records[6].memberCount = 16;
+                records[3].rendererSelected = false; records[5].rendererSelected = false;
+                const auto camera = *view.sample.cameraPosition;
+                for (int n = 0; n < 4; ++n)
+                {
+                    LightRecord behind{100 + n, Vec3{camera.x - 9 + 6 * n, camera.y + 1 - n * .5f, camera.z - 14 - 3 * n},
+                        Vec3{1.6f - .3f * n, .5f, .12f + .2f * n}, .7f, "point"};
+                    behind.rendererSelected = false; behind.memberCount = n % 2 ? 0 : 16;
+                    records.push_back(behind);
+                }
+                view.sample.upstreamLights = view.sample.renderedLights;
+                view.sample.upstreamLights.publishedRecords = static_cast<std::uint32_t>(records.size());
+                view.sample.upstreamLights.records = std::make_shared<const std::vector<LightRecord>>(std::move(records));
+                return view;
+            };
+            const auto engine = engineView(960.f / 720.f);
+            const auto engineImage = frame(false, argc > 2 ? argv[2] : nullptr, &engine, true);
+            const auto renderedImage = frame(false, nullptr, nullptr, true);
+            const float scale = HudScale(960, 720, config, true);
+            Require(engineImage.Different(renderedImage, static_cast<int>(36 * scale), static_cast<int>(138 * scale),
+                static_cast<int>(514 * scale), static_cast<int>(386 * scale)) > 20,
+                "Radar ignored current engine lights the renderer did not select");
+            Require(DisplayLights(engine, Clock::now(), config.staleMs) == &engine.sample.upstreamLights,
+                "Engine-input fixture was not the drawable set");
+            Check(chain->ResizeBuffers(3, 3840, 2160, swapchainFormat, 0));
+            MaintainGraphics();
+            const auto large = engineView(3840.f / 2160.f);
+            frame(false, argc > 3 ? argv[3] : nullptr, &large, true);
+            Check(gpu.device->GetDeviceRemovedReason());
+            std::cout << "PASS engine-input radar/markers: renderer-selected filled, unselected hollow, behind-camera lights drawn; synthetic WARP only\n";
+            DestroyWindow(window);
+            return 0;
+        }
         if (allOn)
         {
             // Exercise actual Present/Present1 with all three graphics features

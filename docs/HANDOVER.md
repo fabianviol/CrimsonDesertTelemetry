@@ -1,4 +1,56 @@
-# Current checkpoint — 2026-09-26, Claude
+# Current checkpoint — 2026-09-26, Claude: all-around engine lights integrated
+
+Owner asked to put the ManyLights-input findings into plugin and HUD, changing
+existing behaviour where sensible. **Implemented; NOT yet live-tested in the game.**
+
+- ASI: `[Lights] Upstream=1` (default) copies the full ManyLights INPUT with EVERY
+  filtered sample at the existing hook, same list and fence. It uses the verified
+  enhanced-barrier SRV round-trip and the same exact-build anchors as the pair
+  diagnostic (owner+0x628 load, binder bytes, build 25477059). Render MMF v4 = the
+  unchanged v3 prefix + input block, with header inputResource/inputState/inputBytes
+  at 160/168/172. A faulting input wrapper costs only that sample's input
+  (`ResolveInput` has its own SEH); refused anchors or enhanced barriers yield
+  inputState Refused. The pair diagnostic keeps working beside it (only a pending
+  SAVE is "busy").
+- Host: `UpstreamLightDecoder` applies the PSO475 rules and publishes
+  `lights.upstream` (schema 1.6). It reads the consumer DWORD0 bound, turns -2/count
+  groups into one summed light at the derived member mean, skips members as
+  standalone, excludes and counts special negative-RGB records (view-space x/y),
+  and applies the floor+matrix colour. `rendererSelected`/`renderedSampleIndex`
+  pair each light with this capture's filtered output by colour fingerprint plus a
+  position bound. Physics targets are now the input lights (behind the camera too),
+  and paired filtered contributions reuse their input light's result. The smoothed
+  feed uses the input exclusively when configured (new source/coverage labels).
+- HUD: prefers the fresh input (radar and markers all around), falls back to the
+  filtered output with the label "RENDERED ONLY / ENGINE INPUT UNAVAILABLE". Filled =
+  renderer-selected, hollow = current but not selected here (not OFF). Detail
+  cards show GROUP of N / SELECTED; the legend adds a coverage line; refused input
+  raises an error notice.
+- Validation: real PID2252 pairs replayed through the production decoder
+  reproduce Codex's results exactly. ABA headers 1462/1615 -> none -> 1360/1513;
+  1360 = RGB 2.0874570/0.6492280/0.1595906 -> output slot 4; 1770/1736/1770. Camp
+  facing: 110 lights, 97 selected, the 3 unmatched outputs = the 3 excluded
+  specials, so all 100 outputs are explained. Camp away: 109 lights, only 3 selected.
+  Tests: 34/34 CTest research AND production builds, including new
+  `manylights-upstream-d3d12` (WARP + debug layer) and `engine-lights-d3d12`;
+  managed suite plus 4 new tests; 160 Python tests; package self-test. Schema
+  accepts real output and rejects 5 negative controls (mini validator, scratch only).
+- Package (private, research, game CLOSED for DMM install):
+  `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-upstream.1-ModManagers.zip`,
+  ZIP SHA256 `B6864F3C31F2F5812F59680C4CE2610D201F1AFFA6ABC66BD31A3C89A1A1A185`,
+  ASI `32C1F895184C00A1BA76AE3FD240B3BF098261F1A354091829FE7FB678EB55DA`.
+  INI = manylights.1 values (PhysicsVisibility=1, ManyLightsPair=1, Radius=100,
+  HideOccluded=0) plus Upstream=1.
+
+Not established: live GPU cost of the second 1.5 MB copy per sample, CPU-side
+emitter/light culling before upload, per-light physics refresh with more targets,
+and HUD readability in dense scenes. **One next step:** the owner installs the whole
+ZIP via DMM with the game closed, then checks the camp: turn away from the lamps.
+Radar should keep them as hollow rings, with the legend showing ENGINE LIGHTS.
+Check the native log for "ManyLights INPUT stream enabled" and no "INPUT unavailable"
+spam. End for owner action; do not poll.
+
+# Previous checkpoint — 2026-09-26, Claude: PIX question answered
 
 **Codex's pending PIX question is answered OFFLINE; the requested PIX UI screenshot
 is not needed.** The complete access history of ManyLights input 213 was derived

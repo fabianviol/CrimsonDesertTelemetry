@@ -34,7 +34,7 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
     $rules = @{
         Server = @{ Enabled = 'bool'; Port = 'int:1024:65535'; SampleRateHz = 'int:1:240' }
         Notifications = @{ Enabled = 'bool'; DurationMilliseconds = 'int:5000:10000' }
-        Lights = @{ Enabled = 'bool'; NearbyRadius = 'int:1:100000'; ManyLights = 'bool'; ManyLightsSampleRateHz = 'int:1:60' }
+        Lights = @{ Enabled = 'bool'; NearbyRadius = 'int:1:100000'; ManyLights = 'bool'; ManyLightsSampleRateHz = 'int:1:60'; Upstream = 'bool' }
         Ambient = @{ Enabled = 'bool' }
         SourceVisibility = @{ Enabled = 'bool' }
         LightSmoothing = @{ TimeConstantMilliseconds = 'int:0:2000'; GroupRadius = 'number:0.01:1' }
@@ -124,6 +124,8 @@ function Assert-IniConfiguration([string]$Ini, [ValidateSet('production', 'resea
         foreach ($requiredKey in $rules[$requiredSection].Keys) {
             # Added in the physics diagnostic. Older research INIs default to OFF.
             if ($requiredSection -eq 'Research' -and $requiredKey -in @('PhysicsProbe','ManyLightsPair')) { continue }
+            # Added with the all-around input stream; older INIs use the native default.
+            if ($requiredSection -eq 'Lights' -and $requiredKey -eq 'Upstream') { continue }
             if (-not $sections[$requiredSection].ContainsKey($requiredKey)) { throw "Missing INI setting $requiredSection.$requiredKey." }
         }
     }
@@ -185,6 +187,7 @@ Enabled=0
 NearbyRadius=1
 ManyLights=0
 ManyLightsSampleRateHz=1
+Upstream=0
 [Ambient]
 Enabled=1
 [SourceVisibility]
@@ -277,6 +280,8 @@ ResultFile=inject_result.txt
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`nMaxLabels=1`n") 'production' } 'A duplicate key was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni + "`n[Server]`n") 'production' } 'A duplicate section was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Enabled=0', 'Enabled=true')) 'production' } 'A nonnumeric boolean was accepted.'
+    Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Upstream=0', 'Upstream=2')) 'production' } 'An invalid Upstream boolean was accepted.'
+    Assert-IniConfiguration ($productionIni -replace '(?m)^Upstream=0\r?\n', '') 'production'
     Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('Port=65535', 'Port=1023')) 'production' } 'An unsupported port was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('DetailsKey=255', 'DetailsKey=256')) 'production' } 'An unsupported keycode was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($productionIni.Replace('MaxLabels=0', 'MaxLabels=-1')) 'production' } 'A negative unsigned setting was accepted.'

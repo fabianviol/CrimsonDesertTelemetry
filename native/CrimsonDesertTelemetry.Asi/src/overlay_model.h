@@ -31,6 +31,11 @@ struct LightRecord
     std::optional<Vec3> direction;
     std::optional<float> coneHalfAngleDegrees;
     std::optional<SourceVisibility> sourceVisibility;
+    // Engine-input records only. False means the renderer did not select this light
+    // in THIS view (e.g. behind the camera); it is not OFF and not occluded.
+    bool rendererSelected = true;
+    // Number of engine group members (e.g. a fire's flame particles); 0 = standalone.
+    int memberCount{};
 };
 struct LightSummary
 {
@@ -70,6 +75,8 @@ struct Sample
     std::int64_t captureUs{};
     bool rediscovered{};
     LightSummary authoredLights, renderedLights;
+    // Current engine lights before view selection, same capture as renderedLights.
+    LightSummary upstreamLights;
 };
 struct View
 {
@@ -90,7 +97,7 @@ struct Config
 {
     bool enabled = false, visible = true, details = false, autoScale = true;
     bool notifications = false;
-    bool lightsExpected = false, renderedExpected = false;
+    bool lightsExpected = false, renderedExpected = false, upstreamExpected = false;
     bool lightOverlay = false, lightOverlayVisible = true, radar3D = true;
     bool showAmbient = true, occlusionTest = false, hideOccluded = false;
     int notificationDurationMs = 6000;
@@ -145,6 +152,10 @@ std::vector<std::vector<size_t>> GroupLightDetails(std::span<const LightRecord* 
 double AgeMs(const View& view, Clock::time_point now);
 bool IsLive(const View& view, Clock::time_point now, int staleMs);
 bool RenderedLightsLive(const View& view, Clock::time_point now, int staleMs);
+bool UpstreamLightsLive(const View& view, Clock::time_point now, int staleMs);
+// The drawable set: the all-around engine input when fresh, otherwise the
+// filtered renderer output, otherwise null. Both come from one capture.
+const LightSummary* DisplayLights(const View& view, Clock::time_point now, int staleMs);
 SourceVisibility CurrentSourceVisibility(const LightRecord& light, const View& view, Clock::time_point now);
 bool HideOccludedLight(const LightRecord& light,const View& view,Clock::time_point now,bool hideOccluded);
 void UpdateShortcutToggle(bool& value,bool& wasDown,int key,bool isDown,bool foreground);

@@ -96,7 +96,12 @@ void RunImpl(HANDLE stopEvent)
     ch::Log("Production build: Research, Console, Explorer and legacy OcclusionTest settings are inactive.");
 #endif
     const bool skyBridge = sky::OpenBridge();
-    if (!render::OpenBridge())
+    // The input block is part of the mapping's fixed size, so decide before opening.
+    const bool upstreamRequested = !earlyFailed &&
+        GetPrivateProfileIntW(L"Lights", L"Enabled", 0, iniPath.c_str()) != 0 &&
+        GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, iniPath.c_str()) != 0 &&
+        GetPrivateProfileIntW(L"Lights", L"Upstream", 1, iniPath.c_str()) != 0;
+    if (!render::OpenBridge(upstreamRequested))
     {
         ch::Log("Native bridge already owned or unavailable; instrumentation skipped.");
         overlay::SetLocalFault("native-capture", "Native telemetry bridge unavailable",
@@ -185,6 +190,8 @@ void RunImpl(HANDLE stopEvent)
         constexpr bool ambientProbe = false;
 #endif
         const bool streamSky = skyBridge && GetPrivateProfileIntW(L"Ambient", L"Enabled", 0, iniPath.c_str()) != 0;
+        if (upstreamRequested && !ambientProbe && !render::EnableUpstreamInput(ch::g_game.moduleBase))
+            ch::Log("ManyLights INPUT refused: exact-build input anchors did not verify; filtered output remains independent.");
         capturing = ambientProbe
             ? render::StartAmbientProbe(ch::g_game.moduleBase, std::filesystem::path(moduleDirectory).c_str())
             : render::StartCapture(ch::g_game.moduleBase, rate, streamSky);

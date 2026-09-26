@@ -41,6 +41,9 @@ public sealed class SmoothedLightProcessor
     private DateTimeOffset _sourceTime;
     private RenderedLightSnapshot[] _previousInput = [];
     private SmoothedLightGroup[] _previous = [];
+    private bool _upstream;
+    private string Source => _upstream ? "spatially-grouped-manylights-input" : "spatially-grouped-filtered-manylights";
+    private string Coverage => _upstream ? "current-engine-lights-before-view-selection" : "view-filtered-not-complete-360";
 
     public SmoothedLightProcessor(LightSmoothingOptions? options = null)
     {
@@ -54,8 +57,29 @@ public sealed class SmoothedLightProcessor
         return Envelope(now, null, null, null, null, null, reason);
     }
 
-    public SmoothedLightsSnapshot Process(RenderLightsSnapshot? input, DateTimeOffset now)
+    /// <summary>
+    /// Current pre-selection engine lights, including sources behind the camera. A
+    /// configured input stream is used exclusively: never a silent per-sample fallback
+    /// to the view-filtered output, whose different coverage would break tracking.
+    /// </summary>
+    public SmoothedLightsSnapshot ProcessUpstream(UpstreamLightsSnapshot input, DateTimeOffset now)
     {
+        SelectSource(true);
+        return Process(UpstreamLightDecoder.AsRendered(input, null), now, keepSource: true);
+    }
+
+    public SmoothedLightsSnapshot Process(RenderLightsSnapshot? input, DateTimeOffset now) =>
+        Process(input, now, keepSource: false);
+
+    private void SelectSource(bool upstream)
+    {
+        if (_upstream == upstream) return;
+        _upstream = upstream; _sequence = null; _previous = []; _previousInput = [];
+    }
+
+    private SmoothedLightsSnapshot Process(RenderLightsSnapshot? input, DateTimeOffset now, bool keepSource)
+    {
+        if (!keepSource) SelectSource(false);
         if (input?.Status != "available" || input.Sources is null)
             return Unavailable(input?.UnavailableReason ?? "rendered-lights-unavailable", now);
         if (input.CaptureSequence is not > 0 || input.FrameNumber is null || input.CapturedAt is not { } timestamp ||
@@ -144,8 +168,8 @@ public sealed class SmoothedLightProcessor
 
     private SmoothedLightsSnapshot Envelope(DateTimeOffset now, ulong? sequence, uint? frame,
         DateTimeOffset? captured, long? age, IReadOnlyList<SmoothedLightGroup>? groups, string? reason = null) =>
-        new("1.0", reason is null ? "available" : "unavailable", "spatially-grouped-filtered-manylights",
-            "view-filtered-not-complete-360", now, _options, sequence, frame, captured, age, groups, reason);
+        new("1.0", reason is null ? "available" : "unavailable", Source, Coverage,
+            now, _options, sequence, frame, captured, age, groups, reason);
     private static bool Valid(RenderedLightSnapshot light) => light.SampleIndex is >= 0 and < RenderLightReader.RawCount &&
         Finite(light.Position) && Finite(light.ColorLinear) && light.ColorLinear.X >= 0 && light.ColorLinear.Y >= 0 &&
         light.ColorLinear.Z >= 0 && float.IsFinite(light.LuminanceLinear) && light.LuminanceLinear >= 0 &&

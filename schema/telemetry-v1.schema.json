@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "sequence", "capturedAt", "game", "coordinateSystem", "capabilities", "player", "camera", "quality"],
   "properties": {
-    "schemaVersion": { "enum": ["1.1", "1.2", "1.3", "1.4", "1.5"] },
+    "schemaVersion": { "enum": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"] },
     "sequence": { "type": "integer", "minimum": 0 },
     "capturedAt": { "type": "string", "format": "date-time" },
     "game": {
@@ -104,13 +104,17 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "schemaVersion": { "enum": ["1.2", "1.3", "1.4", "1.5"] } }, "required": ["schemaVersion"] },
+      "if": { "properties": { "schemaVersion": { "enum": ["1.2", "1.3", "1.4", "1.5", "1.6"] } }, "required": ["schemaVersion"] },
       "then": { "required": ["lights"] },
       "else": { "not": { "required": ["lights"] } }
     },
     {
-      "if": { "properties": { "schemaVersion": { "enum": ["1.4", "1.5"] } }, "required": ["schemaVersion"] },
+      "if": { "properties": { "schemaVersion": { "enum": ["1.4", "1.5", "1.6"] } }, "required": ["schemaVersion"] },
       "then": { "properties": { "lights": { "required": ["rendered"] } } }
+    },
+    {
+      "if": { "properties": { "schemaVersion": { "enum": ["1.1", "1.2", "1.3", "1.4", "1.5"] } }, "required": ["schemaVersion"] },
+      "then": { "properties": { "lights": { "not": { "required": ["upstream"] } } } }
     }
   ],
   "$defs": {
@@ -139,6 +143,7 @@
         },
         "diagnostics": { "$ref": "#/$defs/engineLightDiagnostics" },
         "rendered": { "$ref": "#/$defs/renderLights" },
+        "upstream": { "$ref": "#/$defs/upstreamLights" },
         "unavailableReason": {
           "enum": ["unsupported-build", "walk-unavailable", "player-unavailable", "required-telemetry-unavailable", "game-stopped"]
         }
@@ -272,6 +277,95 @@
         "publishedRecords": { "type": "integer", "minimum": 0, "maximum": 32768 },
         "malformed": { "type": "integer", "minimum": 0, "maximum": 32768 },
         "outsideRadius": { "type": "integer", "minimum": 0, "maximum": 32768 }
+      }
+    },
+    "upstreamLights": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Current ManyLights INPUT: engine light records before the renderer's view-dependent selection, including sources behind the camera. Paired with lights.rendered of the SAME capture (sequence, frame, camera, GPU fence). Present only when the input stream is configured. Not a persistent registry: sampleIndex changes per frame.",
+      "required": ["status", "source", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable"] },
+        "source": { "const": "manylights-input" },
+        "captureSequence": { "type": "integer", "minimum": 1 },
+        "frameNumber": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "ageMilliseconds": { "type": "integer", "minimum": 0 },
+        "inputRecords": { "type": "integer", "minimum": 0, "maximum": 32768, "description": "Current input records at all distances (consumer structure counter DWORD0)." },
+        "sources": {
+          "type": "array",
+          "maxItems": 32768,
+          "items": { "$ref": "#/$defs/upstreamLight" }
+        },
+        "diagnostics": { "$ref": "#/$defs/upstreamLightDiagnostics" },
+        "unavailableReason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "available" } }, "required": ["status"] },
+          "then": {
+            "required": ["captureSequence", "frameNumber", "capturedAt", "ageMilliseconds", "inputRecords", "sources"],
+            "properties": { "ageMilliseconds": { "maximum": 500 } },
+            "not": { "required": ["unavailableReason"] }
+          },
+          "else": {
+            "required": ["unavailableReason"],
+            "not": { "required": ["sources"] }
+          }
+        }
+      ]
+    },
+    "upstreamLight": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One current light. type=group is an engine group, e.g. a fire's flame particles; its position is the DERIVED member mean, not the renderer's noisy per-frame member choice. colorLinear uses the renderer's own conversion, so a selected light equals its filtered contribution. rendererSelected=false is NOT off or occluded: the renderer did not select it in this view.",
+      "required": ["sampleIndex", "type", "position", "colorLinear", "luminanceLinear", "rendererSelected"],
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 0, "maximum": 32767 },
+        "type": { "enum": ["standalone", "group"] },
+        "memberCount": { "type": "integer", "minimum": 1, "maximum": 32767 },
+        "position": { "$ref": "#/$defs/vector3" },
+        "colorLinear": { "$ref": "#/$defs/vector3" },
+        "luminanceLinear": { "type": "number", "minimum": 0 },
+        "kind": { "enum": ["point", "spot"] },
+        "direction": { "$ref": "#/$defs/vector3" },
+        "coneHalfAngleDegrees": { "type": "number", "exclusiveMinimum": 0, "maximum": 90 },
+        "rendererSelected": { "type": "boolean" },
+        "renderedSampleIndex": { "type": "integer", "minimum": 0, "maximum": 32767 },
+        "sourceVisibility": { "$ref": "#/$defs/sourceVisibility" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "group" } }, "required": ["type"] },
+          "then": { "required": ["memberCount"] },
+          "else": { "not": { "required": ["memberCount"] } }
+        },
+        {
+          "if": { "properties": { "rendererSelected": { "const": true } }, "required": ["rendererSelected"] },
+          "then": { "required": ["renderedSampleIndex"] },
+          "else": { "not": { "required": ["renderedSampleIndex"] } }
+        }
+      ]
+    },
+    "upstreamLightDiagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "specialExcluded counts exposure-dependent negative-RGB records whose x/y the engine stores in view space; they are never published at a false world position. renderedUnmatched counts filtered contributions inside the radius without a paired input light.",
+      "required": ["groups", "groupMembers", "standalone", "globalRecords", "skippedMemberRecords", "specialExcluded",
+        "zeroColor", "malformed", "outsideRadius", "publishedRecords", "rendererSelected", "renderedUnmatched"],
+      "properties": {
+        "groups": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "groupMembers": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "standalone": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "globalRecords": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "skippedMemberRecords": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "specialExcluded": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "zeroColor": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "malformed": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "outsideRadius": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "publishedRecords": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "rendererSelected": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "renderedUnmatched": { "type": "integer", "minimum": 0, "maximum": 32768 }
       }
     },
     "engineLightDiagnostics": {

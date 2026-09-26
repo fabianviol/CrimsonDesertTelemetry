@@ -7,7 +7,19 @@ limits. This path remains experimental and is retained in private manylights.1.
 Current investigation is missing upstream light coverage, not a new physics
 classifier. See [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md).
 
-## Current private implementation — physics.10: configurable shared radius
+## Targets from the all-around engine input — 2026-09-26, Claude
+
+With `[Lights] Upstream=1`, physics targets are the paired `lights.upstream`
+lights (same capture sequence), so sources behind the camera are measured too.
+A group's target is its derived member mean. A filtered contribution paired with an
+input light (`renderedSampleIndex`) reports that light's result instead of chasing
+its noisy per-frame member position; unpaired filtered contributions remain their
+own targets. The classifier, the 9-ray fan, the 256-target cap, the 2 ms budget
+and the 500 ms expiry are unchanged. More lights in the radius can lower each
+light's refresh rate. Without an available paired input the previous rendered-only
+selection applies. Managed regression: `UpstreamLightTests.PhysicsTargets`.
+
+## Previous private implementation — physics.10: configurable shared radius
 
 `[LightOverlay] Radius` now controls both HUD views AND physics target selection,
 in a **player-centered** sphere, 1..500 game units. Rays still start at the actual

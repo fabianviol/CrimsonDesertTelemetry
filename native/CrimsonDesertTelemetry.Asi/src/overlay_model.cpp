@@ -160,9 +160,24 @@ SourceVisibility ReadSourceVisibility(const Json& value, const Json& capture)
         SourceVisibility result;result.reason="invalid-metadata";return result;
     }
 }
-LightRecord ReadLightRecord(const Json& value, const Json& capture)
+LightRecord ReadLightRecord(const Json& value, const Json& capture, const bool upstream)
 {
     LightRecord result;
+    if (upstream)
+    {
+        const auto& selected = value.at("rendererSelected");
+        if (!selected.is_boolean()) throw std::runtime_error("Invalid renderer selection");
+        result.rendererSelected = selected.get<bool>();
+        const auto type = value.at("type").get<std::string>();
+        if (type == "group")
+        {
+            const auto& members = value.at("memberCount");
+            if (!members.is_number_integer() || members < 1 || members > 32767)
+                throw std::runtime_error("Invalid group member count");
+            result.memberCount = members.get<int>();
+        }
+        else if (type != "standalone" || value.contains("memberCount")) throw std::runtime_error("Invalid light type");
+    }
     const auto& index = value.at("sampleIndex");
     if (!index.is_number_integer() || index < 0 || index >= MaximumRenderedRecords)
         throw std::runtime_error("Invalid optional light index");
@@ -195,7 +210,7 @@ LightRecord ReadLightRecord(const Json& value, const Json& capture)
         result.sourceVisibility=ReadSourceVisibility(value.at("sourceVisibility"),capture);
     return result;
 }
-LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered = false)
+LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered = false, bool upstream = false)
 {
     LightSummary result;
     try
@@ -225,7 +240,7 @@ LightSummary ReadLights(const Json& value, std::uint32_t maximum, bool rendered 
                 std::bitset<MaximumRenderedRecords> seen;
                 for (const auto& source : sources)
                 {
-                    auto record = ReadLightRecord(source,value);
+                    auto record = ReadLightRecord(source,value,upstream);
                     const auto index = static_cast<size_t>(record.sampleIndex);
                     if (seen.test(index)) throw std::runtime_error("Duplicate optional light index");
                     seen.set(index);
@@ -417,7 +432,7 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
         return true;
     });
     const auto schema = root.at("schemaVersion").get<std::string>();
-    if (schema != "1.1" && schema != "1.2" && schema != "1.3" && schema != "1.4" && schema != "1.5")
+    if (schema != "1.1" && schema != "1.2" && schema != "1.3" && schema != "1.4" && schema != "1.5" && schema != "1.6")
         throw std::runtime_error("Unsupported telemetry schema");
     const auto& axes = root.at("coordinateSystem");
     if (axes.at("upAxis") != "y" || axes.at("handedness") != "right" || axes.at("unit") != "game-unit")
@@ -436,6 +451,8 @@ Sample ParseSample(const std::string_view text, const std::chrono::system_clock:
         sample.authoredLights = ReadLights(lights, 8192);
         if (lights.is_object() && lights.contains("rendered"))
             sample.renderedLights = ReadLights(lights.at("rendered"), MaximumRenderedRecords, true);
+        if (lights.is_object() && lights.contains("upstream"))
+            sample.upstreamLights = ReadLights(lights.at("upstream"), MaximumRenderedRecords, true, true);
     }
     // Non-playing samples must not accidentally show coordinates from an older state.
     if (sample.state != "playing") return sample;
@@ -540,9 +557,10 @@ bool IsLive(const View& view, const Clock::time_point now, const int staleMs)
 {
     return view.connected && view.hasSample && AgeMs(view, now) <= staleMs && view.sample.state == "playing";
 }
-bool RenderedLightsLive(const View& view, const Clock::time_point now, const int staleMs)
+namespace
 {
-    const auto& lights = view.sample.renderedLights;
+bool LightsLive(const View& view, const LightSummary& lights, const Clock::time_point now, const int staleMs)
+{
     if (!IsLive(view, now, staleMs) || lights.status != "available" || !lights.records || !lights.ageMilliseconds ||
         !std::isfinite(*lights.ageMilliseconds) || *lights.ageMilliseconds < 0)
         return false;
@@ -550,6 +568,21 @@ bool RenderedLightsLive(const View& view, const Clock::time_point now, const int
     // transport and time in this client; its camera timestamp slightly predates
     // light decoding, so the resulting freshness bound is conservative.
     return *lights.ageMilliseconds + AgeMs(view, now) <= 500.0;
+}
+}
+bool RenderedLightsLive(const View& view, const Clock::time_point now, const int staleMs)
+{
+    return LightsLive(view, view.sample.renderedLights, now, staleMs);
+}
+bool UpstreamLightsLive(const View& view, const Clock::time_point now, const int staleMs)
+{
+    return LightsLive(view, view.sample.upstreamLights, now, staleMs);
+}
+const LightSummary* DisplayLights(const View& view, const Clock::time_point now, const int staleMs)
+{
+    if (UpstreamLightsLive(view, now, staleMs)) return &view.sample.upstreamLights;
+    if (RenderedLightsLive(view, now, staleMs)) return &view.sample.renderedLights;
+    return nullptr;
 }
 SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& view,const Clock::time_point now)
 {
@@ -559,14 +592,15 @@ SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& vi
     {
         result.status="unknown";result.reason=reason;result.attenuationFactor.reset();return result;
     };
-    if(!RenderedLightsLive(view,now,1000))return unknown("stale-source");
+    const auto* lights=DisplayLights(view,now,1000);
+    if(!lights)return unknown("stale-source");
     if(!result.volumeAgeMillisecondsAtCapture||!std::isfinite(*result.volumeAgeMillisecondsAtCapture)||
         *result.volumeAgeMillisecondsAtCapture<0)return unknown("invalid-metadata");
     // Include transport age as well as time spent in this view. This is a
     // conservative bound; metadata itself remains frozen with its capture.
     // Physics age already starts at native measurement completion. Adding the
     // unrelated GPU readback age again would prematurely expire this sample.
-    const double sourceAge=result.physicsSampled?0:*view.sample.renderedLights.ageMilliseconds;
+    const double sourceAge=result.physicsSampled?0:*lights->ageMilliseconds;
     if(*result.volumeAgeMillisecondsAtCapture+sourceAge+AgeMs(view,now)>(result.physicsSampled?500:1500))
         return unknown(result.physicsSampled?"stale-physics":"stale-volume");
     return result;
@@ -574,9 +608,10 @@ SourceVisibility CurrentSourceVisibility(const LightRecord& light,const View& vi
 SourceVisibilityCounts CountSourceVisibility(const View& view,const Clock::time_point now,const float radius)
 {
     SourceVisibilityCounts counts;
-    if(!RenderedLightsLive(view,now,1000)||!view.sample.playerPosition||!std::isfinite(radius)||radius<=0)return counts;
+    const auto* lights=DisplayLights(view,now,1000);
+    if(!lights||!view.sample.playerPosition||!std::isfinite(radius)||radius<=0)return counts;
     const auto player=*view.sample.playerPosition;
-    for(const auto& light:*view.sample.renderedLights.records)
+    for(const auto& light:*lights->records)
     {
         const Vec3 delta{light.position.x-player.x,light.position.y-player.y,light.position.z-player.z};
         if(Dot(delta,delta)>double{radius}*radius)continue;
@@ -619,12 +654,15 @@ bool AmbientLive(const View& view,const Clock::time_point now)
 std::string LightFeedStatus(const View& view, const Clock::time_point now, const int staleMs)
 {
     if (!IsLive(view, now, staleMs)) return Status(view, now, staleMs);
+    if (UpstreamLightsLive(view, now, staleMs)) return "LIVE ENGINE LIGHTS";
     const auto& lights = view.sample.renderedLights;
     if (lights.status == "not-reported") return "LIGHT FEED NOT REPORTED";
     if (lights.status == "invalid") return "INVALID LIGHT DATA";
     if (lights.status != "available") return "LIGHT DATA UNAVAILABLE";
     if (!RenderedLightsLive(view, now, staleMs)) return "STALE LIGHT DATA";
-    return "LIVE RENDERED LIGHTS";
+    // A configured all-around input that is not current must not look like success.
+    return view.sample.upstreamLights.status == "not-reported" ? "LIVE RENDERED LIGHTS"
+        : "RENDERED ONLY / ENGINE INPUT UNAVAILABLE";
 }
 std::string Status(const View& view, const Clock::time_point now, const int staleMs)
 {
@@ -666,8 +704,11 @@ NoticeState LightNotice(const LightSummary& light)
     if (reason == "bridge-missing")
         return {reason, {"Light capture is not connected",
             "Check that CrimsonDesertTelemetry.asi is loaded and light capture is enabled.", true}, NoticeState::Waiting};
+    if (reason == "input-refused" || reason == "input-invalid" || reason == "input-disabled")
+        return {"lights-input-" + reason, {"All-around light input is unavailable",
+            "The engine input did not verify for this build; only renderer-selected lights are shown. Check the native log.", true}};
     if (reason == "bridge-waiting" || reason == "bridge-stale" || reason == "bridge-changing" ||
-        reason == "walk-unavailable" || reason == "player-unavailable" ||
+        reason == "input-unavailable" || reason == "walk-unavailable" || reason == "player-unavailable" ||
         reason == "required-telemetry-unavailable" || reason == "game-stopped")
         return {"lights-waiting", {"Light capture has no fresh sample",
             "Restart Crimson Desert; check CrimsonDesertTelemetry.native.log if this continues.", true}, NoticeState::Waiting};
@@ -693,7 +734,8 @@ NoticeState NextNotice(const View& view, const Config& config, Clock::time_point
     // A concrete native/layout failure is actionable even during loading. A
     // missing or merely discovering feed is not a startup timeout or an error.
     for (const auto* light : {config.lightsExpected ? &view.sample.authoredLights : nullptr,
-        config.lightsExpected && config.renderedExpected ? &view.sample.renderedLights : nullptr})
+        config.lightsExpected && config.renderedExpected ? &view.sample.renderedLights : nullptr,
+        config.lightsExpected && config.renderedExpected && config.upstreamExpected ? &view.sample.upstreamLights : nullptr})
     {
         if (!light || light->status == "available" || light->status == "not-reported") continue;
         const auto problem = LightNotice(*light);
@@ -721,7 +763,8 @@ NoticeState NextNotice(const View& view, const Config& config, Clock::time_point
 
     std::optional<NoticeState> waiting;
     for (const auto* light : {config.lightsExpected ? &view.sample.authoredLights : nullptr,
-        config.lightsExpected && config.renderedExpected ? &view.sample.renderedLights : nullptr})
+        config.lightsExpected && config.renderedExpected ? &view.sample.renderedLights : nullptr,
+        config.lightsExpected && config.renderedExpected && config.upstreamExpected ? &view.sample.upstreamLights : nullptr})
     {
         if (!light) continue;
         if (light->status == "available") continue;

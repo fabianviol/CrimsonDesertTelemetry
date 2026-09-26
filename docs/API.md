@@ -4,8 +4,10 @@ The API carries raw light contributions, a separate [grouped and smoothed
 local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
 [ambient feed](AMBIENT_STREAM.md). Product versions, route versions and JSON
 schema versions are separate. Routes remain **v1**; the current development host
-uses schema **1.5** with lights enabled and **1.1** with lights disabled. Public
-production 2.1.11 also uses schema 1.5 but reports source visibility as disabled.
+uses schema **1.6** with lights enabled and **1.1** with lights disabled. Public
+production 2.1.11 uses schema 1.5 and reports source visibility as disabled.
+Schema 1.6 adds [`lights.upstream`](#current-engine-lights-before-view-selection-schema-16):
+all current engine lights, including those behind the camera.
 
 ## Current development scope — 2026-09-12
 
@@ -307,14 +309,15 @@ and successful CLI `snapshot`/`track` output. The following examples are synthet
 
 ### Envelope and availability
 
-All top-level fields in the 1.1 example are required. Schemas 1.2–1.5 additionally
-require `lights`; 1.4 and 1.5 also require `lights.rendered`. `vector3` below means an object
+All top-level fields in the 1.1 example are required. Schemas 1.2–1.6 additionally
+require `lights`; 1.4 to 1.6 also require `lights.rendered`. Only 1.6 may carry
+`lights.upstream`, and only when the input stream is configured. `vector3` below means an object
 with three required, finite JSON numbers: `x`, `y`, `z`. There are no string-encoded
 numbers, NaN values, addresses, process handles or memory blobs in this contract.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | string | `1.1` without lights or `1.5` with current development light telemetry. Stable 2.1.10 emits 1.4. Compare as strings/components, not floating-point numbers. |
+| `schemaVersion` | string | `1.1` without lights or `1.6` with current development light telemetry. Stable 2.1.10 emits 1.4, 2.1.11 emits 1.5. Compare as strings/components, not floating-point numbers. |
 | `sequence` | nonnegative integer | Publication counter in this host/command invocation, starting at zero. Not an engine frame number. It continues across game restarts if the same host survives, and resets when a new host starts. |
 | `capturedAt` | date-time string | Sampling timestamp with a UTC offset, currently emitted in UTC. Not an engine timestamp or time elapsed since game launch. |
 | `game.build` | string | Supported game's Steam build ID. |
@@ -336,6 +339,8 @@ Currently known capabilities:
   does not mean `lights.status` is currently `available`.
 - `lights.rendered`: this exact build has a supported native filtered-ManyLights bridge;
   require `lights.rendered.status == "available"` before consuming its sources.
+- `lights.upstream`: the bridge carries the paired ManyLights input (`[Lights] Upstream=1`);
+  require `lights.upstream.status == "available"` before consuming its sources.
 
 Important: `loading`/`stopped` messages still list the three base capabilities, but
 their `player`, `camera`, and `quality` fields are null. Capabilities alone are not
@@ -419,6 +424,50 @@ OFF from culling/unloaded sources; no generic enabled flag or permanent identity
 invented. Sun/sky, emissive surfaces and every other possible lighting path are not
 claimed covered. The unified native path is exact-build gated, unlike the basic
 player/camera compatibility resolver.
+
+### Current engine lights before view selection (schema 1.6)
+
+`lights.rendered` is what the renderer selected for the current view: its GPU pass
+tests range, frustum, depth (HiZ) and brightness first, so lights behind the camera
+or out of view are missing. `lights.upstream` is that pass's **input**, copied in the
+same command list and completed by the same fence as the rendered sample. It has
+the same `captureSequence`, `frameNumber`, `capturedAt` and `ageMilliseconds`, the
+same 500 ms freshness limit and the same player-centred `nearbyRadius`. Present only
+when `[Lights] Upstream=1`; exact-build input anchors are verified before use.
+
+Records are decoded with the engine shader's own rules. Only the consumer counter's
+current records are read, never the retained tail. An engine **group** (for
+example the flame particles of one fire bowl) becomes one light: its RGB is the
+member sum and its position the member mean. The renderer instead picks a noisy,
+brightness-weighted member each frame, so group positions are derived, not the
+renderer's exact choice. RGB uses the renderer's own 5% luminance floor and colour
+matrix, so a selected light equals its filtered contribution.
+
+| Light field | Meaning |
+|---|---|
+| `sampleIndex` | Header/record slot in this capture, **not an object ID**; slots change every frame. |
+| `type` | `group` or `standalone`. |
+| `memberCount` | Group members summed into this light (groups only). |
+| `position`, `colorLinear`, `luminanceLinear` | World position (group: member mean) and renderer-space RGB/luminance, as for rendered contributions. |
+| `kind`, `direction`, `coneHalfAngleDegrees` | As for rendered contributions. |
+| `rendererSelected` | Whether this capture's `lights.rendered` contains the same contribution. `false` is **not** OFF and not occluded: the renderer did not select it for this view. |
+| `renderedSampleIndex` | The paired `lights.rendered` `sampleIndex` when selected. |
+| `sourceVisibility` | As for rendered contributions. Physics targets are these lights, including behind the camera; a selected rendered contribution reports its input light's result. |
+
+`inputRecords` is the number of current input records at every distance. The
+diagnostics count groups and members, standalone and global records, member records
+skipped as standalone lights, zero-colour and malformed records, records outside the
+radius, published and renderer-selected lights, and `renderedUnmatched`: rendered
+contributions within the radius without an input partner. Records with negative
+RGB are exposure-dependent specials. The engine stores their x/y in view space, so
+they are **excluded** (`specialExcluded`) rather than published at a false position.
+Unavailable reasons include the rendered ones plus `input-unavailable` (not copied
+in this sample), `input-refused` (anchors or device support did not verify) and
+`input-invalid`. The input never makes `lights.rendered` unavailable.
+
+The feed covers every current record the GPU light pass receives; it is not a
+persistent lamp registry. Whether the engine skips distant emitters or lights before
+uploading them is not established.
 
 ```json
 {

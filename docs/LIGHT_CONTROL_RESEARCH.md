@@ -4,6 +4,9 @@
 "ManyLights input for off-screen coverage" and its completed ABA / bounded
 producer sections below; [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md)
 is the concise cold-start summary. The following object-control plan is historical.
+**Integrated since:** the input rules below now drive the product stream
+`lights.upstream` (private 2.1.15-upstream.1, not live-tested yet). Contract:
+[API.md](API.md), status and evidence: [HANDOVER.md](HANDOVER.md).
 
 Earlier entry: [WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md). Native
 create/enable, server gimmick and UUID-lookup leads now exist, with offline

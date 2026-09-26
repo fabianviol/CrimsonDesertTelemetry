@@ -76,9 +76,18 @@ bool pairRequested{};
 uint64_t pairRequestedAt{};
 uint32_t pairRuns{};
 ID3D12Resource* pendingInput{};
+bool pendingPairSave{};
 ManyLightsPairHeader pairHeader{};
 constexpr uint32_t PairRunLimit = 8;
-size_t CopyBytes() { return ambientMode ? AmbientBytes : pairEvent ? PairCopyBytes : LightBytes + CounterBytes; }
+// Continuous input requires enhanced buffer barriers on the prepared device.
+bool upstreamEnabled{}, upstreamRefused{}, enhancedBarriers{};
+uint64_t capturedInputResource{};
+InputState capturedInputState = InputState::Disabled;
+uint64_t inputUnavailableSamples{};
+size_t CopyBytes()
+{
+    return ambientMode ? AmbientBytes : pairEvent || upstreamEnabled ? PairCopyBytes : LightBytes + CounterBytes;
+}
 bool InitializePairControl(const wchar_t* directory)
 {
     if (pairEvent || readback || ambientMode || phase != Phase::Stopped) return false;
@@ -104,7 +113,9 @@ void PollPairRequest()
         phase == Phase::Submitting || phase == Phase::WaitingGpu;
     // A normal light/sky copy may already be in flight. Reserve the next free
     // transaction, but never queue another diagnostic behind a paired one.
-    if (!captureReady || !streamRunning || pendingInput || pairRequested || pairRuns >= PairRunLimit || error)
+    // With continuous input every transaction carries input; only a pending
+    // SAVE makes the diagnostic busy.
+    if (!captureReady || !streamRunning || pendingPairSave || pairRequested || pairRuns >= PairRunLimit || error)
     { ch::Log("ManyLights pair request refused: not ready, busy, faulted or limit reached; not queued."); return; }
     pairRequested = true; pairRequestedAt = GetTickCount64();
     ch::Log("ManyLights pair requested: next eligible frame, 5-second expiry.");
@@ -254,6 +265,29 @@ void Fail(uint32_t code)
     // References stay alive after a partial command recording or failed submit;
     // releasing them without a completion fence would itself be unsafe.
 }
+// The input wrapper is optional per sample. A fault while resolving it must
+// cost only this sample's input, never the proven filtered output stream.
+bool ResolveInput(uint64_t owner, uint64_t command, ID3D12Resource* source, ID3D12Resource* counter,
+    ID3D12GraphicsCommandList* list, ID3D12Resource*& input, ID3D12GraphicsCommandList7*& inputList)
+{
+    input = nullptr; inputList = nullptr;
+    __try
+    {
+        uint64_t inputOuter{};
+        ID3D12Resource* candidate{};
+        ID3D12GraphicsCommandList* resolvedList{};
+        IUnknown* inputDevice{};
+        bool valid = enhancedBarriers && Read(owner + PairInputOwnerOffset, inputOuter) &&
+            Resolve(inputOuter, command, candidate, resolvedList) && candidate != source && candidate != counter &&
+            resolvedList == list && SUCCEEDED(candidate->GetDevice(IID_PPV_ARGS(&inputDevice)));
+        if (inputDevice) { valid = valid && inputDevice == preparedDeviceIdentity; inputDevice->Release(); }
+        ID3D12GraphicsCommandList7* candidateList{};
+        if (!valid || FAILED(list->QueryInterface(IID_PPV_ARGS(&candidateList))) || !candidateList) return false;
+        input = candidate; inputList = candidateList;
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { input = nullptr; inputList = nullptr; return false; }
+}
 
 void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner, bool ambientCopy = false)
 {
@@ -304,26 +338,15 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     if (hasFrame && capturedFrame == lastFrame) return;
     ID3D12Resource* input{};
     ID3D12GraphicsCommandList7* inputList{};
-    if (!ambientCopy && pairRequested)
+    const bool saveRequested = !ambientCopy && pairRequested;
+    if (!ambientCopy && (upstreamEnabled || pairRequested))
     {
-        uint64_t inputOuter{};
-        ID3D12GraphicsCommandList* resolvedList{};
-        IUnknown* inputDevice{};
-        ID3D12Device* inputD3DDevice{};
-        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
-        const bool valid = Read(owner + PairInputOwnerOffset, inputOuter) &&
-            Resolve(inputOuter, command, input, resolvedList) && input != source && input != counter &&
-            resolvedList == list && SUCCEEDED(input->GetDevice(IID_PPV_ARGS(&inputDevice))) &&
-            inputDevice == preparedDeviceIdentity && SUCCEEDED(inputDevice->QueryInterface(IID_PPV_ARGS(&inputD3DDevice))) &&
-            SUCCEEDED(inputD3DDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options))) &&
-            options.EnhancedBarriersSupported && SUCCEEDED(list->QueryInterface(IID_PPV_ARGS(&inputList)));
-        if (inputD3DDevice) inputD3DDevice->Release();
-        if (inputDevice) inputDevice->Release();
-        if (!valid)
+        if (!ResolveInput(owner, command, source, counter, list, input, inputList))
         {
-            if (inputList) inputList->Release();
-            inputList = nullptr; input = nullptr;
-            ch::Log("ManyLights pair refused: input resource/list validation failed; normal stream continues.");
+            if (saveRequested) ch::Log("ManyLights pair refused: input resource/list validation failed; normal stream continues.");
+            if (upstreamEnabled && inputUnavailableSamples++ % 600 == 0)
+                ch::Log("ManyLights INPUT unavailable for this sample (%llu so far): wrapper/list validation failed; filtered output continues.",
+                    inputUnavailableSamples);
         }
         pairRequested = false;
     }
@@ -343,6 +366,10 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     pendingAmbient = ambientCopy;
     pendingInput = input;
     if (input) input->AddRef();
+    pendingPairSave = saveRequested && input;
+    capturedInputResource = reinterpret_cast<uint64_t>(input);
+    capturedInputState = upstreamEnabled ? (input ? InputState::Paired : InputState::Unavailable)
+        : upstreamRefused ? InputState::Refused : InputState::Disabled;
     capturedAt = now;
     // These identities belong to THIS recorded pair. Never resolve them again
     // when the worker publishes: the renderer may already have switched banks.
@@ -352,7 +379,7 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     capturedBufferIndex = UINT32_MAX;
     uint32_t currentIndex{};
     if (!ambientCopy && owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
-    if (input)
+    if (pendingPairSave)
     {
         ++pairRuns;
         pairHeader = {};
@@ -456,6 +483,17 @@ bool Prepare()
     hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
         D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
     if (SUCCEEDED(hr)) hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+    // The input's SRV access round-trip uses enhanced buffer barriers. Query the
+    // prepared device once; without support only the input is refused.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
+    enhancedBarriers = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options))) &&
+        options.EnhancedBarriersSupported;
+    if (upstreamEnabled && !enhancedBarriers)
+    {
+        upstreamEnabled = false; upstreamRefused = true;
+        PublishInputState(InputState::Refused);
+        ch::Log("ManyLights INPUT refused: device lacks enhanced barriers; filtered output continues.");
+    }
     // Obtain the real ExecuteCommandLists implementation from THIS source's
     // device, avoiding a wrong WARP/adapter/system-D3D12 function address.
     ID3D12CommandQueue* probeQueue{};
@@ -478,15 +516,15 @@ bool Prepare()
             reinterpret_cast<uint64_t>(discoverySource), discoverySource->GetDesc().Width,
             static_cast<unsigned>(props.Type), static_cast<unsigned>(heapHr), static_cast<unsigned>(queueType));
     }
-    else ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", intervalMs ? 1000 / intervalMs : 0u);
+    else ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter%s, submission fence; instrumented run.",
+        intervalMs ? 1000 / intervalMs : 0u, upstreamEnabled ? " + full INPUT" : "");
     return true;
 }
-}
-
-bool EnableManyLightsPair(uint64_t moduleBase, const wchar_t* directory)
+// Exact-build input anchors: owner+0x628 load and its SRV binder call. The outer
+// exact-EXE gate is still required in instruments::Run. Do not silently carry
+// this field/anchor to another profile/build; relocate and re-verify after updates.
+bool InputAnchorsVerified(uint64_t moduleBase)
 {
-    // The outer exact-EXE gate is still required in instruments::Run. Do not
-    // silently carry this experimental field/anchor to another profile/build.
     if (contract::BuildId != "25477059" || contract::HookRva != 0x3DA97DA || !CheckCapturePreflight(moduleBase)) return false;
     constexpr std::array<uint8_t, 7> expected{0x49,0x8B,0xB5,0x28,0x06,0,0};
     std::array<uint8_t, 7> bytes{};
@@ -494,9 +532,28 @@ bool EnableManyLightsPair(uint64_t moduleBase, const wchar_t* directory)
         return false;
     constexpr std::array<uint8_t, 12> bind{0x4C,0x8B,0xC6,0x48,0x8B,0xD0,0x48,0x8B,0xCB,0x41,0xFF,0xD2};
     std::array<uint8_t, 12> binding{};
-    if (!ch::mem::SafeRead(reinterpret_cast<void*>(moduleBase + 0x3DA94BC), binding.data(), binding.size()) || binding != bind)
+    return ch::mem::SafeRead(reinterpret_cast<void*>(moduleBase + 0x3DA94BC), binding.data(), binding.size()) &&
+        binding == bind;
+}
+}
+
+bool EnableManyLightsPair(uint64_t moduleBase, const wchar_t* directory)
+{
+    return InputAnchorsVerified(moduleBase) && InitializePairControl(directory);
+}
+
+bool EnableUpstreamInput(uint64_t moduleBase)
+{
+    if (upstreamEnabled || readback || ambientMode || phase != Phase::Stopped) return false;
+    if (!InputAnchorsVerified(moduleBase))
+    {
+        upstreamRefused = true;
+        PublishInputState(InputState::Refused);
         return false;
-    return InitializePairControl(directory);
+    }
+    upstreamEnabled = true; upstreamRefused = false;
+    ch::Log("ManyLights INPUT stream enabled: engine light records before view selection, copied with every filtered sample on the same list/fence.");
+    return true;
 }
 
 void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
@@ -780,12 +837,15 @@ void PollCapture()
                 else if (capturedAt && pendingAmbient)
                     sky::PublishSample(scene.data(), mapped, capturedAt, capturedOutputResource, ambientHeader.producerRva);
                 else if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
-                    capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex);
-                if (pendingInput)
+                    capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex,
+                    capturedInputState == InputState::Paired ? static_cast<const uint8_t*>(mapped) + PairInputOffset : nullptr,
+                    capturedInputResource, capturedInputState);
+                if (pendingPairSave)
                 {
                     if (capturedAt) SavePair(mapped);
                     else ch::Log("ManyLights pair discarded: camera changed during recording; no file saved.");
                 }
+                pendingPairSave = false;
                 const D3D12_RANGE noWrites{0,0};
                 readback->Unmap(0, &noWrites);
                 pendingSource->Release(); pendingSource = nullptr;
@@ -881,6 +941,13 @@ bool OwnsCodeAddress(uint64_t address)
 }
 #ifdef CDT_RENDER_CAPTURE_TEST
 bool InitializePairForTest(const wchar_t* directory) { return InitializePairControl(directory); }
+// Host-test-only: the synthetic module has no game code to verify anchors against.
+bool InitializeUpstreamForTest()
+{
+    if (upstreamEnabled || readback || ambientMode || phase != Phase::Stopped) return false;
+    upstreamEnabled = true;
+    return true;
+}
 // Host-test-only entry. Never compiled into the ASI; production always requires
 // the executable hash plus the exact callsite signature before installing hooks.
 void InitializeCaptureForTest(uint64_t moduleBase)

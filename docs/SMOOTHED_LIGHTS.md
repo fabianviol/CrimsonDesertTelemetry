@@ -23,9 +23,15 @@ latest-only queue. Enabling `[Lights] Enabled=1` is required for its source.
 
 ## Consumer contract
 
-Envelope fields: `schemaVersion`, `status` (`available`/`unavailable`), `source`
-(`spatially-grouped-filtered-manylights`), `coverage`
-(`view-filtered-not-complete-360`), `publishedAt`, `settings`.
+Envelope fields: `schemaVersion`, `status` (`available`/`unavailable`), `source`,
+`coverage`, `publishedAt`, `settings`. With `[Lights] Upstream=1` (default) the feed
+groups the all-around ManyLights input (`lights.upstream`, including lights behind
+the camera): `source` = `spatially-grouped-manylights-input`, `coverage` =
+`current-engine-lights-before-view-selection`. Engine groups such as a fire's flame
+particles already arrive as one summed light. That input then owns the feed: an
+unavailable input sample makes the smoothed feed unavailable instead of silently
+switching coverage. With `Upstream=0` the previous `spatially-grouped-filtered-manylights`
+/ `view-filtered-not-complete-360` feed is unchanged.
 Available data also includes `sourceCaptureSequence`, `sourceFrameNumber`,
 `capturedAt`, `ageMilliseconds`, `sources`. Unavailable data omits those fields
 and includes `unavailableReason`. An **available empty sources array is valid**.

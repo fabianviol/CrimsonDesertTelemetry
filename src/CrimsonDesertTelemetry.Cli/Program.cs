@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 const string baseSchemaVersion = "1.1";
-const string lightsSchemaVersion = "1.5";
+const string lightsSchemaVersion = "1.6";
 var capabilities = new[] { "player.position", "camera.transform", "camera.projection" };
 var coordinateSystem = new CoordinateSystemSnapshot("game-unit", "right", "y");
 var jsonOptions = new JsonSerializerOptions
@@ -630,7 +630,8 @@ TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, flo
     frame.Timestamp,
     new GameSnapshot(build, "playing"),
     coordinateSystem,
-    CapabilitiesFor(orientation, supportsLights, lights?.Rendered is not null && lights.Rendered.UnavailableReason != "unsupported-build"),
+    CapabilitiesFor(orientation, supportsLights, lights?.Rendered is not null && lights.Rendered.UnavailableReason != "unsupported-build",
+        lights?.Upstream is not null),
     new PlayerSnapshot(ToVector(player), orientation),
     ToCameraConsensus(new RenderCameraConsensus(
         frame.Camera, frame.ConsensusCopies, frame.ValidCopies, frame.DistinctStates)),
@@ -638,12 +639,14 @@ TelemetrySnapshot ToSnapshot(string build, long sequence, (float X, float Y, flo
         frame.Rediscovered, captureDurationMicroseconds),
     lights);
 
-IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation, bool supportsLights = false, bool supportsRendered = false)
+IReadOnlyList<string> CapabilitiesFor(PlayerOrientationSnapshot? orientation, bool supportsLights = false,
+    bool supportsRendered = false, bool supportsUpstream = false)
 {
     IEnumerable<string> result = capabilities;
     if (orientation is not null) result = result.Append("player.orientation");
     if (supportsLights) result = result.Append("lights.engine");
     if (supportsRendered) result = result.Append("lights.rendered");
+    if (supportsUpstream) result = result.Append("lights.upstream");
     return result.ToArray();
 }
 
@@ -862,8 +865,13 @@ sealed class RuntimeContext(
     {
         if (!LightOptions.Enabled) return null;
         var authored = Lights?.Capture(player, LightOptions.NearbyRadius) ?? UnsupportedLights();
-        var combined = authored with { Rendered = Rendered?.Capture(player, LightOptions.NearbyRadius)
-            ?? RenderLightReader.Unavailable("unsupported-build") };
+        // One bridge sample supplies both views, so they share sequence, camera and fence.
+        var capture = Rendered?.CaptureAll(player, LightOptions.NearbyRadius);
+        var combined = authored with
+        {
+            Rendered = capture?.Rendered ?? RenderLightReader.Unavailable("unsupported-build"),
+            Upstream = capture?.Upstream
+        };
         return PhysicsVisibility?.Apply(player, combined) ?? Visibility?.Apply(player, combined) ?? combined;
     }
 

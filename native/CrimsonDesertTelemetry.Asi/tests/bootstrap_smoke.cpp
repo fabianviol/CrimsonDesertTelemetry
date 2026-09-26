@@ -78,7 +78,7 @@ int wmain(const int argc, wchar_t** argv)
     const auto ini = directory / L"CrimsonDesertTelemetry.ini";
     const auto port = static_cast<unsigned short>(GetPrivateProfileIntW(L"Server", L"Port", 27311, ini.c_str()));
     const std::string schemaMarker = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str())
-        ? "\"schemaVersion\":\"1.5\"" : "\"schemaVersion\":\"1.1\"";
+        ? "\"schemaVersion\":\"1.6\"" : "\"schemaVersion\":\"1.1\"";
     if (std::filesystem::exists(directory / L"crimson-desert-telemetry.deps.json") ||
         std::filesystem::exists(directory / L"crimson-desert-telemetry.runtimeconfig.json"))
     {

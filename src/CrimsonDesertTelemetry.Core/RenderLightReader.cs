@@ -3,6 +3,10 @@ using System.Numerics;
 
 namespace CrimsonDesertTelemetry.Core;
 
+/// <summary>One bridge sample: the filtered renderer output and, when requested, the
+/// paired pre-selection ManyLights input of the same capture.</summary>
+public sealed record RenderCapture(RenderLightsSnapshot Rendered, UpstreamLightsSnapshot? Upstream);
+
 /// <summary>Consumes fenced, camera-paired samples from the unified in-process ASI.</summary>
 public sealed class RenderLightReader(int processId, long processStartFileTime) : IDisposable
 {
@@ -16,6 +20,9 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     public const int TotalBytes = CounterOffset + CounterBytes;
     public const int VisibilityEntryBytes = 8;
     public const int VisibilityTotalBytes = TotalBytes + RawCount * VisibilityEntryBytes;
+    // Version 4 appends the full-capacity INPUT after the unchanged version-3 mapping.
+    public const int InputOffset = VisibilityTotalBytes;
+    public const int InputTotalBytes = InputOffset + RawCount * Stride;
     public const long MaximumVisibilityAgeMilliseconds = 1500;
     public const long MaximumAgeMilliseconds = 500;
     private MemoryMappedFile? _mapping;
@@ -25,17 +32,20 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
     private long _retryAfter;
     private int _mappingBytes;
 
-    public RenderLightsSnapshot Capture((float X, float Y, float Z) player, float radius)
+    public RenderLightsSnapshot Capture((float X, float Y, float Z) player, float radius) =>
+        CaptureAll(player, radius).Rendered;
+
+    public RenderCapture CaptureAll((float X, float Y, float Z) player, float radius)
     {
         try
         {
             if (_view is null)
             {
-                if (Environment.TickCount64 < _retryAfter) return Unavailable("bridge-missing");
+                if (Environment.TickCount64 < _retryAfter) return new(Unavailable("bridge-missing"), null);
                 _mapping = MemoryMappedFile.OpenExisting($"Local\\CrimsonDesertTelemetry.Render.{processId}",
                     MemoryMappedFileRights.Read);
-                // Read the fixed header before choosing one of the two bounded
-                // layouts. Never trust a shared-memory length for allocation.
+                // Read the fixed header before choosing one of the bounded layouts.
+                // Never trust a shared-memory length for allocation.
                 using (var header = _mapping.CreateViewAccessor(0, HeaderBytes, MemoryMappedFileAccess.Read))
                     _mappingBytes = MappingSize(header.ReadUInt32(4), header.ReadUInt32(12));
                 _view = _mapping.CreateViewAccessor(0, _mappingBytes, MemoryMappedFileAccess.Read);
@@ -46,7 +56,7 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 if ((before & 1) != 0) continue;
                 Thread.MemoryBarrier();
                 if (_lastBytes is not null && before == _lastLock)
-                    return Decode(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
+                    return DecodeAll(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
                 var bytes = new byte[_mappingBytes];
                 if (_view.ReadArray(0, bytes, 0, bytes.Length) != bytes.Length)
                     throw new InvalidDataException("Truncated native render bridge.");
@@ -54,7 +64,7 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 var after = _view.ReadUInt64(16);
                 if (before != after || (after & 1) != 0 || BitConverter.ToUInt64(bytes, 16) != after)
                     continue;
-                var decoded = Decode(bytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
+                var decoded = DecodeAll(bytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
                 _lastBytes = bytes;
                 _lastLock = after;
                 return decoded;
@@ -62,21 +72,23 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
             // A writer in progress does not invalidate the preceding complete
             // capture. Reuse the existing one-capture cache, with its original
             // timestamp and the same 500 ms freshness limit, never partial bytes.
-            return _lastBytes is null ? Unavailable("bridge-changing") :
-                Decode(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
+            return _lastBytes is null
+                ? new(Unavailable("bridge-changing"), _mappingBytes == InputTotalBytes
+                    ? UpstreamLightDecoder.Unavailable("bridge-changing") : null)
+                : DecodeAll(_lastBytes, processId, processStartFileTime, Environment.TickCount64, player, radius);
         }
         catch (FileNotFoundException)
         {
             Reset();
             _retryAfter = Environment.TickCount64 + 500;
-            return Unavailable("bridge-missing");
+            return new(Unavailable("bridge-missing"), null);
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or
                                            ArgumentException or OverflowException)
         {
             Reset();
             _retryAfter = Environment.TickCount64 + 500;
-            return Unavailable("bridge-invalid");
+            return new(Unavailable("bridge-invalid"), null);
         }
     }
 
@@ -84,6 +96,10 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
         "unavailable", SourceName, null, null, null, null, null, null, new(0, 0, 0, 0), reason);
 
     public static RenderLightsSnapshot Decode(byte[] snapshot, int expectedPid, long expectedStartFileTime,
+        long nowTickMs, (float X, float Y, float Z) player, float nearbyRadius) =>
+        DecodeAll(snapshot, expectedPid, expectedStartFileTime, nowTickMs, player, nearbyRadius).Rendered;
+
+    public static RenderCapture DecodeAll(byte[] snapshot, int expectedPid, long expectedStartFileTime,
         long nowTickMs, (float X, float Y, float Z) player, float nearbyRadius)
     {
         if (snapshot.Length < HeaderBytes ||
@@ -102,8 +118,11 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
 
         var state = BitConverter.ToUInt32(snapshot, 28);
         if (state > 5) throw new InvalidDataException("Unknown native render bridge state.");
+        var upstreamRequested = snapshot.Length == InputTotalBytes;
+        RenderCapture Missing(string reason) =>
+            new(Unavailable(reason), upstreamRequested ? UpstreamLightDecoder.Unavailable(reason) : null);
         if (state != 1)
-            return Unavailable(state switch
+            return Missing(state switch
             {
                 0 => "bridge-waiting", 2 => "unsupported-build", 3 => "native-fault",
                 4 => "legacy-plugin-conflict", 5 => "game-stopped", _ => "bridge-invalid"
@@ -118,7 +137,7 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
         if (sequence == 0 || capturedTick < 0 || publishedTick < capturedTick || nowTickMs < publishedTick)
             throw new InvalidDataException("Invalid native render timing or sequence.");
         var age = nowTickMs - capturedTick;
-        if (age > MaximumAgeMilliseconds) return Unavailable("bridge-stale");
+        if (age > MaximumAgeMilliseconds) return Missing("bridge-stale");
 
         var scene = SceneConstantsDecoder.Decode(snapshot.AsSpan(HeaderBytes, SceneBytes).ToArray());
         if (scene.FrameNumber != BitConverter.ToUInt32(snapshot, 64))
@@ -165,39 +184,66 @@ public sealed class RenderLightReader(int processId, long processStartFileTime) 
                 outside++;
                 continue;
             }
-            var cone = H(record, 38);
-            string? kind = null;
-            float? halfAngle = null;
-            CameraVector3? direction = null;
-            if (cone == -1) kind = "point";
-            else if (float.IsFinite(cone) && cone > 0 && cone <= MathF.PI / 2)
-            {
-                kind = "spot";
-                halfAngle = cone * 180 / MathF.PI;
-                var look = new Vector3(H(record, 40), H(record, 42), H(record, 44));
-                if (float.IsFinite(look.X) && float.IsFinite(look.Y) && float.IsFinite(look.Z) &&
-                    Math.Abs(look.LengthSquared() - 1) <= .005f)
-                {
-                    look = Vector3.Normalize(look);
-                    direction = new CameraVector3(look.X, look.Y, look.Z);
-                }
-            }
-            var visibility = snapshot.Length == VisibilityTotalBytes
+            var (kind, direction, halfAngle) = DecodeKind(H(record, 38),
+                new Vector3(H(record, 40), H(record, 42), H(record, 44)));
+            var visibility = snapshot.Length >= VisibilityTotalBytes
                 ? DecodeVisibility(snapshot, index, publishedTick, sequence, camera.Position) : null;
             sources.Add(new RenderedLightSnapshot(index, world, rgb, luminance, kind, direction, halfAngle, visibility));
         }
-        return new RenderLightsSnapshot("available", SourceName, sequence, scene.FrameNumber,
-            DateTimeOffset.UtcNow.AddMilliseconds(-age), age,
+        var capturedAt = DateTimeOffset.UtcNow.AddMilliseconds(-age);
+        var rendered = new RenderLightsSnapshot("available", SourceName, sequence, scene.FrameNumber, capturedAt, age,
             new CameraSnapshot(camera.Position, camera.Up, camera.Right, camera.Forward,
                 camera.NearPlane, camera.FarPlane == float.MaxValue ? null : camera.FarPlane,
                 camera.FieldOfViewRadians * 180 / MathF.PI, camera.AspectRatio),
             sources, new(active, sources.Count, malformed, outside));
+        if (!upstreamRequested) return new(rendered, null);
+        // The optional input never invalidates the proven filtered output of this sample.
+        UpstreamLightsSnapshot upstream;
+        var inputResource = BitConverter.ToUInt64(snapshot, 160);
+        var inputState = BitConverter.ToUInt32(snapshot, 168);
+        if (BitConverter.ToUInt32(snapshot, 172) != RawCount * Stride)
+            upstream = UpstreamLightDecoder.Unavailable("input-invalid");
+        else if (inputState == 1)
+        {
+            try
+            {
+                if (inputResource == 0 || inputResource == BitConverter.ToUInt64(snapshot, 88) ||
+                    inputResource == BitConverter.ToUInt64(snapshot, 96))
+                    throw new InvalidDataException("Input resource is missing or aliases output/counter.");
+                upstream = UpstreamLightDecoder.Decode(snapshot.AsSpan(InputOffset, RawCount * Stride),
+                    BitConverter.ToUInt32(snapshot, CounterOffset),
+                    snapshot.AsSpan(HeaderBytes + SceneBytes, RawCount * Stride), validCount, camera.Position,
+                    player, nearbyRadius, sequence, scene.FrameNumber, capturedAt, age);
+            }
+            catch (InvalidDataException) { upstream = UpstreamLightDecoder.Unavailable("input-invalid"); }
+        }
+        else upstream = UpstreamLightDecoder.Unavailable(inputState switch
+        {
+            0 => "input-disabled", 2 => "input-unavailable", 3 => "input-refused", _ => "input-invalid"
+        });
+        return new(rendered, upstream);
+    }
+
+    /// <summary>Packed half cone at +38 (-1 point) and look direction at +40..+44.</summary>
+    internal static (string? Kind, CameraVector3? Direction, float? HalfAngleDegrees) DecodeKind(float cone, Vector3 look)
+    {
+        if (cone == -1) return ("point", null, null);
+        if (!float.IsFinite(cone) || cone <= 0 || cone > MathF.PI / 2) return (null, null, null);
+        CameraVector3? direction = null;
+        if (float.IsFinite(look.X) && float.IsFinite(look.Y) && float.IsFinite(look.Z) &&
+            Math.Abs(look.LengthSquared() - 1) <= .005f)
+        {
+            look = Vector3.Normalize(look);
+            direction = new CameraVector3(look.X, look.Y, look.Z);
+        }
+        return ("spot", direction, cone * 180 / MathF.PI);
     }
 
     private static int MappingSize(uint version, uint totalBytes) => (version, totalBytes) switch
     {
         (2, TotalBytes) => TotalBytes,
         (3, VisibilityTotalBytes) => VisibilityTotalBytes,
+        (4, InputTotalBytes) => InputTotalBytes,
         _ => throw new InvalidDataException("Unsupported native render bridge layout.")
     };
 

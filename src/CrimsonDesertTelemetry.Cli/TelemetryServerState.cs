@@ -137,9 +137,13 @@ internal sealed class TelemetryServerState(JsonSerializerOptions jsonOptions, in
         {
             _latest = snapshot;
             _latestBytes = bytes;
-            _smoothed = snapshot.Game.State == "playing"
-                ? _smoother.Process(snapshot.Lights?.Rendered, DateTimeOffset.UtcNow)
-                : _smoother.Unavailable(snapshot.Game.State, DateTimeOffset.UtcNow);
+            // Present Upstream means the input stream is configured; it then owns the
+            // smoothed feed, including when a sample is unavailable.
+            _smoothed = snapshot.Game.State != "playing"
+                ? _smoother.Unavailable(snapshot.Game.State, DateTimeOffset.UtcNow)
+                : snapshot.Lights?.Upstream is { } upstream
+                    ? _smoother.ProcessUpstream(upstream, DateTimeOffset.UtcNow)
+                    : _smoother.Process(snapshot.Lights?.Rendered, DateTimeOffset.UtcNow);
             _health = _health with
             {
                 Status = snapshot.Game.State,

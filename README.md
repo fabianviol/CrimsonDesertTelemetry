@@ -135,6 +135,7 @@ DurationMilliseconds=6000
 ```
 
 - `[Lights] Enabled=0` disables both authored and rendered light feeds. `ManyLights=0` disables only the native GPU light capture.
+- `[Lights] Upstream=1` (default) also captures the renderer's light **input** with every sample: all current engine lights, including behind the camera. HUD, radar, visibility and smoothing then use it; `0` keeps only the view-filtered output.
 - `[Ambient] Enabled=1` enables the separate sky/ambient path and requires native ManyLights capture.
 - `NearbyRadius` controls the API's player-centered light radius; `LightOverlay.Radius` controls both light views. Distances are **game units**, not a claimed metre conversion.
 - Disable **Overlay, LightOverlay and Notifications** to skip all UI hooks/client. The server and light capture have their own switches.
@@ -187,7 +188,7 @@ Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 ```
 
 Product versions and API versions are separate: routes remain **HTTP API v1**.
-The current source uses snapshot schema **1.5** with lights enabled and reports
+The current source uses snapshot schema **1.6** with lights enabled and reports
 the default-off experimental visibility capability as disabled. With lights disabled it remains
 **1.1**. Optional per-light
 metadata adds no route and changes no original RGB values. Clients should check
@@ -195,6 +196,7 @@ capability/status fields and freshness instead of assuming every source is alway
 
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
+- `lights.upstream.sources` (schema 1.6, `Upstream=1`) contains every current engine light from the same capture before the renderer's view selection, including behind the camera. Fire bowls arrive as one summed group; `rendererSelected` marks lights that are also in `lights.rendered`.
 - With the default INI, rendered `sourceVisibility` stays `unknown` / `disabled`.
   Opting in can attach experimental camera-to-source results to rendered records.
   Research schema 1.5 separately supports player-to-source results on authored and
@@ -242,10 +244,10 @@ The report **does not enable an unknown build**. Historical basic-telemetry layo
 
 Important boundaries:
 
-- This is current **filtered renderer data**, not a complete registry of every visible light. Sun, sky, emissive surfaces and every possible effect are not all covered.
+- `lights.rendered` is current **filtered renderer data**. `lights.upstream` covers every current record the GPU light pass receives, but is not a persistent lamp registry either. Sun, sky, emissive surfaces and every possible effect are not all covered.
 - A missing contribution is **not** a permanent physical OFF state. Stable lamp IDs, physical lumens and validated light ranges are not supplied.
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
-- The radar can show behind-camera contributions still present in the feed, but is **not** a complete 360-degree registry.
+- With `Upstream=1` the radar shows all current engine lights around the player: filled dots are renderer-selected, hollow rings are current lights the renderer did not select in this view (not OFF). Without it, the radar only shows what the renderer selected.
 - Markers can include lights behind geometry. The optional rendered-source verdict and F11 filter are experimental and off by default; they do not establish correct candles, lamps, all known sources or complete 360-degree coverage. Fast motion can expose capture/projection latency.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.

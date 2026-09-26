@@ -166,26 +166,31 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
     }
     const ImVec2 center = ground(0,0);
     const auto now = Clock::now();
-    const bool lightLive = RenderedLightsLive(view,now,config.staleMs);
+    const auto* lights = DisplayLights(view,now,config.staleMs);
+    const bool lightLive = lights != nullptr;
+    const bool engineInput = lights == &view.sample.upstreamLights;
+    size_t inRange = 0, selectedInRange = 0;
     const float frustumLength = radius*.4f;
     const auto frustum = sample.playerPosition ? BuildCameraFrustum(sample,frustumLength) : std::nullopt;
     if (sample.playerPosition)
     {
-        if (lightLive && sample.renderedLights.records)
+        if (lightLive && lights->records)
         {
-            struct Dot { ImVec2 base, tip; ImU32 color, halo; };
+            struct Dot { ImVec2 base, tip; ImU32 color, halo; bool selected; };
             std::vector<Dot> dots;
             const size_t markerLimit = static_cast<size_t>(std::clamp(config.lightMaxMarkers,1,2048));
-            dots.reserve(std::min(sample.renderedLights.records->size(),markerLimit));
-            for (const auto& light : *sample.renderedLights.records)
+            dots.reserve(std::min(lights->records->size(),markerLimit));
+            for (const auto& light : *lights->records)
             {
                 if (DistanceSquared(light.position,*sample.playerPosition) > radius*radius) continue;
+                ++inRange; if (light.rendererSelected) ++selectedInRange;
                 if(HideOccludedLight(light,view,now,config.hideOccluded))continue;
+                if (dots.size() >= markerLimit) continue;
                 const auto delta = relative(light.position);
                 const bool blocked=CurrentSourceVisibility(light,view,now).status=="blocked";
                 dots.push_back({ground(delta.x,delta.z),project(delta),
-                    LightColor(light.colorLinear,blocked?90:255),LightColor(light.colorLinear,blocked?15:40)});
-                if (dots.size() >= markerLimit) break;
+                    LightColor(light.colorLinear,blocked?90:255),LightColor(light.colorLinear,blocked?15:40),
+                    light.rendererSelected});
             }
             std::sort(dots.begin(),dots.end(),[](const Dot& a,const Dot& b){return a.base.y < b.base.y;});
             for (const auto& dot : dots)
@@ -193,8 +198,13 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
                 draw->AddCircleFilled(dot.base,1.5f*scale,IM_COL32(138,163,176,100),8);
                 draw->AddLine(dot.base,dot.tip,IM_COL32(140,174,190,85),scale);
                 draw->AddCircleFilled(dot.tip,6*scale,dot.halo,16);
-                draw->AddCircleFilled(dot.tip,3*scale,dot.color,12);
-                draw->AddCircle(dot.tip,3*scale,IM_COL32(224,239,245,170),12,.65f*scale);
+                if (dot.selected)
+                {
+                    draw->AddCircleFilled(dot.tip,3*scale,dot.color,12);
+                    draw->AddCircle(dot.tip,3*scale,IM_COL32(224,239,245,170),12,.65f*scale);
+                }
+                // Hollow: a current engine light the renderer did not select in this view.
+                else draw->AddCircle(dot.tip,3*scale,dot.color,12,1.5f*scale);
             }
         }
         // Draw the complete pitched/rolled frustum above the light dots. Its
@@ -257,7 +267,9 @@ void DrawRadar(ImDrawList* draw, const View& view, const Sample& sample,
     draw->PopClipRect();
     text(20,375,lightLive && sample.playerPosition ? Muted : Amber,
         !lightLive ? LightFeedStatus(view,now,config.staleMs) : !sample.playerPosition ? "Player position unavailable" :
-        std::format("Radius {:.0f} gu / filtered coverage (not 360 complete)",radius),11);
+        engineInput ? std::format("Radius {:.0f} gu / all engine lights / {} of {} renderer-selected (filled)",
+            radius,selectedInRange,inRange)
+        : std::format("Radius {:.0f} gu / filtered coverage (not 360 complete)",radius),11);
     const auto counts=CountSourceVisibility(view,now,radius);
     const auto hidden=config.hideOccluded?counts.blocked:0;
     text(20,394,lightLive ? Muted : Amber,lightLive
@@ -373,7 +385,10 @@ void DrawHud(const View& view, const Config& config, const bool details)
     text(20,diagnostics+177,Muted,"Build " + view.sample.build,13);
     text(20,diagnostics+198,Muted,std::string(GraphicsOutputLabel())+
         "  |  telemetry HUD  |  no mouse capture",13);
-    text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable"),12);
+    const auto& input = sample.upstreamLights;
+    text(20,diagnostics+226,Cyan,"Rendered lights: " + (live ? sample.renderedLights.status : "unavailable") +
+        "  |  engine input: " + (!live ? std::string("unavailable") : input.status == "available" && input.publishedRecords
+            ? std::format("{} in radius",*input.publishedRecords) : input.status),12);
     const bool ambientLive=config.showAmbient&&AmbientLive(view,now);
     text(20,diagnostics+251,Cyan,"AMBIENT / SKY EXPOSURE",12);
     text(20,diagnostics+272,ambientLive?White:Amber,config.showAmbient
@@ -412,7 +427,9 @@ void DrawLightOverlay(const View& view, const Config& config)
     const float margin = 20*scale;
     const float radius = std::clamp(config.lightRadius,1.f,500.f);
     const auto now = Clock::now();
-    const bool live = RenderedLightsLive(view,now,config.staleMs);
+    const auto* lights = DisplayLights(view,now,config.staleMs);
+    const bool live = lights != nullptr;
+    const bool engineInput = lights == &view.sample.upstreamLights;
     const auto& sample = view.sample;
     struct Marker
     {
@@ -432,11 +449,16 @@ void DrawLightOverlay(const View& view, const Config& config)
             sample.cameraPosition->z + sample.cameraForward->z*probeDistance};
         cameraReady = ProjectWorld(probe,sample,display.x,display.y).has_value();
     }
-    if (live && sample.playerPosition && cameraReady && sample.renderedLights.records)
+    size_t selectedInRange = 0;
+    if (live && sample.playerPosition)
+        for (const auto& light : *lights->records)
+            if (light.rendererSelected && DistanceSquared(light.position,*sample.playerPosition) <= radius*radius)
+                ++selectedInRange;
+    if (live && sample.playerPosition && cameraReady && lights->records)
     {
         const size_t markerLimit = static_cast<size_t>(std::clamp(config.lightMaxMarkers,1,2048));
-        markers.reserve(std::min(sample.renderedLights.records->size(),markerLimit));
-        for (const auto& light : *sample.renderedLights.records)
+        markers.reserve(std::min(lights->records->size(),markerLimit));
+        for (const auto& light : *lights->records)
         {
             const float distanceSquared = DistanceSquared(light.position,*sample.playerPosition);
             if (distanceSquared > radius*radius) continue;
@@ -458,18 +480,23 @@ void DrawLightOverlay(const View& view, const Config& config)
     }
 
     std::string headline;
+    const char* feed = engineInput ? "ENGINE LIGHTS" : "RENDERED LIGHTS";
     if (!live)
     {
         headline = LightFeedStatus(view,now,config.staleMs);
-        if (!sample.renderedLights.unavailableReason.empty())
-            headline += "  /  " + sample.renderedLights.unavailableReason.substr(0,52);
+        const auto& reason = !sample.renderedLights.unavailableReason.empty()
+            ? sample.renderedLights.unavailableReason : sample.upstreamLights.unavailableReason;
+        if (!reason.empty()) headline += "  /  " + reason.substr(0,52);
     }
-    else if (!sample.playerPosition) headline = "RENDERED LIGHTS  /  player position unavailable";
-    else if (!cameraReady) headline = "RENDERED LIGHTS  /  camera projection unavailable";
+    else if (!sample.playerPosition) headline = std::string(feed) + "  /  player position unavailable";
+    else if (!cameraReady) headline = std::string(feed) + "  /  camera projection unavailable";
     else
     {
         const auto hidden=config.hideOccluded?visibilityCounts.blocked:0;
-        headline=std::format("RENDERED LIGHTS  /  {} shown  /  {} hidden  /  {} on screen",inRange-hidden,hidden,markers.size());
+        headline=engineInput
+            ? std::format("ENGINE LIGHTS  /  {} shown  /  {} renderer-selected  /  {} hidden  /  {} on screen",
+                inRange-hidden,selectedInRange,hidden,markers.size())
+            : std::format("RENDERED LIGHTS  /  {} shown  /  {} hidden  /  {} on screen",inRange-hidden,hidden,markers.size());
     }
     const std::string controls=std::format("{}  /  {}  /  radius {:.0f} gu",
         ShortcutAction(config.lightToggleKey,"lights"),
@@ -479,11 +506,13 @@ void DrawLightOverlay(const View& view, const Config& config)
             visibilityCounts.visible,visibilityCounts.blocked,visibilityCounts.unknown)
         : "SOURCE VISIBILITY  /  unavailable";
     const std::string caveat = "Sampled visibility is an estimate / unknown sources stay visible";
+    const std::string coverage = engineInput
+        ? "Includes lights behind the camera / hollow = not selected by the renderer here, not OFF" : "";
     float legendWidth = 0;
-    for (const auto* line : std::array<const std::string*,4>{&headline,&controls,&visibilityLine,&caveat})
+    for (const auto* line : std::array<const std::string*,5>{&headline,&controls,&visibilityLine,&caveat,&coverage})
         legendWidth = std::max(legendWidth,font->CalcTextSizeA(12*scale,FLT_MAX,0,line->c_str()).x);
     legendWidth = std::min(display.x-2*margin,legendWidth+28*scale);
-    const float legendHeight = 89*scale;
+    const float legendHeight = (engineInput ? 108 : 89)*scale;
     Rect legend{ImVec2(margin,display.y-margin-legendHeight),
         ImVec2(margin+legendWidth,display.y-margin)};
     if (hud && legend.Intersects(*hud,12*scale))
@@ -523,8 +552,9 @@ void DrawLightOverlay(const View& view, const Config& config)
         const bool blocked=CurrentSourceVisibility(light,view,now).status=="blocked";
         draw->AddCircle(p,ring+3*scale,LightColor(light.colorLinear,blocked?16:42),24,5*scale);
         draw->AddCircle(p,ring,IM_COL32(4,12,19,235),24,4*scale);
-        draw->AddCircle(p,ring,LightColor(light.colorLinear,blocked?90:255),24,2*scale);
-        draw->AddCircleFilled(p,1.4f*scale,blocked?Muted:White,8);
+        // Thin hollow ring: current engine light the renderer did not select in this view.
+        draw->AddCircle(p,ring,LightColor(light.colorLinear,blocked?90:255),24,(light.rendererSelected?2.f:1.f)*scale);
+        if(light.rendererSelected)draw->AddCircleFilled(p,1.4f*scale,blocked?Muted:White,8);
         if (selected)
         {
             draw->AddCircle(p,ring+4*scale,IM_COL32(230,244,247,170),32,scale);
@@ -579,10 +609,10 @@ void DrawLightOverlay(const View& view, const Config& config)
         struct DetailLine { std::string text; ImU32 color; };
         std::vector<DetailLine> lines;
         const bool multiple = group.size() > 1;
-        lines.push_back({multiple ? std::format("LIGHT DETAILS  /  {} nearby contributions",group.size()) :
-            "LIGHT DETAILS  /  1 contribution", White});
+        lines.push_back({multiple ? std::format("LIGHT DETAILS  /  {} nearby {}",group.size(),engineInput?"lights":"contributions") :
+            engineInput ? "LIGHT DETAILS  /  1 engine light" : "LIGHT DETAILS  /  1 contribution", White});
         lines.push_back({multiple ? std::format("{:.1f} gu away  /  spatial grouping, not object identity",distance) :
-            std::format("{:.1f} gu away  /  current renderer values",distance),Muted});
+            std::format("{:.1f} gu away  /  current {} values",distance,engineInput?"engine":"renderer"),Muted});
         // Fixed spatial ordering is independent of frame-local GPU slots and RGB.
         // Keep each contribution, including its real pulse, separate and unfiltered.
         const size_t shown = std::min<size_t>(group.size(),4);
@@ -591,6 +621,8 @@ void DrawLightOverlay(const View& view, const Config& config)
             const auto& value = *markers[group[member]].light;
             const std::string kind = value.kind == "spot" ? "SPOT" : value.kind == "point" ? "POINT" : "UNKNOWN KIND";
             auto title = std::format("{}  {}",member+1,kind);
+            if (value.memberCount > 0) title += std::format("  /  GROUP of {}",value.memberCount);
+            if (engineInput) title += value.rendererSelected ? "  /  SELECTED" : "  /  NOT SELECTED HERE";
             if (value.kind == "spot" && value.coneHalfAngleDegrees)
                 title += std::format("  /  half cone {:.1f} deg",*value.coneHalfAngleDegrees);
             if (config.details) title += std::format("  /  GPU slot {}",value.sampleIndex);
@@ -667,6 +699,7 @@ void DrawLightOverlay(const View& view, const Config& config)
     legendText(29,White,controls);
     legendText(48,Cyan,visibilityLine);
     legendText(67,Muted,caveat);
+    if (engineInput) legendText(86,Muted,coverage);
     draw->PopClipRect();
 }
 

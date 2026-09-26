@@ -500,6 +500,80 @@ void RenderedLightTests(nlohmann::json json, std::chrono::system_clock::time_poi
     Require(sample.playerPosition && !sample.renderedLights.records, "Schema1.1 core compatibility was lost");
     std::cout << "PASS bounded current rendered records, HDR/color/direction, transport freshness and invalid-feed isolation\n";
 }
+void UpstreamLightTests(nlohmann::json json,std::chrono::system_clock::time_point now)
+{
+    using Json=nlohmann::json;
+    const Json cameraPosition={{"x",1},{"y",2},{"z",3}};
+    auto group=Json::parse(R"({"sampleIndex":1360,"type":"group","memberCount":16,"position":{"x":1,"y":2,"z":13},
+        "colorLinear":{"x":2.1,"y":0.65,"z":0.16},"luminanceLinear":0.93,"kind":"point",
+        "rendererSelected":true,"renderedSampleIndex":4})");
+    // Behind the camera and therefore absent from the filtered output: still current.
+    auto behind=Json::parse(R"({"sampleIndex":1513,"type":"standalone","position":{"x":1,"y":2,"z":-7},
+        "colorLinear":{"x":0.37,"y":0.11,"z":0.03},"luminanceLinear":0.16,"kind":"point","rendererSelected":false})");
+    const Json rendered={{"sampleIndex",4},{"position",{{"x",1.2},{"y",2},{"z",13}}},
+        {"colorLinear",{{"x",2.1},{"y",.65},{"z",.16}}},{"luminanceLinear",.93},{"kind","point"}};
+    json["schemaVersion"]="1.6";json["player"]["position"]=cameraPosition;
+    json["camera"]["aspectRatio"]=2.0;json["camera"]["nearPlane"]=.1;
+    json["lights"]={{"status","available"},{"sources",Json::array()},
+        {"rendered",{{"status","available"},{"captureSequence",7},{"ageMilliseconds",125},
+            {"camera",{{"position",cameraPosition}}},{"sources",Json::array({rendered})}}},
+        {"upstream",{{"status","available"},{"source","manylights-input"},{"captureSequence",7},
+            {"ageMilliseconds",125},{"inputRecords",1770},{"sources",Json::array({group,behind})}}}};
+    View view;view.sample=ParseSample(json.dump(),now);view.connected=true;view.hasSample=true;view.received=Clock::now();
+    const auto& records=*view.sample.upstreamLights.records;
+    Require(view.sample.schemaVersion=="1.6"&&records.size()==2&&records[0].memberCount==16&&records[0].rendererSelected&&
+        records[1].memberCount==0&&!records[1].rendererSelected&&records[1].colorLinear.x==.37f,
+        "Engine-input group/standalone and renderer selection were not preserved");
+    Require(DisplayLights(view,view.received,1000)==&view.sample.upstreamLights,
+        "Fresh all-around engine input must be the drawable light set");
+    Require(!ProjectWorld(records[1].position,view.sample,1000,500),"Behind-camera fixture must be off-screen");
+    const auto counts=CountSourceVisibility(view,view.received,35);
+    Require(counts.unknown==2&&counts.visible==0&&counts.blocked==0,
+        "Legend must count every current engine light, including the unselected one behind the camera");
+    Require(LightFeedStatus(view,view.received,1000)=="LIVE ENGINE LIGHTS","Engine-input status label");
+    // Stale or unavailable input falls back to the filtered output, labelled honestly.
+    Require(DisplayLights(view,view.received+std::chrono::milliseconds(376),1000)==nullptr,
+        "Expired input and output persisted");
+    auto fallback=json;fallback["lights"]["upstream"]={{"status","unavailable"},{"source","manylights-input"},
+        {"unavailableReason","input-unavailable"}};
+    View fallbackView=view;fallbackView.sample=ParseSample(fallback.dump(),now);
+    Require(DisplayLights(fallbackView,view.received,1000)==&fallbackView.sample.renderedLights&&
+        fallbackView.sample.upstreamLights.unavailableReason=="input-unavailable"&&
+        LightFeedStatus(fallbackView,view.received,1000)=="RENDERED ONLY / ENGINE INPUT UNAVAILABLE",
+        "Unavailable input must fall back to filtered output without claiming all-around coverage");
+    const auto reject=[&](Json invalid,const char* message)
+    {
+        const auto parsed=ParseSample(invalid.dump(),now);
+        Require(parsed.upstreamLights.status=="invalid"&&!parsed.upstreamLights.records&&
+            parsed.renderedLights.status=="available"&&parsed.renderedLights.records&&parsed.playerPosition,message);
+    };
+    auto invalid=json;invalid["lights"]["upstream"]["sources"][0].erase("memberCount");
+    reject(invalid,"A group without member count was accepted");
+    invalid=json;invalid["lights"]["upstream"]["sources"][1]["memberCount"]=3;
+    reject(invalid,"A standalone record with members was accepted");
+    invalid=json;invalid["lights"]["upstream"]["sources"][1].erase("rendererSelected");
+    reject(invalid,"Missing renderer selection was accepted");
+    invalid=json;invalid["lights"]["upstream"]["sources"][1]["rendererSelected"]=1;
+    reject(invalid,"Numeric renderer selection was accepted");
+    invalid=json;invalid["lights"]["upstream"]["sources"][1]["type"]="invented";
+    reject(invalid,"Unknown light type was accepted");
+    invalid=json;invalid["lights"]["upstream"]["ageMilliseconds"]=501;
+    reject(invalid,"Stale engine input was accepted");
+    // Notices: a refused input is an actionable error; a missing sample only waits.
+    Config config;config.notifications=true;config.lightsExpected=true;config.renderedExpected=true;
+    config.upstreamExpected=true;config.notificationDurationMs=6000;
+    auto refused=fallback;refused["lights"]["upstream"]["unavailableReason"]="input-refused";
+    View refusedView=fallbackView;refusedView.sample=ParseSample(refused.dump(),now);
+    NoticeTracker tracker;
+    const auto notice=tracker.Update(refusedView,config,view.received);
+    Require(notice&&notice->error&&notice->title=="All-around light input is unavailable",
+        "Refused engine input must be reported, not silently shown as complete coverage");
+    NoticeTracker waiting;
+    const auto transient=waiting.Update(fallbackView,config,view.received);
+    Require(!transient||transient->title!="All-around light input is unavailable",
+        "A single unavailable input sample must not raise the refusal error");
+    std::cout<<"PASS HUD engine-input lights: preference, fallback, behind-camera counts, selection flags, isolation and notices\n";
+}
 void NoticeTests()
 {
     Config config;
@@ -795,12 +869,13 @@ int main(int argc, char** argv)
         LightDetailGroupingTests();
         SourceVisibilityTests(json, now);
         RenderedLightTests(json, now);
+        UpstreamLightTests(json, now);
         Require(sample.playerPosition && sample.playerPosition->x == 123, "Player position");
         Require(sample.playerHeading && std::abs(*sample.playerHeading - 90) < 0.01, "Independent player heading");
         Require(sample.cameraHeading && std::abs(*sample.cameraHeading) < 0.01, "Independent camera heading");
         Require(!Heading({0, 1, 0}), "Vertical direction must not produce a heading");
         std::cout << "PASS overlay camera/player separation and vertical projection\n";
-        for (const auto* version : {"1.2", "1.3", "1.4", "1.5"})
+        for (const auto* version : {"1.2", "1.3", "1.4", "1.5", "1.6"})
         {
             json["schemaVersion"] = version;
             sample = ParseSample(json.dump(), now);

@@ -361,6 +361,7 @@ Config LoadConfig(const std::filesystem::path& ini)
     config.notifications = GetPrivateProfileIntW(L"Notifications", L"Enabled", 0, ini.c_str()) != 0;
     config.lightsExpected = GetPrivateProfileIntW(L"Lights", L"Enabled", 0, ini.c_str()) != 0;
     config.renderedExpected = config.lightsExpected && GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, ini.c_str()) != 0;
+    config.upstreamExpected = config.renderedExpected && GetPrivateProfileIntW(L"Lights", L"Upstream", 1, ini.c_str()) != 0;
     config.notificationDurationMs = static_cast<int>(std::clamp(
         GetPrivateProfileIntW(L"Notifications", L"DurationMilliseconds", 6000, ini.c_str()), 5000u, 10000u));
     if (!config.enabled && !config.notifications && !config.lightOverlay) return config;

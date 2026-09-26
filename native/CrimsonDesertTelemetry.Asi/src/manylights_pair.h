@@ -30,4 +30,9 @@ inline D3D12_BUFFER_BARRIER PairInputBarrier(ID3D12Resource* resource, bool rest
 }
 // Call before StartCapture. No new hook; exact existing hook/context + input load.
 bool EnableManyLightsPair(uint64_t moduleBase, const wchar_t* directory);
+// Continuous ManyLights INPUT: the engine's light records BEFORE view selection,
+// copied with every filtered sample at the same hook, list and fence. Same exact
+// anchors as the pair diagnostic. Call before StartCapture; the bridge must have
+// been opened with its input block.
+bool EnableUpstreamInput(uint64_t moduleBase);
 }
