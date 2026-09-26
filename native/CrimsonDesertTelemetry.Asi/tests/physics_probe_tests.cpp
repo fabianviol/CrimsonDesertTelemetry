@@ -309,6 +309,17 @@ int main()
     }
     Check(RayFanTargets({0,0,0}, {0,2,0}, fanTargets) && Finite(fanTargets[1]), "vertical stencil has stable basis");
     Check(!RayFanTargets({0,0,0}, {.01f,.01f,.01f}, fanTargets), "too-close fan refused");
+    Check(!RayFanTargets({988,22,999}, {1100,20,1000}, fanTargets), "manual fan keeps original short range");
+    Check(RayFanTargets({988,22,999}, {1100,20,1000}, fanTargets, 512), "100gu player radius with camera offset builds full fan");
+    for (const auto& endpoint : fanTargets)
+        Check(SetRaySegment(raySegment, {988,22,999}, endpoint, {1000,20,1000}, MaximumVisibilityRayLength),
+            "all extended fan endpoints pass native ray construction");
+    Check(RayFanTargets({988,20,1000}, {1500,20,1000}, fanTargets, 512), "maximum 500gu radius plus 12gu camera offset supported");
+    Check(!RayFanTargets({988,20,1000}, {1500.5f,20,1000}, fanTargets, 512), "fan remains bounded beyond hard maximum");
+    Check(!SetRaySegment(raySegment, {988,22,999}, {1502,20,1000}, {1000,20,1000}, MaximumVisibilityRayLength),
+        "expanded segment maximum still enforced");
+    Check(!SetRaySegment(raySegment, {988,22,999}, {1100,20,1000}, {1000,20,1000}, std::numeric_limits<float>::quiet_NaN()),
+        "NaN distance override rejected");
     SetupRayControl(); work.mode = "rayfan";
     work.segmentStart = {-10535,612,-4421}; work.segmentEnd = {-10529,611,-4420};
     RunRayControl();
@@ -351,12 +362,20 @@ int main()
     Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous NaN age refused");
     packet.sourceAge=20;packet.camera={50,22,31};
     Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous camera far from player refused");
-    packet.camera={11,22,31};packet.target={150,21,35};
-    Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous target range bounded");
+    packet.camera={11,22,31};packet.target={110,20,30};
+    Check(ValidVisibilityQuery(packet,123,456,1000), "continuous 100gu target accepted");
+    packet.camera={-2,20,30};packet.target={510,20,30};
+    Check(ValidVisibilityQuery(packet,123,456,1000), "500gu player sphere accepts camera offset without clipping edge");
+    packet.target={510.5f,20,30};
+    Check(!ValidVisibilityQuery(packet,123,456,1000), "continuous target range bounded by player sphere");
+    packet.camera={11,22,31};
     SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";
     extraCalls=100;replayTransactions=100;work.segmentStart={-10535,612,-4421};work.segmentEnd={-10529,611,-4420};
     RunRayControl();
     Check(calls==10&&work.fanCompleted==9,"explicit continuous mode uses per-series rather than manual lifetime budget");
+    SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";
+    work.segmentStart={-10535,612,-4421};work.segmentEnd={-10429,611,-4420};RunRayControl();
+    Check(calls==10&&work.fanCompleted==9,"continuous fan no longer hits hidden 50gu segment ceiling");
     SetupRayControl(); continuousVisibility=true;work.continuous=true;work.mode="rayfan";rayExpireAt=2;
     work.segmentStart={-10535,612,-4421};work.segmentEnd={-10529,611,-4420};RunRayControl();
     Check(replayFaulted&&calls==2&&work.fanCompleted==1,"slow continuous context latches off instead of repeated stalls");

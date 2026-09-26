@@ -359,15 +359,17 @@ void RunRayControl()
     { work.controlStatus = "unknown-input-change-or-result"; return; }
     NativeRayCopy control{}, segment{};
     PrepareRayCopy(control);
+    const float maximumRayLength = work.continuous ? MaximumVisibilityRayLength : 50.f;
     if (fan)
     {
         std::array<Vec3, 9> endpoints{};
-        if (!RayFanTargets(work.segmentStart, work.segmentEnd, endpoints))
+        if (!RayFanTargets(work.segmentStart, work.segmentEnd, endpoints, work.continuous ?
+            MaximumVisibilityRadius + MaximumVisibilityCameraOffset : 49.5f))
         { work.controlStatus = "invalid-fan-geometry"; return; }
         // Validate EVERY endpoint before even the control is executed.
         for (size_t i = 0; i < endpoints.size(); ++i)
         {
-            if (!SetRaySegment(segment.query.data, work.segmentStart, endpoints[i], work.player))
+            if (!SetRaySegment(segment.query.data, work.segmentStart, endpoints[i], work.player, maximumRayLength))
             { work.controlStatus = "invalid-fan-or-unverified-zero-component"; return; }
             work.fan[i].endpoint = endpoints[i];
         }
@@ -405,7 +407,7 @@ void RunRayControl()
             { work.controlStatus = "unknown-batch-time-budget"; return; }
             segment = {};
             PrepareRayCopy(segment);
-            if (!SetRaySegment(segment.query.data, work.segmentStart, sample.endpoint, work.player))
+            if (!SetRaySegment(segment.query.data, work.segmentStart, sample.endpoint, work.player, maximumRayLength))
             { work.controlStatus = "invalid-fan-geometry"; return; }
             sample.called = true;
             const bool ok = CallRayCopy(segment, work.callException);
@@ -611,7 +613,7 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory, bool continuous)
     }
     continuousVisibility = continuous && rayEnabled.load() && visibilityBridge.Open(processStart);
     if (continuous && !continuousVisibility) { Stop(); return false; }
-    ch::Log("Physics probe v7 ready. Continuous sampled visibility=%s (max 20 scene batches/sec, 256 queued targets, shared 2ms issue window; unknown on failure).",
+    ch::Log("Physics probe v10 ready. Continuous sampled visibility=%s (shared HUD/player radius, max 500gu; camera-origin rays; max 20 scene batches/sec, 256 queued targets, shared 2ms issue window; unknown on failure).",
         continuousVisibility ? "enabled" : "disabled");
     ch::Log("Physics manual probe ready. Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
         rayEnabled.load() ? "ready" : "unavailable");

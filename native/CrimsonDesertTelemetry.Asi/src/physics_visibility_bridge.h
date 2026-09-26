@@ -38,7 +38,8 @@ inline bool ValidVisibilityQuery(const VisibilityPacket& p, DWORD pid, std::uint
         std::isfinite(p.sourceAge) && p.sourceAge >= 0 && p.sourceAge <= 250 &&
         p.sourceAge + static_cast<double>(now - p.issued) <= 500 &&
         Finite(p.player) && Finite(p.camera) && Finite(p.target) &&
-        Distance(p.player, p.camera) <= 12 && Distance(p.camera, p.target) <= 35;
+        Distance(p.player, p.camera) <= MaximumVisibilityCameraOffset &&
+        Distance(p.player, p.target) <= MaximumVisibilityRadius;
 }
 inline bool ValidVisibilityBatch(const VisibilityBatch& b, DWORD pid, std::uint64_t born, std::uint64_t now)
 {

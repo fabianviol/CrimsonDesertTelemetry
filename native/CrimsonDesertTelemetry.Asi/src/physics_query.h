@@ -7,6 +7,11 @@
 namespace cdt::physics
 {
 using Vec3 = std::array<float, 3>;
+// Continuous mode shares the HUD's configurable 1..500gu player radius.
+// Camera offset and fan endpoints require a slightly longer segment allowance.
+inline constexpr float MaximumVisibilityRadius = 500.f;
+inline constexpr float MaximumVisibilityCameraOffset = 12.f;
+inline constexpr float MaximumVisibilityRayLength = 513.f;
 inline bool Finite(const Vec3& v)
 {
     for (float x : v) if (!std::isfinite(x) || std::abs(x) > 1000000.f) return false;
@@ -40,11 +45,13 @@ inline float Distance(const Vec3& a, const Vec3& b)
 }
 // Diagnostic sensitivity stencil, NOT an emitter radius/area or visibility %.
 // Center, +/-right/up at 0.05 and 0.15 gu, in the plane normal to the sightline.
-inline bool RayFanTargets(const Vec3& start, const Vec3& center, std::array<Vec3, 9>& targets)
+inline bool RayFanTargets(const Vec3& start, const Vec3& center, std::array<Vec3, 9>& targets,
+    float maximumDistance = 49.5f)
 {
-    if (!Finite(start) || !Finite(center)) return false;
+    if (!Finite(start) || !Finite(center) || !std::isfinite(maximumDistance) ||
+        maximumDistance < .25f || maximumDistance > MaximumVisibilityRadius + MaximumVisibilityCameraOffset) return false;
     const float distance = Distance(start, center);
-    if (distance < .25f || distance > 49.5f) return false;
+    if (distance < .25f || distance > maximumDistance) return false;
     Vec3 forward{};
     for (unsigned i = 0; i < 3; ++i) forward[i] = (center[i] - start[i]) / distance;
     Vec3 right{forward[2], 0, -forward[0]};
@@ -67,10 +74,11 @@ inline bool RayFanTargets(const Vec3& start, const Vec3& center, std::array<Vec3
 // Native ray captures (physics.3): double origin/delta, float inverse/length.
 // Keep the zero-axis convention refused for now despite one FLT_MAX observation.
 template<std::size_t N> bool SetRaySegment(std::array<std::uint8_t, N>& q,
-    const Vec3& start, const Vec3& end, const Vec3& player)
+    const Vec3& start, const Vec3& end, const Vec3& player, float maximumDistance = 50.f)
 {
     if constexpr (N < 0x90) return false;
-    if (!Finite(start) || !Finite(end) || !Finite(player) || Distance(start, player) > 20.f) return false;
+    if (!Finite(start) || !Finite(end) || !Finite(player) || Distance(start, player) > 20.f ||
+        !std::isfinite(maximumDistance) || maximumDistance < .05f || maximumDistance > MaximumVisibilityRayLength) return false;
     std::array<double, 3> local{}, delta{};
     Vec3 inverse{};
     double squared = 0;
@@ -81,7 +89,7 @@ template<std::size_t N> bool SetRaySegment(std::array<std::uint8_t, N>& q,
         inverse[i] = static_cast<float>(1.0 / delta[i]); squared += delta[i] * delta[i];
     }
     const double length = std::sqrt(squared);
-    if (length < .05 || length > 50) return false;
+    if (length < .05 || length > maximumDistance) return false;
     local[0] -= static_cast<int>(player[0] * .001f) * 1000.0;
     local[2] -= static_cast<int>(player[2] * .001f) * 1000.0;
     Write(q, 0x40, local); Write(q, 0x58, 0.0);

@@ -383,7 +383,14 @@ DWORD RunBootstrap()
         commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
 #if CDT_RESEARCH
     if (researchSourceVisibility) commandLine += L" --research-source-visibility";
-    if (physicsVisibility) commandLine += L" --physics-visibility";
+    if (physicsVisibility)
+    {
+        // Reuse the exact HUD parser (including decimal/clamp/fallback rules),
+        // even with both light views hidden. One INI setting owns both ranges.
+        const float radius = cdt::overlay::LoadConfig(iniPath).lightRadius;
+        commandLine += L" --physics-visibility --physics-visibility-radius " + std::format(L"{}", radius);
+        Log(std::format(L"Physics visibility and HUD radius: {} game units around player; rays from camera.", radius));
+    }
 #endif
     commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
         L" --light-group-radius " + std::format(L"{}", groupRadius);

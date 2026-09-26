@@ -1,10 +1,32 @@
 # Per-light source visibility
 
-## Current private implementation — physics.9: latest complete measurement
+## Current private implementation — physics.10: configurable shared radius
+
+`[LightOverlay] Radius` now controls both HUD views AND physics target selection,
+in a **player-centered** sphere, 1..500 game units. Rays still start at the actual
+paired camera. Bootstrap uses the existing HUD float parser and passes the value
+to the host as `--physics-visibility-radius`. When enabled, physics raises the
+API capture radius to at least this value (never reduces a larger
+`[Lights] NearbyRadius`). Hidden/disabled HUD views do not disable API sampling.
+The private .10 package sets Radius=100; the generic template remains35/default-off.
+
+Native validation allows the bounded500gu player sphere and12gu camera offset;
+continuous fan construction allows512gu centers/513gu segments including offsets.
+Manual diagnostic fan/segment bounds stay49.5/50gu. Same context, control ray,
+buffer/lifetime/fault checks,256 targets,20 rounds/sec and2ms issue budget remain.
+`outside-physics-radius` now distinguishes range from `outside-physics-budget`
+(no cached target). The500ms expiry is unchanged. More lights may mean less
+frequent per-light updates, not guaranteed20Hz each. Renderer coverage and collision
+streaming still limit what can be observed; the radius does NOT load game objects.
+Longer-range construction and selection have synthetic coverage, not live proof
+of collision accuracy/performance at100..500gu. No game calls during this change.
+
+## physics.9 policy retained: latest complete measurement
 
 Owner explicitly requested removal of movement analysis rather than a larger
 native-scheduling rewrite. Keep the proven nine-ray fan, native controls, existing
-V2 batch transport, max20 rounds/sec,256 queued targets/35gu and shared2ms budget.
+V2 batch transport, max20 rounds/sec,256 queued targets and shared2ms budget.
+The former fixed35gu camera range is superseded by the .10 setting above.
 Each complete result is emitted directly: any clear ray -> clear; all9 blocked
 -> blocked IMMEDIATELY. No second-result confirmation, receiver-distance reset,
 smoothing or camera-movement invalidation in either API or HUD. This is the latest

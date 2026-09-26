@@ -104,6 +104,14 @@ using decimal Windows virtual-key codes, or individually disabled with `0`. No A
 record or RGB is filtered.
 Display radius does not expand API source coverage or its configured nearby radius.
 
+Private physics.10 exception: with `[Experimental] PhysicsVisibility=1`,
+`[LightOverlay] Radius` (1..500 game units) is shared by HUD and visibility target
+selection around the player; rays still originate at the paired camera. The host
+raises its API capture radius to at least this value, without shrinking a larger
+`[Lights] NearbyRadius`. Restart after edits. This does not create renderer-missing
+lights or guarantee collision coverage at long range. The private test ZIP uses100.
+The CLI equivalent is `--physics-visibility --physics-visibility-radius 100`.
+
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
 display global sky, camera sky visibility and the local estimate with their separate
 ages. Ambient requires native ManyLights capture. Current `CDT_RESEARCH=OFF`

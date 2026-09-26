@@ -1,4 +1,35 @@
-# Current: physics queries FIRST — 2026-09-25, Codex
+# Current: configurable physics/HUD radius — 2026-09-26, Codex
+
+Owner reports the current installation works well / almost live; occasional
+"measurement expired" and many "outside sampled range". The preceding loading
+hang was withdrawn by owner (likely wrong file); cause remains unproven and its
+saved evidence is preserved. No further hang or ingame investigation requested.
+
+**physics.10:** owner approved trying100gu and INI control. Reuses existing
+`[LightOverlay] Radius` (1..500), no competing second setting. Target selection
+now uses PLAYER center like HUD; actual rays still start at paired CAMERA.
+Host receives the same HUD-parsed value via --physics-visibility-radius and raises
+API coverage to at least that radius (preserves any larger Lights/NearbyRadius).
+Native continuous query/fan/segment bounds extended together to cover500gu plus
+12gu camera offset/fan offsets; manual diagnostic49.5/50gu bounds unchanged.
+Max256 targets,20 rounds/sec,shared2ms issue budget,9 rays and500ms expiry unchanged.
+Radius vs no-target reasons now separate. Raw records/RGB and latest-result policy
+preserved. New code has NOT been installed or live-tested; no game access this turn.
+
+PASS focused managed physics tests (1/35/100/500gu boundaries, camera offset/orbit,
+300 raw lights vs256 targets, invalid radius, existing freshness/fault cases),
+native physics + overlay-model tests, CLI invalid-radius rejection before game
+access, package profile/expanded/ZIP validation. No performance claim at100gu yet.
+Ready WHOLE private DMM ZIP (game must be CLOSED for replacement):
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-physics.10-ModManagers.zip`.
+ZIP SHA256 `F53DB9D85B4AE429CD0C1724328BD5710C68F3D74D9F4B573648FA9341BBB4D2`.
+ASI SHA256 `68B7E2A0088801BC0E1A455A39BC63FD56A4C6E39994A2DD7DD4A4B011EC2346`.
+Expanded `artifacts/mod-manager/v2.1.15-physics.10-20260926-080406-439-80d87ea4/CrimsonDesertTelemetry`.
+Radius=100; PhysicsVisibility/HideOccluded ON, manual/legacy/ambient paths OFF as.9.
+**Next:** owner installs whole .10 via DMM and judges ordinary use at100gu. Do not
+wait/poll or start another scene experiment without owner input. No public release.
+
+## Historical physics.9 checkpoint
 
 **Current: physics.9 implements owner's direct/raw-measurement policy.**
 Owner: camera orbit alone makes .8 show all hidden markers as "refreshing after

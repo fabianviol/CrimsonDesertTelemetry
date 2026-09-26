@@ -584,7 +584,8 @@ RuntimeContext OpenRuntime(LightOptions lightOptions = default, bool privateExac
             }
             return new RuntimeContext(process, reader, resolved, addresses, orientation, camera, lights, rendered,
                 visibility, lightOptions.PhysicsVisibility && exactLightProfile
-                    ? new PhysicsVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc()) : null, lightOptions);
+                    ? new PhysicsVisibilityClient(process.Id, process.StartTime.ToFileTimeUtc(),
+                        radius: lightOptions.PhysicsVisibilityRadius) : null, lightOptions);
         }
         catch { reader.Dispose(); throw; }
     }
@@ -716,6 +717,7 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
     var enabled = false;
     var sourceVisibilityQuery = false;
     var physicsVisibility = false;
+    var physicsRadius = PhysicsVisibilityClient.DefaultRadius;
     var radius = LightOptions.DefaultRadius;
     error = null;
     for (var index = 0; index < arguments.Length; index++)
@@ -728,6 +730,19 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
         }
         if (argument.Equals("--physics-visibility", StringComparison.OrdinalIgnoreCase))
         { enabled = true; physicsVisibility = true; continue; }
+        if (argument.Equals("--physics-visibility-radius", StringComparison.OrdinalIgnoreCase))
+        {
+            if (++index >= arguments.Length ||
+                !float.TryParse(arguments[index], NumberStyles.Float, CultureInfo.InvariantCulture, out physicsRadius) ||
+                !float.IsFinite(physicsRadius) || physicsRadius is < 1 or > PhysicsVisibilityClient.MaximumRadius)
+            {
+                positional = [];
+                options = default;
+                error = "--physics-visibility-radius must be between 1 and 500 game units.";
+                return false;
+            }
+            continue;
+        }
         if (argument.Equals("--research-source-visibility", StringComparison.OrdinalIgnoreCase))
         {
             enabled = true;
@@ -757,7 +772,10 @@ bool TryParseLightOptions(string[] arguments, out string[] positional, out Light
         return false;
     }
     positional = values.ToArray();
-    options = new LightOptions(enabled, radius, sourceVisibilityQuery && !physicsVisibility, physicsVisibility);
+    // Do not silently cut the shared HUD/physics range at Lights.NearbyRadius.
+    // Raising coverage preserves raw records; it never shrinks a larger API radius.
+    if (physicsVisibility) radius = Math.Max(radius, physicsRadius);
+    options = new LightOptions(enabled, radius, sourceVisibilityQuery && !physicsVisibility, physicsVisibility, physicsRadius);
     return true;
 }
 
@@ -872,7 +890,8 @@ sealed class RuntimeContext(
     }
 }
 
-readonly record struct LightOptions(bool Enabled, float NearbyRadius, bool SourceVisibilityQuery, bool PhysicsVisibility = false)
+readonly record struct LightOptions(bool Enabled, float NearbyRadius, bool SourceVisibilityQuery, bool PhysicsVisibility = false,
+    float PhysicsVisibilityRadius = PhysicsVisibilityClient.DefaultRadius)
 {
     public const float DefaultRadius = 100f;
 }

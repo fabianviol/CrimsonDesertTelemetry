@@ -71,7 +71,8 @@ const char* VisibilityReasonText(const std::string& reason)
     if(reason=="waiting-for-physics"||reason=="physics-query-unavailable")return "waiting for physics";
     if(reason=="physics-budget-pending")return "queued for physics check";
     if(reason=="stale-physics")return "measurement expired";
-    if(reason=="outside-physics-budget")return "outside sampled range/budget";
+    if(reason=="outside-physics-radius")return "outside configured radius";
+    if(reason=="outside-physics-budget")return "outside sampled target set";
     if(reason=="physics-stopped-restart-required")return "physics stopped - restart required";
     if(reason=="stale-volume"||reason=="stale-source")return "waiting for fresh data";
     if(reason=="waiting-for-volume")return "waiting for data";

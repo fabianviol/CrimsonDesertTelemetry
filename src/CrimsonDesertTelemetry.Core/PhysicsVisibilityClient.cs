@@ -12,6 +12,8 @@ public sealed class PhysicsVisibilityClient : IDisposable
     // Latest measurement, not a prediction for today's camera pose. Do not
     // retain a hidden marker for seconds if queries stop delivering results.
     public const long MaximumAgeMilliseconds = 500;
+    public const float DefaultRadius = 35, MaximumRadius = 500;
+    private readonly float _radiusSquared;
     private readonly int _pid;
     private readonly ulong _born;
     private readonly Func<long> _now;
@@ -34,8 +36,12 @@ public sealed class PhysicsVisibilityClient : IDisposable
         public string Status = "unknown", Reason = "waiting-for-physics";
     }
 
-    public PhysicsVisibilityClient(int processId, long processStartFileTime, Func<long>? tickCount = null)
+    public PhysicsVisibilityClient(int processId, long processStartFileTime, Func<long>? tickCount = null,
+        float radius = DefaultRadius)
     {
+        if (!float.IsFinite(radius) || radius is < 1 or > MaximumRadius)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        _radiusSquared = radius * radius;
         _pid = processId; _born = unchecked((ulong)processStartFileTime);
         _now = tickCount ?? (() => Environment.TickCount64);
         _query = MemoryMappedFile.CreateOrOpen($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQueryV2.{_pid}",
@@ -56,11 +62,14 @@ public sealed class PhysicsVisibilityClient : IDisposable
                 { Sources = rendered.Sources?.Select(s => s with { SourceVisibility = null }).ToArray() } };
         }
         var camera = rendered.Camera.Position;
+        var center = new CameraVector3(player.X, player.Y, player.Z);
         _cache.RemoveAll(e => now - Math.Max(e.Measured, e.LastRequested) > 5000);
         var targets = new List<CameraVector3>();
-        foreach (var source in rendered.Sources.OrderBy(s => DistanceSquared(s.Position, camera)))
+        // Match the HUD's player-centered sphere; rays still originate at the
+        // paired camera. A third-person offset must not exclude edge markers.
+        foreach (var source in rendered.Sources.OrderBy(s => DistanceSquared(s.Position, center)))
         {
-            if (DistanceSquared(source.Position, camera) > 35 * 35) continue;
+            if (DistanceSquared(source.Position, center) > _radiusSquared) continue;
             if (targets.Any(p => DistanceSquared(p, source.Position) <= .01f)) continue;
             if (targets.Count == MaximumTargets) break;
             targets.Add(source.Position);
@@ -86,7 +95,9 @@ public sealed class PhysicsVisibilityClient : IDisposable
         SourceVisibilitySnapshot Resolve(CameraVector3 position)
         {
             var e = Find(position);
-            var reason = _faulted ? "physics-stopped-restart-required" : e is null ? "outside-physics-budget" :
+            var reason = _faulted ? "physics-stopped-restart-required" :
+                DistanceSquared(position, center) > _radiusSquared ? "outside-physics-radius" :
+                e is null ? "outside-physics-budget" :
                 e.Measured == 0 ? e.Reason : now - e.Measured > MaximumAgeMilliseconds ? "stale-physics" : e.Reason;
             var status = reason.Length == 0 ? e!.Status : "unknown";
             // Preserve actual measurement origin/capture; never pretend an older ray

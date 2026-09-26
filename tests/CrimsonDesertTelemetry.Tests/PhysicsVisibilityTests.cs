@@ -5,6 +5,7 @@ internal static class PhysicsVisibilityTests
 {
     public static void Exchange()
     {
+        RadiusSelection();
         var pid = Environment.ProcessId + 210000;
         const long born = 987654321;
         long now = 10000;
@@ -105,6 +106,52 @@ internal static class PhysicsVisibilityTests
         var seq=input.ReadUInt64(24); now+=1000; Apply(); Check(input.ReadUInt64(24)==seq,"latched fault stops scheduling");
         snapshot=snapshot with {Rendered=rendered with {AgeMilliseconds=500}};
         Check(Apply().Rendered!.Sources![0].SourceVisibility is null,"stale paired source cannot keep classification");
+    }
+    private static void RadiusSelection()
+    {
+        var pid = Environment.ProcessId + 220000;
+        foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, 0, 501 })
+        {
+            try { using var rejected = new PhysicsVisibilityClient(pid, 1, radius: invalid); }
+            catch (ArgumentOutOfRangeException) { continue; }
+            throw new InvalidOperationException("invalid physics radius accepted");
+        }
+        foreach (var radius in new[] { 1f, 35f, 100f, 500f })
+        {
+            long now = 10000;
+            using var client = new PhysicsVisibilityClient(pid, 1, () => now, radius);
+            using var query = MemoryMappedFile.OpenExisting($"Local\\CrimsonDesertTelemetry.PhysicsVisibilityQueryV2.{pid}");
+            using var input = query.CreateViewAccessor();
+            var camera = new CameraSnapshot(new(988,20,1000),new(0,1,0),new(1,0,0),new(0,0,1),.1f,null,50,1.7f);
+            var edge = new RenderedLightSnapshot(0,new(1000+radius,20,1000),new(1,1,1),1,"point",null,null);
+            var outside = edge with { SampleIndex=1, Position=new(1000+radius+.5f,20,1000) };
+            var rendered = new RenderLightsSnapshot("available",RenderLightReader.SourceName,17,44,DateTimeOffset.UtcNow,10,camera,[edge,outside],new(2,2,0,0));
+            var snapshot = new EngineLightsSnapshot("available",EngineLightReader.SourceName,1000,[],new(0,0,0,0,0,0,0,0,0,0),null,rendered);
+            var result = client.Apply((1000,20,1000),snapshot);
+            Check(input.ReadUInt32(12)==1 && input.ReadSingle(32+112)==1000+radius,
+                "shared player radius includes exact edge despite camera being 12gu farther away");
+            Check(input.ReadSingle(32+100)==988,"camera remains actual ray origin, not player");
+            Check(result.Rendered!.Sources![1].SourceVisibility!.Reason=="outside-physics-radius",
+                "outside radius distinguished from target budget");
+            Check(result.Rendered.Sources.Count==2,"radius does not delete raw light records");
+            // Turning the camera around the player must not change membership.
+            now+=450;
+            snapshot=snapshot with {Rendered=rendered with {Camera=camera with {Position=new(1012,20,1000)}}};
+            client.Apply((1000,20,1000),snapshot);
+            Check(input.ReadUInt32(12)==1 && input.ReadSingle(32+100)==1012,"orbit preserves player-centered radius and updates ray origin");
+            if (radius == 100)
+            {
+                now+=450;
+                var crowded = Enumerable.Range(0,300).Select(n => edge with {
+                    SampleIndex=n, Position=new(1000+n*.2f,20,1000) }).Reverse().ToArray();
+                snapshot=snapshot with {Rendered=rendered with {Sources=crowded}};
+                result=client.Apply((1000,20,1000),snapshot);
+                Check(input.ReadUInt32(12)==256 && input.ReadSingle(32+112)==1000,
+                    "larger radius preserves 256-target cap, nearest to player first");
+                Check(result.Rendered!.Sources!.Count==300 && result.Rendered.Sources[0].SourceVisibility!.Reason=="outside-physics-budget",
+                    "untested target cap is distinct from radius and raw records stay intact");
+            }
+        }
     }
     private static void Check(bool ok,string message) { if(!ok) throw new InvalidOperationException(message); }
 }
