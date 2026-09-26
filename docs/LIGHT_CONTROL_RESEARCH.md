@@ -286,6 +286,35 @@ A2 SHA256: `5d505a71e8b0151b00df5725e4e656bb85435ac96632708fddbffa2e7e4b0bb9`.
 No feed/HUD change or additional toggle needed; next is scoped runtime
 integration after position/special-case semantics are handled or clearly bounded.
 
+### Bounded producer check while owner opened PIX — 2026-09-26
+
+Existing captured PSO21575 `GPUSpawnPointUpdateCS` confirms an exact header
+store at listing line1404: int32(-2,count) at byte40 of resource213, followed
+by zero-initialized members. Allocation uses atomic add of member count+1
+(bounded by shader limits) on resource234; packed allocation information is
+stored in `particleBlockBufferUAV` at block+80. The time-accurate resolver
+confirms u38/space39 ->213 and u19/space39 ->234 for both dispatches, GlobalIds
+771/775. This proves the initializer code/binding, not that any particular
+captured thread took the branch, not the final color writer, and not the live
+bowl's owner. The old 224-byte emitter-variables source is also bound here.
+An exploratory t28/t29 resolver query addressed registers NOT used by this
+shader; those returned descriptor values are not evidence of shader inputs.
+
+Extracted actual PSO21582 `InjectLightGroupsCS` to
+`artifacts/light-research/manylights-group-producer-20260926/pso-21582.dxbc/.ll`.
+GlobalId759 Dispatch(5,5,1): t16/space37 -> resource14963, u12/space39 ->213.
+The former contains uint3(count,descriptorIndex,destinationOffset); the shader
+indexes unbounded `g_lightDataBuffers` t0/space14 using descriptorIndex and reads
+48-byte `LightGroupInstanceData`: positionAndRadius, colorAndIntensity, up, look.
+It copies position and packed orientation, applies conditional exposure scaling,
+and writes abs(color.w). No literal -2 header allocation occurs in this shader.
+This is a separate prepared-light input route, not evidence that it builds the
+live bowl's 16-member particle groups. Array resources are NOT resolved yet.
+
+Next bounded PIX question: resource213 history relative to GlobalId93's read.
+Do not infer execution order or same-frame contribution from GlobalId numbering
+across command lists/queues. No replay, live acquisition, plugin or API changes.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,

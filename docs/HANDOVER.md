@@ -1,5 +1,17 @@
 # Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
 
+**Latest bounded PIX producer check:** owner has the old capture open and analysis
+started. GPUSpawnPointUpdateCS (PSO21575, GlobalIds771/775) writes the exact
+`look.x=-2 / look.y=count` group header at byte40, then zero-initializes members;
+u38/space39 resolves to213, counter u19 to234. This is an initializer, not the
+final member-color writer or a proven join to the live bowl. Separately extracted
+PSO21582 InjectLightGroupsCS (GlobalId759): t16/space37 ->14963, u12/space39 ->213;
+it copies named LightGroupInstanceData from a dynamically indexed SRV array.
+Do not conflate its "groups" with the 16-member particle groups. Details in
+LIGHT_CONTROL_RESEARCH.md. No live/plugin/API changes. Next PIX question is
+resource213 write history relative to ProcessManyLightsCS GlobalId93; numeric
+GlobalId order alone is not queue execution/dependency order.
+
 **ABA COMPLETE, specific rear bowl:** PID2252, owner-operated AN/AUS/AN,
 fixed anchor(-10492.520996,606.882263,-4446.792969), not the shrine.
 Current input groups2 ->0 ->2; matched members32 ->0 ->32; paired output
