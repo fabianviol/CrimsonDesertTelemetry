@@ -1,6 +1,11 @@
 # In-game light control — 2026-09-24, Codex
 
-Latest entry: [WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md). Native
+**Current priority, 2026-09-26:** light switching is deferred. Continue with
+"ManyLights input for off-screen coverage" and its completed ABA / bounded
+producer sections below; [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md)
+is the concise cold-start summary. The following object-control plan is historical.
+
+Earlier entry: [WORLD_BUILDER_RESEARCH.md](WORLD_BUILDER_RESEARCH.md). Native
 create/enable, server gimmick and UUID-lookup leads now exist, with offline
 current-EXE checks and the exact known lamp prefab in upstream's catalog.
 No native lamp toggle or RGB write is proven. Observation-only object capture

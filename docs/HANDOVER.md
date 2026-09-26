@@ -1,4 +1,18 @@
-# Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
+# Current handoff to Claude — 2026-09-26, Codex
+
+**Cold re-entry:** read [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md)
+first. It covers product/private-release state, camera PR, the working experimental
+physics path, unresolved ambient limits, the completed upstream-light ABA, tools,
+evidence and the next scoped decision. Older "next" paragraphs below are history.
+Owner stopped PIX Computer Use and requested this handoff: only the queue menu was
+opened/highlighted; resource213 history was NOT inspected/exported. No new live
+result, game/plugin change or release in this handoff. Do not resume UI automation
+or repeat ABA automatically. Last runtime verification is PID2252, pair7/8, AN;
+current process liveness is not checked. Next: resolve or explicitly scope upstream
+group-position/special-RGB semantics before integration, retaining paired output
+as reference; use existing PIX exports for the bounded producer question if needed.
+
+## Paired ManyLights input/output diagnostic checkpoint
 
 **Latest bounded PIX producer check:** owner has the old capture open and analysis
 started. GPUSpawnPointUpdateCS (PSO21575, GlobalIds771/775) writes the exact

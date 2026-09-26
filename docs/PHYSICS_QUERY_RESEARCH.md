@@ -1,5 +1,13 @@
 # Physics-first occlusion investigation — 2026-09-25, Codex
 
+**Re-entry update, 2026-09-26:** this file preserves the discovery/control history.
+Continuous API/HUD integration progressed through physics.10 and is retained in
+manylights.1. Owner reported near-live behavior; the movement/confirmation gates
+and hysteresis described in earlier versions were REMOVED in physics.9. Current
+behavior is in [SOURCE_VISIBILITY.md](SOURCE_VISIBILITY.md); current task/evidence
+in [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md). Do not repeat the
+diagnostic controls or treat the older "not live-tested" entries as today's state.
+
 **physics.6 integration supersedes the diagnostic-only state below:** continuous
 experimental camera-to-rendered-light fans now feed API/HUD, bounded scheduling
 and hysteresis. Built/host-tested, NOT live-tested. See current HANDOVER and

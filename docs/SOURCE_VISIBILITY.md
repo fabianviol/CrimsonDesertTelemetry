@@ -1,5 +1,12 @@
 # Per-light source visibility
 
+**Status update, 2026-09-26:** the owner subsequently reported near-live behavior
+and a successful unchanged physics.10 run. Those observations supersede the older
+"no live acceptance yet" build-time notes below, not all accuracy/performance
+limits. This path remains experimental and is retained in private manylights.1.
+Current investigation is missing upstream light coverage, not a new physics
+classifier. See [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md).
+
 ## Current private implementation — physics.10: configurable shared radius
 
 `[LightOverlay] Radius` now controls both HUD views AND physics target selection,
