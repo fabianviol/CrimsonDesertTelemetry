@@ -6,6 +6,22 @@ remembers broader previous radar coverage. At night more lights return; rotating
 the camera brings more into the feed. Do not dismiss that observation or call
 complete360 coverage impossible. ESC is being used by owner to freeze game time.
 
+**Latest: known physical anchors missing when looking away,09:19.** Owner asks
+whether HUD dots are real lights or artifacts, then supplies screenshot4e2246e5
+looking away from camp,player(-10538.404,608.976,-4431.55),radius100,22 shown/0 hidden.
+Passive API sample51909/frame41062,age31ms at this pose has26 sources (NOT the
+exact screenshot frame). Compared with saved40947: shrine bowl's two known
+contributions, exact blue IC White Pavilion position and exact Twilight Glass
+position were present before and now absent, despite current player distances
+33.14/66.25/80.82gu respectively. Prior anchor matches within0.4gu, none now.
+This is concrete loss of previously physically-associated lights, not merely
+count fluctuations. Known four lantern anchors are absent in BOTH compared
+samples; do not claim this pair proves their disappearance specifically.
+Evidence: artifacts/light-research/offscreen-known-anchors-20260926-0919.json;
+prior physical controls: CODEX_HANDOVER_FIRE.md candle/shrine/blue/blind-object
+checkpoints. Subset association supports genuine lights, NOT authenticity of every
+unlabelled point or historical complete360 coverage. No new toggle requested.
+
 **Latest DIRECT raw audit,09:14 (owner explicitly corrected focus to reader loss):**
 Read an existing stable/seqlocked native Render MMF, no new GPU query or game write.
 PID24696,capture47052/frame26305,age78ms. Capacity32768; paired GPU validCounter=90.
