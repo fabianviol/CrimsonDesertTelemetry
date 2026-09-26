@@ -1,5 +1,14 @@
 # Current checkpoint — 2026-09-26, Claude: release candidate 2.2.0 built, NOT published
 
+**Antivirus COMPLETE, Codex:** owner requested VirusTotal checking; exact ZIP
+and ASI submitted. ZIP: 0/67 detections (1 engine failure, 7 unsupported).
+Separate ASI: 4/71 (CrowdStrike, Cynet, McAfeeD, Microsoft; 66 undetected,
+1 timeout, 4 unsupported). Same four vendors as preserved 2.1.12-fire-visibility.2,
+not proof of false positives; no Bitdefender/Barys family in this scan.
+Defender reports no threats for both, exit0, remediation disabled and hashes
+unchanged. Details/links: [releases/v2.2.0-validation.md](releases/v2.2.0-validation.md).
+Raw reports: `artifacts/validation-v2.2.0-antivirus-20260926-184457/`.
+
 **Owner confirmation, 2026-09-26, Codex takeover:** owner explicitly confirmed
 the exact `v2.2.0-ModManagers.zip` live test: "Hat soweit alles geklappt."
 Codex rechecked ZIP/expanded ASI hashes against the values below; both match.
@@ -31,12 +40,11 @@ use the new name, historical notes keep old links (GitHub redirects).
   ZIP SHA256 `9DEACE1ACAA6E953FA72140E0C7A7A3C13CC4FDCE7708D703DAC130792F6C014`,
   ASI `CDEAB32F8559A39803C70CE036F60B6B476A411BDDF58F4890A67D29BC866A98`.
   Expanded: `artifacts/mod-manager/v2.2.0-20260926-173840-107-ce091b02/`.
-- Not done: VirusTotal (upload needs owner OK),
-  `git push`, tag `v2.2.0`, GitHub release, GitHub About text (draft in
+- Not done: `git push`, tag `v2.2.0`, GitHub release, GitHub About text (draft in
   PUBLIC_DESCRIPTIONS.md). Local main is ahead of origin/main (fast-forward).
 
-**One next step:** scan the unchanged final ASI/ZIP and record exact verdicts,
-then push/tag/publish on GitHub only. Do not request the completed owner live test
+**One next step:** report the completed scan, then finish the pending GitHub-only
+publication with the exact unchanged ZIP. Do not request the completed owner live test
 again. Before publishing, correct the release-note fallback sentence: the HUD
 falls back to rendered output, but configured upstream smoothing deliberately
 reports unavailable rather than silently changing its source. No binary change
