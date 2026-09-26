@@ -51,6 +51,17 @@ Keep both separate from screen-frustum membership and actual object ON/OFF.
 Input/output comparison concerns renderer selection; physics sampling concerns
 line-of-sight. Missing from output is NOT automatically occluded or switched off.
 
+**Historical claim check:** owner quotes Nexus2.1.10 changelog: "Expanded
+rendered-light capture to include off-screen and behind-camera sources."
+Exact sentence not found in tracked Git history; do not dismiss the owner's
+public-release evidence. At release099c39e, RenderLightReader.cs and
+filter_thunk.asm are byte-identical to current HEAD; native capture already
+copied filtered R12 output + paired counter, not the upstream input. Archived
+Nexus description atddf1bf9 explicitly says view-filtered/not a complete world
+registry. Thus off-screen support was claimed, but complete360 coverage or a
+removed input-capture feature is not established. Historical broader coverage
+and possible game-side changes remain unresolved; no public text changed.
+
 **Current: off-screen coverage audit, 2026-09-26 (no runtime/code change).**
 Owner needs CURRENT lights around360 degrees, including behind the camera, and
 remembers broader previous radar coverage. At night more lights return; rotating
