@@ -16,11 +16,12 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-First request consumed1 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Two requests consumed2 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
-directory. **Next: owner turns camera TOWARD camp without moving player, then
-take the second paired snapshot.** No new install or toggle required.
+directory. **Next: owner turns camera AWAY from camp without moving player, then
+take the third paired snapshot against the fresh13:56 camp-facing control below.**
+No new install or toggle required.
 Decode with `scripts/Decode-ManyLightsPair.py --input-space world` for this build;
 `--anchor NAME X Y Z` repeats. INPUT positions are already WORLD coordinates;
 OUTPUT positions still require the paired camera addition.
@@ -31,6 +32,16 @@ Control expires after5s without an eligible frame; max8 paired transactions per
 process; idle until explicit request; rejects loading, busy paired requests and
 faults. Copy restores input shader-resource access with enhanced buffer barriers.
 See LIGHT_CONTROL_RESEARCH.md for build-specific input provenance.
+
+**Latest pair13:56, camp now IN FRONT:** frame55620,fence34188,camera
+(-10508.72949,607.93359,-4461.79443),forward(0.121950,-0.152331,0.980777).
+100 valid output records. L1/L2/L3/L4 each input80/79/79/79 candidates and1
+output; shrine input220/output2; blue input3/output1; Twilight Glass input1/
+output1. All anchor matches now in front. Both previously missing static lamps
+are present in output again, but owner moved since first pair: NOT a controlled
+rotation-only comparison yet. Use this pose as fresh control. Evidence:
+`artifacts/light-research/manylights-pair-2252-20260926-camp-facing-1356/`
+contains original3931140-2.bin,log,INI anddecoded-world.json. No feed/HUD change.
 
 **First live pair, camp behind:** frame35571,fence7092,output61 valid records.
 Known blue IC White Pavilion and Twilight Glass positions match input EXACTLY
