@@ -6,10 +6,15 @@ two16-member groups (headers1462/1615),121 full-capacity matches. Narrow0.45gu
 output match1 this pose; do not conflate input groups with output selection.
 Player just before request(-10493.513,605.4289,-4447.177). Evidence:
 `artifacts/light-research/manylights-aba-2252-rear-bowl-20260926/A1-on/` binary,
-log,INI,groups.json. Next owner AUS -> ONE pair for B-off, then owner AN -> ONE
-pair for A2-on. Keep same fixed bowl anchor(-10492.520996,606.882263,-4446.792969),
+log,INI,groups.json. **B-off captured run6 after explicit owner AUS:**
+tick7196187,frame52356,fence92403,prefix1736 (1770-34 = two headers +32 members).
+Bowl current matches32 ->0, groups2 ->0, output1 ->0. Exactly89 out-of-bound
+position matches remain, same89 as A1: directly demonstrates why tails must not
+be published as on-lights. Whole output count4, capture progressing. Evidence
+in sibling `B-off/` binary/log/INI/groups.json. Next owner AN -> ONE pair A2-on.
+Keep same fixed bowl anchor(-10492.520996,606.882263,-4446.792969),
 not shrine, and verify input-bound group/color loss/reappearance, not tail counts.
-No polling/session wait between owner replies. 5/8 requests consumed.
+No polling/session wait between owner replies. 6/8 requests consumed.
 
 **LATEST: input bounds + group semantics resolved offline on saved live pairs.**
 Use `groups.json` in each of the four pair directories, not full-capacity PI
@@ -52,7 +57,7 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-Five requests consumed5 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Six requests consumed6 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
 directory. **Rotation comparison and known-source group/color controls COMPLETE.
