@@ -1,5 +1,21 @@
 # Current: configurable physics/HUD radius — 2026-09-26, Codex
 
+**Latest requirement/check: preserve off-screen / behind-camera sources in RAW API.**
+Owner sees fewer radar lights even with blocked sources shown and explicitly needs
+sources behind camera, not merely visible lights. One passive /v1/snapshot read
+(no extra native/game query): sequence36114, playing, rendered age62ms, API radius100,
+4 published/active sources, all within35gu,2 behind paired camera, all4 clear;
+malformed=0,outsideRadius=0. The small set is already in the source stream, not
+caused by HUD hide-blocked or current range rejection. Why fewer are selected than
+in the owner's earlier view is NOT established by this single snapshot.
+Code: radar has no camera-frustum test; PhysicsVisibilityClient only adds metadata,
+never removes raw sources. .10 did not change native ManyLights capture/decoder.
+Current source is renderer-selected filtered ManyLights, not a proven complete
+360-degree registry. Preserve it; if full loaded-source coverage is required,
+next inspect EXISTING pre-filter ManyLights findings/inputs, do not resurrect stale
+capacity-tail records or fabricate an all-lights stream. No implementation change,
+new capture/research or user movement test performed for this check.
+
 **Current: owner reports successful UNCHANGED .10 restart and normal gameplay.**
 No INI edits were made: Radius=100 and PhysicsVisibility=1 remain the tested
 configuration. Neither the proposed35gu comparison nor PhysicsVisibility=0 was
