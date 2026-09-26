@@ -1,5 +1,20 @@
 # Current: configurable physics/HUD radius — 2026-09-26, Codex
 
+**STOP: .10 startup hang, 2026-09-26 08:06 run, PID16988.** Owner reports
+frozen startup with continuing sound; process is still alive, Responding=false.
+All THREE installed binaries match the exact .10 ZIP; Radius=100 and physics
+enabled confirmed in INI/bootstrap/native logs. Not another wrong-file assumption.
+Host started, overlay ready, playable-world signal received; no explicit failure
+logged. No new Application1000/1001/1002 since launch or System4101 in checked
+window. These absences do not exclude a GPU failure or prove a physics deadlock.
+Only logs/process state/config/hashes inspected; no API, extra game calls, dump,
+debugger, runtime writes or process termination. Cause remains UNKNOWN.
+Evidence: `artifacts/light-research/loading-hang-16988-physics10-20260926-081043`
+(copied logs+INI). The2ms native issue budget cannot interrupt a blocked call.
+**Next:** owner closes game, same .10 package with ONLY LightOverlay/Radius=35
+for the next startup comparison; do not rebuild or blame100gu without evidence.
+No waiting/polling for owner; do not promote .10 to live accepted/public release.
+
 Owner reports the current installation works well / almost live; occasional
 "measurement expired" and many "outside sampled range". The preceding loading
 hang was withdrawn by owner (likely wrong file); cause remains unproven and its
@@ -26,7 +41,7 @@ ZIP SHA256 `F53DB9D85B4AE429CD0C1724328BD5710C68F3D74D9F4B573648FA9341BBB4D2`.
 ASI SHA256 `68B7E2A0088801BC0E1A455A39BC63FD56A4C6E39994A2DD7DD4A4B011EC2346`.
 Expanded `artifacts/mod-manager/v2.1.15-physics.10-20260926-080406-439-80d87ea4/CrimsonDesertTelemetry`.
 Radius=100; PhysicsVisibility/HideOccluded ON, manual/legacy/ambient paths OFF as.9.
-**Next:** owner installs whole .10 via DMM and judges ordinary use at100gu. Do not
+**Historical next (superseded by hang above):** owner installs whole .10 via DMM and judges ordinary use at100gu. Do not
 wait/poll or start another scene experiment without owner input. No public release.
 
 ## Historical physics.9 checkpoint
