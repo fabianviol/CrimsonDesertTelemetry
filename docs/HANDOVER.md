@@ -2,23 +2,28 @@
 
 Private `2.1.15-manylights.1` adds a bounded input/output snapshot at the EXISTING
 post-ProcessManyLights hook. No new hook, no public API change, no 360-coverage
-claim. The new package is NOT live-validated yet; game must close before DMM
-replacement. Current .10 installation is untouched. READY diagnostic package:
+claim. Installed and first paired readback LIVE-validated in PID2252, started
+2026-09-26 13:16:36+02. The input is diagnostic-only, NOT shown in HUD/API yet.
+Private diagnostic package (unchanged):
 `artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-manylights.1-ModManagers.zip`.
 ZIP SHA256 `9B19C6EFE06D417A39622AD9089D66DF014154745A031C81F112CC91E63B5052`;
 ASI SHA256 `27FD7CF81876AC2D9BC89D0EA7610AA9D9263451759D237325C7C3C644BB0556`.
 Expanded: `artifacts/mod-manager/v2.1.15-manylights.1-20260926-100424-306-34410caf/CrimsonDesertTelemetry`.
 PASS7 focused native tests (pair WARP, existing lights/ambient/both sky orders,
-preflight and thunk),5 decoder tests, package rules and exact ZIP/expanded check.
+preflight and thunk),6 decoder tests, package rules and exact ZIP/expanded check.
 Initial package validation rejected the new INI key because its allow-list had
 not yet been extended. Fixed validator and reran successfully against the SAME
-immutable ZIP; no binary/config/archive replacement and no live diagnostic yet.
+immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
-legacy SourceVisibility=0. No manual edits needed. After the owner returns ingame,
-run `scripts/Start-ManyLightsPair.ps1` ONCE: returns immediately, no waiting.
+legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
+First request consumed1 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
-directory. Request two poses (camp-facing / camp-behind), not another toggle test.
-Decode with `scripts/Decode-ManyLightsPair.py`; `--anchor NAME X Y Z` repeats.
+directory. **Next: owner turns camera TOWARD camp without moving player, then
+take the second paired snapshot.** No new install or toggle required.
+Decode with `scripts/Decode-ManyLightsPair.py --input-space world` for this build;
+`--anchor NAME X Y Z` repeats. INPUT positions are already WORLD coordinates;
+OUTPUT positions still require the paired camera addition.
 Each file includes scene2816 + output full capacity + output counter256 + input
 full capacity, same submission fence. Input PI-marker/position matches are
 candidates, NOT an active-light count; never apply output counter to input.
@@ -26,6 +31,19 @@ Control expires after5s without an eligible frame; max8 paired transactions per
 process; idle until explicit request; rejects loading, busy paired requests and
 faults. Copy restores input shader-resource access with enhanced buffer barriers.
 See LIGHT_CONTROL_RESEARCH.md for build-specific input provenance.
+
+**First live pair, camp behind:** frame35571,fence7092,output61 valid records.
+Known blue IC White Pavilion and Twilight Glass positions match input EXACTLY
+but are absent from simultaneous output. Shrine matches input only within0.45gu.
+Four known lantern anchors each have ONE output match in this sample; do not
+claim all four vanished. Input has18922 PI candidates, NOT18922 current lamps:
+repeated/generation validity and input color semantics remain unresolved.
+Evidence: `artifacts/light-research/manylights-pair-2252-20260926-camp-behind/`:
+original binary, native log, INI and `decoded-world.json`. Initial `decoded.json`
+is INVALID FOR INPUT POSITIONS (assumed camera-relative, added camera twice);
+preserved for provenance, superseded by explicit world-input decode and test.
+No public feed/HUD change or rebuild this turn. Older "next" entries below are
+historical; the first input readback is now complete.
 
 **Owner's distinction (2026-09-26):** renderer camera/view-dependent selection
 versus geometric line-of-sight from the camera POSITION, including behind camera.

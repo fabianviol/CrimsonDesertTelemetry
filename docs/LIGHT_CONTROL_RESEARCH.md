@@ -123,6 +123,45 @@ consumer stream. Existing PIX CSVs (including manylights.csv with569 PI-marked
 slots and sceneconstants.csv) remain historical reference, not a valid-count or
 current-frame proof; the later raytracing SRV name alone does not identify input.
 
+### First live paired readback: camp behind camera
+
+2026-09-26, private2.1.15-manylights.1, PID2252; installed ASI SHA256 matches
+the package recorded in HANDOVER. One explicit request completed at frame35571,
+fence7092,captured/completed tick2350765. Input resource0x25A3EEDD0, output
+0x25A3F4370. Paired camera(-10533.81836,612.61902,-4424.75732), forward
+(-0.580948,-0.193983,-0.790488). Output valid count61;13 behind camera.
+
+INPUT xyz are WORLD positions in this capture, not camera-relative. Exact known
+blue and Twilight Glass coordinates expose the initial decoder mistake of adding
+the camera twice. Correct analysis uses explicit `--input-space world`; OUTPUT
+still uses camera addition. Regression test covers this difference (6/6 tests).
+
+| Known anchor (0.45gu match tolerance) | Input candidates | Output matches |
+| --- | ---: | ---: |
+| L1 / L2 test / L3 / L4 | 80 / 79 / 79 / 79 | 1 / 1 / 1 / 1 |
+| Shrine bowl | 221 | 0 |
+| Blue IC White Pavilion | 3 | 0 |
+| Twilight Glass | 1 | 0 |
+
+All matching input positions are behind the paired camera. Blue slot4 and
+slots5737/15558 share exact position(-10510.69238,611.63318,-4371.43750), with
+different raw colors. Twilight Glass slot2 is exactly
+(-10493.73438,611.61084,-4364.25391). These upstream known-position matches
+are absent in the simultaneous output: positive evidence for recovering missing
+sources upstream, NOT a complete current-light inventory. In particular the
+four lanterns DO have downstream matches here. The18922 PI-marked input slots
+(16739 behind,13419 zero slots,427 other-marker slots) must not be counted as
+physical lights; repeated/historical/generated-slot validity and color remain
+open. No blind deduplication or publication of all input records.
+
+Evidence directory:
+`artifacts/light-research/manylights-pair-2252-20260926-camp-behind/`.
+Original `manylights-pair-2252-2350765-1.bin`, log and INI preserved.
+`decoded-world.json` supersedes initial `decoded.json`, which is invalid for
+input positions because of the wrong coordinate assumption. Instrument/game
+code was unchanged; only offline decoder corrected. Next: same player location,
+camera facing camp, second paired capture to compare known-source membership.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,

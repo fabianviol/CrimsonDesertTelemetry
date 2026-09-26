@@ -1,8 +1,8 @@
 """Offline comparison of one fenced input/output diagnostic, NOT an API decoder.
 
 Input occupancy/lifetime and color semantics are intentionally not inferred.
-World conversion of input positions is an explicit camera-relative hypothesis;
-known-position controls can test it. Output count applies ONLY to output.
+Input coordinate interpretation must be explicitly selected by the caller.
+Known-position controls can test it. Output count applies ONLY to output.
 """
 import argparse
 import json
@@ -16,7 +16,9 @@ LIGHT_BYTES = COUNT * STRIDE
 FILE_BYTES = HEADER.size + SCENE + 2 * LIGHT_BYTES + COUNTER
 
 
-def decode(data, anchors=()):
+def decode(data, anchors=(), input_space='camera-relative'):
+    if input_space not in ('world', 'camera-relative'):
+        raise ValueError('Explicit input coordinate convention required')
     if len(data) != FILE_BYTES:
         raise ValueError('Wrong size / partial snapshot')
     h = HEADER.unpack_from(data)
@@ -41,7 +43,7 @@ def decode(data, anchors=()):
     if output_count > COUNT:
         raise ValueError('Invalid OUTPUT valid count')
 
-    def inspect(offset, count):
+    def inspect(offset, count, space):
         rows, zero, other, invalid = [], 0, 0, 0
         for slot in range(count):
             p = offset + slot * STRIDE
@@ -56,16 +58,18 @@ def decode(data, anchors=()):
             if not all(map(math.isfinite, values)):
                 invalid += 1
                 continue
-            relative = values[:3]
-            rows.append({'slot': slot, 'relativePosition': relative,
-                         'worldPositionCandidate': tuple(relative[i]+camera[i] for i in range(3)),
+            raw_position = values[:3]
+            relative = tuple(raw_position[i]-camera[i] for i in range(3)) if space == 'world' else raw_position
+            world = raw_position if space == 'world' else tuple(relative[i]+camera[i] for i in range(3))
+            rows.append({'slot': slot, 'rawPosition': raw_position, 'relativePosition': relative,
+                         'worldPositionCandidate': world,
                          'rawColor': values[4:8],
                          'behindCamera': sum(relative[i]*forward[i] for i in range(3)) < 0})
         return {'piCandidates': len(rows), 'behindCandidates': sum(r['behindCamera'] for r in rows),
                 'zeroSlots': zero, 'otherMarkerSlots': other, 'nonfinitePiSlots': invalid}, rows
 
-    output_stats, output_rows = inspect(base, output_count)
-    input_stats, input_rows = inspect(base + LIGHT_BYTES + COUNTER, COUNT)
+    output_stats, output_rows = inspect(base, output_count, 'camera-relative')
+    input_stats, input_rows = inspect(base + LIGHT_BYTES + COUNTER, COUNT, input_space)
     matches = []
     for name, position in anchors:
         def near(rows):
@@ -75,22 +79,23 @@ def decode(data, anchors=()):
     return {'pid': pid, 'processStartFileTime': process_start, 'frame': frame, 'bank': bank,
             'capturedTick': captured, 'completedTick': completed, 'fence': fence,
             'resources': {'input': hex(inp), 'output': hex(out), 'counter': hex(counter)},
-            'camera': camera, 'forward': forward, 'outputValidCount': output_count,
+            'camera': camera, 'forward': forward, 'inputPositionSpace': input_space, 'outputValidCount': output_count,
             'outputCounterWords': counter_data, 'input': input_stats, 'output': output_stats,
             'anchors': matches,
             'scope': 'Same-boundary GPU bytes. Input PI candidates are NOT proven current lights. '
-                     'Input world conversion assumes camera-relative positions. Input/output RGB are NOT normalized. '
+                     'Input coordinate convention is caller-selected. Input/output RGB are NOT normalized. '
                      'Renderer inclusion is distinct from geometric line-of-sight, on-screen visibility and ON/OFF.'}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('capture', type=Path)
+    parser.add_argument('--input-space', choices=('world', 'camera-relative'), required=True)
     parser.add_argument('--anchor', nargs=4, action='append', default=[], metavar=('NAME', 'X', 'Y', 'Z'))
     parser.add_argument('--out', type=Path)
     args = parser.parse_args()
     anchors = [(a[0], tuple(map(float, a[1:]))) for a in args.anchor]
-    result = json.dumps(decode(args.capture.read_bytes(), anchors), indent=2, allow_nan=False)
+    result = json.dumps(decode(args.capture.read_bytes(), anchors, args.input_space), indent=2, allow_nan=False)
     if args.out:
         with args.out.open('x', encoding='utf-8') as output:
             output.write(result + '\n')

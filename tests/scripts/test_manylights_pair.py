@@ -36,6 +36,15 @@ class PairTests(unittest.TestCase):
         struct.pack_into('<8f', data, 128+2816+150*48, 1, 2, -3, 3.14159265, 4, 5, 6, 0.001)
         self.assertEqual(pair.decode(data)['output']['piCandidates'], 1)
 
+    def test_world_input_does_not_add_camera_twice(self):
+        data = self.fixture()
+        pos = 128+2816+pair.LIGHT_BYTES+256+150*48
+        struct.pack_into('<3f', data, pos, 11, 22, 27)
+        r = pair.decode(data, [('rear', (11, 22, 27))], 'world')
+        self.assertEqual(r['anchors'][0]['inputCandidates'][0]['relativePosition'], (1, 2, -3))
+        self.assertTrue(r['anchors'][0]['inputCandidates'][0]['behindCamera'])
+        self.assertEqual(r['anchors'][0]['outputMatches'], [])
+
     def test_reject_invalid_provenance(self):
         for offset, fmt, value in [(0, '<I', 0), (28, '<I', 0), (56, '<Q', 999),
                                    (80, '<Q', 0x3000), (104, '<Q', 1), (128+0x20, '<I', 1),
