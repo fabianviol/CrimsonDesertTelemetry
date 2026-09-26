@@ -16,7 +16,7 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-Three requests consumed3 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Four requests consumed4 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
 directory. **Rotation comparison COMPLETE. Next: resolve which upstream input
@@ -33,6 +33,18 @@ Control expires after5s without an eligible frame; max8 paired transactions per
 process; idle until explicit request; rejects loading, busy paired requests and
 faults. Copy restores input shader-resource access with enhanced buffer barriers.
 See LIGHT_CONTROL_RESEARCH.md for build-specific input provenance.
+
+**Specific rear bowl14:07:** owner corrected the mistaken use of shrine anchor;
+new location measured explicitly. API159942 player(-10485.007,605.23517,-4439.536),
+fresh pair4 frame27555/fence45753 has the only nearby rear light cluster within
+35gu at(-10492.52100,606.88226,-4446.79297),10.58gu from player. TWO valid output
+contributions (slots37/40), centroid used as anchor;121 PI input candidates
+within0.45gu. Widening match radius0.6/0.75/1gu keeps121. This is NOT the shrine
+bowl's220. Association is proximity behind camera plus owner's bowl description,
+not a decoded physical-object name. Input positions span X[-10492.590,-10492.297],
+Y[606.605,607.236],Z[-4446.79297,-4446.79248]. Evidence:
+`artifacts/light-research/manylights-pair-2252-20260926-rear-bowl-1407/` original
+4596968-4.bin,log,INI,decoded-world.json. No new source-validity conclusion.
 
 **Latest pair13:59, camp BEHIND:** frame352,fence37401,output23 valid (2 behind).
 L1/L2/L3/L4/shrine/blue/Twilight input candidate counts remain EXACTLY
