@@ -8,6 +8,16 @@ sources behind camera, not merely visible lights. One passive /v1/snapshot read
 malformed=0,outsideRadius=0. The small set is already in the source stream, not
 caused by HUD hide-blocked or current range rejection. Why fewer are selected than
 in the owner's earlier view is NOT established by this single snapshot.
+Second passive snapshot while owner reports NO radar lights at the four-lantern
+shed: sequence42034, player(-10537.646,609.02704,-4426.5254), rendered age32ms,
+capture10709/frame43672; active5,published4,malformed0,outsideRadius1. All4 clear,
+measurement ages16/16/16/172ms. Three positions within~0.6gu of paired camera,
+one near player; none corresponds to the four documented fixed lantern positions.
+An unused PowerShell delta-array expression errored; reported positions/counts/
+metadata came directly from the same JSON snapshot, not that failed expression.
+Do NOT conclude definite frustum culling or complete360 impossibility explains
+this new sparsity: first check established ManyLights capture/view/counter pairing
+and actual lamp state. No HUD filter restores records absent from its input.
 Code: radar has no camera-frustum test; PhysicsVisibilityClient only adds metadata,
 never removes raw sources. .10 did not change native ManyLights capture/decoder.
 Current source is renderer-selected filtered ManyLights, not a proven complete
