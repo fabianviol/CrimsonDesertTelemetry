@@ -56,6 +56,49 @@ inject a dispatch assuming the engine rebinds all state afterward; the captured
 next pass reuses most of it. Never edit a previous frame's numeric light slot.
 The old capture proves this old frame's chain, not current-build addresses.
 
+## ManyLights input for off-screen coverage — 2026-09-26
+
+Current priority is acquisition of off-screen lights, NOT light switching.
+The public raw feed is raw POST-filter output, not raw input to ProcessManyLights.
+Absence there does not establish absence in the input. Existing captured PSO475
+tests frustum planes and HiZ before appending output; brightness/distance affect
+selection extent. This is evidence for a concrete mechanism, not proof that the
+current build rejected each missing source through one particular branch.
+
+Exact current EXE SHA256:
+`57da440d72f4db974f25fef047cf84c4dadd999a88cb2a3c5af4c9bd67fde1e7`.
+Unwind-aligned function0x143DA8210..0x143DAB737 fully decoded by existing
+`artifacts/light-research/preset-static-20260924.py --function 0x143DA8210`.
+Saved listing: `artifacts/light-research/manylights-input-boundary-25477059-20260926.json`.
+
+| Input provenance in current EXE | Evidence |
+| --- | --- |
+| Owner | RCX saved into R13 at0x143DA823E; same owner in existing Render bridge |
+| Input outer wrapper | `mov rsi,[r13+0x628]` at0x143DA9406 |
+| Binding name | RIP-relative literal `g_manyLightsDataBuffer` at0x143DA9452 |
+| SRV bind | RSI passed in R8 at0x143DA94BC, virtual binder+0x4C0 at0x143DA94C5 |
+| Later dispatch | Dispatch(512,1,1) at0x143DA97D4, existing hook at0x143DA97DA |
+| Input resource wrapper | outer+0x30 -> inner; inner+0xC0 stride, +0xC4 count, +0x168 native resource |
+
+Read-only live confirmation PID24696, bridge sample74395/frame48659/age47ms:
+owner0x4B1AC67DC00, input outer0x4B18A88D200, inner0x4B18B2F2840,
+stride48,count32768,native resource0x133430C90; bridge OUTPUT is0x133436AC0.
+Live load bytes `498BB528060000` and live binding-name literal match disk.
+These are process-local diagnostic addresses, NOT future anchors. Reads used
+existing Render mapping's seqlock and Core.ReadOnlyProcess; no remote function
+calls, GPU copy, breakpoint or writes. GPU contents were NOT read in this step.
+
+Next bounded diagnostic: copy this input alongside output/counter and paired
+scene using the existing fence-completed readback infrastructure, after the same
+dispatch, preserving the input's actual resource state. Compare known camp
+positions in both. Do not install stale console addresses or use its historical
+fixed-delay completion. Input validity is a separate question: prior producer
+captures had repeated groups and counter[0] represented free slots, not a live
+prefix (CODEX_HANDOVER_FIRE.md, September6 producer checks). Post-filter counter
+DWORD1 cannot be applied to this input. Its RGB also precedes the captured color
+conversion. Presence upstream would locate the loss; it would not by itself
+prove a complete, current, ready-to-publish360 light inventory.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,

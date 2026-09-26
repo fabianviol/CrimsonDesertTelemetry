@@ -6,6 +6,22 @@ remembers broader previous radar coverage. At night more lights return; rotating
 the camera brings more into the feed. Do not dismiss that observation or call
 complete360 coverage impossible. ESC is being used by owner to freeze game time.
 
+**Latest: actual ManyLights INPUT resolved, read-only,2026-09-26.** Owner rightly
+redirected investigation to the INPUT, not another output/HUD audit. Current EXE's
+ProcessManyLights setup loads `[R13+0x628]` at VA0x143DA9406, registers the literal
+`g_manyLightsDataBuffer` at0x143DA9452 and passes that wrapper as R8 to its SRV
+binder at0x143DA94C5, before Dispatch at0x143DA97D4. R13 is the same owner already
+captured in our Render bridge. Live PID24696/sample74395/frame48659,age47ms:
+owner0x4B1AC67DC00 -> +0x628 outer0x4B18A88D200 -> +0x30 inner0x4B18B2F2840;
+stride48,count32768,resource0x133430C90, DISTINCT from output0x133436AC0.
+Live load bytes `498BB528060000` and name string agree with exact-EXE analysis.
+This verifies the input route/resource wrapper, NOT GPU contents or complete360
+coverage. No new hook, query, game write, package or config change. Details and
+evidence: LIGHT_CONTROL_RESEARCH.md, section "ManyLights input for off-screen
+coverage". Next is a fence-completed INPUT+OUTPUT+scene paired diagnostic at the
+existing boundary; retain current public output. Do not apply output valid-prefix
+counter semantics to input or blindly publish all32768 producer slots.
+
 **Latest: known physical anchors missing when looking away,09:19.** Owner asks
 whether HUD dots are real lights or artifacts, then supplies screenshot4e2246e5
 looking away from camp,player(-10538.404,608.976,-4431.55),radius100,22 shown/0 hidden.
@@ -84,8 +100,8 @@ rejected a particular current lamp. v2.0.0 already used filtered-manylights;
 complete360 was not proven for that release. Never restore stale capacity tails
 to imitate a larger list. Owner's earlier denser view is not disproven.
 
-**Next:** inspect/validate the EXISTING ManyLights input before ProcessManyLightsCS
-at the known boundary, paired with the current output/camera. Captured binding is
+**Next (input wrapper now resolved above):** compare the EXISTING ManyLights input
+before filtering with the current output/camera. Captured binding is
 t18/space37 resource213 -> u13/space39 resource217 (LIGHT_CONTROL_RESEARCH.md).
 Do not mistake initial PIX resource bytes or old producer allocation contents for
 fresh complete lights: validity/generation, position and RGB transformations must
