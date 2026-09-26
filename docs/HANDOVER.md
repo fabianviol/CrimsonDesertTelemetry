@@ -6,6 +6,24 @@ remembers broader previous radar coverage. At night more lights return; rotating
 the camera brings more into the feed. Do not dismiss that observation or call
 complete360 coverage impossible. ESC is being used by owner to freeze game time.
 
+**Latest rear-source distinction,09:07/09:08:** new screenshot yaw240.4,pitch-0.9
+matches two passive API reads40947/frame8194 and42216/frame11959, camera identical.
+74 published (90 active,16 outside100gu,0 malformed);8 behind camera:6 spots,
+2 points. Rear distances11.12..17.92gu,angles133.3..165.3 degrees from forward:
+genuinely behind, not merely outside the drawn frustum. Front sources extend87.79gu.
+Rear luminance0.034..0.842 includes faint spots, not only exceptionally bright lights;
+all8 physics-clear, but hide-blocked=0 in screenshot, so that is not why others vanish.
+Strong observed distinction is proximity, not a unique point/spot class.
+At XZ(-10497.55,-4358.118), earlier front-facing screenshot yaw28.6 shows TWO point
+contributions (L~0.1846/1.171); both current rear-facing reads contain only ONE,
+L0.842 at(-10497.625,611.2619,-4358.118). This supports per-contribution selection
+and brightness/extent dependence, NOT a proven current shader branch: screenshots
+are different times and individual effect contributions can change. Do not invent
+a physical lamp name, stable slot identity or measured influence radius.
+Evidence: artifacts/light-research/offscreen-survivors-20260926-0907.json;
+owner screenshots83e3a71c/eff9da2f/37435a6d in chat (76/36/74 shown,all0 hidden).
+No plugin/config change or new native sampling was performed.
+
 Two passive API samples during owner-reported ESC pause,08:47:22/08:47:59:
 sequence93995->96244,capture23927->24462,renderer frame23084->24657,age79/16ms.
 Both contain76 lights:52 point/front,15 spot/front,2 point/behind,7 spot/behind
