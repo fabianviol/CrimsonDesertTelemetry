@@ -16,12 +16,13 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-Two requests consumed2 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Three requests consumed3 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
-directory. **Next: owner turns camera AWAY from camp without moving player, then
-take the third paired snapshot against the fresh13:56 camp-facing control below.**
-No new install or toggle required.
+directory. **Rotation comparison COMPLETE. Next: resolve which upstream input
+records are current/active and their conversion, using the saved pairs and
+existing producer/ProcessManyLights evidence. No more camera turns required now.**
+Do not publish all PI candidates or replace raw output with retained history.
 Decode with `scripts/Decode-ManyLightsPair.py --input-space world` for this build;
 `--anchor NAME X Y Z` repeats. INPUT positions are already WORLD coordinates;
 OUTPUT positions still require the paired camera addition.
@@ -33,7 +34,24 @@ process; idle until explicit request; rejects loading, busy paired requests and
 faults. Copy restores input shader-resource access with enhanced buffer barriers.
 See LIGHT_CONTROL_RESEARCH.md for build-specific input provenance.
 
-**Latest pair13:56, camp now IN FRONT:** frame55620,fence34188,camera
+**Latest pair13:59, camp BEHIND:** frame352,fence37401,output23 valid (2 behind).
+L1/L2/L3/L4/shrine/blue/Twilight input candidate counts remain EXACTLY
+80/79/79/79/220/3/1; all seven anchor locations now have ZERO output matches,
+versus1/1/1/1/2/1/1 at13:56. All matched input positions are behind camera.
+Camera(-10507.34277,608.14697,-4450.25195),forward(-0.373713,-0.188034,-0.908285).
+Forward changed155.197deg; camera displaced11.627gu during third-person orbit
+(owner reports only turning, player pose not stored in paired binary). Samples
+184.875s apart, not simultaneous across poses; each input/output pair IS fenced
+together. This locates known-position loss in renderer selection before HUD;
+it does NOT establish full input freshness/completeness or one fixed near radius.
+Evidence: `artifacts/light-research/manylights-pair-2252-20260926-camp-away-1359/`
+contains original4116015-3.bin,log,INI anddecoded-world.json. Initial terminal
+angle180 was a PowerShell integer Clamp overload artifact; corrected explicit
+double Clamp yields155.197deg. Input rawColor.w sign is NOT an active flag:
+all matched fire records are negative even in the front-facing control that
+produces output. No game/config/HUD change. Result saved, no owner wait.
+
+**Control pair13:56, camp IN FRONT:** frame55620,fence34188,camera
 (-10508.72949,607.93359,-4461.79443),forward(0.121950,-0.152331,0.980777).
 100 valid output records. L1/L2/L3/L4 each input80/79/79/79 candidates and1
 output; shrine input220/output2; blue input3/output1; Twilight Glass input1/

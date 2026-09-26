@@ -162,6 +162,43 @@ input positions because of the wrong coordinate assumption. Instrument/game
 code was unchanged; only offline decoder corrected. Next: same player location,
 camera facing camp, second paired capture to compare known-source membership.
 
+### Live rotation comparison,13:56 to13:59 (same process)
+
+Second pair `manylights-pair-2252-3931140-2.bin`: frame55620,fence34188,
+camera(-10508.72949,607.93359,-4461.79443),forward(0.121950,-0.152331,0.980777).
+Third pair `manylights-pair-2252-4116015-3.bin`: frame352,fence37401,
+camera(-10507.34277,608.14697,-4450.25195),forward(-0.373713,-0.188034,-0.908285).
+Owner was asked only to rotate and reported ready. Paired files do not include
+player position; camera moves11.627gu on its third-person orbit, direction
+changes155.197deg. These poses are184.875 seconds apart, not time-frozen data.
+Each input/output snapshot uses one completed submission fence.
+
+| Known anchor | Input candidates, both poses | Output facing | Output away |
+| --- | ---: | ---: | ---: |
+| L1 | 80 | 1 | 0 |
+| L2 test | 79 | 1 | 0 |
+| L3 | 79 | 1 | 0 |
+| L4 | 79 | 1 | 0 |
+| Shrine bowl | 220 | 2 | 0 |
+| Blue IC White Pavilion | 3 | 1 | 0 |
+| Twilight Glass | 1 | 1 | 0 |
+
+All matched input positions change from front to behind. Total valid output
+count100 ->23 (2 rear); these are whole captured output counts, not HUD counts.
+Upstream known-position candidates persist while downstream matches disappear.
+This supports engine view selection, not a forgotten35gu HUD/API cutoff. It does
+not justify publishing every upstream slot: away input contains18943 PI slots,
+with repeated records and unproven lifetime/color semantics. RawColor.w sign
+alone cannot label fire entries inactive; their negative-w front counterparts
+also coexist with matching valid output contributions.
+
+Evidence directories `artifacts/light-research/`:
+`manylights-pair-2252-20260926-camp-facing-1356/` and
+`manylights-pair-2252-20260926-camp-away-1359/`, each with original binary/log/INI
+and explicit world-input decode. Next is bounded offline input validity and
+conversion analysis from saved pairs/known producer code, not another rotation
+or arbitrary restoration of output tails. No public feed changed.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,
