@@ -1,6 +1,49 @@
 # Current: configurable physics/HUD radius — 2026-09-26, Codex
 
-**Latest requirement/check: preserve off-screen / behind-camera sources in RAW API.**
+**Current: off-screen coverage audit, 2026-09-26 (no runtime/code change).**
+Owner needs CURRENT lights around360 degrees, including behind the camera, and
+remembers broader previous radar coverage. At night more lights return; rotating
+the camera brings more into the feed. Do not dismiss that observation or call
+complete360 coverage impossible. ESC is being used by owner to freeze game time.
+
+Two passive API samples during owner-reported ESC pause,08:47:22/08:47:59:
+sequence93995->96244,capture23927->24462,renderer frame23084->24657,age79/16ms.
+Both contain76 lights:52 point/front,15 spot/front,2 point/behind,7 spot/behind
+(front/behind = dot with paired camera forward, NOT screen-frustum membership).
+Player and complete paired camera identical; light POSITION multisets identical
+ignoring slot/order, RGB/luminance multisets differ. Fresh rendering continues
+while pose is static; game-time freeze is OWNER-REPORTED, not measured by this API.
+Evidence: artifacts/light-research/offscreen-pause-20260926-0847.json.
+
+Offline comparison v2.0.0->HEAD: filter_thunk.asm byte-identical; managed
+RenderLightReader keeps the same valid-prefix, world transform and source
+acceptance/radius logic. Added visibility metadata and last-whole-sample reuse do
+not filter raw records. PhysicsVisibilityClient adds metadata with Select;
+radar only applies player radius, marker cap and optional hide-blocked, no frustum.
+Native Record still copies post-filter output+counter at the same semantic
+boundary; changes are ambient sharing, startup gating, submission handling and
+exact-build relocation, not a new per-light selection loop. This is NOT a live
+old/new game-build comparison or proof that all engine selection is unchanged.
+
+Existing CAPTURE-EXTRACTED pso-475.ll (light-control-pix-20260924) confirms
+ProcessManyLightsCS uses SceneConstantBuffer _frustumPlanes at1872 (CB rows117+)
+and g_hiZMap in selection before atomic append to output. The tested extent
+depends on RGB/brightness/distance, not simply whether the source point lies in
+the view cone; special branches also exist. This supports view-dependent mixed
+coverage, NOT a claim that point/spot alone determines inclusion or which branch
+rejected a particular current lamp. v2.0.0 already used filtered-manylights;
+complete360 was not proven for that release. Never restore stale capacity tails
+to imitate a larger list. Owner's earlier denser view is not disproven.
+
+**Next:** inspect/validate the EXISTING ManyLights input before ProcessManyLightsCS
+at the known boundary, paired with the current output/camera. Captured binding is
+t18/space37 resource213 -> u13/space39 resource217 (LIGHT_CONTROL_RESEARCH.md).
+Do not mistake initial PIX resource bytes or old producer allocation contents for
+fresh complete lights: validity/generation, position and RGB transformations must
+be checked before exposing that input. Preserve current raw/render stream. No new
+hook, build, game write, installation or rotation request performed for this audit.
+
+**Earlier sparse daylight observations (preserved):**
 Owner sees fewer radar lights even with blocked sources shown and explicitly needs
 sources behind camera, not merely visible lights. One passive /v1/snapshot read
 (no extra native/game query): sequence36114, playing, rendered age62ms, API radius100,
