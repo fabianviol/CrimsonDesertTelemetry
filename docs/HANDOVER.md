@@ -45,10 +45,11 @@ use the new name, historical notes keep old links (GitHub redirects).
 
 **One next step:** report the completed scan, then finish the pending GitHub-only
 publication with the exact unchanged ZIP. Do not request the completed owner live test
-again. Before publishing, correct the release-note fallback sentence: the HUD
-falls back to rendered output, but configured upstream smoothing deliberately
-reports unavailable rather than silently changing its source. No binary change
-is needed for that wording. Use the ZIP and `docs/releases/v2.2.0.md`.
+again. The owner authorized pushing the completed work after the small text fix.
+The release-note fallback sentence is now corrected: the HUD falls back to rendered
+output, but configured upstream smoothing deliberately reports unavailable rather
+than silently changing its source. No binary/package change. Use the unchanged ZIP
+and corrected `docs/releases/v2.2.0.md` for the separate GitHub release step.
 
 # Previous checkpoint — 2026-09-26, Claude: all-around engine lights integrated
 
