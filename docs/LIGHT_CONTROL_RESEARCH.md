@@ -251,6 +251,41 @@ generation constants/noise or honestly specified derived position), special
 records and runtime integration. Keep renderer output as reference/selection
 stream; do not silently rename the input control as a finished light feed.
 
+### Specific rear-bowl AN/AUS/AN validation — 2026-09-26
+
+Owner walked to the previously measured rear bowl and explicitly switched it.
+Fixed anchor(-10492.520996,606.882263,-4446.792969),0.45gu match tolerance;
+NOT the shrine. PID2252, unchanged private diagnostic/plugin/config.
+
+| Measurement | A1 ON | B OFF | A2 ON |
+| --- | ---: | ---: | ---: |
+| Capture run | 5 | 6 | 7 |
+| Frame / fence | 40626 /88893 | 52356 /92403 | 62750 /95511 |
+| Input dispatch bound | 1770 | 1736 | 1770 |
+| Bowl members inside bound | 32 | 0 | 32 |
+| Explicit bowl groups | 2 x16 | 0 | 2 x16 |
+| Bowl position matches outside bound | 89 | 89 | 89 |
+| Nearby paired output matches | 1 | 0 | 1 |
+
+The bound changes by34: two headers plus32 members. Full-capacity hits121 ->89
+->121 would incorrectly suggest the OFF bowl still has89 active records.
+This validates current-prefix/group semantics for this physical source, without
+arbitrary positional deduplication. It does not prove a complete world inventory.
+Group headers change from1462/1615 to1360/1513, so slots are not stable IDs.
+A2 header1360 converts to RGB(2.0874567033,0.6492280213,0.1595906163), matching
+paired output slot4 within4.452e-8. Header1513 converts to
+(0.3686018992,0.1138570532,0.0280757912), but has no nearby output match in this
+capture. Do not label both input groups renderer-selected or infer geometric
+visibility from that selection. Exact position/special-color caveats above remain.
+
+Evidence: `artifacts/light-research/manylights-aba-2252-rear-bowl-20260926/`,
+subdirectories `A1-on/`, `B-off/`, `A2-on/`, each with binary, log, INI and
+`groups.json`. Binaries: `manylights-pair-2252-7000687-5.bin`,
+`manylights-pair-2252-7196187-6.bin`, `manylights-pair-2252-7369453-7.bin`.
+A2 SHA256: `5d505a71e8b0151b00df5725e4e656bb85435ac96632708fddbffa2e7e4b0bb9`.
+No feed/HUD change or additional toggle needed; next is scoped runtime
+integration after position/special-case semantics are handled or clearly bounded.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,

@@ -1,20 +1,22 @@
 # Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
 
-**ABA IN PROGRESS, owner at measured rear bowl:** A1-on captured run5,
-PID2252,tick7000687,frame40626,fence88893. Prefix1770; bowl32 current members in
-two16-member groups (headers1462/1615),121 full-capacity matches. Narrow0.45gu
-output match1 this pose; do not conflate input groups with output selection.
-Player just before request(-10493.513,605.4289,-4447.177). Evidence:
-`artifacts/light-research/manylights-aba-2252-rear-bowl-20260926/A1-on/` binary,
-log,INI,groups.json. **B-off captured run6 after explicit owner AUS:**
-tick7196187,frame52356,fence92403,prefix1736 (1770-34 = two headers +32 members).
-Bowl current matches32 ->0, groups2 ->0, output1 ->0. Exactly89 out-of-bound
-position matches remain, same89 as A1: directly demonstrates why tails must not
-be published as on-lights. Whole output count4, capture progressing. Evidence
-in sibling `B-off/` binary/log/INI/groups.json. Next owner AN -> ONE pair A2-on.
-Keep same fixed bowl anchor(-10492.520996,606.882263,-4446.792969),
-not shrine, and verify input-bound group/color loss/reappearance, not tail counts.
-No polling/session wait between owner replies. 6/8 requests consumed.
+**ABA COMPLETE, specific rear bowl:** PID2252, owner-operated AN/AUS/AN,
+fixed anchor(-10492.520996,606.882263,-4446.792969), not the shrine.
+Current input groups2 ->0 ->2; matched members32 ->0 ->32; paired output
+matches1 ->0 ->1 within0.45gu. Out-of-bound position matches stay89 throughout:
+tail presence cannot represent ON. Input bounds1770 ->1736 ->1770, difference34
+equals two headers +32 members. A1 headers1462/1615 become1360/1513 in A2;
+slot numbers are transient, not object identity. A2 group1360 converted RGB
+matches output slot4 within4.452e-8; the other group has no nearby output match.
+A1 run5 tick7000687 frame40626 fence88893; B run6 tick7196187 frame52356
+fence92403; A2 run7 tick7369453 frame62750 fence95511. Progressing, fenced pairs.
+Evidence: `artifacts/light-research/manylights-aba-2252-rear-bowl-20260926/`
+with `A1-on/`, `B-off/`, `A2-on/`, each original binary/log/INI/groups.json.
+Player before A1(-10493.513,605.4289,-4447.177). Specific-source freshness/control
+validated; not complete360 coverage or ready-to-publish semantics. No further
+owner toggle required. Next: resolve/declare group position and special colors,
+then scoped upstream-feed integration retaining renderer output as reference.
+No polling/session wait between owner replies. 7/8 requests consumed.
 
 **LATEST: input bounds + group semantics resolved offline on saved live pairs.**
 Use `groups.json` in each of the four pair directories, not full-capacity PI
@@ -57,7 +59,7 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-Six requests consumed6 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Seven requests consumed7 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
 directory. **Rotation comparison and known-source group/color controls COMPLETE.
