@@ -319,6 +319,109 @@ live bowl's 16-member particle groups. Array resources are NOT resolved yet.
 Next bounded PIX question: resource213 history relative to GlobalId93's read.
 Do not infer execution order or same-frame contribution from GlobalId numbering
 across command lists/queues. No replay, live acquisition, plugin or API changes.
+**Answered offline in the next section; no PIX UI step is needed.**
+
+### Resource 213 access history, resolved offline — 2026-09-26, Claude
+
+Same capture and export. No PIX UI, replay, game access, build or plugin change.
+Method: walk the whole frame with the time-accurate descriptor timeline of
+`Resolve-PixExportBindings.py`, test every table slot of every dispatch/draw, and
+count a hit ONLY when the pipeline's actual extracted shader declares that register
+(DXIL resource-binding table). All 287 compute PSOs were extracted; the four
+extracted earlier (475, 21562, 21575, 21582) are byte-identical. Undeclared slots
+produced many false candidates (e.g. `SystemEffectUpdateCS`, `AdaptExposureCS`);
+table contents alone are never an access. Enhanced barriers bracket every access
+found, but are not an inventory: a first access in an ECL scope needs no barrier.
+No graphics draw bound 213, 230 or 234.
+
+| GlobalId | queue / list | shader (PSO) | 213 access |
+| --- | --- | --- | --- |
+| 89 | q4 / 5 | CalculateManyLightsBoundsCS (474) | read t18 |
+| 93 | q4 / 5 | ProcessManyLightsCS (475) | read t18 |
+| 757 | q4 / 21556 | **InjectLightsCS (21570)**, new | write u12 |
+| 759 | q4 / 21556 | InjectLightGroupsCS (21582) | write u12 |
+| 771, 775 | q4 / 21556 | GPUSpawnPointUpdateCS (21575) | write u38 |
+| 779 | q4 / 21556 | InjectEmitterLodLightCS (21562) | write u38 |
+| 11304, 12952-12967 | q1 / 21759 | **GPUParticleUpdateCS** (21821, 21844, 21861, 22040, 22038, 22027), new | write u38 |
+
+`InitSortingDataIndirectCS` and `BuildLightTreeLevel0CS` also declare
+`g_manyLightsDataBuffer`, but at their dispatches it is output 217 (PSO470 t18 ->217).
+
+**Established: nothing writes 213 before GlobalId93 inside the capture.** List 5 is
+the first list on q4; the producers run two lists later on q4 and on q1. GlobalId93
+reads what the PREVIOUS frame's producers wrote. Hence, unlike most event states,
+the serialized initial 213 in `resources.bin` IS the input of GlobalIds 89/93.
+
+**Established: the structure counter alternates per frame.** The consumer passes of
+list 5 bind `g_structureCounterBufferUAV` u2 ->230. `InjectLightsCS` binds the same
+name ->234, and the particle producers name 234 `g_manyLightsDataCounterBufferUAV`
+(u19) and allocate by atomic add at DWORD0. `InjectLightsCS` resets its counter:
+DWORD0 = cb.z + cb.y (CPU light records), DWORD1/2 = cb.z (records taken from the
+global list), DWORD3..5 = 0xFFFFFFFF, DWORD6..10 = 0, bytes 44..296 = 0. Initial 230
+is such a reset counter after the producers' atomic allocations: DWORD0 2236,
+DWORD1 0, min bounds 0xFFFFFFFF, everything else zero. Initial 234
+holds a CONSUMED state: DWORD0 2236, DWORD1 84 outputs, +1e8-offset bounds and
+luminance floats, i.e. the previous frame's consumer counter. Frame N producers fill
+one counter; frame N+1 ProcessManyLights consumes it while frame N+1 producers reset
+and fill the other. Our paired diagnostic copies the counter bound at the
+ProcessManyLights hook, the consumer: correct for DWORD0 input bound and DWORD1
+output count. Never read the producer counter as the current bound.
+
+**Strong inference, one frame: the fence chain matches.** q4 waits fence3 >=43857
+before list 5. Fence3 advances six signals per frame (43860..43865 here), so 43857
+is the previous frame's signal after q1 lists 21757+21759, the GPUParticleUpdateCS
+writes. q1 waits fence21467 39531 (after q4 list 21556) before those lists. Chain:
+q4 producers (N) -> q1 particle update (N) -> q4 bounds/ProcessManyLights (N+1).
+One frame of latency by design.
+
+**Writer semantics from the executed DXIL:**
+
+- `GPUParticleUpdateCS` (21821, stores near listing lines 21415 and 21663) writes a
+  full 48-byte `ManyLightsData {float4 _position; float4 _color; uint2 _up; uint2 _look}`
+  per live particle. Slot: packed dword at particle block +80, high16 = header slot,
+  low16 = count+1; member slot = header +1 + particle index while index < count.
+  0xFFFFFFFF = no group: a standalone slot is allocated by atomic add at counter
+  DWORD0, bounded <32768. position.xyz = SceneConstantBuffer `_viewPos` + particle
+  position (hence the measured WORLD input); position.w = pi or min(pi, profile
+  value). RGB = rgb / max(1, 0.005 * Rec.709 luminance), clamped to [0,200].
+  color.w = +/-max(0.001, radius term): NEGATIVE for group members, POSITIVE for
+  standalone particle lights. The half at +46 is -1 or minus an emitter constant
+  (+84), so it can be -0; do not assume every member passes a strict `<0` test.
+  This explains the empirical group rules: members are particles of one emitter.
+- `InjectLightsCS` (Dispatch(1,1,1), NumThreads 256: at most 256 CPU records in THIS
+  frame) copies 64-byte `LightDataEncoded` (+ int4 `_shadowParam`) from
+  `g_globalLightDataBuffer` t7 and `g_lightInjectDataBuffer` t15 to slots [0, cb.x).
+  Global-list records get |w| = 1e6; `_shadowParam.w` bit0 negates w, `>>1` selects
+  exposure compensation from `_exposure0.x` (clamped 0.05..150 or a second curve);
+  bit1 of SceneConstant `_isPhotosensitiveMode_isAllolwBlood` scales RGB by 0.1.
+  **The special negative-RGB records originate here:** when any source RGB < 0,
+  position.x/y are replaced by `_view`-space x/y of (pos - `_viewPos`) (SceneConstant
+  offset 992); z is kept. Those records do NOT carry world XY. Particle lights never
+  produce negative RGB.
+- Already known: GPUSpawnPointUpdateCS headers (-2/count at +40, zeroed members),
+  InjectLightGroupsCS (`LightGroupInstanceData` at destinationOffset, abs w) and
+  InjectEmitterLodLightCS (LOD list, atomic allocation).
+
+**Consequences for integration.** 213 below the consumer DWORD0 is rebuilt every
+frame from every GPU producer found; nothing on the GPU upstream of it is more
+complete. Further upstream is only CPU-side choice of which lights are uploaded and
+which emitters simulate, which this capture cannot show. Low slots hold CPU-authored
+lights (consistent with live Twilight Glass slot2 and blue slot4); fire bowls are
+particle groups allocated after them, in per-frame atomic order. Exclude or separately
+label special negative-RGB records until their view-space convention is decoded;
+they are not a decoder bug. A (luminance-weighted) member centroid is an honest
+DERIVED group position; the renderer's noisy per-frame choice is not reproducible.
+
+Not established: CPU-side culling before upload; this frame's root-constant values
+(root CBV 21583 is rewritten by `ResourceModifications` during the frame, so its
+initial bytes are not authoritative); identity of current-build shaders beyond the
+live 1e-7 color agreement; complete world coverage.
+
+Evidence: `artifacts/light-research/manylights-input-history-20260926/`:
+`all-compute-psos/` (287 DXBC + `.ll`), window PSOs, `resource-{213,230,234}-initial.bin`
+(SHA256 213 `a4ec5628…a914`, 230 `14444ea0…0356`, 234 `adb252b7…a950`), and
+`analysis/` with the scripts (`resource_history2.py` = declared-register history,
+`window_dispatches.py`, `extract_many.py`), `history2.txt/json` and resolver outputs.
 
 ## PIX revisited for control parameters, not playback
 

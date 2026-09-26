@@ -168,6 +168,11 @@ write/dependency history of213 relative to event93, then the final group-member
 writer if needed. This may clarify provenance; it must not become another broad
 GPU project delaying a useful upstream feed.
 
+**Update, Claude, same day:** both answered offline from the existing export, without
+PIX UI: GPUParticleUpdateCS is the member writer, and event93 consumes the previous
+frame's producers. See HANDOVER's current checkpoint and LIGHT_CONTROL_RESEARCH.md,
+"Resource 213 access history, resolved offline".
+
 ## 5. Resume safely / one next step
 
 First review the existing paired-data/group decoder against captured PSO475 and

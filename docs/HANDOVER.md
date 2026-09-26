@@ -1,4 +1,32 @@
-# Current handoff to Claude — 2026-09-26, Codex
+# Current checkpoint — 2026-09-26, Claude
+
+**Codex's pending PIX question is answered OFFLINE; the requested PIX UI screenshot
+is not needed.** The complete access history of ManyLights input 213 was derived
+from the existing export. A hit counts only where the executed shader declares
+the register; all 287 compute PSOs were extracted. Nothing writes 213 before
+ProcessManyLights (GlobalId93) in the captured frame, so it consumes the PREVIOUS
+frame's producers. Producers: q4 InjectLightsCS 757 (new: CPU light lists) ->
+InjectLightGroupsCS 759 -> GPUSpawnPointUpdateCS 771/775 (group headers) ->
+InjectEmitterLodLightCS 779, then q1 GPUParticleUpdateCS 11304/12952-12967 (new:
+the actual group-member writer). Fence values chain them into the next frame's
+ProcessManyLights. The structure counter alternates per frame (230 consumer, 234
+producer here); the paired diagnostic reads the consumer counter, which is correct.
+Group members are one emitter's particles: negative color.w, slot = header+1+index,
+RGB clamped [0,200]. The special negative-RGB records come from InjectLightsCS and
+carry VIEW-space x/y, not world x/y. Details: LIGHT_CONTROL_RESEARCH.md, "Resource
+213 access history, resolved offline". Evidence:
+`artifacts/light-research/manylights-input-history-20260926/`.
+
+No game, plugin, package, config or PIX UI action. The game was not running at
+session start; WinPix was left open by the owner and untouched. Still open before
+integration: group presentation (derived centroid), special records (exclude and
+count), a continuous bounded input readback (the diagnostic allows 8 transactions
+per process) and unexamined CPU-side upload selection.
+**One next step:** with owner approval, design the default-off upstream stream:
+consumer-bounded standalone and group records with derived centroid, special
+negative-RGB records excluded and counted, renderer output kept as reference.
+
+# Previous handoff to Claude — 2026-09-26, Codex (history)
 
 **Cold re-entry:** read [CLAUDE_REENTRY_20260926.md](CLAUDE_REENTRY_20260926.md)
 first. It covers product/private-release state, camera PR, the working experimental
