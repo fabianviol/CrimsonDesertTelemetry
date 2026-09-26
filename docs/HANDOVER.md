@@ -1,5 +1,13 @@
 # Current checkpoint — 2026-09-26, Claude: release candidate 2.2.0 built, NOT published
 
+**Owner confirmation, 2026-09-26, Codex takeover:** owner explicitly confirmed
+the exact `v2.2.0-ModManagers.zip` live test: "Hat soweit alles geklappt."
+Codex rechecked ZIP/expanded ASI hashes against the values below; both match.
+This is owner-reported live acceptance, not an additional instrumented API test.
+No rebuild needed. The D3D12 test executables and Claude's new `--upstream` /
+`--engine-lights` modes are present; package-build CTest logs record their passes.
+They use synthetic WARP data, separately from the successful game test.
+
 Owner asked for a new release after upstream.1 worked. Decisions (owner): version
 **2.2.0**; physics visibility is "DAS MAIN FEATURE von 2.2" -> production, ON by
 default; publish on **GitHub only**, after the owner live-tests the exact ZIP. The
@@ -23,14 +31,16 @@ use the new name, historical notes keep old links (GitHub redirects).
   ZIP SHA256 `9DEACE1ACAA6E953FA72140E0C7A7A3C13CC4FDCE7708D703DAC130792F6C014`,
   ASI `CDEAB32F8559A39803C70CE036F60B6B476A411BDDF58F4890A67D29BC866A98`.
   Expanded: `artifacts/mod-manager/v2.2.0-20260926-173840-107-ce091b02/`.
-- Not done: live test of this exact ZIP, VirusTotal (upload needs owner OK),
+- Not done: VirusTotal (upload needs owner OK),
   `git push`, tag `v2.2.0`, GitHub release, GitHub About text (draft in
   PUBLIC_DESCRIPTIONS.md). Local main is ahead of origin/main (fast-forward).
 
-**One next step:** owner closes the game, removes the upstream.1 package in DMM,
-deploys the exact 2.2.0 ZIP, and checks HUD/radar all around, a wall (blocked)
-and a lantern (clear), plus API `/v1/snapshot` schema 1.6. On "passt": push,
-tag v2.2.0 and create the GitHub release with the ZIP and `docs/releases/v2.2.0.md`.
+**One next step:** scan the unchanged final ASI/ZIP and record exact verdicts,
+then push/tag/publish on GitHub only. Do not request the completed owner live test
+again. Before publishing, correct the release-note fallback sentence: the HUD
+falls back to rendered output, but configured upstream smoothing deliberately
+reports unavailable rather than silently changing its source. No binary change
+is needed for that wording. Use the ZIP and `docs/releases/v2.2.0.md`.
 
 # Previous checkpoint — 2026-09-26, Claude: all-around engine lights integrated
 
