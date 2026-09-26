@@ -1,4 +1,5 @@
 #include "render_capture.h"
+#include "manylights_pair.h"
 #include "submission_observer.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
@@ -69,7 +70,67 @@ uint32_t ambientLimit = AmbientSampleLimit;
 constexpr uint64_t SubmissionTimeoutMs = 60000;
 constexpr uint64_t GpuTimeoutMs = 5000;
 
-size_t CopyBytes() { return ambientMode ? AmbientBytes : LightBytes + CounterBytes; }
+HANDLE pairEvent{};
+std::filesystem::path pairDirectory;
+bool pairRequested{};
+uint64_t pairRequestedAt{};
+uint32_t pairRuns{};
+ID3D12Resource* pendingInput{};
+ManyLightsPairHeader pairHeader{};
+constexpr uint32_t PairRunLimit = 8;
+size_t CopyBytes() { return ambientMode ? AmbientBytes : pairEvent ? PairCopyBytes : LightBytes + CounterBytes; }
+bool InitializePairControl(const wchar_t* directory)
+{
+    if (pairEvent || readback || ambientMode || phase != Phase::Stopped) return false;
+    pairDirectory = directory;
+    const auto name = L"Local\\CrimsonDesertTelemetry.ManyLightsPair." + std::to_wstring(GetCurrentProcessId());
+    pairEvent = CreateEventW(nullptr, FALSE, FALSE, name.c_str());
+    if (!pairEvent) return false;
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    { CloseHandle(pairEvent); pairEvent = nullptr; return false; }
+    ch::Log("ManyLights INPUT/OUTPUT diagnostic enabled, IDLE until explicit request, max8 files; public feed unchanged.");
+    return true;
+}
+void PollPairRequest()
+{
+    if (!pairEvent) return;
+    if (pairRequested && GetTickCount64() - pairRequestedAt > 5000)
+    {
+        pairRequested = false;
+        ch::Log("ManyLights pair request expired: no eligible source/frame; no file saved.");
+    }
+    if (WaitForSingleObject(pairEvent, 0) != WAIT_OBJECT_0) return;
+    const bool streamRunning = phase == Phase::Ready || phase == Phase::Recorded ||
+        phase == Phase::Submitting || phase == Phase::WaitingGpu;
+    // A normal light/sky copy may already be in flight. Reserve the next free
+    // transaction, but never queue another diagnostic behind a paired one.
+    if (!captureReady || !streamRunning || pendingInput || pairRequested || pairRuns >= PairRunLimit || error)
+    { ch::Log("ManyLights pair request refused: not ready, busy, faulted or limit reached; not queued."); return; }
+    pairRequested = true; pairRequestedAt = GetTickCount64();
+    ch::Log("ManyLights pair requested: next eligible frame, 5-second expiry.");
+}
+void SavePair(const void* mapped)
+{
+    pairHeader.completedTick = GetTickCount64(); pairHeader.fenceValue = fenceValue;
+    pairHeader.flags = 15; // exact input context, paired scene, same-list copy, completed queue fence
+    const auto path = pairDirectory / (L"manylights-pair-" + std::to_wstring(GetCurrentProcessId()) +
+        L"-" + std::to_wstring(capturedAt) + L"-" + std::to_wstring(pairRuns) + L".bin");
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    bool ok = file != INVALID_HANDLE_VALUE;
+    const auto write = [&](const void* bytes, DWORD count) {
+        DWORD written{};
+        return WriteFile(file, bytes, count, &written, nullptr) && written == count;
+    };
+    if (ok)
+    {
+        ok = write(&pairHeader, sizeof(pairHeader)) && write(scene.data(), SceneBytes) &&
+            write(mapped, static_cast<DWORD>(PairCopyBytes));
+        CloseHandle(file);
+    }
+    ch::Log("ManyLights pair %s: frame=%u input=0x%llX output=0x%llX fence=%llu file=%s; input validity NOT inferred.",
+        ok ? "saved" : "WRITE FAILED (reject partial file)", capturedFrame, pairHeader.input,
+        pairHeader.output, fenceValue, path.string().c_str());
+}
 void CloseAmbientFile()
 {
     if (ambientFile != INVALID_HANDLE_VALUE) { CloseHandle(ambientFile); ambientFile = INVALID_HANDLE_VALUE; }
@@ -241,6 +302,31 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     if (!ReadScene(scene) || !ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) return;
     memcpy(&capturedFrame, scene.data() + contract::FrameOffset, sizeof(capturedFrame));
     if (hasFrame && capturedFrame == lastFrame) return;
+    ID3D12Resource* input{};
+    ID3D12GraphicsCommandList7* inputList{};
+    if (!ambientCopy && pairRequested)
+    {
+        uint64_t inputOuter{};
+        ID3D12GraphicsCommandList* resolvedList{};
+        IUnknown* inputDevice{};
+        ID3D12Device* inputD3DDevice{};
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
+        const bool valid = Read(owner + PairInputOwnerOffset, inputOuter) &&
+            Resolve(inputOuter, command, input, resolvedList) && input != source && input != counter &&
+            resolvedList == list && SUCCEEDED(input->GetDevice(IID_PPV_ARGS(&inputDevice))) &&
+            inputDevice == preparedDeviceIdentity && SUCCEEDED(inputDevice->QueryInterface(IID_PPV_ARGS(&inputD3DDevice))) &&
+            SUCCEEDED(inputD3DDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options, sizeof(options))) &&
+            options.EnhancedBarriersSupported && SUCCEEDED(list->QueryInterface(IID_PPV_ARGS(&inputList)));
+        if (inputD3DDevice) inputD3DDevice->Release();
+        if (inputDevice) inputDevice->Release();
+        if (!valid)
+        {
+            if (inputList) inputList->Release();
+            inputList = nullptr; input = nullptr;
+            ch::Log("ManyLights pair refused: input resource/list validation failed; normal stream continues.");
+        }
+        pairRequested = false;
+    }
     if (ambientMode)
     {
         ExposureCacheSample cache{};
@@ -255,6 +341,8 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     pendingCounter = counter;
     pendingList = list;
     pendingAmbient = ambientCopy;
+    pendingInput = input;
+    if (input) input->AddRef();
     capturedAt = now;
     // These identities belong to THIS recorded pair. Never resolve them again
     // when the worker publishes: the renderer may already have switched banks.
@@ -264,6 +352,18 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
     capturedBufferIndex = UINT32_MAX;
     uint32_t currentIndex{};
     if (!ambientCopy && owner && Read(owner + contract::OwnerBankIndexOffset, currentIndex)) capturedBufferIndex = currentIndex;
+    if (input)
+    {
+        ++pairRuns;
+        pairHeader = {};
+        pairHeader.pid = GetCurrentProcessId(); pairHeader.frame = capturedFrame; pairHeader.bank = capturedBufferIndex;
+        pairHeader.capturedTick = now; pairHeader.owner = owner;
+        pairHeader.input = reinterpret_cast<uint64_t>(input);
+        pairHeader.output = capturedOutputResource; pairHeader.counter = capturedCounterResource;
+        FILETIME creation{}, exit{}, kernel{}, user{};
+        if (GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+            memcpy(&pairHeader.processStart, &creation, sizeof(creation));
+    }
     std::array<D3D12_RESOURCE_BARRIER, 2> barriers{};
     for (auto& barrier : barriers)
     {
@@ -286,6 +386,19 @@ void Record(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t ow
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     }
     list->ResourceBarrier(barrierCount, barriers.data());
+    if (input)
+    {
+        // The proven input SRV remains SHADER_RESOURCE at this post-dispatch
+        // boundary. Use a buffer access/sync round-trip, not an assumed UAV state.
+        auto transition = PairInputBarrier(input, false);
+        D3D12_BARRIER_GROUP group{}; group.Type = D3D12_BARRIER_TYPE_BUFFER;
+        group.NumBarriers = 1; group.pBufferBarriers = &transition;
+        inputList->Barrier(1, &group);
+        list->CopyBufferRegion(readback, PairInputOffset, input, 0, LightBytes);
+        transition = PairInputBarrier(input, true);
+        inputList->Barrier(1, &group);
+        inputList->Release();
+    }
     // A camera update concurrent with recording invalidates this pair. Still
     // submit and fence the copy, but never publish the mismatched sample.
     if (!ReadScene(confirmation) || !SameScene(scene.data(), confirmation.data())) capturedAt = 0;
@@ -368,6 +481,22 @@ bool Prepare()
     else ch::Log("ManyLights recurring capture ready: exact filter callsite, %u Hz, paired counter, submission fence; instrumented run.", intervalMs ? 1000 / intervalMs : 0u);
     return true;
 }
+}
+
+bool EnableManyLightsPair(uint64_t moduleBase, const wchar_t* directory)
+{
+    // The outer exact-EXE gate is still required in instruments::Run. Do not
+    // silently carry this experimental field/anchor to another profile/build.
+    if (contract::BuildId != "25477059" || contract::HookRva != 0x3DA97DA || !CheckCapturePreflight(moduleBase)) return false;
+    constexpr std::array<uint8_t, 7> expected{0x49,0x8B,0xB5,0x28,0x06,0,0};
+    std::array<uint8_t, 7> bytes{};
+    if (!ch::mem::SafeRead(reinterpret_cast<void*>(moduleBase + 0x3DA9406), bytes.data(), bytes.size()) || bytes != expected)
+        return false;
+    constexpr std::array<uint8_t, 12> bind{0x4C,0x8B,0xC6,0x48,0x8B,0xD0,0x48,0x8B,0xCB,0x41,0xFF,0xD2};
+    std::array<uint8_t, 12> binding{};
+    if (!ch::mem::SafeRead(reinterpret_cast<void*>(moduleBase + 0x3DA94BC), binding.data(), binding.size()) || binding != bind)
+        return false;
+    return InitializePairControl(directory);
 }
 
 void CaptureFilter(uint64_t outer, uint64_t command, uint64_t counterOuter, uint64_t owner)
@@ -601,6 +730,7 @@ bool StartCapture(uint64_t moduleBase, unsigned sampleRateHz, bool skyEnabled)
 void PollCapture()
 {
     AcquireSRWLockExclusive(&lock);
+    PollPairRequest();
     if (ambientMode) PollAmbientRequest();
     if (!ambientMode && !captureReady && captureReadyEvent &&
         WaitForSingleObject(captureReadyEvent, 0) == WAIT_OBJECT_0)
@@ -651,10 +781,16 @@ void PollCapture()
                     sky::PublishSample(scene.data(), mapped, capturedAt, capturedOutputResource, ambientHeader.producerRva);
                 else if (capturedAt) PublishSample(scene.data(), mapped, static_cast<const uint8_t*>(mapped) + LightBytes,
                     capturedAt, capturedOutputResource, capturedCounterResource, capturedOwner, capturedBufferIndex);
+                if (pendingInput)
+                {
+                    if (capturedAt) SavePair(mapped);
+                    else ch::Log("ManyLights pair discarded: camera changed during recording; no file saved.");
+                }
                 const D3D12_RANGE noWrites{0,0};
                 readback->Unmap(0, &noWrites);
                 pendingSource->Release(); pendingSource = nullptr;
                 if (pendingCounter) pendingCounter->Release(); pendingCounter = nullptr;
+                if (pendingInput) pendingInput->Release(); pendingInput = nullptr;
                 pendingList->Release(); pendingList = nullptr;
                 lastFrame = capturedFrame; hasFrame = true;
                 phase = Phase::Ready;
@@ -725,6 +861,8 @@ void StopCapture()
     CloseAmbientControl();
     CloseCaptureReadyGate();
     CloseAmbientFile();
+    if (pairEvent) { CloseHandle(pairEvent); pairEvent = nullptr; }
+    pairRequested = false;
     ReleaseSRWLockExclusive(&lock);
     PublishStatus(Status::Stopped);
     if (skyStreaming) sky::PublishStatus(Status::Stopped);
@@ -742,6 +880,7 @@ bool OwnsCodeAddress(uint64_t address)
     return hookEnabled && address >= hookAddress && address < hookAddress + contract::HookSignature.size();
 }
 #ifdef CDT_RENDER_CAPTURE_TEST
+bool InitializePairForTest(const wchar_t* directory) { return InitializePairControl(directory); }
 // Host-test-only entry. Never compiled into the ASI; production always requires
 // the executable hash plus the exact callsite signature before installing hooks.
 void InitializeCaptureForTest(uint64_t moduleBase)

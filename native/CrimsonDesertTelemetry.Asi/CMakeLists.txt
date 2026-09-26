@@ -240,6 +240,8 @@ target_compile_definitions(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE CDT_
 target_compile_options(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/WX;/permissive->")
 target_link_libraries(CrimsonDesertTelemetryRenderCaptureSmoke PRIVATE cdt_sdf minhook d3d12 dxgi psapi user32)
 add_test(NAME render-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke)
+add_test(NAME manylights-pair-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --manylights-pair)
+set_tests_properties(manylights-pair-d3d12 PROPERTIES TIMEOUT 20)
 set_tests_properties(render-capture-d3d12 PROPERTIES TIMEOUT 20)
 add_test(NAME ambient-capture-d3d12 COMMAND CrimsonDesertTelemetryRenderCaptureSmoke --ambient)
 set_tests_properties(ambient-capture-d3d12 PROPERTIES TIMEOUT 20)

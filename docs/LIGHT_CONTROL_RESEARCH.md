@@ -99,6 +99,30 @@ DWORD1 cannot be applied to this input. Its RGB also precedes the captured color
 conversion. Presence upstream would locate the loss; it would not by itself
 prove a complete, current, ready-to-publish360 light inventory.
 
+Private implementation `2.1.15-manylights.1`: opt-in Research.ManyLightsPair,
+explicit named-event request, max8 transactions,5s eligibility timeout. Uses
+existing post-filter callback and queue-fence completion; does not add another
+hook or change output/API bytes. Input access round-trip is enhanced BUFFER
+COMPUTE_SHADING/SHADER_RESOURCE -> COPY/COPY_SOURCE -> original, whole resource.
+Old captured input213 acquire/release corroborates this state in
+CommandLists_000.cpp at GlobalId88 / later release; current exact input load and
+R8 binder bytes are checked before enabling. Unsupported enhanced barriers,
+wrong wrapper dimensions, aliased source/counter or wrong device refuse only
+the diagnostic. A failed/in-flight capture retains resources until process exit.
+File ABI: manylights_pair.h,128-byte header,2816-byte scene,1572864-byte output,
+256-byte output counter,1572864-byte input. Header carries frame,bank,pid/process
+start,resource identities,timestamps and fence. Partial files are rejected.
+No interpretation of input occupied slots as live lamps is built into capture.
+
+Owner explicitly distinguishes renderer view-selection from camera-position
+geometric line-of-sight, including sources behind the camera. Neither implies
+on-screen membership or physical ON/OFF. This diagnostic compares renderer
+selection; existing physics estimates geometric line-of-sight. Off-screen
+candidate completeness and freshness must be demonstrated before extending any
+consumer stream. Existing PIX CSVs (including manylights.csv with569 PI-marked
+slots and sceneconstants.csv) remain historical reference, not a valid-count or
+current-frame proof; the later raytracing SRV name alone does not identify input.
+
 ## PIX revisited for control parameters, not playback
 
 Bounded offline check, 2026-09-24. Extracted captured PSOs 21562, 21564,

@@ -1,4 +1,37 @@
-# Current: configurable physics/HUD radius — 2026-09-26, Codex
+# Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
+
+Private `2.1.15-manylights.1` adds a bounded input/output snapshot at the EXISTING
+post-ProcessManyLights hook. No new hook, no public API change, no 360-coverage
+claim. The new package is NOT live-validated yet; game must close before DMM
+replacement. Current .10 installation is untouched. READY diagnostic package:
+`artifacts/mod-manager/CrimsonDesertTelemetry-v2.1.15-manylights.1-ModManagers.zip`.
+ZIP SHA256 `9B19C6EFE06D417A39622AD9089D66DF014154745A031C81F112CC91E63B5052`;
+ASI SHA256 `27FD7CF81876AC2D9BC89D0EA7610AA9D9263451759D237325C7C3C644BB0556`.
+Expanded: `artifacts/mod-manager/v2.1.15-manylights.1-20260926-100424-306-34410caf/CrimsonDesertTelemetry`.
+PASS7 focused native tests (pair WARP, existing lights/ambient/both sky orders,
+preflight and thunk),5 decoder tests, package rules and exact ZIP/expanded check.
+Initial package validation rejected the new INI key because its allow-list had
+not yet been extended. Fixed validator and reran successfully against the SAME
+immutable ZIP; no binary/config/archive replacement and no live diagnostic yet.
+INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
+legacy SourceVisibility=0. No manual edits needed. After the owner returns ingame,
+run `scripts/Start-ManyLightsPair.ps1` ONCE: returns immediately, no waiting.
+Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
+directory. Request two poses (camp-facing / camp-behind), not another toggle test.
+Decode with `scripts/Decode-ManyLightsPair.py`; `--anchor NAME X Y Z` repeats.
+Each file includes scene2816 + output full capacity + output counter256 + input
+full capacity, same submission fence. Input PI-marker/position matches are
+candidates, NOT an active-light count; never apply output counter to input.
+Control expires after5s without an eligible frame; max8 paired transactions per
+process; idle until explicit request; rejects loading, busy paired requests and
+faults. Copy restores input shader-resource access with enhanced buffer barriers.
+See LIGHT_CONTROL_RESEARCH.md for build-specific input provenance.
+
+**Owner's distinction (2026-09-26):** renderer camera/view-dependent selection
+versus geometric line-of-sight from the camera POSITION, including behind camera.
+Keep both separate from screen-frustum membership and actual object ON/OFF.
+Input/output comparison concerns renderer selection; physics sampling concerns
+line-of-sight. Missing from output is NOT automatically occluded or switched off.
 
 **Current: off-screen coverage audit, 2026-09-26 (no runtime/code change).**
 Owner needs CURRENT lights around360 degrees, including behind the camera, and

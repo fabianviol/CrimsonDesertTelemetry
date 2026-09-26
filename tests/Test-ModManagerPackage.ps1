@@ -53,7 +53,7 @@ function Get-ProfileRules([ValidateSet('production', 'research')][string]$Profil
     if ($ProfileName -eq 'research') {
         $rules.Experimental = @{ PhysicsVisibility = 'bool' }
         $rules.Research = @{
-            PhysicsProbe = 'bool'
+            PhysicsProbe = 'bool'; ManyLightsPair = 'bool'
             SignedDistanceReadback = 'bool'; SignedDistanceReadbackCount = 'int:1:120'; SignedDistanceReadbackIntervalMs = 'int:250:10000'
             SpatialProbe = 'bool'; SpatialReadback = 'bool'; SpatialReadbackCount = 'int:1:8'
             SpatialReadbackIntervalMs = 'int:250:10000'; SpatialVisibilitySeconds = 'int:0:4294967295'; AmbientProbe = 'bool'
@@ -123,7 +123,7 @@ function Assert-IniConfiguration([string]$Ini, [ValidateSet('production', 'resea
         if (-not $sections.ContainsKey($requiredSection)) { throw "Missing INI section [$requiredSection]." }
         foreach ($requiredKey in $rules[$requiredSection].Keys) {
             # Added in the physics diagnostic. Older research INIs default to OFF.
-            if ($requiredSection -eq 'Research' -and $requiredKey -eq 'PhysicsProbe') { continue }
+            if ($requiredSection -eq 'Research' -and $requiredKey -in @('PhysicsProbe','ManyLightsPair')) { continue }
             if (-not $sections[$requiredSection].ContainsKey($requiredKey)) { throw "Missing INI setting $requiredSection.$requiredKey." }
         }
     }
@@ -260,6 +260,8 @@ ResultFile=inject_result.txt
     Assert-IniConfiguration $researchIni 'research'
     Assert-IniConfiguration ($researchIni.Replace('EnableConsole=0', 'EnableConsole=1').Replace('SpatialProbe=0', 'SpatialProbe=1')) 'research'
     Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=1")) 'research'
+    Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nManyLightsPair=1")) 'research'
+    Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nManyLightsPair=2")) 'research' } 'Invalid ManyLightsPair boolean was accepted.'
     Assert-IniConfiguration ($researchIni + "`n[Experimental]`nPhysicsVisibility=1`n") 'research'
     Assert-Rejected { Assert-IniConfiguration ($researchIni + "`n[Experimental]`nPhysicsVisibility=2`n") 'research' } 'Invalid PhysicsVisibility boolean was accepted.'
     Assert-Rejected { Assert-IniConfiguration ($researchIni.Replace('[Research]', "[Research]`nPhysicsProbe=2")) 'research' } 'Invalid PhysicsProbe boolean was accepted.'

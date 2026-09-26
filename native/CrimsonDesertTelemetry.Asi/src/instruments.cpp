@@ -1,6 +1,7 @@
 #include "instruments.h"
 #include "build_guard.h"
 #include "render_capture.h"
+#include "manylights_pair.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "source_visibility_bridge.h"
@@ -176,6 +177,9 @@ void RunImpl(HANDLE stopEvent)
         const unsigned rate = GetPrivateProfileIntW(L"Lights", L"ManyLightsSampleRateHz", 20, iniPath.c_str());
 #if CDT_RESEARCH
         const bool ambientProbe = GetPrivateProfileIntW(L"Research", L"AmbientProbe", 0, iniPath.c_str()) != 0;
+        if (!ambientProbe && GetPrivateProfileIntW(L"Research", L"ManyLightsPair", 0, iniPath.c_str()) != 0 &&
+            !render::EnableManyLightsPair(ch::g_game.moduleBase, std::filesystem::path(moduleDirectory).c_str()))
+            ch::Log("ManyLights INPUT/OUTPUT probe initialization refused; normal capture remains independent.");
 #else
         // An old diagnostic INI must never replace the production light/sky feed.
         constexpr bool ambientProbe = false;

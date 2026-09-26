@@ -1,10 +1,12 @@
 #include "render_capture.h"
+#include "manylights_pair.h"
 #include "submission_observer.h"
 #include "ambient_probe.h"
 #include "render_bridge.h"
 #include "sky_bridge.h"
 #include "native_contract.generated.h"
 #include <d3d12.h>
+#include <d3d12sdklayers.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <array>
@@ -15,6 +17,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <vector>
 
 namespace cdt::render
 {
@@ -25,6 +28,7 @@ bool InitializeAmbientForTest(uint64_t base, const wchar_t* directory);
 uint32_t AmbientSamplesForTest();
 void CaptureAmbient(uint64_t sky, uint64_t command, uint64_t path);
 void EnableSkyForTest();
+bool InitializePairForTest(const wchar_t* directory);
 }
 // The smoke executable links only memory/log support from imported research.
 namespace cdt::instruments { bool OwnsCodeAddress(uint64_t) { return false; } }
@@ -95,6 +99,9 @@ int main(int argc, char** argv)
     const bool ambientTest=argc==2 && std::string(argv[1])=="--ambient";
     const bool mixedTest=argc==2 && (std::string(argv[1])=="--sky-shared" || std::string(argv[1])=="--sky-first");
     const bool skyFirst=argc==2 && std::string(argv[1])=="--sky-first";
+    const bool pairTest=argc==2 && std::string(argv[1])=="--manylights-pair";
+    ComPtr<ID3D12Debug> debug;
+    if(pairTest && SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) debug->EnableDebugLayer();
     ComPtr<IDXGIFactory4> factory; Hr(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory)),"factory");
     ComPtr<IDXGIAdapter> warp; Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)),"WARP");
     ComPtr<ID3D12Device> device; Hr(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
@@ -175,6 +182,94 @@ int main(int argc, char** argv)
     HANDLE mapHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,mappingName.c_str());
     const auto* bridge=static_cast<const Mapping*>(MapViewOfFile(mapHandle,FILE_MAP_READ,0,0,MappingBytes));
     Check(bridge!=nullptr,"read bridge");
+    if(pairTest)
+    {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options{};
+        Hr(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12,&options,sizeof(options)),"enhanced barriers query");
+        Check(options.EnhancedBarriersSupported,"enhanced barriers required for pair test");
+        const auto directory=std::filesystem::absolute(L"manylights-pair-smoke-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+        Check(std::filesystem::create_directory(directory),"pair directory");
+        Check(InitializePairForTest(directory.c_str()),"pair control");
+        Check(!InitializePairForTest(directory.c_str()),"duplicate pair setup accepted");
+        std::array<uint8_t,0x200> inputInner{}; std::array<uint8_t,0x38> inputOuter{};
+        Put(inputInner,0xC0,RecordStride); Put(inputInner,0xC4,RecordCount);
+        Put(inputInner,0x168,reinterpret_cast<uint64_t>(source2.Get()));
+        Put(inputOuter,0x30,reinterpret_cast<uint64_t>(inputInner.data()));
+        Put(owner,PairInputOwnerOffset,reinterpret_cast<uint64_t>(inputOuter.data()));
+        // A distinctive input-only tail must survive the copy without entering
+        // the public output. No claim that this synthetic payload is a light.
+        barrier.Transition.pResource=source2.Get();
+        barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        list->ResourceBarrier(1,&barrier);
+        list->CopyBufferRegion(source2.Get(),LightBytes-RecordStride,counterUpload.Get(),0,RecordStride);
+        barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
+        barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        list->ResourceBarrier(1,&barrier);
+        InitializeCaptureForTest(reinterpret_cast<uint64_t>(fakeBase));
+        const auto capture=[&] { CaptureFilter(reinterpret_cast<uint64_t>(outer.data()),reinterpret_cast<uint64_t>(command.data()),
+            reinterpret_cast<uint64_t>(counterOuter.data()),reinterpret_cast<uint64_t>(owner.data())); };
+        const auto eventName=L"Local\\CrimsonDesertTelemetry.ManyLightsPair."+std::to_wstring(GetCurrentProcessId());
+        HANDLE request=OpenEventW(EVENT_MODIFY_STATE,FALSE,eventName.c_str()); Check(request!=nullptr,"pair event");
+        const auto start=[&] { Check(SetEvent(request)!=FALSE,"pair request"); PollCapture(); };
+        const auto files=[&] { std::vector<std::filesystem::path> result;
+            for(const auto& entry:std::filesystem::directory_iterator(directory)) result.push_back(entry.path()); return result; };
+        start(); capture(); PollCapture();
+        Check(files().empty() && std::strcmp(CapturePhaseForTest(),"discover (no source recorded)")==0,"pair captured while loading");
+        SignalCaptureReady(); capture(); PollCapture();
+        Check(files().empty(),"pair wrote without request");
+        // Invalid input layout consumes the request, not the normal stream.
+        Put(inputInner,0xC0,uint32_t{4}); start(); capture(); Hr(list->Close(),"invalid input close");
+        ID3D12CommandList* lists[]{list.Get()}; queue->ExecuteCommandLists(1,lists);
+        WaitForSample(bridge,device.Get(),1,100,"invalid pair broke raw output"); Check(files().empty(),"invalid input saved");
+        Put(inputInner,0xC0,RecordStride);
+        ComPtr<ID3D12Fence> gate; Hr(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"pair gate");
+        for(uint32_t n=0;n<2;++n)
+        {
+            Hr(allocator->Reset(),"pair allocator reset"); Hr(list->Reset(allocator.Get(),nullptr),"pair list reset");
+            Put(constants,0x20,uint32_t{101+n}); Put(owner,0x8F8,n);
+            start(); capture(); Put(owner,0x8F8,uint32_t{99});
+            start(); // busy must not queue an additional capture
+            Hr(list->Close(),"pair close"); Hr(queue->Wait(gate.Get(),n+1),"pair GPU block");
+            queue->ExecuteCommandLists(1,lists); PollCapture();
+            Check(files().size()==n && bridge->header.sampleSequence==n+1,"pair published before fence");
+            Hr(gate->Signal(n+1),"pair GPU release");
+            WaitForSample(bridge,device.Get(),n+2,101+n,"pair sample failed");
+            Check(files().size()==n+1,"pair file missing or busy request queued");
+            Check(memcmp(bridge->lights,light.data(),sizeof(light))==0 && bridge->lights[LightBytes-RecordStride]==0,
+                "input polluted public output");
+            const auto suffix=L"-"+std::to_wstring(n+1)+L".bin";
+            std::filesystem::path path;
+            for(const auto& f:files()) if(f.filename().wstring().ends_with(suffix)) path=f;
+            Check(!path.empty() && std::filesystem::file_size(path)==sizeof(ManyLightsPairHeader)+SceneBytes+PairCopyBytes,"pair file size");
+            std::ifstream file(path,std::ios::binary); ManyLightsPairHeader header{};
+            file.read(reinterpret_cast<char*>(&header),sizeof(header));
+            std::vector<uint8_t> payload(SceneBytes+PairCopyBytes); file.read(reinterpret_cast<char*>(payload.data()),payload.size());
+            Check(file.good() && header.magic==0x50445443 && header.flags==15 && header.frame==101+n && header.bank==n &&
+                header.input==reinterpret_cast<uint64_t>(source2.Get()) && header.output==reinterpret_cast<uint64_t>(source.Get()) &&
+                header.fenceValue==n+2 && header.processStart!=0,"pair provenance");
+            Check(memcmp(payload.data(),constants.data(),SceneBytes)==0 &&
+                memcmp(payload.data()+SceneBytes,bridge->lights,LightBytes)==0 &&
+                memcmp(payload.data()+SceneBytes+LightBytes,counterData.data(),CounterBytes)==0 &&
+                memcmp(payload.data()+SceneBytes+PairInputOffset,light.data(),sizeof(light))==0 &&
+                memcmp(payload.data()+SceneBytes+PairCopyBytes-RecordStride,counterData.data(),RecordStride)==0,"pair bytes mismatch");
+        }
+        CheckSubmissions(); StopCapture(); start(); Check(files().size()==2,"stopped pair rearmed"); CloseHandle(request);
+        ComPtr<ID3D12InfoQueue> info;
+        if(debug && SUCCEEDED(device.As(&info)))
+        {
+            for(UINT64 i=0;i<info->GetNumStoredMessages();++i)
+            {
+                SIZE_T bytes{}; info->GetMessage(i,nullptr,&bytes); std::vector<uint8_t> data(bytes);
+                auto* message=reinterpret_cast<D3D12_MESSAGE*>(data.data()); Hr(info->GetMessage(i,message,&bytes),"debug message");
+                if(message->Severity<=D3D12_MESSAGE_SEVERITY_ERROR)
+                { std::cerr<<message->pDescription<<'\n'; Check(false,"D3D12 validation error"); }
+            }
+        }
+        Check(device->GetDeviceRemovedReason()==S_OK,"pair device lost");
+        std::cout<<"ManyLights pair: explicit bounded requests, invalid layout isolation, SRV round-trip, full input/output/counter/scene bytes, blocked GPU fences, repeated requests and unchanged public feed passed.\n";
+        return 0;
+    }
     if (mixedTest)
     {
         Check(cdt::sky::OpenBridge(),"sky bridge");
