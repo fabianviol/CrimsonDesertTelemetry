@@ -1,7 +1,19 @@
 # Current: configurable physics/HUD radius — 2026-09-26, Codex
 
-**STOP: .10 startup hang, 2026-09-26 08:06 run, PID16988.** Owner reports
-frozen startup with continuing sound; process is still alive, Responding=false.
+**Current: owner reports successful UNCHANGED .10 restart and normal gameplay.**
+No INI edits were made: Radius=100 and PhysicsVisibility=1 remain the tested
+configuration. Neither the proposed35gu comparison nor PhysicsVisibility=0 was
+performed. Owner says everything looks good. During loading, the NVIDIA FPS
+counter displayed9999 for a prolonged period, then normal FPS ingame. This is a
+reported COUNTER DISPLAY, not a verified actual frame rate or established cause.
+Owner requests documentation only; do not investigate this deeply unless strong
+relevance emerges. No new process/API inspection, config change or test this turn.
+Successful startup does not explain the previous hang or establish reliability.
+**Next:** continue normal use at100gu; no forced configuration downgrade, extra
+scene test or public release. Wait for the owner's next request, not a live poll.
+
+**Historical .10 startup hang, 2026-09-26 08:06 run, PID16988.** Owner reported
+frozen startup with continuing sound; at inspection process was alive, Responding=false.
 All THREE installed binaries match the exact .10 ZIP; Radius=100 and physics
 enabled confirmed in INI/bootstrap/native logs. Not another wrong-file assumption.
 Host started, overlay ready, playable-world signal received; no explicit failure
@@ -11,9 +23,11 @@ Only logs/process state/config/hashes inspected; no API, extra game calls, dump,
 debugger, runtime writes or process termination. Cause remains UNKNOWN.
 Evidence: `artifacts/light-research/loading-hang-16988-physics10-20260926-081043`
 (copied logs+INI). The2ms native issue budget cannot interrupt a blocked call.
-**Next:** owner closes game, same .10 package with ONLY LightOverlay/Radius=35
-for the next startup comparison; do not rebuild or blame100gu without evidence.
-No waiting/polling for owner; do not promote .10 to live accepted/public release.
+After closing, the process remained listed (four threads); owner reported GPU
+usage>90% and taskkill /PID16988 /F returned "Von dieser Aufgabe wird momentan
+keine Instanz ausgefuehrt." Windows restart was recommended. No root cause proven.
+Proposed35gu/off comparisons were NOT performed; superseded by unchanged success
+above. Preserve the evidence; do not blame or exonerate100gu/the mod from one run.
 
 Owner reports the current installation works well / almost live; occasional
 "measurement expired" and many "outside sampled range". The preceding loading
@@ -29,7 +43,8 @@ Native continuous query/fan/segment bounds extended together to cover500gu plus
 12gu camera offset/fan offsets; manual diagnostic49.5/50gu bounds unchanged.
 Max256 targets,20 rounds/sec,shared2ms issue budget,9 rays and500ms expiry unchanged.
 Radius vs no-target reasons now separate. Raw records/RGB and latest-result policy
-preserved. New code has NOT been installed or live-tested; no game access this turn.
+preserved. At packaging time it was not installed/live-tested; subsequent startup
+failure and owner's unchanged successful run are recorded above.
 
 PASS focused managed physics tests (1/35/100/500gu boundaries, camera offset/orbit,
 300 raw lights vs256 targets, invalid radius, existing freshness/fault cases),
