@@ -1,5 +1,16 @@
 # Current: paired ManyLights input/output diagnostic — 2026-09-26, Codex
 
+**ABA IN PROGRESS, owner at measured rear bowl:** A1-on captured run5,
+PID2252,tick7000687,frame40626,fence88893. Prefix1770; bowl32 current members in
+two16-member groups (headers1462/1615),121 full-capacity matches. Narrow0.45gu
+output match1 this pose; do not conflate input groups with output selection.
+Player just before request(-10493.513,605.4289,-4447.177). Evidence:
+`artifacts/light-research/manylights-aba-2252-rear-bowl-20260926/A1-on/` binary,
+log,INI,groups.json. Next owner AUS -> ONE pair for B-off, then owner AN -> ONE
+pair for A2-on. Keep same fixed bowl anchor(-10492.520996,606.882263,-4446.792969),
+not shrine, and verify input-bound group/color loss/reappearance, not tail counts.
+No polling/session wait between owner replies. 5/8 requests consumed.
+
 **LATEST: input bounds + group semantics resolved offline on saved live pairs.**
 Use `groups.json` in each of the four pair directories, not full-capacity PI
 counts as current counts. PIX PSO475 reads SAME structure counter DWORD0 as
@@ -41,7 +52,7 @@ not yet been extended. Fixed validator and reran successfully against the SAME
 immutable ZIP; no binary/config/archive replacement during validation.
 INI: Research.ManyLightsPair=1, PhysicsVisibility=1, Radius=100, HideOccluded=0,
 legacy SourceVisibility=0. Installed ASI hash and these INI values verified.
-Four requests consumed4 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
+Five requests consumed5 of8 transactions. `scripts/Start-ManyLightsPair.ps1`
 requests ONCE and returns immediately, no waiting.
 Save the new `manylights-pair-<pid>-<tick>-<run>.bin` and native log from the ASI
 directory. **Rotation comparison and known-source group/color controls COMPLETE.
