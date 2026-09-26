@@ -6,7 +6,22 @@ remembers broader previous radar coverage. At night more lights return; rotating
 the camera brings more into the feed. Do not dismiss that observation or call
 complete360 coverage impossible. ESC is being used by owner to freeze game time.
 
-**Latest rear-source distinction,09:07/09:08:** new screenshot yaw240.4,pitch-0.9
+**Latest DIRECT raw audit,09:14 (owner explicitly corrected focus to reader loss):**
+Read an existing stable/seqlocked native Render MMF, no new GPU query or game write.
+PID24696,capture47052/frame26305,age78ms. Capacity32768; paired GPU validCounter=90.
+All90 prefix markers are PI,0 zero,0 other; original decoder on SAME bytes/player
+with radius100 publishes74,outside16,malformed0. Diagnostic-only decode with
+radius100000 publishesALL90. The16 excluded positions are113.06..481.91gu away,
+so no current valid-prefix light INSIDE100gu was lost in this sample.
+Rest of buffer contains415 more PI-marked records OUTSIDE valid prefix; existence
+is measured, current-frame validity is NOT. Never publish these as live or call
+them additional active lights based only on marker. Earlier diagnostic output
+was truncated, so it was repeated with bounded SUMMARY output; final evidence is
+artifacts/light-research/offscreen-raw-prefix-audit-20260926-0914.json.
+No settings/code changed. This audits our POST-filter copy, not the upstream
+ManyLights INPUT, which has not been read/compared live in this investigation.
+
+**Rear-source distinction,09:07/09:08:** new screenshot yaw240.4,pitch-0.9
 matches two passive API reads40947/frame8194 and42216/frame11959, camera identical.
 74 published (90 active,16 outside100gu,0 malformed);8 behind camera:6 spots,
 2 points. Rear distances11.12..17.92gu,angles133.3..165.3 degrees from forward:
