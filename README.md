@@ -4,7 +4,12 @@
 
 Inspect positions, colors and brightness of current light contributions from fires, candles, lanterns and glass/crystal lamps, alongside the player and render camera. Use the data in your own overlays, tools and lighting integrations.
 
-[Published downloads](https://github.com/fabianviol/CrimsonDesertTelemetry/releases)
+**New in 2.2:**
+
+- **Lights all around you.** Telemetry now reads the game's light list *before* the renderer discards what the current view cannot see. Lights behind the camera and out of view stay in the API, radar and markers. A fire bowl arrives as one light instead of many flickering particles.
+- **Which lights actually reach you.** The game's own physics casts nine rays from the camera to every nearby light. A wall blocks all nine; a lantern cage blocks only some, so the lantern stays visible. The HUD dims blocked lights (F11 hides them) and the API reports `clear` / `blocked` / `unknown` per light.
+
+[Published downloads](https://github.com/ZappendusterFX/CrimsonDesertTelemetry/releases)
 · [Watch the demo](https://youtu.be/eyRkkTXAU64)
 · [API reference](docs/API.md)
 · [Client examples](examples)
@@ -23,12 +28,11 @@ reach it through world geometry**, including sources off-screen or behind the
 camera. The current source targets **Crimson Desert patch 2.03.02** on Steam
 for Windows. Internal EXE/Steam identifiers are listed under Compatibility.
 
-Per-light geometric visibility remains experimental: the classifier has reported
-lights behind solid geometry as visible. It is included but **off by default**;
-raw and smoothed light data do not depend on it. The broader player/all-source
-candidate remains isolated under `CDT_RESEARCH=ON`. Candles, lamps and complete
-off-screen occlusion coverage are not claimed. Methods and limits are in
-[source visibility](docs/SOURCE_VISIBILITY.md).
+Per-light visibility is a sampled collision estimate, not a measurement of how
+much light gets through: any free ray counts as visible, all nine blocked as
+blocked, and anything missing, stale or failed stays `unknown` and is never hidden.
+It is **on by default** in 2.2; raw and smoothed light data do not depend on it.
+Methods and limits are in [source visibility](docs/SOURCE_VISIBILITY.md).
 
 [![Crimson Desert Telemetry: fullscreen light details and a 3D radar with the camera frustum](media/screenshot1.jpg)](https://youtu.be/eyRkkTXAU64)
 
@@ -38,11 +42,12 @@ off-screen occlusion coverage are not claimed. Methods and limits are in
 
 | Data / view | Included |
 |---|---|
-| **Lights** | World position, current linear HDR RGB, derived linear luminance, and direction/cone half-angle for recognized spot contributions |
+| **Lights** | All current engine lights around the player (including behind the camera) plus the renderer-selected contributions: world position, linear HDR RGB, luminance, spot direction/cone, and whether the renderer selected them |
+| **Light visibility** | Per-light `clear` / `blocked` / `unknown` from nine physics rays between camera and light, with measurement age |
 | **Player** | World position, physics-root forward/up vectors and heading when valid |
 | **Camera** | Native render-camera position, orientation, vertical FOV, aspect ratio and near plane |
 | **Fullscreen light overlay** | Markers at projected light positions; aim toward a source to inspect position, color, brightness and distance |
-| **3D light radar** | Nearby light contributions with height, player heading and a camera frustum that follows pitch and roll |
+| **3D light radar** | All nearby lights with height (filled = renderer-selected, hollow = outside the current view), blocked lights dimmed, player heading and a camera frustum that follows pitch and roll |
 | **Local API** | HTTP snapshots and health, WebSocket streaming, JSON Schema and JSON Lines recordings |
 | **Ambient / sky** | Global sky RGB; optional camera-local sky visibility and derived working RGB when a valid spatial sample arrives. Earlier tests succeeded, but the local fields were unavailable in one 2.03.02 release-candidate session. |
 | **Status notices** | Brief success when data becomes ready; actionable startup/build/capture errors |
@@ -82,7 +87,7 @@ Do not merge old binaries or metadata into the new package. Preserve your INI pr
 | **F8** | Show/hide the corner HUD and 3D radar |
 | **F9** | Toggle additional diagnostics |
 | **F10** | Show/hide fullscreen light markers |
-| **F11** | Experimental show/hide for classified blocked lights; meaningful only if SourceVisibility is enabled |
+| **F11** | Show/hide lights whose nine visibility rays are all blocked; unknown lights always stay visible |
 
 The HUD does not capture mouse input. Hiding it does not stop telemetry.
 These are defaults: all four shortcuts can be reassigned in the INI using decimal
@@ -101,13 +106,14 @@ Enabled=1
 NearbyRadius=100
 ManyLights=1
 ManyLightsSampleRateHz=20
+Upstream=1
 
 [Ambient]
 Enabled=1
 
 [SourceVisibility]
-; EXPERIMENTAL: current verdicts can be wrong behind solid geometry.
-Enabled=0
+; Nine physics rays camera -> light; a sampled collision estimate.
+Enabled=1
 
 [Overlay]
 Enabled=1
@@ -125,7 +131,7 @@ InitiallyVisible=1
 ToggleKey=121
 HideOccluded=0
 OcclusionToggleKey=122
-Radius=35
+Radius=100
 MaxMarkers=512
 MaxLabels=6
 
@@ -142,13 +148,13 @@ DurationMilliseconds=6000
 - `InitiallyVisible=0` hides an enabled view at launch; hotkeys cannot enable a view whose `Enabled=0`.
 - `HdrPaperWhiteNits` controls all HDR UI brightness, including markers and notices with the corner HUD disabled. The default is 200 nits, clamped to 80–500. It does not change the game's HDR settings or metadata.
 - Radar/marker swatches visualize measured HDR values; they do not reproduce the game's tone mapping. Nearby contributions share a detail box without merging, summing or smoothing their raw measurements.
-- `[SourceVisibility] Enabled=1` opts into an experimental camera-to-rendered-source classifier. It can falsely report a source behind solid geometry as visible. The default is `0`; it is not a reliable visibility filter or complete light registry.
-- `HideOccluded=1` or F11 experimentally hides sources with a fresh blocked verdict from the HUD/radar. Unknown and stale sources remain shown. Raw and smoothed API records and RGB values remain complete.
+- `[SourceVisibility] Enabled=1` (default) casts nine physics rays from the camera to each light within `[LightOverlay] Radius`. Any free ray reports `clear`, all nine blocked reports `blocked`, and missing, stale or failed results stay `unknown`. It is a sampled collision estimate, not optical transmission, and needs `ManyLights=1`. `0` switches it off; all other light data stays unchanged.
+- `HideOccluded=1` or F11 hides lights with a fresh `blocked` result from the HUD/radar; by default they are only dimmed. Unknown and stale lights always remain shown. Raw and smoothed API records and RGB values remain complete.
 - The camera frustum uses the real basis and view angles; its drawn length is schematic. World X/Z axes are not compass north; player-root orientation is not an animated body pose.
 
-The production `CDT_RESEARCH=OFF` profile contains the narrow current-volume SDF
-acquisition and rendered-source classifier, without history buffers or diagnostic
-tracing. Research, Console, Explorer, the broad player/all-source bridge and legacy
+The production `CDT_RESEARCH=OFF` profile contains the continuous physics ray fan
+for light visibility and bounded ambient acquisition, without history buffers,
+manual probes or diagnostic tracing. Research, Console, Explorer, the broad player/all-source bridge and legacy
 `OcclusionTest` remain in a separate `CDT_RESEARCH=ON` profile. See
 [configuration dependencies and validation](docs/INI_VALIDATION.md).
 
@@ -189,7 +195,7 @@ Invoke-RestMethod http://127.0.0.1:27311/v1/snapshot
 
 Product versions and API versions are separate: routes remain **HTTP API v1**.
 The current source uses snapshot schema **1.6** with lights enabled and reports
-the default-off experimental visibility capability as disabled. With lights disabled it remains
+per-light physics visibility on each rendered and upstream light. With lights disabled it remains
 **1.1**. Optional per-light
 metadata adds no route and changes no original RGB values. Clients should check
 capability/status fields and freshness instead of assuming every source is always available.
@@ -197,10 +203,11 @@ capability/status fields and freshness instead of assuming every source is alway
 - `lights.sources` contains authored engine-light records.
 - `lights.rendered.sources` contains current filtered renderer contributions, including the investigated fire/candle path, reconstructed using the camera paired with their capture.
 - `lights.upstream.sources` (schema 1.6, `Upstream=1`) contains every current engine light from the same capture before the renderer's view selection, including behind the camera. Fire bowls arrive as one summed group; `rendererSelected` marks lights that are also in `lights.rendered`.
-- With the default INI, rendered `sourceVisibility` stays `unknown` / `disabled`.
-  Opting in can attach experimental camera-to-source results to rendered records.
-  Research schema 1.5 separately supports player-to-source results on authored and
-  rendered records; original records and RGB smoothing remain unchanged.
+- With the default INI, upstream and rendered lights carry `sourceVisibility`
+  (`clear` / `blocked` / `unknown`, method `physics-ray-fan`, ray counts and
+  measurement age). A rendered contribution reports the result of its upstream
+  light. `[SourceVisibility] Enabled=0` leaves it `unknown` / `disabled`; original
+  records and RGB smoothing never depend on it.
 - Player/camera telemetry defaults to 60 Hz; native light capture defaults to 20 Hz. Faster API polling does not create additional GPU samples.
 - The arrays **overlap**; do not add them together. One physical lamp can produce several contributions.
 
@@ -248,7 +255,7 @@ Important boundaries:
 - A missing contribution is **not** a permanent physical OFF state. Stable lamp IDs, physical lumens and validated light ranges are not supplied.
 - Linear HDR RGB/luminance can vary with effects and exposure; they are not final screen pixels or exposure-normalized lamp colors.
 - With `Upstream=1` the radar shows all current engine lights around the player: filled dots are renderer-selected, hollow rings are current lights the renderer did not select in this view (not OFF). Without it, the radar only shows what the renderer selected.
-- Markers can include lights behind geometry. The optional rendered-source verdict and F11 filter are experimental and off by default; they do not establish correct candles, lamps, all known sources or complete 360-degree coverage. Fast motion can expose capture/projection latency.
+- Visibility rays sample fixed points on the camera-to-light path. Thin gaps can make a light behind a fence or cage `clear`, and geometry without collision (foliage, some decorations) does not block. Results can be up to 500 ms old; fast motion can expose capture/projection latency. Visibility does not establish correct candles, lamps or a complete list of all sources.
 - HDR UI is composited in linear light, with configurable white brightness and unchanged pixels outside the UI. It does not tone-map the whole scene. Rendering HDR UI uses two extra full-resolution GPU textures plus a scene copy/composite; the SDR path has no extra compositor pass.
 - Unrecognized output format/color-space combinations remain unsupported. Automated HDR rendering tests do not establish live HDR game or display compatibility; frame generation, other upscalers and AMD/Intel game setups remain unvalidated.
 - The external host reads process memory. The unified ASI uses guarded renderer hooks, GPU copies and optional UI hooks; the full system is **not purely read-only instrumentation**. The console that can change debug values is available only in a separate `CDT_RESEARCH=ON` build.
@@ -264,8 +271,8 @@ ctest --test-dir build/native-package-release -C Release --output-on-failure
 
 The native build requires Visual Studio C++/Windows SDK/CMake; see [local tooling](docs/TOOLING.md) for executable paths. Choose an unused local test version: package builds refuse to overwrite an existing versioned ZIP.
 
-The production package uses `CDT_RESEARCH=OFF`; bounded ambient acquisition plus
-one current SDF volume for the narrow rendered-source classifier are included.
+The production package uses `CDT_RESEARCH=OFF`; bounded ambient acquisition and
+the continuous physics visibility ray fan are included.
 Repeated captures, history, dumps, diagnostic tracing and the broad player/all-source
 bridge stay excluded. `-Research on` selects
 [CrimsonDesertTelemetry.research.ini](packaging/mod-manager/CrimsonDesertTelemetry.research.ini)
@@ -277,8 +284,8 @@ See [contributing](CONTRIBUTING.md), [research provenance](docs/PROVENANCE.md), 
 
 ## Credits and scope
 
-Created and maintained by [fabianviol](https://github.com/fabianviol), developed with **Claude** and **Codex (OpenAI)**. Runtime third-party components are credited in [provenance](docs/PROVENANCE.md) and the package's `THIRD-PARTY-NOTICES.txt`.
+Created and maintained by [ZappendusterFX](https://github.com/ZappendusterFX), developed with **Claude** and **Codex (OpenAI)**. Runtime third-party components are credited in [provenance](docs/PROVENANCE.md) and the package's `THIRD-PARTY-NOTICES.txt`.
 
-Thanks to [Moon-yungg and the World Builder project](https://github.com/Moon-yungg/crimson-desert-world-builder) for contributing [automatic direct-camera compatibility](https://github.com/fabianviol/CrimsonDesertTelemetry/pull/2) and sharing engine research that informs ongoing work.
+Thanks to [Moon-yungg and the World Builder project](https://github.com/Moon-yungg/crimson-desert-world-builder) for contributing [automatic direct-camera compatibility](https://github.com/ZappendusterFX/CrimsonDesertTelemetry/pull/2) and sharing engine research that informs ongoing work.
 
 This unofficial community project is not affiliated with or endorsed by Pearl Abyss. Use it only where game terms and applicable restrictions permit; no anti-cheat bypass or competitive advantage is provided. Source is licensed under the [MIT License](LICENSE).

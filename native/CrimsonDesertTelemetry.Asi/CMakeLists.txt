@@ -47,9 +47,12 @@ if(CDT_RESEARCH)
         src/spatial_sample.cpp src/spatial_thunk.asm src/source_visibility_bridge.cpp src/physics_probe.cpp)
     set(CDT_SDF_LIBRARY cdt_sdf)
 else()
-    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/sdf_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp)
+    # Production 2.2 source visibility is the continuous physics ray fan; its manual
+    # diagnostic modes stay refused in this build (physics_probe.cpp, CDT_RESEARCH=0).
+    set(CDT_RESEARCH_SOURCES src/spatial_acquire.cpp src/sdf_acquire.cpp src/spatial_thunk.asm src/spatial_sample.cpp
+        src/physics_probe.cpp)
     set(CDT_SDF_LIBRARY cdt_sdf_fire)
-    message(STATUS "CDT_RESEARCH=OFF: narrow rendered-source fire visibility included; research instrumentation excluded")
+    message(STATUS "CDT_RESEARCH=OFF: continuous physics source visibility included; research instrumentation excluded")
 endif()
 
 add_library(cdt_imgui STATIC
@@ -85,11 +88,10 @@ foreach(header imstb_rectpack.h imstb_textedit.h imstb_truetype.h)
     string(SUBSTRING "${stb_source}" ${license_start} -1 stb_license)
     file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt" "\n${header} (embedded in Dear ImGui)\n${stb_license}\n")
 endforeach()
-if(CDT_RESEARCH)
-    file(READ "${CDT_ROOT}/licenses/WorldBuilder-MIT.txt" worldbuilder_license)
-    file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt"
-        "\nWorld Builder / cdmodkit - physics query selection and layout\n${worldbuilder_license}\n")
-endif()
+# Both builds ship physics_probe.cpp, whose query approach is informed by World Builder.
+file(READ "${CDT_ROOT}/licenses/WorldBuilder-MIT.txt" worldbuilder_license)
+file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-NOTICES.txt"
+    "\nWorld Builder / cdmodkit - physics query selection and layout\n${worldbuilder_license}\n")
 
 set(CDT_CONSOLE_SOURCES
     src/console/breakpoint.cpp src/console/console.cpp src/console/debugcmd.cpp
@@ -137,7 +139,8 @@ enable_testing()
 add_executable(CrimsonDesertTelemetryPhysicsProbeTests tests/physics_probe_tests.cpp)
 target_compile_features(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE cxx_std_20)
 target_compile_options(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE /W4 /WX /permissive-)
-target_compile_definitions(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+# The guard test exercises the research start path; production refuses manual mode earlier.
+target_compile_definitions(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE CDT_RESEARCH=1 UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_include_directories(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE src)
 target_link_libraries(CrimsonDesertTelemetryPhysicsProbeTests PRIVATE minhook nlohmann_json::nlohmann_json)
 add_test(NAME physics-natural-query-observer COMMAND CrimsonDesertTelemetryPhysicsProbeTests)

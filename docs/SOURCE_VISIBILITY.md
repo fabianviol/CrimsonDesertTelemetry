@@ -1,5 +1,16 @@
 # Per-light source visibility
 
+**Release 2.2.0, 2026-09-26:** the continuous physics ray fan below is the
+production feature, ON by default via `[SourceVisibility] Enabled=1` in the
+`CDT_RESEARCH=OFF` build. Production runs only the continuous fan (same 9 rays,
+256 targets, 20 batches/s, 2 ms budget, 500 ms expiry, exact-build hash check);
+manual probes and research diagnostics stay ON-only, and OFF no longer selects
+the SDF classifier. Targets are the upstream lights within `[LightOverlay]
+Radius` (100 in the template). Owner live reports so far cover the private
+physics.10 and 2.1.15-upstream.1 packages; the exact 2.2.0 ZIP is validated
+separately in the handover. The limits below still apply: sampled collision,
+not optical transmission; thin gaps and non-colliding geometry.
+
 **Status update, 2026-09-26:** the owner subsequently reported near-live behavior
 and a successful unchanged physics.10 run. Those observations supersede the older
 "no live acceptance yet" build-time notes below, not all accuracy/performance

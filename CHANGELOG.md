@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.2.0 - 2026-09-26
+
+Release notes: [v2.2.0](docs/releases/v2.2.0.md). Target unchanged: patch 2.03.02
+(EXE `1.0.0.2976`, Steam build `25477059`).
+
+- Add the all-around engine light stream. With `[Lights] Upstream=1` (default)
+  every light sample also copies the ManyLights input on the same command list and
+  fence, using exact-build anchors and an enhanced-barrier round trip. The render
+  bridge becomes v4 (v3 prefix unchanged plus an input block). The host decodes it
+  with the consumer's rules: fire groups become one summed light at the member
+  mean, group members are not repeated, special view-space records are excluded
+  and counted, and colour uses the renderer's floor and matrix.
+- Publish `lights.upstream` in snapshot schema 1.6 and add capability
+  `lights.upstream`. Each light carries `rendererSelected`, paired with the
+  filtered output of the same capture.
+- Move physics source visibility into the production build, on by default. Nine
+  collision rays per light from the camera; any clear ray means `clear`, all nine
+  blocked means `blocked`, anything missing or older than 500 ms means `unknown`.
+  Targets are the upstream lights within `[LightOverlay] Radius` (100 in the
+  supplied INI, shared by markers and radar) and include lights behind the camera.
+  Manual probes and research diagnostics stay in `CDT_RESEARCH=ON`.
+- HUD, radar and markers show the all-around list: filled = renderer-selected,
+  hollow = not selected in this view. Detail cards show groups and selection.
+  Blocked lights are dimmed; F11 hides them. Unknown lights are never hidden.
+- The smoothed feed uses the upstream lights when available, with new source and
+  coverage labels; otherwise the rendered output as before.
+- Raw and authored records, rendered RGB values and routes are unchanged.
+
 ## Unreleased — production ambient and per-light occlusion
 
 - Extend automatic compatibility to the direct camera layout, so the camera stays

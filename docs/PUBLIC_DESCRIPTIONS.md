@@ -1,11 +1,13 @@
-# Public descriptions — 2.1.11, 2026-09-13
+# Public descriptions — 2.2.0, 2026-09-26
 
-These texts describe release 2.1.11. It addresses the Streamline/DXGI crash path;
-confirmation on both external reporter systems remains pending.
+These texts describe release 2.2.0. The GitHub owner is now
+[ZappendusterFX](https://github.com/ZappendusterFX); old `fabianviol` links
+redirect, but current texts use the new name. Earlier release notes and the
+handover history keep their original links.
 
 ## GitHub About text
 
-Crimson Desert telemetry. Goal: reliable ambient and per-light geometric occlusion, including off-screen sources. Blocker: fire, lamp and world-geometry occlusion.
+Live light, player, camera and ambient telemetry for Crimson Desert: all-around engine lights, per-light physics visibility, HTTP/WebSocket API, HUD and 3D radar.
 
 ## Nexus description draft — English
 
@@ -19,68 +21,66 @@ The mod provides a 3D light radar, fullscreen markers, status notices and local
 HTTP/WebSocket APIs for overlays, tools and future lighting integrations.
 It does not drive physical lamps itself.
 
-**TL;DR:** 2.1.11 addresses the traced NVIDIA Streamline/DXGI swapchain-replacement
-crash path while keeping the released telemetry features enabled. Per-light
-wall/terrain occlusion remains unfinished and excluded from production. The full
-current source is on GitHub, and testing, technical ideas, reviews, forks and pull
-requests toward reliable ambient and direct player-to-light visibility are welcome.
+**New in 2.2:**
 
-Target: **Steam build 25246367 / EXE 1.0.0.2850**. Native capture rejects unknown builds.
+- **Lights all around you.** Telemetry reads the game's light list before the
+  renderer discards what the current view cannot see. Lights behind the camera
+  stay in the API, radar and markers. A fire bowl arrives as one light.
+- **Which lights actually reach you.** The game's own physics casts nine rays from
+  the camera to every nearby light. A wall blocks all nine; a lantern cage only
+  some, so the lantern stays visible. The HUD dims blocked lights (F11 hides them)
+  and the API reports `clear` / `blocked` / `unknown` per light. On by default.
 
-### Goal and current development blocker
+Target: **Crimson Desert patch 2.03.02** on Steam for Windows (EXE `1.0.0.2976`,
+Steam build `25477059`). Native capture rejects unknown builds.
 
-The goal is telemetry that answers both how exposed the player/camera location is
-to the sky/environment and which individual nearby lights can reach it through
-world geometry, including sources off-screen or behind the camera. The current
-blocker is consistent occlusion in all its forms: fires, candles and other lamps
-still disagree with walls, buildings and terrain in controlled tests. Ambient
-passed open/enclosed/open, but camera-orientation semantics still need validation.
+The complete source and preserved research are on
+[GitHub](https://github.com/ZappendusterFX/CrimsonDesertTelemetry). Testing,
+technical ideas, reviews, forks and pull requests are welcome. Evidence should
+identify the game build, light type and exact player/light position.
 
-The complete current development state and preserved research are on
-[GitHub](https://github.com/fabianviol/CrimsonDesertTelemetry). Everyone is welcome
-to fork the repository, test alternatives and contribute improvements.
-
-Help with controlled in-game tests, D3D12 or geometry analysis, implementation
-ideas, code review and pull requests is welcome. Evidence should identify the
-game build, source type and exact player/light position.
-
-- Rendered light positions, linear HDR RGB, luminance and recognized spotlight directions/cone angles; separate authored light records.
+- All current engine lights around the player, including behind the camera; fire
+  groups as one light; renderer selection per light.
+- Rendered light positions, linear HDR RGB, luminance and recognized spotlight
+  directions/cone angles; separate authored light records.
+- Per-light physics visibility: `clear` / `blocked` / `unknown`, ray counts and
+  measurement age.
 - A separate grouped/EMA light feed preserving the original contributions.
 - Player root and independent render-camera position, orientation and projection.
-- Global sky, camera-local ambient exposure and a derived ambient estimate.
+- Global sky RGB; camera-local sky exposure and a derived ambient estimate when
+  available.
 - Configurable HUD/radar, fullscreen markers and startup/error notices.
 - Local HTTP snapshots, health, schema and WebSocket streaming, default port 27311.
 
-**Per-light geometric occlusion is excluded from this release.** Controlled
-concealed-source tests failed. The implementation and evidence are preserved for
-later work. Markers can appear through walls; F11 and occlusion-hiding INI settings
-are absent. No API records or RGB values are filtered. Retained visibility metadata
-reports unknown/disabled with no attenuation.
+Visibility is a sampled collision estimate, not how much light gets through.
+Thin gaps can make a light behind a fence clear, and geometry without collision
+does not block. Unknown lights are never hidden, and no API record or RGB value
+is removed. `[SourceVisibility] Enabled=0` switches it off.
 
-Camera-local ambient passed an open/enclosed/open route in the earlier OFF v2.1.9
-package. Current acceptance is tracked separately. Exposure is sampled at the
-camera location, not measured as sky pixels in the image; its orientation
-sensitivity remains under investigation. The estimate is not physical brightness.
+Camera-local sky visibility and its derived estimate are optional fields; on patch
+2.03.02 they have remained unavailable for whole sessions.
 
 ### Controls
 
-All offered feature switches are enabled in the supplied 31-setting INI.
-**F8** toggles the corner HUD/radar, **F9** details, **F10** fullscreen markers.
+**F8** toggles the corner HUD/radar, **F9** details, **F10** fullscreen markers,
+**F11** hides or shows blocked lights (by default they are dimmed).
 Each accepts a decimal Windows virtual-key code; **0** disables that shortcut.
-**F11 is unused.** Keys do not stop telemetry streaming.
+Keys do not stop telemetry streaming.
 
 | INI section | Key | Default |
 | --- | --- | --- |
 | Overlay | ToggleKey | 119 / F8 |
 | Overlay | DetailsKey | 120 / F9 |
 | LightOverlay | ToggleKey | 121 / F10 |
+| LightOverlay | OcclusionToggleKey | 122 / F11 |
 
+`[LightOverlay] Radius=100` is shared by markers, radar and visibility rays.
 Automatic hiding in every menu is not implemented; use F8/F10.
 Layout, scale, opacity, HDR white, marker limits, sampling and smoothing remain
 configurable. INI changes need a game restart. See
-[configuration](https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md).
-Research, Console, Explorer and occlusion switches cannot activate through an old
-INI in the production build; their separate research profile remains in source.
+[configuration](https://github.com/ZappendusterFX/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md).
+Research, Console and Explorer switches cannot activate through an old INI in the
+production build; their separate research profile remains in source.
 
 ### Requirements and installation
 
@@ -109,29 +109,19 @@ delete only those four leftover Telemetry files, then import the new ZIP. Do not
 delete the ASI loader. A clean import then deployed all six current files exactly.
 JSON Mod Manager/manual-loader lifecycle validation remains pending.
 
-### Streamline/DXGI compatibility fix
-
-Two affected NVIDIA 616.92 users reproduced `CreateSwapChainForHwnd` failing with
-`E_ACCESSDENIED` during Streamline 2.11.1 setup, followed by a game null dereference.
-Version 2.1.11 defers HUD hook installation until wrapper setup completes and
-releases Telemetry's references before a flip-model swapchain is replaced for the
-same game window. The owner separately reproduced the same DXGI failure during a
-runtime monitor/HDR transition; that path has a different downstream crash offset.
-Automated nested and runtime replacement tests pass. External affected-user
-confirmation is still required before claiming universal resolution. See
-[compatibility issues](https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/COMPATIBILITY_ISSUES.md).
-
 ### Data limits
 
-Authored/rendered arrays overlap; one lamp can produce several contributions.
-Discovery is view-filtered, not a full world registry. A missing light does not
-prove OFF. Linear HDR RGB is renderer data, not lumens or final screen pixels.
-Fast motion can expose projection latency. Display spot lengths are schematic.
+Authored, rendered and upstream arrays overlap; do not add them together. One lamp
+can produce several rendered contributions. The upstream list covers the lights the
+game currently hands to the renderer; it is not a persistent world registry, and a
+missing light does not prove OFF. Linear HDR RGB is renderer data, not lumens or
+final screen pixels. Fast motion can expose projection latency. Display spot
+lengths are schematic.
 
-The host reads memory; the plugin uses guarded renderer/D3D12 hooks and GPU copies.
-No gameplay-control API or anti-cheat bypass. Exact scans apply only to the hashes
-in the versioned validation record.
+The host reads memory; the plugin uses guarded renderer/D3D12 hooks, GPU copies and
+game physics queries. No gameplay-control API or anti-cheat bypass. Exact scans
+apply only to the hashes in the versioned validation record.
 
-[Source](https://github.com/fabianviol/CrimsonDesertTelemetry) and [API](API.md).
-Created by fabianviol with Claude and Codex (OpenAI). Unofficial; not affiliated
+[Source](https://github.com/ZappendusterFX/CrimsonDesertTelemetry) and [API](API.md).
+Created by ZappendusterFX with Claude and Codex (OpenAI). Unofficial; not affiliated
 with Pearl Abyss. MIT source; dependencies retain their notices.

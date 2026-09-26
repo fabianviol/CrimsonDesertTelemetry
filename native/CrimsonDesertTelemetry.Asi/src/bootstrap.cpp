@@ -265,6 +265,11 @@ DWORD RunBootstrap()
         GetPrivateProfileIntW(L"Experimental", L"PhysicsVisibility", 0, iniPath.c_str()) != 0;
     const bool researchSourceVisibility = lightsEnabled && !physicsVisibility &&
         GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+#else
+    // 2.2 production: [SourceVisibility] is the continuous physics ray fan.
+    const bool physicsVisibility = lightsEnabled &&
+        GetPrivateProfileIntW(L"Lights", L"ManyLights", 1, iniPath.c_str()) != 0 &&
+        GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
 #endif
     const int nearbyRadius = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"Lights", L"NearbyRadius", 100, iniPath.c_str())), 1, 100000);
@@ -383,6 +388,7 @@ DWORD RunBootstrap()
         commandLine += L" --lights --light-radius " + std::to_wstring(nearbyRadius);
 #if CDT_RESEARCH
     if (researchSourceVisibility) commandLine += L" --research-source-visibility";
+#endif
     if (physicsVisibility)
     {
         // Reuse the exact HUD parser (including decimal/clamp/fallback rules),
@@ -391,7 +397,6 @@ DWORD RunBootstrap()
         commandLine += L" --physics-visibility --physics-visibility-radius " + std::format(L"{}", radius);
         Log(std::format(L"Physics visibility and HUD radius: {} game units around player; rays from camera.", radius));
     }
-#endif
     commandLine += L" --light-smoothing-ms " + std::to_wstring(smoothingMs) +
         L" --light-group-radius " + std::format(L"{}", groupRadius);
     if (cdt::native_contract::ResearchContract)

@@ -7,9 +7,7 @@
 #include "source_visibility_bridge.h"
 #include "sky_bridge.h"
 #include "spatial_probe.h"
-#if CDT_RESEARCH
 #include "physics_probe.h"
-#endif
 #include "native_contract.generated.h"
 #include "overlay.h"
 #include "console/common.h"
@@ -213,9 +211,17 @@ void RunImpl(HANDLE stopEvent)
         else overlay::ClearLocalFault("ambient-capture");
     }
     else overlay::ClearLocalFault("native-capture");
-    const bool physicsVisibility = CDT_RESEARCH &&
+#if CDT_RESEARCH
+    const bool physicsVisibility =
         GetPrivateProfileIntW(L"Experimental", L"PhysicsVisibility", 0, iniPath.c_str()) != 0;
     const bool sourceVisibility = !physicsVisibility && GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+#else
+    // 2.2: production source visibility IS the continuous physics ray fan. The
+    // retired SDF camera-to-source classifier gave false clears through walls.
+    const bool physicsVisibility = captureEnabled &&
+        GetPrivateProfileIntW(L"SourceVisibility", L"Enabled", 0, iniPath.c_str()) != 0;
+    constexpr bool sourceVisibility = false;
+#endif
     // OFF uses the narrow render-capture path with its paired camera. ON keeps
     // that path disabled and uses the player/all-known-source bridge below.
     render::SetSourceVisibilityEnabled(!CDT_RESEARCH && sourceVisibility);
@@ -257,19 +263,21 @@ void RunImpl(HANDLE stopEvent)
     uint32_t reportedCaptureError = 0;
 #if CDT_RESEARCH
     const bool physicsRequested = physicsVisibility || GetPrivateProfileIntW(L"Research", L"PhysicsProbe", 0, iniPath.c_str()) != 0;
+#else
+    const bool physicsRequested = physicsVisibility;
+#endif
     const bool physicsStarted = physicsRequested && physics::Start(ch::g_game.moduleBase,
         std::filesystem::path(moduleDirectory).c_str(), physicsVisibility);
     if (physicsRequested && !physicsStarted) ch::Log("Physics observation refused initialization; no physics capture available.");
     if (physicsVisibility && !physicsStarted)
-        overlay::SetLocalFault("physics-visibility", "Experimental light visibility unavailable",
+        overlay::SetLocalFault("physics-visibility", "Light visibility unavailable",
             "The validated physics hook or data bridge could not start. Raw light data is unaffected; check the native log.");
-#endif
     while (WaitForSingleObject(stopEvent, 5) == WAIT_TIMEOUT)
     {
         if(spatialStarted) spatial::Poll();
+        if(physicsStarted) physics::Poll();
 #if CDT_RESEARCH
         if(sourceVisibilityBridge) source_visibility::Poll();
-        if(physicsStarted) physics::Poll();
 #endif
         if (capturing)
         {
@@ -286,8 +294,8 @@ void RunImpl(HANDLE stopEvent)
     }
 #if CDT_RESEARCH
     if(sourceVisibilityBridge) source_visibility::Close();
-    if(physicsStarted) physics::Stop();
 #endif
+    if(physicsStarted) physics::Stop();
     if(spatialStarted) spatial::Stop();
     if (capturing) render::StopCapture();
     else render::PublishStatus(render::Status::Stopped);
@@ -312,9 +320,7 @@ void Run(HANDLE stopEvent)
 }
 bool OwnsCodeAddress(uint64_t address)
 {
-#if CDT_RESEARCH
     if (physics::OwnsCodeAddress(address)) return true;
-#endif
     return render::OwnsCodeAddress(address) || spatial::OwnsCodeAddress(address);
 }
 }

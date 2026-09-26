@@ -585,6 +585,11 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory, bool continuous)
     constexpr std::string_view expectedHash = "57da440d72f4db974f25fef047cf84c4dadd999a88cb2a3c5af4c9bd67fde1e7";
     if (enabled.load() || native_contract::BuildId != "25477059" ||
         Hex(native_contract::ExecutableSha256) != expectedHash) return false;
+#if !CDT_RESEARCH
+    // Production ships only the continuous visibility sampler. File-driven manual
+    // observe/replay/segment/rayfan requests and their JSON reports stay research-only.
+    if (!continuous) return false;
+#endif
     base = moduleBase; folder = directory;
     shapeTarget = reinterpret_cast<void*>(base + 0x42B0C50);
     constexpr std::array<std::uint8_t, 30> shapeHead{0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,
@@ -615,8 +620,10 @@ bool Start(std::uint64_t moduleBase, const wchar_t* directory, bool continuous)
     if (continuous && !continuousVisibility) { Stop(); return false; }
     ch::Log("Physics probe v10 ready. Continuous sampled visibility=%s (shared HUD/player radius, max 500gu; camera-origin rays; max 20 scene batches/sec, 256 queued targets, shared 2ms issue window; unknown on failure).",
         continuousVisibility ? "enabled" : "disabled");
+#if CDT_RESEARCH
     ch::Log("Physics manual probe ready. Ray observer=%s; explicit requests only; max 12 transactions / 24 extra calls per process.",
         rayEnabled.load() ? "ready" : "unavailable");
+#endif
     return true;
 }
 void Poll()

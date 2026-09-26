@@ -4,8 +4,9 @@ The API carries raw light contributions, a separate [grouped and smoothed
 local-light feed](SMOOTHED_LIGHTS.md), player/camera poses, and an independent
 [ambient feed](AMBIENT_STREAM.md). Product versions, route versions and JSON
 schema versions are separate. Routes remain **v1**; the current development host
-uses schema **1.6** with lights enabled and **1.1** with lights disabled. Public
-production 2.1.11 uses schema 1.5 and reports source visibility as disabled.
+uses schema **1.6** with lights enabled and **1.1** with lights disabled. Release
+2.2.0 uses schema 1.6 and attaches physics `sourceVisibility` to upstream and
+rendered lights by default (public 2.1.11 used 1.5 with visibility disabled).
 Schema 1.6 adds [`lights.upstream`](#current-engine-lights-before-view-selection-schema-16):
 all current engine lights, including those behind the camera.
 
@@ -53,8 +54,8 @@ The server listens on IPv4 loopback only. There is no API key, authentication,
 TLS, game-control endpoint or runtime-configuration endpoint. Do not expose it to
 the network through a proxy. CORS/origin checks are not authentication of local apps.
 
-Configure the ASI before starting the game. These settings describe the current
-production source candidate:
+Configure the ASI before starting the game. These settings describe the 2.2.0
+production template:
 
 ```ini
 [Server]
@@ -67,6 +68,7 @@ Enabled=1
 NearbyRadius=100
 ManyLights=1
 ManyLightsSampleRateHz=20
+Upstream=1
 
 [Ambient]
 Enabled=1
@@ -89,7 +91,7 @@ InitiallyVisible=1
 ToggleKey=121
 HideOccluded=0
 OcclusionToggleKey=122
-Radius=35
+Radius=100
 
 [Notifications]
 Enabled=1
@@ -104,29 +106,32 @@ for the corner HUD/radar, F9 for diagnostics, F10 for fullscreen markers and F11
 for display-only hiding of freshly blocked sources. All four keys can be reassigned
 using decimal Windows virtual-key codes, or individually disabled with `0`. No API
 record or RGB is filtered.
-Display radius does not expand API source coverage or its configured nearby radius.
+Without source visibility, display radius does not expand API source coverage or
+its configured nearby radius.
 
-Private physics.10 exception: with `[Experimental] PhysicsVisibility=1`,
+Since 2.2.0, production `[SourceVisibility] Enabled=1` (research profile:
+`[Experimental] PhysicsVisibility=1`) runs the physics ray fan. Then
 `[LightOverlay] Radius` (1..500 game units) is shared by HUD and visibility target
 selection around the player; rays still originate at the paired camera. The host
 raises its API capture radius to at least this value, without shrinking a larger
 `[Lights] NearbyRadius`. Restart after edits. This does not create renderer-missing
-lights or guarantee collision coverage at long range. The private test ZIP uses100.
+lights or guarantee collision coverage at long range. The 2.2.0 template uses 100.
 The CLI equivalent is `--physics-visibility --physics-visibility-radius 100`.
 
 `ShowAmbient=1` makes F9 diagnostics poll the existing `/v1/ambient` endpoint and
 display global sky, camera sky visibility and the local estimate with their separate
 ages. Ambient requires native ManyLights capture. Current `CDT_RESEARCH=OFF`
-accepts SourceVisibility, HideOccluded and OcclusionToggleKey, but ignores Research,
+accepts Upstream, SourceVisibility, HideOccluded and OcclusionToggleKey, but ignores Research,
 Console, Explorer and legacy `OcclusionTest` controls left in an old INI. Those
 settings cannot enable the broad research architecture.
 `CDT_RESEARCH=ON` preserves the experimental paths and uses a separate
 `CrimsonDesertTelemetry.research.ini` template, packaged as the normal INI filename.
 See [configuration dependencies and validation](INI_VALIDATION.md).
 
-Public production 2.1.11 publishes additive rendered `sourceVisibility` as
-`unknown` with reason `disabled`. The current OFF candidate attaches measured or
-explicit unknown camera-to-source metadata to rendered records. The schema 1.5
+Public production 2.1.11 published additive rendered `sourceVisibility` as
+`unknown` with reason `disabled`. Release 2.2.0 attaches physics `physics-ray-fan`
+results (or an explicit `unknown` with a reason) to upstream and rendered records;
+`[SourceVisibility] Enabled=0` restores `unknown` / `disabled`. The schema 1.5
 research host separately attaches player-to-source results to authored and rendered
 records through the independent bridge described in
 [source visibility](SOURCE_VISIBILITY.md).
@@ -404,7 +409,7 @@ Preview.1/2 lacked this bound and could publish camera-attached ghost contributi
 | `luminanceLinear` | Derived RGB luminance using coefficients 0.212671, 0.71516, 0.07216. Not physical brightness. |
 | `kind` | Recognized `point` or `spot`; otherwise omitted. |
 | `direction`, `coneHalfAngleDegrees` | Spotlight emission direction and cone; invalid/unknown direction is omitted. Points have no direction. |
-| `sourceVisibility` | Optional geometric measurement: `clear`/`blocked`/`unknown`. Private physics.9 reports the latest complete `physics-ray-fan` result immediately, without motion invalidation or confirmation delay, expiring after500ms. Includes sampled path counts, measured camera/capture/age and optional `measurementSequence` / `measuredAtTickMilliseconds` (Windows uptime, not Unix time). This is a measured-pose result, not guaranteed current-pose visibility or optical transmission %. Raw light records stay intact. Legacy SDF metadata remains separate. See [complete contract](SOURCE_VISIBILITY.md). |
+| `sourceVisibility` | Optional geometric measurement: `clear`/`blocked`/`unknown`. The physics path (production default since 2.2.0) reports the latest complete `physics-ray-fan` result immediately, without motion invalidation or confirmation delay, expiring after 500 ms. Includes sampled path counts, measured camera/capture/age and optional `measurementSequence` / `measuredAtTickMilliseconds` (Windows uptime, not Unix time). This is a measured-pose result, not guaranteed current-pose visibility or optical transmission %. Raw light records stay intact. Legacy SDF metadata remains separate. See [complete contract](SOURCE_VISIBILITY.md). |
 
 Diagnostics count active records, published records, malformed records and records
 outside `lights.nearbyRadius`. Unavailable results omit sources/camera/timing and

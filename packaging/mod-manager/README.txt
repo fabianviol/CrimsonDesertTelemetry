@@ -4,15 +4,18 @@ Live light contributions, player/render-camera telemetry and local ambient data,
 with a corner HUD, 3D light radar, fullscreen markers and startup/error notices.
 Local HTTP/WebSocket APIs support other tools. This mod does not drive lamps.
 
-The narrow camera-to-rendered-source visibility experiment remains included but
-is OFF by default. It has reported lights behind solid geometry as visible, so
-do not use its verdicts or F11 filter as reliable occlusion data. Enabling it in
-the INI is an explicit experiment, not a complete light registry. Raw/smoothed
-light records and RGB remain available independently of that setting.
+New in 2.2:
+- Lights all around you. Telemetry reads the game's light list before the
+  renderer discards what the current view cannot see, so lights behind the
+  camera stay in the API, radar and markers. A fire bowl arrives as one light.
+- Which lights actually reach you. The game's own physics casts nine rays from
+  the camera to every nearby light. A wall blocks all nine; a lantern cage only
+  some, so the lantern stays visible. The HUD dims blocked lights (F11 hides
+  them) and the API reports clear/blocked/unknown per light. ON by default.
 
-Source and support: https://github.com/fabianviol/CrimsonDesertTelemetry
-Validation: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/STABLE_RELEASE_VALIDATION.md
-API: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/API.md
+Source and support: https://github.com/ZappendusterFX/CrimsonDesertTelemetry
+Validation: https://github.com/ZappendusterFX/CrimsonDesertTelemetry/blob/main/docs/STABLE_RELEASE_VALIDATION.md
+API: https://github.com/ZappendusterFX/CrimsonDesertTelemetry/blob/main/docs/API.md
 
 Requirements and installation
 -----------------------------
@@ -58,16 +61,15 @@ Compatibility fix retained from 2.1.11: an overlay-owned DXGI reference could ke
 an old flip-model swapchain alive while NVIDIA Streamline or the game replaced it
 for the same window. That failure was observed as CreateSwapChainForHwnd
 E_ACCESSDENIED. Automated nested/startup-style and runtime display/HDR replacement
-tests pass. Confirmation on the two external reporter systems remains pending;
-include a DMM support bundle if a crash persists.
+tests pass. One of the two reporters confirmed the fix; the second has not
+reported back. Include a DMM support bundle if a crash persists.
 
 Controls and configuration
 --------------------------
-The supplied INI enables the supported telemetry, ambient and HUD paths.
-SourceVisibility.Enabled=0 because its experimental geometric verdicts are not
-reliable. F8: corner HUD/radar. F9: details. F10: fullscreen light markers.
-F11: experimental show/hide of freshly classified blocked records; meaningful
-only if SourceVisibility.Enabled=1, and not a reliable visibility filter.
+The supplied INI enables the supported telemetry, ambient, upstream-light,
+light-visibility and HUD paths. F8: corner HUD/radar. F9: details.
+F10: fullscreen light markers. F11: hide/show lights whose nine visibility rays
+are all blocked (by default they are only dimmed); unknown lights stay shown.
 Each shortcut accepts a decimal Windows virtual-key code; 0 disables that key.
 Defaults: Overlay.ToggleKey=119, Overlay.DetailsKey=120,
 LightOverlay.ToggleKey=121, LightOverlay.OcclusionToggleKey=122.
@@ -78,15 +80,19 @@ INI changes require a game restart; display keys work immediately.
 Research, Console, Explorer, the broad player/all-source bridge and OcclusionTest
 remain absent from this production build. Merge preferences into the new template.
 Configuration ranges, dependencies and tests:
-https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md
+https://github.com/ZappendusterFX/CrimsonDesertTelemetry/blob/main/docs/INI_VALIDATION.md
 
 Lights.Enabled includes authored lights; ManyLights adds renderer contributions
-at 20 Hz by default. Ambient requires both. Server.SampleRateHz defaults to60;
+at 20 Hz by default and Upstream=1 adds all current engine lights from the same
+capture. Ambient and SourceVisibility require ManyLights. Server.SampleRateHz
+defaults to 60;
 faster API polling does not create additional GPU samples. NearbyRadius uses game
 units. LightSmoothing controls grouping and EMA; raw values remain unchanged.
 Radar3D=0 selects the compass. AutoScale/Scale/Opacity/Corner control layout.
-LightOverlay.Radius/MaxMarkers/MaxLabels bound visual clutter, not source discovery.
-HdrPaperWhiteNits=200 sets shared HDR UI white, clamped to80-500 nits.
+LightOverlay.Radius (default 100) is shared by markers, radar and visibility rays;
+more lights share the 256-target visibility budget. MaxMarkers/MaxLabels bound
+visual clutter, not source discovery.
+HdrPaperWhiteNits=200 sets shared HDR UI white, clamped to 80-500 nits.
 Notifications show readiness briefly or persistent actionable errors. Readiness
 requires valid player and render-camera data. Native light/sky capture waits for
 that first playable-world signal, so initial menu/shader loading cannot consume a
@@ -105,12 +111,14 @@ Ambient:   http://127.0.0.1:27311/v1/ambient
 Smoothed:  http://127.0.0.1:27311/v1/lights/smoothed
 
 The host listens on loopback only. Do not launch another host on its port.
-Routes remain v1; light-enabled snapshots use additive schema1.5, otherwise1.1.
-With the experimental SourceVisibility setting enabled, rendered records receive
-camera-to-source verdicts when a fresh SDF volume covers their segment. These
-verdicts can be wrong; unknown/stale records remain present with null attenuation.
-Authored/rendered arrays overlap. One lamp may produce multiple contributions.
-This is not a full360-degree registry; a missing source does not prove OFF.
+Routes remain v1; light-enabled snapshots use additive schema 1.6, otherwise 1.1.
+lights.upstream lists every current engine light of a capture, including behind
+the camera; rendererSelected marks those the renderer also used in this view.
+Upstream and rendered lights carry sourceVisibility clear/blocked/unknown with
+method physics-ray-fan, ray counts and measurement age (expires after 500 ms).
+Unknown/stale lights remain present with null attenuation; nothing is removed.
+Authored/rendered/upstream arrays overlap; do not add them together. It is not a
+persistent light registry; a missing source does not prove OFF.
 Linear HDR RGB/luminance are renderer values, not lumens or final pixels.
 Ambient contains global sky, camera-local sky exposure and their derived estimate.
 Exposure is sampled at the camera location, not the fraction of sky on screen.
@@ -138,14 +146,17 @@ CrimsonDesertTelemetry.native.log (light/ambient capture).
 Exact ASI/ZIP scan and live results belong to the versioned validation record;
 an earlier clean scan is not a verdict for this binary.
 
-Experimental visibility status
-------------------------------
-The current camera-to-rendered-light visibility classifier is unfinished and OFF
-by default. It can falsely report sources behind solid geometry as visible.
-Future work includes walls, terrain and off-screen/behind-camera coverage. The
-normal light, smoothed-light and ambient streams do not depend on this setting.
+Light visibility limits
+-----------------------
+Visibility is a sampled collision estimate, not how much light gets through.
+Nine rays go from the camera to fixed points around each light: any free ray
+counts as clear. Thin gaps can make a light behind a fence or cage clear, and
+geometry without collision (foliage, some decorations) does not block. It runs
+only on the exact supported game build; otherwise every light stays unknown.
+SourceVisibility.Enabled=0 switches it off. The normal light, smoothed-light and
+ambient streams do not depend on this setting.
 The complete source and preserved research are on GitHub. Forks are welcome.
 
-Created by fabianviol, developed with Claude and Codex (OpenAI).
+Created by ZappendusterFX, developed with Claude and Codex (OpenAI).
 See THIRD-PARTY-NOTICES.txt for dependency licenses.
 Unofficial community project; not affiliated with Pearl Abyss.

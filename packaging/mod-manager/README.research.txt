@@ -58,5 +58,5 @@ loader, and Microsoft .NET 8 ASP.NET Core Runtime x64.
 
 HTTP snapshot: http://127.0.0.1:27311/v1/snapshot
 Schema:        http://127.0.0.1:27311/v1/schema
-Source/state:  https://github.com/fabianviol/CrimsonDesertTelemetry
-Test contract: https://github.com/fabianviol/CrimsonDesertTelemetry/blob/main/docs/SOURCE_VISIBILITY.md
+Source/state:  https://github.com/ZappendusterFX/CrimsonDesertTelemetry
+Test contract: https://github.com/ZappendusterFX/CrimsonDesertTelemetry/blob/main/docs/SOURCE_VISIBILITY.md

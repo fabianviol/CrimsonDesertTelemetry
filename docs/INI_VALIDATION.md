@@ -2,8 +2,9 @@
 
 This is the option inventory and test ledger, not a claim that every configuration
 has passed in the game. The previous combined template contained **60 settings**.
-Public 2.1.11 offered **31**. The current production source candidate offers **34**
-after restoring SourceVisibility, HideOccluded and OcclusionToggleKey. The unchanged
+Public 2.1.11 offered **31**; later candidates offered **34** after restoring
+SourceVisibility, HideOccluded and OcclusionToggleKey. Release 2.2.0 offers **35**
+(adds Lights.Upstream). The unchanged
 research template retains all **60**, including the 26 research-only settings below.
 No research implementation or evidence was removed.
 
@@ -58,9 +59,11 @@ All supported boolean values in packaged profiles are `0` and `1`. Runtime
 readers have historically accepted other nonzero integers; that is not an
 additional advertised boolean syntax. Changes require a game restart except
 the four runtime display toggles. Fractional values use a decimal point.
-Every supported non-experimental boolean feature is 1 in the release template,
-including ShowDetails. `SourceVisibility.Enabled=0` by default because its live
-geometric verdicts have produced false-visible results through solid geometry.
+Every supported boolean feature is 1 in the 2.2.0 release template (the display
+preference HideOccluded stays 0), including ShowDetails and `SourceVisibility.Enabled`, which drives the physics ray fan in
+production since 2.2.0. The earlier production SDF classifier (2.1.14 and earlier,
+default 0 after false-visible results through solid geometry) is no longer
+selected by OFF; its research path and evidence remain in the ON profile.
 
 Bootstrap settings are read in `src/bootstrap.cpp:252-268`, light/ambient source
 selection in `src/instruments.cpp:110-207`, UI settings in
@@ -79,7 +82,7 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | Lights.ManyLightsSampleRateHz | Integer 1-60; capture interval is integer `1000 / rate` ms (`render_capture.cpp:547`). | Native copy tests; INI min/max cadence not a measured game result; P. |
 | Lights.Upstream | 0/1, missing = 1; also copies the ManyLights INPUT (before view selection) with every sample; requires Lights.Enabled/ManyLights. Feeds `lights.upstream`, HUD/radar, PhysicsVisibility targets and smoothing. Refused cleanly if exact-build input anchors or enhanced barriers do not verify. | WARP copy/fence/debug-layer test, v4 bridge and decoder tests, HUD model/render tests, offline replay of the live PID2252 pairs; live game acceptance pending; P. |
 | Ambient.Enabled | 0/1; global sky + camera visibility, requires Lights.Enabled/ManyLights. Independent of HUD visibility. | A plus live ambient default; dependency/combined startup pending. |
-| SourceVisibility.Enabled | 0/1; enables the narrow camera-to-rendered-source classifier and one current SDF volume; requires Lights.Enabled/ManyLights. It does not enable the ON-only player/all-source bridge. | V verifies OFF enable/disable, clear/blocked, front/behind and raw-byte preservation; live restored-fire acceptance pending. |
+| SourceVisibility.Enabled | 0/1, default 1 since 2.2.0; in OFF enables the continuous physics ray fan (9 rays camera -> each light within LightOverlay.Radius, 256 targets, 20 batches/s, 2 ms budget, 500 ms expiry, exact build only); requires Lights.Enabled/ManyLights. Targets are the upstream lights when Lights.Upstream=1. OFF no longer selects the SDF classifier. It does not enable the ON-only player/all-source bridge or manual probes. | Native physics tests (ON test target), managed PhysicsVisibility/UpstreamLightTests; private physics.10 and 2.1.15-upstream.1 live use reported working by the owner; exact 2.2.0 ZIP live test pending; P. |
 | LightSmoothing.TimeConstantMilliseconds | Integer 0-2000; 0 keeps grouping but disables temporal smoothing. | B forwards time; M covers zero/invalid/EMA; P. |
 | LightSmoothing.GroupRadius | Decimal 0.01-1 game units; maximal group extent, not physical identity. Invalid runtime input falls back to 0.15 and logs. | M validates options/grouping; ASI malformed/boundary forwarding pending; P. |
 | Overlay.Enabled | 0/1; corner HUD. Other UI owners can keep graphics/client active when 0. | O/G disabled, enabled and view-isolation controls. |
@@ -98,9 +101,9 @@ selection in `src/instruments.cpp:110-207`, UI settings in
 | LightOverlay.Enabled | 0/1; independent fullscreen markers; radar belongs to Overlay. | O/G markers-only, HUD+markers/all-three-UI pass; rc.1 all-enabled SDR and user F10 control pass without reported flicker. |
 | LightOverlay.InitiallyVisible | 0/1; initial marker state, changed by ToggleKey; requires Enabled. | O/G hidden startup and toggle regression. |
 | LightOverlay.ToggleKey | Integer 0-255 Windows VK; 0 disables; default121/F10. | O remap/disable/bounds and G runtime display state. |
-| LightOverlay.HideOccluded | 0/1; hides only freshly known blocked records in the HUD/radar. Unknown/stale records remain shown; raw/EMA API records remain unchanged. | O model controls; V raw preservation; live verdict quality pending. |
+| LightOverlay.HideOccluded | 0/1, default 0 (blocked lights are dimmed); hides only freshly known blocked records in the HUD/radar. Unknown/stale records remain shown; raw/EMA API records remain unchanged. | O model controls; V raw preservation; live verdict quality pending. |
 | LightOverlay.OcclusionToggleKey | Integer 0-255 Windows VK; 0 disables; default122/F11. | O remap/disable/bounds and shortcut state machine; live F11 depends on accepted visibility verdicts. |
-| LightOverlay.Radius | Decimal 1-500 game units for radar/markers; cannot extend Lights.NearbyRadius or source discovery. | O nondefault/bounds/nonfinite; G views; P. |
+| LightOverlay.Radius | Decimal 1-500 game units around the player, 100 in the 2.2.0 template; shared by radar, markers and physics visibility targets. With SourceVisibility the host raises its API capture radius to at least this value; it never creates lights the game does not hand to the renderer. | O nondefault/bounds/nonfinite; G views; managed physics radius boundary tests; P. |
 | LightOverlay.MaxMarkers | Integer 1-2048; bound in both views. 0 clamps to1, does not disable. | O small/large bounds; G rendering; P. |
 | LightOverlay.MaxLabels | Integer 0-16; fullscreen detail-label bound. 0 keeps markers without labels. | O small/large bounds; label-zero render check pending; P. |
 
@@ -205,9 +208,15 @@ OcclusionTest, pass. Those are synthetic/source-build results; installed-game
 combinations and live per-light acceptance remain subject to the current handover.
 No full INI or live all-functions pass is claimed.
 
-## Current production candidate follow-up
+## Release 2.2.0 template
 
-The OFF template now has 34 settings. SourceVisibility.Enabled, HideOccluded and
+The OFF template has 35 settings: `Lights.Upstream=1` was added, and
+`SourceVisibility.Enabled=1` now selects the physics ray fan. The package self-test
+keeps rejecting Research, Console, Explorer and OcclusionTest in OFF.
+
+## Earlier production candidate follow-up
+
+The OFF template then had 34 settings. SourceVisibility.Enabled, HideOccluded and
 OcclusionToggleKey are restored; the ON template remains the preserved 60-setting
 research profile. The profile self-test accepts and bounds the three restored OFF
 settings while continuing to reject Research, Console, Explorer and OcclusionTest.
