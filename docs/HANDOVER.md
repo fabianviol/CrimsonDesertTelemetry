@@ -62,6 +62,20 @@ registry. Thus off-screen support was claimed, but complete360 coverage or a
 removed input-capture feature is not established. Historical broader coverage
 and possible game-side changes remain unresolved; no public text changed.
 
+**100gu audit,2026-09-26:** owner reports a rear bowl disappearing with distance,
+returning on camera turn; suggests either forgotten plugin radius or engine near
+coverage. Installed Lights.NearbyRadius=100, LightOverlay.Radius=100. Live host
+PID27540 command line has BOTH `--light-radius 100` and
+`--physics-visibility-radius 100`; API reports nearbyRadius100. Snapshot85929 /
+capture21654 publishes a front source at36.35gu with fresh physics-clear63ms,
+and rear sources18.75/18.73gu. HUD uses configured radius for radar/markers;
+physics annotates records without removing them; native continuous limit500gu.
+No forgotten general35gu cutoff found. A view-dependent ENGINE influence/near
+region remains plausible, not a measured fixed engine distance. Our radius
+does not expand the engine-selected output. Owner has moved since the first
+paired capture; do not call a later camera-facing sample a same-location control
+without checking its pose. No config/plugin change for this audit.
+
 **Current: off-screen coverage audit, 2026-09-26 (no runtime/code change).**
 Owner needs CURRENT lights around360 degrees, including behind the camera, and
 remembers broader previous radar coverage. At night more lights return; rotating
